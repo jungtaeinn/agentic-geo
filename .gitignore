@@ -1,0 +1,18 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+.vercel
+.vscode
+.idea
+.next
+.pnpm-store
+.turbo
+coverage
+dist
+node_modules
+out
+pnpm-debug.log*
+*.tsbuildinfo
+apps/product-extractor/src/app/components/ExtractorConsole 2.tsx
+apps/product-extractor/src/app/globals 2.css

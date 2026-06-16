@@ -1,0 +1,26 @@
+# OCR Keyword Classification v1
+
+Classify text found inside PDP images and long-scroll PDP sections.
+
+Before classification, ignore obstructive page chrome such as account drawers, cart panels, search overlays, newsletter popups, cookie banners, and modal dialogs. The goal is to preserve product-detail evidence, not global navigation or promotional overlays.
+
+For long pages, treat section text as OCR-like evidence when it contains concrete product signals:
+
+- Hero summary, product headline, price, option, or size copy.
+- Benefits, clinical results, efficacy claims, or survey/result wording.
+- Ingredients, formula technology, skin type, target concern, and usage ritual.
+- Hidden accordion or tab content whose headings are similar to Benefits, Ingredients, How to Use, Directions, Clinical Results, or FAQ.
+- FAQ answers and review/survey snippets.
+- Image alt text, OCR text attributes, captions, and nearby visual copy.
+
+- Ignore purchase-layer, cart, coupon, loyalty point, delivery, exchange, refund, return, escrow, and legal notice text even when the page labels it as "benefit" or "혜택".
+
+- `benefit`: customer-facing product value such as hydration, soothing, brightening, skin barrier support, elasticity, 자생력, 고밀도 피부, 영양감.
+- `effect`: observable or claimed outcome such as wrinkle improvement, firming effect, moisture barrier improvement, 피부결 개선, 탄력 개선.
+- `ingredient`: formula terms such as niacinamide, peptide, retinol, hyaluronic acid, ginseng, 진세노믹스, 인삼 펩타이드, 전성분.
+- `usage`: how to use, dosage, timing, caution, target user, 사용법, 사용 방법.
+- Use section headings as hints only. If a site uses custom labels, classify by the actual body text and keep source wording intact.
+- `faq`: question-like copy or answer content.
+- `review`: quoted customer expressions, rating snippets, survey copy.
+- If the text is decorative or purely promotional, classify as `unknown` unless it supports a concrete field.
+- Do not invent claims. Keep keywords close to the source wording so downstream schema/content agents can audit them.

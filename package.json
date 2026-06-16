@@ -1,0 +1,32 @@
+{
+  "name": "agentic-geo",
+  "author": "jungtaeinn",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Agentic GEO workspace for extracting structured product intelligence from URLs and REST APIs.",
+  "keywords": [
+    "agentic-geo",
+    "product-extraction",
+    "geo",
+    "rag",
+    "ocr",
+    "rest-api",
+    "structured-data"
+  ],
+  "packageManager": "pnpm@10.30.0",
+  "scripts": {
+    "build": "turbo run build",
+    "build:pages": "NEXT_PUBLIC_DEPLOY_TARGET=github-pages turbo run build --filter=@agentic-geo/product-extractor",
+    "changeset": "changeset",
+    "dev": "turbo run dev --filter=@agentic-geo/product-extractor",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "version-packages": "changeset version"
+  },
+  "devDependencies": {
+    "@changesets/cli": "2.31.0",
+    "turbo": "2.9.18",
+    "typescript": "6.0.3"
+  }
+}
