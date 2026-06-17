@@ -1,6 +1,7 @@
 {
   "name": "@agentic-geo/geo-generator",
   "author": "jungtaeinn",
+  "license": "MIT",
   "description": "Next.js orchestration console for PDP extraction, GEO schema/content generation, and validation diagnostics.",
   "keywords": [
     "agentic-geo",

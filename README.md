@@ -203,3 +203,9 @@ AZURE_OPENAI_API_VERSION=
 - [apps/pdp-extractor/README.md](apps/pdp-extractor/README.md)
 - [packages/pdp-extractor-agent/README.md](packages/pdp-extractor-agent/README.md)
 - [packages/pdp-geo-generator-agent/README.md](packages/pdp-geo-generator-agent/README.md)
+
+## License
+
+MIT License. You may use, copy, modify, and distribute this project as long as the copyright notice and license notice are included.
+
+Copyright (c) 2026 jungtaeinn
