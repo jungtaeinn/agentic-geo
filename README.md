@@ -1,126 +1,185 @@
 # Agentic GEO
 
-Agentic GEO는 상품 상세 페이지 URL 또는 상품 REST API 주소를 넣으면 상품명, 가격, 설명, 옵션, FAQ, 리뷰 신호, OCR 후보 키워드, RAG chunk를 하나의 JSON 결과로 정리하는 프로젝트입니다.
+Agentic GEO는 서비스에서 필요한 GEO(Generative Engine Optimization) 작업을 여러 sub agent로 나누고, 입력 유형과 목적에 맞게 오케스트레이션하는 AI 활용 워크스페이스입니다. PDP 상품 페이지, REST API, 임의 상품 JSON을 받아 추출, 정규화, 생성, 검증 단계를 분리된 agent가 처리하고, 앱은 필요한 조합만 연결해 schema.org JSON-LD와 GEO 최적화 PDP content를 만듭니다.
 
-비개발자 관점에서는 "상품 페이지를 넣으면 AI 검색 최적화와 콘텐츠 생성에 필요한 원천 데이터를 정리해 주는 도구"라고 이해하면 됩니다.
+핵심 방향은 하나의 거대한 처리기가 아니라, 재사용 가능한 agent들을 서비스 요구사항에 따라 조합하는 구조입니다. 각 agent는 자체 RAG와 AI provider를 활용해 상품 정보 해석, 리뷰/OCR/FAQ 신호 분류, GEO 문맥 검색, schema/content 생성, 검증 보정을 수행합니다. 예를 들어 PDP URL을 입력하면 `pdp-extractor-agent`가 상품/리뷰/OCR/FAQ/RAG 근거를 추출하고, `pdp-geo-generator-agent`가 그 결과를 기반으로 JSON-LD schema markup과 accordion HTML content를 생성한 뒤 validation/repair diagnostics를 제공합니다. 이미 정리된 상품 JSON이 있는 서비스라면 extractor를 건너뛰고 generator agent만 호출할 수 있습니다.
 
-## 한눈에 보기
+## Representative Screen
+
+`apps/geo-generator`의 대표 화면입니다. 좌측에서는 extractor/generator mode와 실행 히스토리를 관리하고, 중앙에서는 생성된 schema/content/diagnostics artifact를 확인하며, 우측에서는 sub agent별 진행 상태와 AI/RAG 기반 진단 로그를 추적합니다.
+
+![Agentic GEO PDP GEO generation console](docs/images/agentic-geo-console.png)
+
+## Architecture
 
 ```mermaid
-flowchart LR
-  A["상품 URL 또는 REST API"] --> B["화면에서 입력"]
-  B --> C["상품 추출 에이전트"]
-  C --> D["상품/리뷰/FAQ/OCR 분석"]
-  D --> E["RAG chunk 생성"]
-  E --> F["복사 가능한 JSON"]
+flowchart TD
+  U["Service or operator input<br/>PDP URL / REST API / Product JSON"] --> APP["apps/geo-generator<br/>orchestration layer"]
+  AI["AI provider runtime<br/>OpenAI / Gemini / Azure OpenAI / Mock"]
+
+  subgraph APP_LAYER["Application Layer"]
+    APP --> ROUTER{"Input strategy"}
+    ROUTER -->|"URL or REST API"| EXTRACT_ROUTE["Run extraction flow"]
+    ROUTER -->|"Manual product JSON"| GENERATE_ROUTE["Run generation flow"]
+  end
+
+  subgraph EXTRACTOR["Independent sub agent: pdp-extractor-agent"]
+    EXTRACT_ROUTE --> EXTRACT["extract + normalize"]
+    AI --> EXTRACT
+    EXTRACT_RAG["Extractor-local RAG<br/>normalization, review, OCR, FAQ"] --> EXTRACT
+    EXTRACT --> RAW["GEO RAW JSON<br/>product, reviews, FAQ, OCR, rag.chunks"]
+  end
+
+  subgraph GENERATOR["Independent sub agent: pdp-geo-generator-agent"]
+    RAW --> GENERATE["normalize + retrieve + generate"]
+    GENERATE_ROUTE --> GENERATE
+    AI --> GENERATE
+    GENERATOR_RAG["Generator-local RAG<br/>schema.org, E-E-A-T, CEP, GEO, locale"] --> GENERATE
+    GENERATE --> VALIDATE["validate + repair<br/>JSON-LD and HTML"]
+  end
+
+  VALIDATE --> OUT["Service artifacts<br/>schemaMarkup, script tag, PDP HTML content, diagnostics"]
 ```
 
-## 무엇을 할 수 있나요?
+각 sub agent는 앱 내부 컴포넌트가 아니라 독립 패키지입니다. 함수 API와 REST handler를 제공하므로 단독 실행, 테스트, 다른 서비스 내장도 가능하고, `apps/geo-generator`는 입력과 서비스 목적에 따라 어떤 agent를 어떤 순서로 실행할지만 결정합니다. `apps/pdp-extractor`는 같은 extractor agent를 단독으로 실행해 추출 품질만 검토하는 콘솔입니다.
 
-- 상품 상세 페이지 URL을 입력해 상품 정보를 추출합니다.
-- REST API 주소를 입력해 JSON 응답에서 상품 정보를 정리합니다.
-- 여러 URL을 한 번에 입력하고 처리 결과를 히스토리로 확인합니다.
-- OpenAI, Gemini, Azure OpenAI 중 하나를 연결해 실제 AI 분석을 실행합니다.
-- RAG 프로필과 분석 프롬프트를 화면에서 관리합니다.
-- 최종 결과를 GEO RAW JSON 형태로 복사합니다.
-- 추출된 JSON에 대해 간단한 수정 요청을 입력해 결과를 다듬습니다.
+## End-To-End Flow
 
-## 프로젝트 구성
+| 단계 | 실행 주체 | 입력 | AI 활용 | agent-local RAG | 출력 |
+| --- | --- | --- | --- | --- | --- |
+| 1. 입력 분기 | `apps/geo-generator` | URL, REST API, Product JSON | provider 설정과 모델 접근 검증 | 없음 | extractor 실행 또는 generator 직접 실행 결정 |
+| 2. 상품 추출 | `pdp-extractor-agent` | PDP URL, REST API, HTML | 리뷰 키워드, OCR 후보, FAQ/상품 신호 분류 보조 | `packages/pdp-extractor-agent/src/rag` | GEO RAW JSON, evidence, warning, extractor RAG chunks |
+| 3. GEO 생성 | `pdp-geo-generator-agent` | GEO RAW JSON 또는 Product JSON | GEO 문맥 생성, schema/content 구성, locale 표현 보조 | `packages/pdp-geo-generator-agent/src/rag` | schema.org JSON-LD, PDP HTML sections, recommendations |
+| 4. 검증/보정 | `pdp-geo-generator-agent` | 생성된 JSON-LD/HTML | 누락/불일치 진단과 보정 후보 판단 | generator diagnostics 기준 | validation warnings, repaired artifacts |
+| 5. 앱 표시/복사 | `apps/geo-generator` | agent 결과와 logs | AI 실행 결과와 진단 로그 시각화 | 없음 | 복사 가능한 script tag, content HTML, diagnostics panel |
 
-```txt
-agentic-geo/
-  apps/
-    product-extractor/
-      README.md
-      src/app/
-        page.tsx                  # Product Extractor 화면
-        components/
-          ExtractorConsole.tsx     # 채팅형 추출 콘솔 UI
-        api/
-          extract/route.ts         # 추출 API
-          provider/validate/route.ts
-          rag-profile/route.ts
+## Sub Agent Composition
 
-  packages/
-    product-extractor-agent/
-      README.md
-      src/
-        agent.ts                   # 상품 추출 파이프라인
-        rest.ts                    # REST 어댑터
-        refine.ts                  # GEO RAW JSON 수정 로직
-        types.ts                   # 공개 타입 계약
-        llm/                       # OpenAI/Gemini/Azure/Mock provider
-        rag/                       # 분석 프롬프트와 RAG 기준 문서
-```
+Agentic GEO의 기본 구성은 다음과 같습니다.
 
-역할을 간단히 나누면 다음과 같습니다.
+| Sub agent | 담당 | AI 활용 | 자체 RAG | 독립 실행 | 오케스트레이션 활용 |
+| --- | --- | --- | --- | --- | --- |
+| `pdp-extractor-agent` | URL/REST/HTML에서 상품 기본 정보, 리뷰, OCR 후보, FAQ 후보, RAG chunk, evidence/warning 추출 | 상품/리뷰/OCR/FAQ 신호 분류와 요약 품질 보강 | extractor RAG profile | 가능 | PDP 기반 서비스에서 raw product intelligence 생성 |
+| `pdp-geo-generator-agent` | 임의 상품 JSON을 product signal로 정규화하고 RAG 검색, locale terminology, schema/content 생성, validation/repair 수행 | GEO 친화적 문장 구성, schema/content 생성, locale 표현 판단 | generator RAG profile | 가능 | 추출 결과 또는 내부 상품 API 데이터를 GEO artifact로 변환 |
+| validation/diagnostics flow | JSON-LD graph, Product 필수 필드, FAQ/HowTo 구조, 안전한 accordion HTML 검증 및 보정 | 생성 결과의 누락/불일치 진단 보조 | generator diagnostics | generator 내부 포함 | 앱 우측 패널과 REST 응답에서 warnings/evidence로 노출 |
+
+이 구조 덕분에 서비스별 요구사항에 따라 다음처럼 다르게 조합할 수 있습니다.
+
+| 서비스 상황 | 권장 흐름 |
+| --- | --- |
+| PDP URL만 있는 운영 도구 | extractor -> generator -> validation |
+| 상품 API JSON이 이미 있는 커머스 백오피스 | generator -> validation |
+| 추출 품질만 검토하는 내부 QA | extractor만 실행하고 GEO RAW JSON/evidence 확인 |
+| 자체 vector DB나 reranker를 쓰는 서비스 | generator의 `managed-vector-store-rag` 또는 `customRetriever`로 교체 |
+
+## Workspace
 
 | 위치 | 역할 |
 | --- | --- |
-| `apps/product-extractor` | 사용자가 보는 웹 화면과 Next.js API |
-| `packages/product-extractor-agent` | 실제 상품 정보 추출, 분석, JSON 생성 로직 |
-| `packages/product-extractor-agent/src/rag` | 분석 기준이 되는 프롬프트와 RAG 문서 |
+| `apps/geo-generator` | PDP 추출, GEO 생성, validation diagnostics를 연결하는 메인 Next.js 콘솔 |
+| `apps/pdp-extractor` | 상품 추출 sub agent를 단독으로 실행하고 GEO RAW JSON을 검토하는 Next.js 콘솔 |
+| `packages/pdp-extractor-agent` | 상품 URL/REST API/HTML에서 product intelligence와 RAG 근거를 추출하는 재사용 패키지 |
+| `packages/pdp-geo-generator-agent` | 임의 상품 JSON에서 schema.org JSON-LD, PDP HTML content, diagnostics를 생성하는 재사용 패키지 |
 
-## 처음 실행하기
+## GEO Artifacts
 
-### 1. 준비물
+`packages/pdp-geo-generator-agent`는 서비스가 바로 사용할 수 있는 두 가지 핵심 산출물을 생성합니다.
 
-- Node.js가 설치되어 있어야 합니다.
-- pnpm을 사용합니다. 이 저장소는 `pnpm@10.30.0` 기준입니다.
+- `schemaMarkup`: `Product`, `FAQPage`, `HowTo`, `BreadcrumbList`, `WebPage`를 포함하는 schema.org JSON-LD와 복사용 `<script type="application/ld+json">`
+- `content`: `productName`, `description`, `quickFacts`, `benefits`, `ingredients`, `howToUse`, `faq` 섹션을 포함하는 GEO 최적화 accordion HTML
 
-Corepack을 쓰는 환경이라면 다음처럼 pnpm을 준비할 수 있습니다.
+진단 정보는 `recommendations`, `evidence`, `terminology`, `validationWarnings`, `selectedRagChunks`, `ragMode`로 분리되어 앱 우측 패널이나 REST 응답에서 확인할 수 있습니다.
 
-```bash
-corepack enable
-corepack pnpm --version
+## RAG And Validation
+
+Agentic GEO는 agent별로 RAG profile을 분리합니다. extractor는 추출과 원천 데이터 정규화에 필요한 RAG를 갖고, generator는 schema/content 생성과 locale terminology에 필요한 RAG를 갖습니다. 앱은 두 profile을 함께 읽고 저장할 수 있지만, 각 agent는 자기 RAG 문서와 manifest를 기준으로 독립적으로 실행됩니다.
+
+| Agent | RAG 위치 | 목적 |
+| --- | --- | --- |
+| `pdp-extractor-agent` | `packages/pdp-extractor-agent/src/rag` | 상품 정규화, 리뷰 키워드 추출, OCR 후보 분류, FAQ 추출 기준 |
+| `pdp-geo-generator-agent` | `packages/pdp-geo-generator-agent/src/rag` | schema.org graph 구성, E-E-A-T, CEP, BestPractice, GEO guidance, official docs, locale 표현/용어 기준 |
+
+Extractor RAG 파일:
+
+```txt
+packages/pdp-extractor-agent/src/rag/
+  analysis-prompt_v1.md
+  product-normalization_v1.md
+  review-keyword-extraction_v1.md
+  ocr-keyword-classification_v1.md
+  faq-extraction_v1.md
 ```
 
-### 2. 의존성 설치
+Generator의 기본 RAG 모드는 `local-versioned-rag`입니다. 패키지 안의 버전 관리 RAG 파일을 chunking, deterministic hash embedding, local hybrid reranking으로 검색하므로 OpenAI가 아닌 provider도 사용할 수 있습니다.
+
+선택적으로 `managed-vector-store-rag`를 사용할 수 있습니다. 첫 adapter는 OpenAI Vector Store Search를 지원하고, `customRetriever` 계약을 통해 다른 vector DB나 reranker로 교체할 수 있게 설계되어 있습니다.
+
+Generator RAG 파일:
+
+```txt
+packages/pdp-geo-generator-agent/src/rag/
+  analysis-prompt_v1.md
+  schema-org-product_v1.md
+  eeat_v1.md
+  cep_v1.md
+  best-practice_v1.md
+  geo-paper_v1.md
+  official-ai-search-platform-docs_v1.md
+  locale-expression-guidelines_v1.md
+  locale-terminology-map_v1.json
+```
+
+Validation flow는 생성된 JSON-LD와 HTML을 그대로 반환하지 않고 다음 항목을 확인합니다.
+
+- `@context`, `@graph`, `Product.name`, `Product.description` 같은 기본 graph 구조
+- `FAQPage`의 Question/Answer, `HowTo`의 step 구조
+- `<script>`, inline event, style attribute 같은 안전하지 않은 accordion HTML 요소
+- repair가 필요한 경우 `validationWarnings`와 `evidence`에 보정 내역 기록
+
+## Getting Started
 
 ```bash
 pnpm install
-```
-
-### 3. 개발 서버 실행
-
-```bash
 pnpm dev
 ```
 
-브라우저에서 다음 주소를 엽니다.
+기본 앱은 `apps/geo-generator`입니다.
 
 ```txt
 http://localhost:3000
 ```
 
-## 기본 사용법
+PDP extractor 앱만 실행하려면 다음 명령을 사용합니다.
 
-1. 화면 하단 입력창에 상품 URL 또는 REST API 주소를 입력합니다.
-2. 처음 사용하는 경우 좌측 하단의 `설정`에서 AI provider를 연결합니다.
-3. OpenAI, Gemini, Azure OpenAI 중 하나를 선택하고 API Key와 모델을 확인합니다.
-4. 연결 테스트를 통과하면 입력창에서 Enter 또는 전송 버튼으로 추출을 실행합니다.
-5. 우측 패널에서 진행 상황, 출력 요약, 출처를 확인합니다.
-6. 결과 카드 또는 우측 패널에서 JSON을 복사합니다.
-
-여러 상품을 한 번에 처리하려면 한 줄에 하나씩 입력합니다.
-
-```txt
-https://example.com/products/a
-https://example.com/products/b
-https://example.com/products/c
+```bash
+pnpm dev:pdp-extractor
 ```
 
-## AI 연결 방식
+## Main Commands
 
-로컬 개발 화면에서는 설정 모달에서 API Key를 입력하고 연결 테스트를 할 수 있습니다.
+| 명령어 | 설명 |
+| --- | --- |
+| `pnpm dev` | GEO Generator 개발 서버 실행 |
+| `pnpm dev:geo-generator` | GEO Generator 개발 서버 실행 |
+| `pnpm dev:pdp-extractor` | PDP Extractor 개발 서버 실행 |
+| `pnpm typecheck` | 전체 TypeScript 검사 |
+| `pnpm test` | 패키지 테스트 실행 |
+| `pnpm build` | 전체 빌드 |
+| `pnpm build:pages` | GEO Generator GitHub Pages 산출물 생성 |
+| `pnpm build:pages:pdp` | PDP Extractor GitHub Pages 산출물 생성 |
+
+## AI Provider
+
+AI provider는 sub agent가 상품 데이터를 단순 파싱하는 수준을 넘어 의미 기반으로 해석하고 생성하도록 돕는 실행 계층입니다. 로컬 개발과 테스트는 `mock`으로도 가능하지만, 실제 품질 검증에서는 OpenAI, Gemini, Azure OpenAI 같은 provider를 연결해 리뷰 키워드 분류, OCR 후보 해석, FAQ 추론, GEO content 생성, locale 표현 판단을 수행합니다.
 
 지원 provider:
 
-- OpenAI
-- Gemini
-- Azure OpenAI
+- `mock`
+- `openai`
+- `gemini`
+- `azure-openai`
 
-서버 환경 변수로 기본 provider를 지정할 수도 있습니다.
+환경 변수 예시:
 
 ```env
 AGENTIC_GEO_PROVIDER=openai
@@ -138,74 +197,9 @@ AZURE_OPENAI_DEPLOYMENT=
 AZURE_OPENAI_API_VERSION=
 ```
 
-주의: 공개 정적 배포 페이지에 개인 API Key를 직접 입력하는 방식은 권장하지 않습니다. 공개 배포에서는 별도 서버에 추출 API를 두고 `NEXT_PUBLIC_AGENTIC_GEO_API_URL`로 연결하는 구성이 안전합니다.
+## More Docs
 
-## RAG 프로필 관리
-
-Product Extractor는 패키지 안의 RAG 문서를 분석 기준으로 사용합니다.
-
-```txt
-packages/product-extractor-agent/src/rag/
-  analysis-prompt_v1.md
-  product-normalization_v1.md
-  review-keyword-extraction_v1.md
-  ocr-keyword-classification_v1.md
-  faq-extraction_v1.md
-```
-
-화면의 설정에서 분석 프롬프트와 RAG 파일을 편집하면 로컬 개발 환경에서는 이 패키지 파일과 동기화됩니다.
-
-파일 버전은 파일명으로 관리합니다.
-
-```txt
-{purpose}_v1.md
-{purpose}_v2.md
-```
-
-## 주요 명령어
-
-| 명령어 | 설명 |
-| --- | --- |
-| `pnpm dev` | Product Extractor 개발 서버 실행 |
-| `pnpm lint` | 전체 워크스페이스 lint |
-| `pnpm typecheck` | 전체 TypeScript 검사 |
-| `pnpm test` | 패키지 테스트 실행 |
-| `pnpm build` | 전체 빌드 |
-| `pnpm build:pages` | GitHub Pages용 정적 산출물 생성 |
-
-앱만 실행하거나 검사하려면 다음처럼 필터를 사용할 수 있습니다.
-
-```bash
-pnpm --filter @agentic-geo/product-extractor dev
-pnpm --filter @agentic-geo/product-extractor lint
-pnpm --filter @agentic-geo/product-extractor typecheck
-```
-
-에이전트 패키지만 테스트하려면 다음을 사용합니다.
-
-```bash
-pnpm --filter @agentic-geo/product-extractor-agent test
-```
-
-## API 호출 예시
-
-개발 서버가 켜져 있을 때 추출 API를 직접 호출할 수 있습니다.
-
-```bash
-curl -X POST http://localhost:3000/api/extract \
-  -H "Content-Type: application/json" \
-  -d '{"sources":["https://example.com/products/a"],"sourceType":"url"}'
-```
-
-REST API 소스를 호출할 때는 `sourceType`을 `restApi`로 보냅니다.
-
-```bash
-curl -X POST http://localhost:3000/api/extract \
-  -H "Content-Type: application/json" \
-  -d '{"sources":["https://example.com/api/products/a"],"sourceType":"restApi"}'
-```
-
-## 더 자세히 보기
-
-- 앱 사용과 화면 구조: [apps/product-extractor/README.md](apps/product-extractor/README.md)
-- 에이전트 패키지 API와 내부 구조: [packages/product-extractor-agent/README.md](packages/product-extractor-agent/README.md)
+- [apps/geo-generator/README.md](apps/geo-generator/README.md)
+- [apps/pdp-extractor/README.md](apps/pdp-extractor/README.md)
+- [packages/pdp-extractor-agent/README.md](packages/pdp-extractor-agent/README.md)
+- [packages/pdp-geo-generator-agent/README.md](packages/pdp-geo-generator-agent/README.md)

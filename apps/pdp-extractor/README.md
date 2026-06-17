@@ -1,6 +1,8 @@
-# Product Extractor App
+# PDP Extractor App
 
-`apps/product-extractor`는 Agentic GEO의 사용자 화면입니다. 상품 URL 또는 REST API 주소를 입력하고, AI provider와 RAG 프로필을 설정하며, 추출 결과를 JSON으로 확인하는 Next.js 앱입니다.
+`apps/pdp-extractor`는 `pdp-extractor-agent`를 단독으로 실행하는 Next.js 콘솔입니다. 상품 URL 또는 REST API 주소를 입력하고, AI provider와 RAG 프로필을 설정하며, downstream GEO 생성에 넘길 수 있는 GEO RAW JSON과 evidence/warning diagnostics를 확인합니다.
+
+이 앱은 전체 Agentic GEO 파이프라인 중 “추출 sub agent”의 품질을 검토하기 위한 화면입니다. GEO Generator 앱에서 extractor -> generator를 한 번에 실행할 수도 있지만, 추출 규칙, 리뷰/OCR/FAQ 후보, RAG chunk가 올바른지 따로 확인해야 할 때 이 앱을 사용합니다.
 
 ## 주요 기능
 
@@ -9,10 +11,35 @@
 - OpenAI, Gemini, Azure OpenAI 연결 테스트와 모델 목록 확인
 - REST API 요청 헤더와 소스 감지 방식 설정
 - RAG 분석 프롬프트와 참고 문서 관리
-- 진행 단계, 출력 요약, 출처를 보여주는 우측 패널
+- 진행 단계, 출력 요약, evidence/warning, 출처를 보여주는 우측 패널
 - 추출 결과 JSON 복사
 - 기존 GEO RAW JSON 결과에 대한 수정 요청 처리
 - 좁은 화면에서도 좌측/우측 패널이 자연스럽게 동작하는 반응형 UI
+
+## Extraction Output
+
+추출 결과는 generator agent가 바로 사용할 수 있는 상품 중심 JSON입니다.
+
+| 영역 | 내용 |
+| --- | --- |
+| `product` | 상품명, 설명, 브랜드, 가격, 이미지, 옵션 등 기본 신호 |
+| `reviews` | 평점, 리뷰 수, 리뷰 본문, 반복 키워드 |
+| `faq` | PDP/JSON-LD/본문에서 발견한 FAQ 후보 |
+| `ocr` | 이미지 alt/text와 상세 영역 텍스트 기반 OCR 후보 키워드 |
+| `geoProduct.rag.chunks` | 상품, 리뷰, FAQ, OCR 근거를 downstream 검색에 쓰기 좋게 분할한 chunk |
+| `diagnostics` | 단계별 진행, evidence, warning, source log |
+
+## Extraction Stages
+
+| 단계 | 역할 |
+| --- | --- |
+| `input` | URL/REST API 입력 검증과 정규화 |
+| `fetch` | HTML 또는 API JSON 수집 |
+| `extract` | 상품 기본 정보, meta tag, JSON-LD, embedded state 분석 |
+| `ocr` | 이미지/상세 영역의 OCR 후보 키워드 분류 |
+| `review` | 리뷰 신호와 고객 표현 정리 |
+| `rag` | 상품/리뷰/FAQ/OCR 근거를 RAG chunk로 변환 |
+| `json` | 최종 GEO RAW JSON 생성 |
 
 ## 화면 구성
 
@@ -46,7 +73,7 @@ pnpm dev
 앱 패키지만 직접 실행할 수도 있습니다.
 
 ```bash
-pnpm --filter @agentic-geo/product-extractor dev
+pnpm --filter @agentic-geo/pdp-extractor dev
 ```
 
 기본 주소:
@@ -118,7 +145,7 @@ REST API 입력 처리 방식을 설정합니다.
 
 ### RAG 프로필
 
-분석 프롬프트와 GEO 참고 파일을 관리합니다. 로컬 개발 서버에서는 `/api/rag-profile`을 통해 `packages/product-extractor-agent/src/rag` 파일과 동기화됩니다.
+분석 프롬프트와 GEO 참고 파일을 관리합니다. 로컬 개발 서버에서는 `/api/rag-profile`을 통해 `packages/pdp-extractor-agent/src/rag` 파일과 동기화됩니다.
 
 ## API 라우트
 
@@ -196,11 +223,11 @@ NEXT_PUBLIC_AGENTIC_GEO_API_URL=https://your-api.example.com
 ## 명령어
 
 ```bash
-pnpm --filter @agentic-geo/product-extractor dev
-pnpm --filter @agentic-geo/product-extractor lint
-pnpm --filter @agentic-geo/product-extractor typecheck
-pnpm --filter @agentic-geo/product-extractor build
-pnpm --filter @agentic-geo/product-extractor build:pages
+pnpm --filter @agentic-geo/pdp-extractor dev
+pnpm --filter @agentic-geo/pdp-extractor lint
+pnpm --filter @agentic-geo/pdp-extractor typecheck
+pnpm --filter @agentic-geo/pdp-extractor build
+pnpm --filter @agentic-geo/pdp-extractor build:pages
 ```
 
 ## 주의 사항

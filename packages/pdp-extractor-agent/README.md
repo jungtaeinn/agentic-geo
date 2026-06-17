@@ -1,6 +1,17 @@
-# Product Extractor Agent
+# PDP Extractor Agent
 
-`packages/product-extractor-agent`는 상품 상세 페이지 또는 REST API 응답을 GEO RAW JSON으로 정리하는 독립 에이전트 패키지입니다. 앱 없이도 함수로 직접 호출할 수 있고, Next.js Route Handler 같은 Web API 환경에서 REST 어댑터로 사용할 수 있습니다.
+`packages/pdp-extractor-agent`는 Agentic GEO의 PDP 추출 sub agent입니다. 상품 상세 페이지, REST API 응답, 이미 수집한 HTML을 GEO RAW JSON으로 정리하고, downstream generator agent가 사용할 수 있는 product intelligence, evidence, warning, RAG chunk를 함께 제공합니다.
+
+앱 없이 함수로 직접 호출할 수 있고, Next.js Route Handler 같은 Web API 환경에서는 REST 어댑터로 사용할 수 있습니다. 전체 Agentic GEO 오케스트레이션에서는 URL/REST 입력을 상품 중심 데이터로 바꾸는 첫 번째 agent 역할을 맡습니다.
+
+## When To Use
+
+| 상황 | 사용 방식 |
+| --- | --- |
+| PDP URL에서 GEO 생성까지 자동화 | 이 agent로 `geoProduct`를 만든 뒤 `pdp-geo-generator-agent`에 전달 |
+| 상품 API 품질 검토 | REST API 응답을 추출하고 누락된 product/review/FAQ 신호 확인 |
+| 추출 결과 QA | `diagnostics.evidence`, `diagnostics.warnings`, `result.geoProduct.rag.chunks`를 보고 추출 근거 검토 |
+| 이미 수집한 HTML 처리 | `extractProductFromHtml`로 fetch 단계를 건너뛰고 추출만 실행 |
 
 ## 담당 범위
 
@@ -13,6 +24,18 @@
 - RAG chunk 생성
 - 진행 단계와 evidence/warning 진단 로그 생성
 - GEO RAW JSON 결과 수정 요청 처리
+
+## Output Contract
+
+주요 산출물은 `ProductExtractionRun`입니다.
+
+| 필드 | 설명 |
+| --- | --- |
+| `result.geoProduct` | generator agent에 넘길 수 있는 상품 중심 GEO RAW JSON |
+| `result.geoProduct.rag.chunks` | 상품, 리뷰, FAQ, OCR 근거에서 만든 검색용 chunk |
+| `diagnostics.process` | UI와 REST 응답에서 공유하는 단계별 진행 로그 |
+| `diagnostics.evidence` | 어떤 원문/필드에서 추출했는지 남기는 근거 |
+| `diagnostics.warnings` | 누락, 추론, fallback 처리 등 검토가 필요한 항목 |
 
 ## 처리 파이프라인
 
@@ -48,7 +71,7 @@ import {
   extractProductFromHtml,
   refineGeoProductResult,
   createProductExtractorRestHandler
-} from "@agentic-geo/product-extractor-agent";
+} from "@agentic-geo/pdp-extractor-agent";
 ```
 
 ### `extractProduct`
@@ -56,7 +79,7 @@ import {
 URL 또는 REST API를 직접 수집해 결과를 만듭니다.
 
 ```ts
-import { extractProduct } from "@agentic-geo/product-extractor-agent";
+import { extractProduct } from "@agentic-geo/pdp-extractor-agent";
 
 const run = await extractProduct(
   {
@@ -83,7 +106,7 @@ console.log(run.diagnostics.evidence);
 이미 수집한 HTML 문자열이 있을 때 사용합니다.
 
 ```ts
-import { extractProductFromHtml } from "@agentic-geo/product-extractor-agent";
+import { extractProductFromHtml } from "@agentic-geo/pdp-extractor-agent";
 
 const run = await extractProductFromHtml(html, "https://example.com/products/serum", {
   provider: "mock"
@@ -95,7 +118,7 @@ const run = await extractProductFromHtml(html, "https://example.com/products/ser
 Web API `Request`/`Response` 기반 REST 핸들러를 만듭니다.
 
 ```ts
-import { createProductExtractorRestHandler } from "@agentic-geo/product-extractor-agent/rest";
+import { createProductExtractorRestHandler } from "@agentic-geo/pdp-extractor-agent/rest";
 
 export const POST = createProductExtractorRestHandler({
   provider: "openai",
@@ -147,7 +170,7 @@ export const POST = createProductExtractorRestHandler({
 이미 생성된 GEO RAW JSON에서 사용자가 요청한 상품 정보 필드만 부분 수정합니다.
 
 ```ts
-import { refineGeoProductResult } from "@agentic-geo/product-extractor-agent";
+import { refineGeoProductResult } from "@agentic-geo/pdp-extractor-agent";
 
 const refinement = refineGeoProductResult({
   result,
@@ -200,7 +223,7 @@ src/rag/
 
 ```ts
 export const productExtractorRagManifest = {
-  profile: "product-extractor-default",
+  profile: "pdp-extractor-default",
   analysisPrompt: "analysis-prompt_v1.md",
   documents: {
     productNormalization: "product-normalization_v1.md",
@@ -240,10 +263,10 @@ export const productExtractorRagManifest = {
 ## 명령어
 
 ```bash
-pnpm --filter @agentic-geo/product-extractor-agent test
-pnpm --filter @agentic-geo/product-extractor-agent typecheck
-pnpm --filter @agentic-geo/product-extractor-agent build
-pnpm --filter @agentic-geo/product-extractor-agent lint
+pnpm --filter @agentic-geo/pdp-extractor-agent test
+pnpm --filter @agentic-geo/pdp-extractor-agent typecheck
+pnpm --filter @agentic-geo/pdp-extractor-agent build
+pnpm --filter @agentic-geo/pdp-extractor-agent lint
 ```
 
 ## 설계 메모
