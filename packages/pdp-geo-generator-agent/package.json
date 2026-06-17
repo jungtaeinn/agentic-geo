@@ -1,0 +1,40 @@
+{
+  "name": "@agentic-geo/pdp-geo-generator-agent",
+  "author": "jungtaeinn",
+  "description": "Reusable PDP GEO generation sub agent for turning arbitrary product JSON into schema.org JSON-LD, optimized PDP HTML content, and validation diagnostics.",
+  "keywords": [
+    "agentic-geo",
+    "pdp-geo-generator-agent",
+    "sub-agent",
+    "generative-engine-optimization",
+    "schema-org",
+    "json-ld",
+    "rag",
+    "pdp-content",
+    "validation"
+  ],
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./mock": "./src/mock.ts",
+    "./rag-profile": "./src/rag/profile.ts",
+    "./rest": "./src/rest.ts",
+    "./types": "./src/types.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "25.9.3",
+    "tsx": "4.22.4",
+    "vitest": "4.1.9"
+  }
+}

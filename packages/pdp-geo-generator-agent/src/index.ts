@@ -1,0 +1,42 @@
+export { generatePdpGeo } from "./agent";
+export { createPdpGeoGeneratorRestHandler, type PdpGeoGeneratorRestConfig, type PdpGeoGeneratorRestRequest } from "./rest";
+export { pdpGeoGeneratorRagManifest } from "./rag/manifest";
+export {
+  readPdpGeoGeneratorRagProfile,
+  resetPdpGeoGeneratorRagProfile,
+  writePdpGeoGeneratorRagProfile,
+  type StoredPdpGeoGeneratorRagDocument,
+  type StoredPdpGeoGeneratorRagProfile
+} from "./rag/profile";
+export type {
+  JsonObject,
+  JsonValue,
+  PdpGeoBreadcrumbItem,
+  PdpGeoContentArtifact,
+  PdpGeoContentSections,
+  PdpGeoDiagnostics,
+  PdpGeoEmbeddingProvider,
+  PdpGeoEvidence,
+  PdpGeoFaqItem,
+  PdpGeoFieldMapping,
+  PdpGeoGenerationHints,
+  PdpGeoGenerationInput,
+  PdpGeoGenerationResult,
+  PdpGeoGenerationRun,
+  PdpGeoGenerationStageId,
+  PdpGeoGenerationStep,
+  PdpGeoGeneratorOptions,
+  PdpGeoLocale,
+  PdpGeoRagChunk,
+  PdpGeoRagMode,
+  PdpGeoRagProvider,
+  PdpGeoRagSettings,
+  PdpGeoRecommendation,
+  PdpGeoRetrievedChunk,
+  PdpGeoReviewItem,
+  PdpGeoSchemaMarkup,
+  PdpGeoSchemaTarget,
+  PdpGeoSourceInfo,
+  PdpGeoTerminologyDiagnostics,
+  PdpProductSignal
+} from "./types";

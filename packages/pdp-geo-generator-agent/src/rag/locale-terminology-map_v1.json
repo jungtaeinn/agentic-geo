@@ -1,0 +1,72 @@
+{
+  "concepts": [
+    {
+      "concept": "hydration",
+      "category": "benefit",
+      "preferred": {
+        "ko-KR": ["보습", "수분감"],
+        "ja-JP": ["保湿", "うるおい"],
+        "en-US": ["hydration", "moisture"],
+        "en-GB": ["hydration", "moisturising"]
+      },
+      "avoid": {
+        "ko-KR": ["치료"],
+        "ja-JP": ["治療"],
+        "en-US": ["cure"],
+        "en-GB": ["cure"]
+      },
+      "notes": "Use cosmetic benefit wording, not medical treatment wording."
+    },
+    {
+      "concept": "brightening",
+      "category": "benefit",
+      "preferred": {
+        "ko-KR": ["화사함", "맑은 피부톤"],
+        "ja-JP": ["明るい印象", "透明感"],
+        "en-US": ["brightening", "even-looking tone"],
+        "en-GB": ["brightening", "even-looking tone"]
+      },
+      "avoid": {
+        "ko-KR": ["미백 치료"],
+        "ja-JP": ["漂白"],
+        "en-US": ["whitening"],
+        "en-GB": ["whitening"]
+      },
+      "notes": "Prefer appearance-oriented tone wording in global English."
+    },
+    {
+      "concept": "firming",
+      "category": "benefit",
+      "preferred": {
+        "ko-KR": ["탄력", "탄탄한 피부"],
+        "ja-JP": ["ハリ", "弾力感"],
+        "en-US": ["firming", "elasticity"],
+        "en-GB": ["firming", "elasticity"]
+      },
+      "avoid": {
+        "ko-KR": ["리프팅 수술 효과"],
+        "ja-JP": ["手術級"],
+        "en-US": ["surgical lift"],
+        "en-GB": ["surgical lift"]
+      },
+      "notes": "Keep firming claims cosmetic and evidence-backed."
+    },
+    {
+      "concept": "skin-barrier",
+      "category": "benefit",
+      "preferred": {
+        "ko-KR": ["피부 장벽", "장벽 케어"],
+        "ja-JP": ["バリア機能", "肌のバリア"],
+        "en-US": ["skin barrier", "barrier support"],
+        "en-GB": ["skin barrier", "barrier support"]
+      },
+      "avoid": {
+        "ko-KR": ["질환 개선"],
+        "ja-JP": ["疾患改善"],
+        "en-US": ["eczema treatment"],
+        "en-GB": ["eczema treatment"]
+      },
+      "notes": "Do not imply disease treatment."
+    }
+  ]
+}

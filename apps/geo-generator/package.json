@@ -1,0 +1,44 @@
+{
+  "name": "@agentic-geo/geo-generator",
+  "author": "jungtaeinn",
+  "description": "Next.js orchestration console for PDP extraction, GEO schema/content generation, and validation diagnostics.",
+  "keywords": [
+    "agentic-geo",
+    "nextjs",
+    "geo-generator",
+    "sub-agent-orchestration",
+    "pdp-extraction",
+    "geo-content",
+    "schema-org",
+    "json-ld",
+    "rag",
+    "validation"
+  ],
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "next build",
+    "build:pages": "NEXT_PUBLIC_DEPLOY_TARGET=github-pages next build",
+    "dev": "next dev",
+    "lint": "eslint .",
+    "test": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@agentic-geo/pdp-extractor-agent": "workspace:*",
+    "@agentic-geo/pdp-geo-generator-agent": "workspace:*",
+    "lucide-react": "1.18.0",
+    "next": "16.2.9",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@types/node": "25.9.3",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.2.9",
+    "typescript": "6.0.3"
+  }
+}
