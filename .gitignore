@@ -14,7 +14,5 @@ node_modules
 out
 pnpm-debug.log*
 *.tsbuildinfo
-apps/product-extractor/src/app/components/ExtractorConsole 2.tsx
-apps/product-extractor/src/app/globals 2.css
-apps/pdp-extractor/src/app/components/ExtractorConsole 2.tsx
-apps/pdp-extractor/src/app/globals 2.css
+apps/*/src/app/components/ExtractorConsole 2.tsx
+apps/*/src/app/globals 2.css
