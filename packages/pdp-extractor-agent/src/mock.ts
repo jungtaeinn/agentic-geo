@@ -11,6 +11,15 @@ export function createMockProductExtraction(source: string, index = 0): ProductE
   const productName = index % 2 === 0 ? "Hydra Barrier Cream" : "Bright Tone Serum";
   const benefit = index % 2 === 0 ? "hydration" : "brightening";
   const effect = index % 2 === 0 ? "barrier care" : "tone improvement";
+  const visualText = `${benefit} ${effect} niacinamide daily use FAQ`;
+  const sentenceInsights = [
+    {
+      imageUrl: `${source.replace(/\/$/, "")}/mock-product-${index + 1}.jpg`,
+      text: `${benefit} and ${effect} are emphasized with niacinamide in the mock PDP copy.`,
+      category: "benefit" as const,
+      keywords: [benefit, effect, "niacinamide"]
+    }
+  ];
   const generatedAt = new Date().toISOString();
   const result: ProductExtractionResult = {
     source,
@@ -89,10 +98,11 @@ export function createMockProductExtraction(source: string, index = 0): ProductE
           imageTexts: [
             {
               imageUrl: `${source.replace(/\/$/, "")}/mock-product-${index + 1}.jpg`,
-              text: `${benefit} ${effect} niacinamide daily use FAQ`
+              text: visualText
             }
           ],
-          textBlocks: [`${benefit} ${effect} niacinamide daily use FAQ`]
+          textBlocks: [visualText],
+          sentenceInsights
         }
       },
       aiAnalysis: {
@@ -186,7 +196,7 @@ export function createMockProductExtraction(source: string, index = 0): ProductE
         ratingSummary: "Rating 4.7 · 1284 reviews"
       },
       ocr: {
-        textBlocks: [`${benefit} ${effect} niacinamide daily use FAQ`],
+        textBlocks: [visualText],
         keywords: {
           product: [],
           price: [],
@@ -199,7 +209,8 @@ export function createMockProductExtraction(source: string, index = 0): ProductE
           metric: [],
           trend: [],
           unknown: []
-        }
+        },
+        sentenceInsights
       },
       rag: {
         chunks: [
@@ -216,7 +227,7 @@ export function createMockProductExtraction(source: string, index = 0): ProductE
           {
             id: "ocr-1",
             kind: "ocr",
-            text: `${benefit} ${effect} niacinamide daily use FAQ`
+            text: visualText
           }
         ]
       }
@@ -271,9 +282,9 @@ function createMockProcessTrace(source: string): ProductExtractionStep[] {
     },
     {
       id: "ocr",
-      title: "OCR 키워드 분류",
-      description: "이미지/상세 영역의 효능, 효과, 성분 키워드 분류",
-      message: "Mock OCR 키워드를 분류했습니다."
+      title: "OCR 문장/키워드 분석",
+      description: "이미지/상세 영역의 효능, 효과, 성분 문장과 키워드 분류",
+      message: "Mock OCR 문장과 키워드를 분류했습니다."
     },
     {
       id: "review",

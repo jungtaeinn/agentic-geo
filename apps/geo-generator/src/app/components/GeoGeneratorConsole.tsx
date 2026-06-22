@@ -701,7 +701,10 @@ export function GeoGeneratorConsole() {
   const activeRunStatus = activeMode === "extractor" ? extractorRunStatus : runStatus;
   const activeModeCopy = text.modes[activeMode];
   const schemaText = selectedResult ? JSON.stringify(selectedResult.generator.schemaMarkup.jsonLd, null, 2) : "";
-  const diagnosticsText = selectedResult ? JSON.stringify(selectedResult.generator.diagnostics, null, 2) : "";
+  const diagnosticsText = selectedResult ? JSON.stringify({
+    extractor: selectedLog?.extractor,
+    generator: selectedResult.generator.diagnostics
+  }, null, 2) : "";
   const extractorJsonText = selectedExtractorResult ? JSON.stringify(selectedExtractorResult, null, 2) : "";
   const extractorDiagnosticsText = selectedExtractorLog ? JSON.stringify(selectedExtractorLog, null, 2) : "";
   const canSubmitComposer = activeMode === "extractor"

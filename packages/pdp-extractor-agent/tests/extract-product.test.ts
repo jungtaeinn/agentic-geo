@@ -355,6 +355,294 @@ AGREED FINE LINES AND WRINKLES FEEL DIMINISHED 93%"
     expect(result.geoProduct.contentAnalysis.sections.some((section) => section.category === "effect" && section.text.includes("FINE LINES"))).toBe(true);
   });
 
+  it("reconstructs OCR visual copy into sentence-level ingredient and effect evidence", async () => {
+    const peptideOcrHtml = `
+      <main>
+        <h1>Concentrated Ginseng Rejuvenating Serum</h1>
+        <img
+          src="/ginseng-peptide.jpg"
+          data-ocr-text="Maximizing Effects with Ginseng Peptide™
+Ginseng Peptide™ is a 6-peptide blend that combines a potent ginseng-extracted peptide with 5 other peptides. This advanced formula, working synergistically with Korean Ginseng Actives, enhances skin firmness, elasticity, and resilience, helping to diminish visible signs of aging.
+INGREDIENTS: WATER / AQUA / EAU, GLYCERIN, NIACINAMIDE, PANAX GINSENG ROOT EXTRACT, GINSENG PEPTIDE, RETINOL."
+        />
+      </main>
+    `;
+
+    const { result } = await extractProductFromHtml(peptideOcrHtml, "https://example.com/products/ginseng-serum");
+
+    expect(result.geoProduct.ocr.sentenceInsights.some((item) => item.text.includes("6-peptide blend") && item.category === "ingredient")).toBe(true);
+    expect(result.geoProduct.ocr.sentenceInsights.some((item) => item.text.includes("enhances skin firmness") && item.category === "effect")).toBe(true);
+    expect(result.geoProduct.ingredients.some((text) => text.includes("6-peptide blend"))).toBe(true);
+    expect(result.geoProduct.effects.some((text) => text.includes("enhances skin firmness"))).toBe(true);
+    expect(result.geoProduct.ingredients.some((text) => text.includes("INGREDIENTS: WATER / AQUA"))).toBe(true);
+    expect(JSON.stringify(result)).not.toContain("confidence");
+  });
+
+  it("joins wrapped OCR lines into semantic sentence insights when punctuation is missing", async () => {
+    const wrappedOcrHtml = `
+      <main>
+        <h1>Concentrated Ginseng Rejuvenating Serum</h1>
+        <img
+          src="/wrapped-ginseng-peptide.jpg"
+          data-ocr-text="Maximizing Effects with
+Ginseng Peptide™
+Ginseng Peptide™ is a 6-peptide blend that combines a potent
+ginseng-extracted peptide with 5 other peptides This advanced formula
+working synergistically with Korean Ginseng Actives enhances skin firmness
+elasticity and resilience helping to diminish visible signs of aging"
+        />
+      </main>
+    `;
+
+    const { result } = await extractProductFromHtml(wrappedOcrHtml, "https://example.com/products/ginseng-serum");
+    const insights = result.geoProduct.ocr.sentenceInsights.map((item) => item.text);
+
+    expect(insights.some((text) =>
+      text.includes("combines a potent ginseng-extracted peptide with 5 other peptides This advanced formula")
+      && text.includes("enhances skin firmness elasticity and resilience")
+    )).toBe(true);
+    expect(insights).not.toContain("ginseng-extracted peptide with 5 other peptides This advanced formula");
+  });
+
+  it("sends many English product-detail images, including lazy client images, to vision OCR before review images", async () => {
+    const sentImageUrls: string[] = [];
+    const detailImages = Array.from({ length: 16 }, (_, index) =>
+      `https://cdn.example.com/pdp/technical-description/detail-section-${index + 1}.png?ver=2026061802`
+    );
+    const htmlWithManyImages = `
+      <main>
+        <h1>Barrier Hydro Soothing Cream</h1>
+        <section class="product-detail technical-description ingredient-technology">
+          <h2>Technical Ingredients</h2>
+          ${detailImages.slice(0, 8).map((src) => `<img data-lazy-src="${src}" />`).join("\n")}
+          <picture>
+            <source data-srcset="${detailImages.slice(8, 13).map((src, index) => `${src} ${index + 1}x`).join(", ")}" />
+          </picture>
+        </section>
+        <img src="https://images-kr.amoremall.com/fileupload/reviews/2026/06/18/review.jpg?format=webp" />
+      </main>
+      <script>
+        window.__PRODUCT__ = {
+          productName: "Barrier Hydro Soothing Cream",
+          detailDesc: ${JSON.stringify(detailImages.slice(13).map((src) => `<img data-src="${src}" />`).join(""))}
+        };
+      </script>
+    `;
+    const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      const content = body.input?.[0]?.content;
+      const imageParts = Array.isArray(content) ? content.filter((part: { type?: string }) => part.type === "input_image") : [];
+
+      if (imageParts.length > 0) {
+        sentImageUrls.push(...imageParts.map((part: { image_url: string }) => part.image_url));
+        return new Response(JSON.stringify({
+          output_text: JSON.stringify({
+            images: [
+              {
+                imageUrl: detailImages[0],
+                text: "Compressed Hyaluronic Acid\nPatented technology compresses hyaluronic acid to 1/100 size for fast moisture charging and lasting hydration"
+              },
+              {
+                imageUrl: detailImages[1],
+                text: "High-density Ceramide Capsule\nLong-chain ceramide and linker ceramide help reinforce skin barrier moisture for sensitive skin"
+              }
+            ]
+          })
+        }), { status: 200 });
+      }
+
+      return new Response(JSON.stringify({
+        output_text: JSON.stringify({
+          keywords: [
+            { keyword: "Compressed Hyaluronic Acid", category: "ingredient", confidence: 0.9, source: "llm" },
+            { keyword: "lasting hydration", category: "benefit", confidence: 0.9, source: "llm" },
+            { keyword: "High-density Ceramide Capsule", category: "ingredient", confidence: 0.9, source: "llm" },
+            { keyword: "skin barrier moisture", category: "benefit", confidence: 0.9, source: "llm" }
+          ],
+          sentenceInsights: [],
+          summary: "classified"
+        })
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result, diagnostics } = await extractProductFromHtml(
+      htmlWithManyImages,
+      "https://brand.example.com/products/barrier-hydro-soothing-cream",
+      { provider: "openai", apiKey: "test-key", model: "gpt-5.4-mini" }
+    );
+
+    expect(diagnostics.evidence).toContainEqual({ field: "runtime.provider", source: "api", value: "openai" });
+    expect(sentImageUrls.length).toBeGreaterThan(10);
+    expect(sentImageUrls).toEqual(expect.arrayContaining([detailImages[0], detailImages[12], detailImages[15]]));
+    expect(sentImageUrls.some((url) => /fileupload\/reviews/i.test(url))).toBe(false);
+    expect(result.geoProduct.ocr.textBlocks.join(" ")).toContain("Compressed Hyaluronic Acid");
+    expect(result.geoProduct.ocr.sentenceInsights.some((item) => item.text.includes("Compressed Hyaluronic Acid") && item.category === "ingredient")).toBe(true);
+    expect(result.geoProduct.ocr.sentenceInsights.some((item) => item.text.includes("High-density Ceramide Capsule"))).toBe(true);
+    expect(result.geoProduct.ingredients.some((text) => text.includes("Compressed Hyaluronic Acid"))).toBe(true);
+    expect(result.geoProduct.benefits.some((text) => text.includes("skin barrier moisture") || text.includes("lasting hydration"))).toBe(true);
+    expect(diagnostics.warnings.some((warning) => warning.code === "IMAGE_OCR_PROVIDER_NOT_CONFIGURED")).toBe(false);
+  });
+
+  it("keeps OCR text from product-detail images beyond the first 24 candidates", async () => {
+    const detailImages = Array.from({ length: 30 }, (_, index) =>
+      `https://cdn.example.com/pdp/technical-description/detail-section-${index + 1}.png`
+    );
+    const htmlWithThirtyImages = `
+      <main>
+        <h1>Barrier Hydro Soothing Cream</h1>
+        <section class="product-detail technical-description">
+          <h2>Ingredients and effects</h2>
+          ${detailImages.map((imageUrl) => `<img data-src="${imageUrl}" alt="ingredient technology detail" />`).join("\n")}
+        </section>
+      </main>
+    `;
+    const imageBatches: string[][] = [];
+    const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      const content = body.input?.[0]?.content;
+      const imageParts = Array.isArray(content) ? content.filter((part: { type?: string }) => part.type === "input_image") : [];
+
+      if (imageParts.length > 0) {
+        const urls = imageParts.map((part: { image_url: string }) => part.image_url);
+        imageBatches.push(urls);
+        return new Response(JSON.stringify({
+          output_text: JSON.stringify({
+            images: urls.map((imageUrl) => {
+              const sectionNumber = imageUrl.match(/detail-section-(\d+)/)?.[1] ?? "0";
+              return {
+                imageUrl,
+                text: `Compressed Hyaluronic Acid section ${sectionNumber}. Product-detail image text explains fast hydration, skin barrier moisture, and sensitive skin care.`
+              };
+            })
+          })
+        }), { status: 200 });
+      }
+
+      return new Response(JSON.stringify({
+        output_text: JSON.stringify({
+          keywords: [],
+          sentenceInsights: [],
+          summary: "classified"
+        })
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = await extractProductFromHtml(
+      htmlWithThirtyImages,
+      "https://brand.example.com/products/barrier-hydro-soothing-cream",
+      { provider: "openai", apiKey: "test-key", model: "gpt-5.4-mini" }
+    );
+
+    expect(imageBatches).toHaveLength(3);
+    expect(imageBatches.every((batch) => batch.length <= 12)).toBe(true);
+    expect(imageBatches.flat()).toEqual(expect.arrayContaining([detailImages[0], detailImages[24], detailImages[29]]));
+    expect(result.geoProduct.sourceExtraction.ocr.imageTexts.length).toBeGreaterThan(24);
+    expect(result.geoProduct.ocr.textBlocks.join(" ")).toContain("Compressed Hyaluronic Acid section 30");
+  });
+
+  it("warns when product-detail image OCR candidates exist but the active provider is mock", async () => {
+    const imageOnlyHtml = `
+      <main>
+        <h1>Barrier Hydro Soothing Cream</h1>
+        <section class="product-detail technical-description">
+          <h2>기술서</h2>
+          <img src="https://cdn.example.com/pdp/technical-description/detail-section-1.png?ver=2026061802" />
+        </section>
+      </main>
+    `;
+
+    const { diagnostics } = await extractProductFromHtml(imageOnlyHtml, "https://brand.example.com/products/barrier-hydro-soothing-cream");
+
+    expect(diagnostics.warnings.some((warning) =>
+      warning.code === "IMAGE_OCR_PROVIDER_NOT_CONFIGURED"
+      && warning.message.includes("product-detail image OCR candidates")
+    )).toBe(true);
+  });
+
+  it("sends raw image URLs embedded in page scripts to image OCR", async () => {
+    const rawScriptImageUrl = "https://assets.example.com/upload/editor/f4652a02-f514-4936-ac7e-00f5fcab61b4.png";
+    const sentImageUrls: string[] = [];
+    const htmlWithRawScriptImage = `
+      <main>
+        <h1>Barrier Hydro Soothing Cream</h1>
+      </main>
+      <script>
+        window.detailAsset = "${rawScriptImageUrl}";
+      </script>
+    `;
+    const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      const content = body.input?.[0]?.content;
+      const imageParts = Array.isArray(content) ? content.filter((part: { type?: string }) => part.type === "input_image") : [];
+
+      if (imageParts.length > 0) {
+        sentImageUrls.push(...imageParts.map((part: { image_url: string }) => part.image_url));
+        return new Response(JSON.stringify({
+          output_text: JSON.stringify({
+            images: [
+              {
+                imageUrl: rawScriptImageUrl,
+                text: "Compressed Hyaluronic Acid. Fast hydration and lasting moisture support the skin barrier."
+              }
+            ]
+          })
+        }), { status: 200 });
+      }
+
+      return new Response(JSON.stringify({
+        output_text: JSON.stringify({
+          keywords: [],
+          sentenceInsights: [],
+          summary: "classified"
+        })
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = await extractProductFromHtml(
+      htmlWithRawScriptImage,
+      "https://brand.example.com/products/barrier-hydro-soothing-cream",
+      { provider: "openai", apiKey: "test-key", model: "gpt-5.4-mini" }
+    );
+
+    expect(sentImageUrls).toContain(rawScriptImageUrl);
+    expect(result.geoProduct.sourceExtraction.ocr.imageTexts.some((item) => item.imageUrl === rawScriptImageUrl)).toBe(true);
+    expect(result.geoProduct.ocr.textBlocks.join(" ")).toContain("Compressed Hyaluronic Acid");
+  });
+
+  it("warns when an image OCR provider returns no readable product text", async () => {
+    const imageOnlyHtml = `
+      <main>
+        <h1>Barrier Hydro Soothing Cream</h1>
+        <section class="product-detail technical-description">
+          <h2>기술서</h2>
+          <img src="https://cdn.example.com/pdp/technical-description/detail-section-empty.png?ver=2026061802" />
+        </section>
+      </main>
+    `;
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({
+        output_text: JSON.stringify({
+          images: []
+        })
+      }), { status: 200 })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { diagnostics } = await extractProductFromHtml(
+      imageOnlyHtml,
+      "https://brand.example.com/products/barrier-hydro-soothing-cream",
+      { provider: "openai", apiKey: "test-key", model: "gpt-5.4-mini" }
+    );
+
+    expect(diagnostics.warnings.some((warning) =>
+      warning.code === "IMAGE_OCR_NO_TEXT_EXTRACTED"
+      && warning.message.includes("product-detail image OCR candidates were sent")
+    )).toBe(true);
+  });
+
   it("analyzes DOM-only ingredients, efficacy, usage, reviews, and rating content", async () => {
     const domOnlyHtml = `
       <main>

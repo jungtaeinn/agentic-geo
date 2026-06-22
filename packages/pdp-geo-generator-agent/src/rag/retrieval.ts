@@ -64,8 +64,8 @@ export function createPdpGeoRagQuery(product: PdpProductSignal, locale: PdpGeoLo
     product.usage.length > 0 ? `Usage: ${product.usage.slice(0, 3).join(", ")}.` : undefined,
     product.reviews.keywords.length > 0 ? `Review keywords: ${product.reviews.keywords.slice(0, 6).join(", ")}.` : undefined,
     "Need schema.org Product FAQPage HowTo BreadcrumbList WebPage, E-E-A-T, CEP, GEO, locale terminology, additionalProperty, positiveNotes.",
-    "Need answer-ready FAQ intent, customer review language, WebPage/Product description separation, source-supported benefit/effect/HowTo reconstruction, and public wording without internal diagnostic labels.",
-    "Use official OpenAI, Google Search Central, Gemini, and Perplexity docs for retrieval mode, embeddings, grounding, structured data, and citation-ready source support guidance."
+    "Need OCR sentence diagnostics, answer-ready FAQ intent, customer review language, WebPage/Product description separation, source-supported benefit/effect/HowTo reconstruction, and public wording without internal diagnostic labels.",
+    "Use official OpenAI, Google Search Central, Gemini, and Perplexity docs for retrieval mode, embeddings, grounding, structured data, and answer-ready source support guidance."
   ].filter(Boolean).join("\n");
 }
 
@@ -307,7 +307,7 @@ function retrievalBoost(chunk: PdpGeoRagChunk, locale: PdpGeoLocale, market?: st
   if (chunk.kind === "eeat" || chunk.kind === "cep") {
     boost += 0.04;
   }
-  if (/citation|cite|quotable|answer-ready|faqpage|mainentity|review|customer|webpage\.description|product\.description|claim support|evidence hierarchy|public wording/i.test(text)) {
+  if (/ocr|sentence diagnostics|sentence intent|classified sentence|citation|cite|quotable|answer-ready|faqpage|mainentity|review|customer|webpage\.description|product\.description|claim support|evidence hierarchy|public wording/i.test(text)) {
     boost += 0.04;
   }
   if (text.includes(locale)) {

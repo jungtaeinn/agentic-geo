@@ -1,4 +1,5 @@
 import { generatePdpGeoArtifacts } from "./generate";
+import { normalizeProductReviewKeywords } from "./keyword-normalizer";
 import { normalizePdpProduct } from "./normalize";
 import { readPdpGeoGeneratorRagProfile } from "./rag/profile";
 import { createPdpGeoRagQuery, resolvePdpGeoRagSettings, retrievePdpGeoRagChunks } from "./rag/retrieval";
@@ -84,12 +85,31 @@ export async function generatePdpGeo(
   process.done("input", "입력 JSON을 표준 요청으로 검증했습니다.");
 
   process.start("normalize", "상품 JSON 구조를 자동 추론하고 fieldMapping을 적용합니다.");
-  const normalized = normalizePdpProduct(parsed.product, {
+  let normalized = normalizePdpProduct(parsed.product, {
     hints: parsed.hints,
     fieldMapping: parsed.fieldMapping,
     sourceUrl: parsed.source?.url
   });
-  process.done("normalize", `${normalized.product.name} 상품 신호를 정규화했습니다.`);
+  const keywordNormalization = await normalizeProductReviewKeywords(
+    normalized.product,
+    normalized.locale,
+    normalized.market,
+    options
+  );
+  normalized = {
+    ...normalized,
+    product: keywordNormalization.product,
+    evidence: [
+      ...normalized.evidence,
+      ...keywordNormalization.evidence
+    ]
+  };
+  process.done(
+    "normalize",
+    keywordNormalization.evidence.length > 0
+      ? `${normalized.product.name} 상품 신호를 정규화하고 리뷰 키워드 오타 후보를 보정했습니다.`
+      : `${normalized.product.name} 상품 신호를 정규화했습니다.`
+  );
 
   process.start("rag-load", "패키지 RAG 프로필과 런타임 RAG 문서를 로드합니다.");
   const profile = await readPdpGeoGeneratorRagProfile();
@@ -162,7 +182,8 @@ export async function generatePdpGeo(
     schemaMarkup: generated.schemaMarkup,
     content: generated.content,
     fallbackProductName: generated.content.sections.productName,
-    fallbackDescription: generated.content.sections.description
+    fallbackDescription: generated.content.sections.description,
+    locale: normalized.locale
   });
   process.done("validate", `${repaired.validationWarnings.length}개 검증 경고를 확인했습니다.`);
 
@@ -173,6 +194,7 @@ export async function generatePdpGeo(
   const generatedAt = new Date().toISOString();
   const diagnostics: PdpGeoDiagnostics = {
     normalizedProduct: normalized.product,
+    ocrSentences: normalized.ocrSentences,
     recommendations: generated.recommendations,
     evidence: [
       ...normalized.evidence,

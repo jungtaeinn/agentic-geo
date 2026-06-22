@@ -13,6 +13,7 @@ export interface PdpGeoGeneratorRestRequest extends Omit<PdpGeoGenerationInput, 
   product?: unknown;
   products?: unknown[];
   llm?: Partial<Pick<PdpGeoGeneratorRestConfig, "provider" | "apiKey" | "model" | "endpoint" | "deployment" | "apiVersion">>;
+  keywordNormalization?: PdpGeoGeneratorRestConfig["keywordNormalization"];
 }
 
 export interface PdpGeoGeneratorRestFailure {
@@ -39,7 +40,13 @@ export function createPdpGeoGeneratorRestHandler(config: PdpGeoGeneratorRestConf
         rag: {
           ...config.rag,
           ...body.rag
-        }
+        },
+        keywordNormalization: config.keywordNormalization || body.keywordNormalization
+          ? {
+              ...config.keywordNormalization,
+              ...body.keywordNormalization
+            }
+          : undefined
       };
 
       if (products.length === 0) {

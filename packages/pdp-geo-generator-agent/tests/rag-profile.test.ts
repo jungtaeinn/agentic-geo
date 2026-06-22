@@ -11,6 +11,8 @@ describe("readPdpGeoGeneratorRagProfile", () => {
     expect(profile.profile).toBe(pdpGeoGeneratorRagManifest.profile);
     expect(profile.analysisPrompt).toContain("GEO-optimized PDP artifacts");
     expect(profile.analysisPrompt).toContain("WebPage.description");
+    expect(profile.analysisPrompt).toContain("OCR text is present");
+    expect(profile.analysisPrompt).toContain("classified OCR sentences");
     expect(profile.analysisPrompt).toContain("Do not expose internal labels");
     expect(profile.documents.map((document) => document.name)).toEqual(expect.arrayContaining([
       pdpGeoGeneratorRagManifest.documents.schemaOrgProduct,
@@ -30,8 +32,12 @@ describe("readPdpGeoGeneratorRagProfile", () => {
       .toContain("Reference Output From Amoremall/Sulwhasoo Example (Verbatim)");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.bestPractice)?.content)
       .toContain("Cross-Product Benchmarking Guidance");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.bestPractice)?.content)
+      .toContain("OCR Sentence Diagnostics and English RAG Use");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.schemaOrgProduct)?.content)
       .toContain("Do not expose internal diagnostic labels");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.schemaOrgProduct)?.content)
+      .toContain("When OCR sentences provide ingredient, benefit, usage, review, or full-ingredient evidence");
   });
 
   it("builds retrieval queries for review-led FAQ intent and public wording constraints", () => {
@@ -56,20 +62,24 @@ describe("readPdpGeoGeneratorRagProfile", () => {
     }, "en-US", "US");
 
     expect(query).toContain("answer-ready FAQ intent");
+    expect(query).toContain("OCR sentence diagnostics");
     expect(query).toContain("customer review language");
     expect(query).toContain("WebPage/Product description separation");
     expect(query).toContain("public wording without internal diagnostic labels");
   });
 
-  it("keeps default fallback RAG aligned with citation and public wording guardrails", () => {
+  it("keeps default fallback RAG aligned with answer-ready content and public wording guardrails", () => {
     const bestPractice = defaultPdpGeoGeneratorRagProfile.documents.find(
       (document) => document.name === pdpGeoGeneratorRagManifest.documents.bestPractice
     );
 
-    expect(defaultPdpGeoGeneratorRagProfile.analysisPrompt).toContain("answer-ready, citation-friendly");
+    expect(defaultPdpGeoGeneratorRagProfile.analysisPrompt).toContain("diverse product keywords");
+    expect(defaultPdpGeoGeneratorRagProfile.analysisPrompt).toContain("classified OCR sentences");
     expect(bestPractice?.content).toContain("Public Wording Guardrails");
     expect(bestPractice?.content).toContain("Schema.org + GEO Description Direction");
     expect(bestPractice?.content).toContain("Reconstruct FAQPage questions");
+    expect(bestPractice?.content).toContain("OCR Sentence Diagnostics and English RAG Use");
+    expect(bestPractice?.content).toContain("natural English commerce language");
     expect(bestPractice?.content).toContain("Do not reuse the same text for WebPage.description and Product.description");
     expect(bestPractice?.content).toContain("Korean Reference Artifact Usage");
     expect(bestPractice?.content).toContain("Cross-Product Benchmarking Guidance");

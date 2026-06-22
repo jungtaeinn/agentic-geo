@@ -1,4 +1,4 @@
-import type { ClassifiedKeyword } from "../types";
+import type { ClassifiedKeyword, ClassifiedSentenceInsight } from "../types";
 
 /** Provider IDs supported by the first extractor agent. */
 export type LlmProviderId = "mock" | "openai" | "gemini" | "azure-openai";
@@ -31,6 +31,7 @@ export interface KeywordClassificationRequest {
 /** Structured keyword output expected from every provider adapter. */
 export interface KeywordClassificationResponse {
   keywords: ClassifiedKeyword[];
+  sentenceInsights?: ClassifiedSentenceInsight[];
   summary: string;
   rawText?: string;
 }

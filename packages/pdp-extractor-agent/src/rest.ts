@@ -124,8 +124,8 @@ const failureStepMessages: Record<ProductExtractionStageId, Pick<ProductExtracti
     description: "상품명, 가격, 설명, 옵션, FAQ 후보 정규화"
   },
   ocr: {
-    title: "OCR 키워드 분류",
-    description: "이미지/상세 영역의 효능, 효과, 성분 키워드 분류"
+    title: "OCR 문장/키워드 분석",
+    description: "이미지/상세 영역의 효능, 효과, 성분 문장과 키워드 분류"
   },
   review: {
     title: "리뷰 신호 추출",

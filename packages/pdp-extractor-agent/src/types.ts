@@ -78,6 +78,23 @@ export interface ClassifiedKeyword {
   source: "dom" | "jsonLd" | "review" | "ocr" | "llm" | "mock";
 }
 
+/** Sentence-level OCR evidence reconstructed from visual copy and classified with related keywords. */
+export interface ClassifiedSentenceInsight {
+  text: string;
+  category: KeywordCategory;
+  keywords: string[];
+  confidence: number;
+  source: "ocr" | "llm" | "mock";
+}
+
+/** Public sentence-level OCR insight retained without model confidence for downstream schema/content generation. */
+export interface GeoSentenceInsight {
+  imageUrl?: string;
+  text: string;
+  category: KeywordCategory;
+  keywords: string[];
+}
+
 /** Keyword categories used by GEO downstream agents. */
 export type KeywordCategory =
   | "product"
@@ -118,6 +135,7 @@ export interface OcrTextEvidence {
   imageUrl: string;
   text: string;
   keywords: ClassifiedKeyword[];
+  sentenceInsights: ClassifiedSentenceInsight[];
   confidence: number;
 }
 
@@ -171,6 +189,7 @@ export interface GeoProductRawData {
         text: string;
       }>;
       textBlocks: string[];
+      sentenceInsights: GeoSentenceInsight[];
     };
   };
   aiAnalysis: {
@@ -202,6 +221,7 @@ export interface GeoProductRawData {
   ocr: {
     textBlocks: string[];
     keywords: GeoKeywordGroups;
+    sentenceInsights: GeoSentenceInsight[];
   };
   rag: {
     chunks: GeoRagChunk[];

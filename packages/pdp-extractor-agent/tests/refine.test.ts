@@ -31,7 +31,8 @@ const baseResult: ProductExtractionResult = {
       },
       ocr: {
         imageTexts: [],
-        textBlocks: []
+        textBlocks: [],
+        sentenceInsights: []
       }
     },
     aiAnalysis: {
@@ -86,7 +87,8 @@ const baseResult: ProductExtractionResult = {
         metric: [],
         trend: [],
         unknown: []
-      }
+      },
+      sentenceInsights: []
     },
     rag: {
       chunks: []

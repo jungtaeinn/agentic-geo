@@ -6,10 +6,13 @@ import {
   ProductExtractionInputSchema,
   type AgentWarning,
   type ClassifiedKeyword,
+  type ClassifiedSentenceInsight,
   type ExtractionEvidence,
   type FaqItem,
   type GeoKeywordGroups,
+  type GeoSentenceInsight,
   type GeoProductRawData,
+  type KeywordCategory,
   type OcrExtraction,
   type ProductContentCategory,
   type ProductContentSection,
@@ -39,6 +42,9 @@ export interface ProductExtractorOptions {
   }>;
   onProgress?: (step: ProductExtractionStep) => void;
 }
+
+const OCR_EVIDENCE_LIMIT = 80;
+const IMAGE_OCR_BATCH_SIZE = 12;
 
 const modalNoiseSelector = [
   "[role='dialog']",
@@ -101,8 +107,8 @@ const pipelineSteps: Array<Pick<ProductExtractionStep, "id" | "title" | "descrip
   },
   {
     id: "ocr",
-    title: "OCR 키워드 분류",
-    description: "이미지/상세 영역의 효능, 효과, 성분 키워드 분류"
+    title: "OCR 문장/키워드 분석",
+    description: "이미지/상세 영역의 효능, 효과, 성분 문장과 키워드 분류"
   },
   {
     id: "review",
@@ -162,6 +168,7 @@ export async function extractProductFromHtml(
   const $ = load(html);
   const evidence: ExtractionEvidence[] = [];
   const warnings: AgentWarning[] = [];
+  evidence.push({ field: "runtime.provider", source: "api", value: resolveProviderConfig(runtimeOptions).provider });
   const jsonLdNodes = readJsonLdNodes($);
   const productNode = findJsonLdNode(jsonLdNodes, "Product");
   const faqNode = findJsonLdNode(jsonLdNodes, "FAQPage");
@@ -179,7 +186,7 @@ export async function extractProductFromHtml(
     ...extractPageTextBlocks($, name),
     ...embeddedProductTextBlocks,
     ...clientStateData.textBlocks
-  ]).slice(0, 28);
+  ]).slice(0, OCR_EVIDENCE_LIMIT);
 
   if (removedNoiseCount > 0) {
     evidence.push({ field: "page.obstructionsRemoved", source: "dom", value: `${removedNoiseCount} modal, overlay, drawer, or chrome nodes removed before extraction.` });
@@ -212,7 +219,8 @@ export async function extractProductFromHtml(
     ...arrayValues(productNode?.images),
     ...clientStateData.images,
     meta($, "og:image"),
-    ...$("img").toArray().map((node) => absoluteUrl($(node).attr("src"), source))
+    ...$("img, picture source").toArray().flatMap((node) => imageUrlsFromNode($, node, source)),
+    ...extractRawImageUrls(html, source)
   ].filter(Boolean));
 
   const faq = extractFaq($, faqNode);
@@ -236,10 +244,10 @@ export async function extractProductFromHtml(
   };
   process.done("extract", `${name} 상품 기본정보를 정규화했습니다.`);
 
-  process.start("ocr", "이미지 대체 텍스트와 OCR 후보 텍스트를 키워드로 분류합니다.");
-  const ocr = await extractOcrKeywords($, source, name, pageTextBlocks, runtimeOptions, warnings);
+  process.start("ocr", "이미지 대체 텍스트와 OCR 후보 텍스트를 문장/키워드 근거로 분류합니다.");
+  const ocr = await extractOcrKeywords($, source, name, pageTextBlocks, images, runtimeOptions, warnings);
   const sectionBuckets = createProductSectionBuckets(pageTextBlocks, ocr);
-  process.done("ocr", `${ocr.imagesScanned}개 이미지/스크롤 섹션 후보에서 OCR 키워드를 분류했습니다.`);
+  process.done("ocr", `${ocr.imagesScanned}개 이미지/스크롤 섹션 후보에서 OCR 문장과 키워드를 분류했습니다.`);
 
   process.start("review", "JSON-LD와 리뷰 영역에서 고객 표현을 추출합니다.");
   const reviews = mergeReviewSummaries(extractReviews($, productNode, bodyText), clientStateData.reviews);
@@ -247,6 +255,7 @@ export async function extractProductFromHtml(
 
   process.start("rag", "상품, 리뷰, FAQ, OCR 근거를 RAG chunk로 구성합니다.");
   const keywords = mergeKeywords(reviews.keywords, ocr.extractedTexts.flatMap((item) => item.keywords));
+  const ocrSentenceSignals = createOcrSentenceSignalBuckets(ocr);
 
   const fallbackBenefitKeywords = sectionBuckets.benefits.length === 0
     ? selectKeywordTexts([...keywords, ...keywordsFromText(bodyText, "benefit")], "benefit")
@@ -258,15 +267,21 @@ export async function extractProductFromHtml(
     ...productBase,
     benefits: unique([
       ...sectionBuckets.benefits,
+      ...ocrSentenceSignals.benefits,
       ...fallbackBenefitKeywords
     ]).slice(0, 12),
     effects: unique([
       ...sectionBuckets.effects,
+      ...ocrSentenceSignals.effects,
       ...fallbackEffectKeywords
     ]).slice(0, 12),
-    ingredients: sectionBuckets.ingredients,
+    ingredients: unique([
+      ...sectionBuckets.ingredients,
+      ...ocrSentenceSignals.ingredients
+    ]).slice(0, 12),
     usage: unique([
       ...sectionBuckets.usage,
+      ...ocrSentenceSignals.usage,
       ...(sectionBuckets.usage.length === 0 ? usageFromFaq(faq) : [])
     ]).slice(0, 12),
     metrics: sectionBuckets.metrics,
@@ -375,7 +390,7 @@ async function extractProductFromApiPayload(
   const payloadLabel = sourceType === "url" ? "JSON" : "API";
   process.done("extract", `${product.name} ${payloadLabel} 상품정보를 정규화했습니다.`);
 
-  process.start("ocr", `${payloadLabel}이 제공한 상품 상세 텍스트를 OCR 근거로 분류합니다.`);
+  process.start("ocr", `${payloadLabel}이 제공한 상품 상세 텍스트를 OCR 문장/키워드 근거로 분류합니다.`);
   const warnings: AgentWarning[] = [];
   const imageTexts = mergeOcrCandidates([
     ...arrayValues(productSource.ocrTexts).map((text, index) => ({
@@ -383,20 +398,25 @@ async function extractProductFromApiPayload(
       text
     })),
     ...apiTextCandidates
-  ]).slice(0, 18);
+  ]).slice(0, OCR_EVIDENCE_LIMIT);
   const classified = await classifyOcrCandidates(source, product.name, imageTexts, runtimeOptions, warnings);
   const ocr: OcrExtraction = {
     imagesScanned: imageTexts.length,
-    extractedTexts: imageTexts.map((item) => ({
-      ...item,
-      confidence: classified.confidence,
-      keywords: mergeKeywords(
+    extractedTexts: imageTexts.map((item) => {
+      const keywords = mergeKeywords(
         classified.keywords.filter((keyword) => item.text.toLowerCase().includes(keyword.keyword.toLowerCase())),
         keywordsFromTextAcrossCategories(item.text, "ocr")
-      ).slice(0, 16)
-    }))
+      ).slice(0, 16);
+
+      return {
+        ...item,
+        confidence: classified.confidence,
+        keywords,
+        sentenceInsights: sentenceInsightsForCandidate(item, classified.sentenceInsights, keywords, classified.confidence)
+      };
+    })
   };
-  process.done("ocr", `${ocr.imagesScanned}개 OCR 근거 텍스트를 분류했습니다.`);
+  process.done("ocr", `${ocr.imagesScanned}개 OCR 근거 텍스트에서 문장과 키워드를 분류했습니다.`);
 
   process.start("review", "REST API 리뷰 데이터를 키워드 근거로 정규화합니다.");
   const reviewItems = readReviewArray(reviewSource.items ?? sourceObject.reviewItems);
@@ -406,22 +426,27 @@ async function extractProductFromApiPayload(
     items: reviewItems,
     keywords: mergeKeywords(keywordsFromReviews(reviewItems), classified.keywords)
   };
+  const classifiedSentenceSignals = createSentenceSignalBuckets(classified.sentenceInsights);
   const enrichedProduct: ProductProfile = {
     ...product,
     benefits: unique([
       ...product.benefits,
+      ...classifiedSentenceSignals.benefits,
       ...selectKeywordTexts(mergeKeywords(classified.keywords, keywordsFromText(description ?? "", "benefit")), "benefit")
     ]).slice(0, 12),
     effects: unique([
       ...product.effects,
+      ...classifiedSentenceSignals.effects,
       ...selectKeywordTexts(mergeKeywords(classified.keywords, keywordsFromText(description ?? "", "effect")), "effect")
     ]).slice(0, 12),
     ingredients: unique([
       ...product.ingredients,
+      ...classifiedSentenceSignals.ingredients,
       ...selectKeywordTexts(classified.keywords, "ingredient")
     ]).slice(0, 12),
     usage: unique([
       ...product.usage,
+      ...classifiedSentenceSignals.usage,
       ...selectKeywordTexts(classified.keywords, "usage")
     ]).slice(0, 12),
     metrics: unique([
@@ -442,6 +467,11 @@ async function extractProductFromApiPayload(
   process.done("json", "최종 JSON 결과를 생성했습니다.");
 
   const evidence: ExtractionEvidence[] = [
+    {
+      field: "runtime.provider",
+      source: "api",
+      value: resolveProviderConfig(runtimeOptions).provider
+    },
     {
       field: sourceType === "url" ? "url.jsonPayload" : "api.payload",
       source: "api",
@@ -1085,9 +1115,9 @@ function extractClientStateProductData($: ReturnType<typeof load>, source: strin
   const scopedOptions = unique(scopedProductRecords.flatMap(readClientStateOptions)).filter(isProductOptionText);
 
   return {
-    textBlocks: contentSectionsToPageTextBlocks(sections, "client-state").slice(0, 20),
+    textBlocks: contentSectionsToPageTextBlocks(sections, "client-state").slice(0, OCR_EVIDENCE_LIMIT),
     reviews,
-    images: (scopedImages.length > 0 ? scopedImages : unique(productRecords.flatMap((record) => readClientStateImages(record, source)))).slice(0, 28),
+    images: scopedImages.length > 0 ? scopedImages : unique(productRecords.flatMap((record) => readClientStateImages(record, source))),
     options: (scopedOptions.length > 0 ? scopedOptions : unique(productRecords.flatMap(readClientStateOptions)).filter(isProductOptionText)).slice(0, 12),
     name: firstStringFromRecords(scopedProductRecords, ["onlineProdName", "productName", "prodName", "name", "title"], isLikelyProductName),
     description: firstStringFromRecords(scopedProductRecords, ["linePromoDesc", "description", "desc", "summary", "shortDescription"], (text) =>
@@ -1166,7 +1196,7 @@ function expandEmbeddedJsonState(value: unknown, depth = 0, seen = new Set<unkno
 }
 
 function extractAssignedJsonStates(scriptText: string): unknown[] {
-  if (!/(?:__INITIAL_STATE__|__PRELOADED_STATE__|initialState|productDetail|productInfo|reviewInfo|reviews?)/i.test(scriptText)) {
+  if (!/(?:__INITIAL_STATE__|__PRELOADED_STATE__|__PRODUCT__|initialState|productDetail|productInfo|productData|productState|reviewInfo|reviews?)/i.test(scriptText)) {
     return [];
   }
 
@@ -1174,7 +1204,9 @@ function extractAssignedJsonStates(scriptText: string): unknown[] {
   const assignmentPatterns = [
     /(?:window\.)?__INITIAL_STATE__\s*=\s*\{/g,
     /(?:window\.)?__PRELOADED_STATE__\s*=\s*\{/g,
-    /(?:window\.)?initialState\s*=\s*\{/gi
+    /(?:window\.)?__PRODUCT__\s*=\s*\{/g,
+    /(?:window\.)?initialState\s*=\s*\{/gi,
+    /(?:window\.)?product(?:Detail|Info|Data|State)?\s*=\s*\{/gi
   ];
 
   for (const pattern of assignmentPatterns) {
@@ -1184,7 +1216,7 @@ function extractAssignedJsonStates(scriptText: string): unknown[] {
     while ((match = pattern.exec(scriptText)) !== null) {
       const objectStart = scriptText.indexOf("{", match.index);
       const literal = readBalancedObjectLiteral(scriptText, objectStart);
-      const parsed = literal ? parseJsonText(literal) : undefined;
+      const parsed = literal ? parseEmbeddedObjectLiteral(literal) : undefined;
       if (parsed !== undefined) {
         states.push(...expandEmbeddedJsonState(parsed));
       }
@@ -1192,6 +1224,18 @@ function extractAssignedJsonStates(scriptText: string): unknown[] {
   }
 
   return states;
+}
+
+function parseEmbeddedObjectLiteral(literal: string): unknown | undefined {
+  const parsed = parseJsonText(literal);
+  if (parsed !== undefined) {
+    return parsed;
+  }
+
+  const jsonLike = literal
+    .replace(/([{,]\s*)([A-Za-z_$][\w$]*)\s*:/g, '$1"$2":')
+    .replace(/,\s*([}\]])/g, "$1");
+  return parseJsonText(jsonLike);
 }
 
 function uniqueStateObjects(values: unknown[]): unknown[] {
@@ -1327,16 +1371,14 @@ function readClientStateImages(record: Record<string, unknown>, source: string):
 }
 
 function extractHtmlImageUrls(html: string, source: string): string[] {
-  if (!/<img[\s>]/i.test(html)) {
-    return [];
-  }
-
-  const $ = load(html);
-  return unique($("img").toArray().flatMap((node) => [
-    absoluteUrl($(node).attr("src"), source),
-    absoluteUrl($(node).attr("data-src"), source),
-    absoluteUrl(firstSrcsetUrl($(node).attr("srcset")), source)
-  ]).filter(Boolean));
+  const fragment = /<(?:img|source|picture)[\s>]/i.test(html) ? load(html) : undefined;
+  const domImageUrls = fragment
+    ? fragment("img, picture source").toArray().flatMap((node) => imageUrlsFromNode(fragment, node, source))
+    : [];
+  return unique([
+    ...domImageUrls,
+    ...extractRawImageUrls(html, source)
+  ].filter(Boolean));
 }
 
 function readClientStateOptions(record: Record<string, unknown>): string[] {
@@ -2131,6 +2173,10 @@ function stripSectionTitle(title: string, text: string): string {
   return normalizedText;
 }
 
+function stripSourceSectionLabel(text: string): string {
+  return cleanText(text.replace(/^\[[^\]]+\]\s*/, ""));
+}
+
 function normalizeFingerprint(text: string): string {
   return cleanText(text).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").slice(0, 260);
 }
@@ -2460,10 +2506,12 @@ async function extractOcrKeywords(
   source: string,
   productName: string,
   pageTextBlocks: PageTextBlock[],
+  imageUrls: string[],
   options: ProductExtractorOptions,
   warnings: AgentWarning[]
 ): Promise<OcrExtraction> {
-  const visionOcrTexts = await extractVisionOcrCandidates($, source, productName, options, warnings);
+  const visionTargets = collectImageOcrTargets($, source, imageUrls);
+  const visionOcrTexts = await extractVisionOcrCandidates(visionTargets, source, productName, options, warnings);
   const imageTexts = mergeOcrCandidates([
     ...visionOcrTexts,
     ...collectImageTextCandidates($, source),
@@ -2473,7 +2521,7 @@ async function extractOcrKeywords(
     }))
   ])
     .filter((item) => isProductEvidenceCandidate("", item.text))
-    .slice(0, 28);
+    .slice(0, OCR_EVIDENCE_LIMIT);
 
   if (imageTexts.length === 0) {
     return { imagesScanned: 0, extractedTexts: [] };
@@ -2484,14 +2532,19 @@ async function extractOcrKeywords(
     const classified = await classifier.classifyKeywords(createKeywordClassificationRequest(source, productName, imageTexts, options));
     return {
       imagesScanned: imageTexts.length,
-      extractedTexts: imageTexts.map((item) => ({
-        ...item,
-        confidence: 0.72,
-        keywords: mergeKeywords(
+      extractedTexts: imageTexts.map((item) => {
+        const keywords = mergeKeywords(
           classified.keywords.filter((keyword) => item.text.toLowerCase().includes(keyword.keyword.toLowerCase())),
           keywordsFromTextAcrossCategories(item.text, "ocr")
-        ).slice(0, 16)
-      }))
+        ).slice(0, 16);
+
+        return {
+          ...item,
+          confidence: 0.72,
+          keywords,
+          sentenceInsights: sentenceInsightsForCandidate(item, classified.sentenceInsights ?? [], keywords, 0.72)
+        };
+      })
     };
   } catch (error) {
     warnings.push({
@@ -2500,17 +2553,22 @@ async function extractOcrKeywords(
     });
     return {
       imagesScanned: imageTexts.length,
-      extractedTexts: imageTexts.map((item) => ({
-        ...item,
-        confidence: 0.54,
-        keywords: keywordsFromTextAcrossCategories(item.text, "ocr").slice(0, 16)
-      }))
+      extractedTexts: imageTexts.map((item) => {
+        const keywords = keywordsFromTextAcrossCategories(item.text, "ocr").slice(0, 16);
+
+        return {
+          ...item,
+          confidence: 0.54,
+          keywords,
+          sentenceInsights: sentenceInsightsForCandidate(item, [], keywords, 0.54)
+        };
+      })
     };
   }
 }
 
 async function extractVisionOcrCandidates(
-  $: ReturnType<typeof load>,
+  targets: string[],
   source: string,
   productName: string,
   options: ProductExtractorOptions,
@@ -2519,42 +2577,75 @@ async function extractVisionOcrCandidates(
   const providerConfig = resolveProviderConfig(options);
 
   if (providerConfig.provider === "mock") {
+    if (targets.length > 0) {
+      warnings.push({
+        code: "IMAGE_OCR_PROVIDER_NOT_CONFIGURED",
+        message: `${targets.length} product-detail image OCR candidates were found, but image OCR was skipped because the active provider is mock. Configure an image-capable provider such as OpenAI to extract visible text from PDP images.`
+      });
+    }
     return [];
   }
-
-  const targets = collectImageOcrTargets($, source).slice(0, 10);
 
   if (targets.length === 0) {
     return [];
   }
 
-  try {
-    const classifier = createKeywordClassifier(providerConfig);
+  const classifier = createKeywordClassifier(providerConfig);
 
-    if (!classifier.extractImageTexts) {
-      return [];
-    }
-
-    const extracted = await classifier.extractImageTexts({
-      source,
-      productName,
-      imageUrls: targets
-    });
-
-    return extracted.images.map((image) => ({
-      imageUrl: image.imageUrl,
-      text: normalizeOcrText(image.text)
-    })).filter((item) => item.text.length >= 8);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Image OCR provider failed.";
+  if (!classifier.extractImageTexts) {
     warnings.push({
-      code: isQuotaOrBillingError(message) ? "IMAGE_OCR_QUOTA_EXCEEDED" : "IMAGE_OCR_PROVIDER_FAILED",
-      message: isQuotaOrBillingError(message)
-        ? "OpenAI image OCR quota exceeded. Check the OpenAI project billing, usage limits, and model access before retrying image OCR."
-        : message
+      code: "IMAGE_OCR_PROVIDER_NOT_AVAILABLE",
+      message: `${targets.length} product-detail image OCR candidates were found, but the active provider does not support visible text extraction from images.`
     });
     return [];
   }
+
+  const extractedTexts: OcrTextCandidate[] = [];
+  const failures: string[] = [];
+  let quotaOrBillingFailure = false;
+
+  for (let index = 0; index < targets.length; index += IMAGE_OCR_BATCH_SIZE) {
+    const batch = targets.slice(index, index + IMAGE_OCR_BATCH_SIZE);
+    try {
+      const extracted = await classifier.extractImageTexts({
+        source,
+        productName,
+        imageUrls: batch
+      });
+
+      extractedTexts.push(...extracted.images.map((image) => ({
+        imageUrl: image.imageUrl,
+        text: normalizeOcrText(image.text)
+      })).filter((item) => item.text.length >= 8));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Image OCR provider failed.";
+      failures.push(message);
+      if (isQuotaOrBillingError(message)) {
+        quotaOrBillingFailure = true;
+        break;
+      }
+    }
+  }
+
+  if (failures.length > 0) {
+    warnings.push({
+      code: quotaOrBillingFailure ? "IMAGE_OCR_QUOTA_EXCEEDED" : "IMAGE_OCR_PROVIDER_FAILED",
+      message: quotaOrBillingFailure
+        ? "OpenAI image OCR quota exceeded. Check the OpenAI project billing, usage limits, and model access before retrying image OCR."
+        : `Image OCR failed for ${failures.length} batch(es): ${unique(failures).slice(0, 2).join(" | ")}`
+    });
+  }
+
+  const merged = mergeOcrCandidates(extractedTexts);
+
+  if (merged.length === 0 && failures.length === 0) {
+    warnings.push({
+      code: "IMAGE_OCR_NO_TEXT_EXTRACTED",
+      message: `${targets.length} product-detail image OCR candidates were sent to the image OCR provider, but no readable product text was returned. Check image accessibility, OCR model output, or whether the provider can read the target locale.`
+    });
+  }
+
+  return merged;
 }
 
 function hasOcrProviderWarning(warnings: AgentWarning[]): boolean {
@@ -2575,25 +2666,411 @@ async function classifyOcrCandidates(
   imageTexts: OcrTextCandidate[],
   options: ProductExtractorOptions,
   warnings: AgentWarning[]
-): Promise<{ keywords: ClassifiedKeyword[]; confidence: number }> {
+): Promise<{ keywords: ClassifiedKeyword[]; sentenceInsights: ClassifiedSentenceInsight[]; confidence: number }> {
   if (imageTexts.length === 0) {
-    return { keywords: [], confidence: 0 };
+    return { keywords: [], sentenceInsights: [], confidence: 0 };
   }
 
   try {
     const classifier = createKeywordClassifier(resolveProviderConfig(options));
     const classified = await classifier.classifyKeywords(createKeywordClassificationRequest(source, productName, imageTexts, options));
-    return { keywords: classified.keywords, confidence: 0.72 };
+    const fallbackSentenceInsights = imageTexts.flatMap((item) =>
+      sentenceInsightsForCandidate(
+        item,
+        classified.sentenceInsights ?? [],
+        mergeKeywords(
+          classified.keywords.filter((keyword) => item.text.toLowerCase().includes(keyword.keyword.toLowerCase())),
+          keywordsFromTextAcrossCategories(item.text, "ocr")
+        ).slice(0, 16),
+        0.72
+      )
+    );
+
+    return {
+      keywords: classified.keywords,
+      sentenceInsights: mergeSentenceInsights(classified.sentenceInsights ?? [], fallbackSentenceInsights),
+      confidence: 0.72
+    };
   } catch (error) {
     warnings.push({
       code: "OCR_PROVIDER_FAILED",
       message: error instanceof Error ? error.message : "OCR keyword provider failed."
     });
+    const keywords = mergeKeywords(...imageTexts.map((item) => keywordsFromTextAcrossCategories(item.text, "ocr")));
     return {
-      keywords: mergeKeywords(...imageTexts.map((item) => keywordsFromTextAcrossCategories(item.text, "ocr"))),
+      keywords,
+      sentenceInsights: imageTexts.flatMap((item) =>
+        sentenceInsightsForCandidate(
+          item,
+          [],
+          mergeKeywords(keywords.filter((keyword) => item.text.toLowerCase().includes(keyword.keyword.toLowerCase())), keywordsFromTextAcrossCategories(item.text, "ocr")),
+          0.54
+        )
+      ),
       confidence: 0.54
     };
   }
+}
+
+function sentenceInsightsForCandidate(
+  candidate: OcrTextCandidate,
+  providerInsights: ClassifiedSentenceInsight[],
+  keywords: ClassifiedKeyword[],
+  confidence: number
+): ClassifiedSentenceInsight[] {
+  const providerMatches = providerInsights
+    .map(normalizeProviderSentenceInsight)
+    .filter((insight): insight is ClassifiedSentenceInsight => Boolean(insight))
+    .filter((insight) => sentenceBelongsToCandidate(insight.text, candidate.text));
+  const localInsights = extractSentenceInsightsFromText(candidate.text, keywords, confidence);
+
+  return mergeSentenceInsights(providerMatches, localInsights).slice(0, 8);
+}
+
+function extractSentenceInsightsFromText(
+  text: string,
+  keywords: ClassifiedKeyword[],
+  confidence: number
+): ClassifiedSentenceInsight[] {
+  return splitEvidenceSentences(text).flatMap((sentence): ClassifiedSentenceInsight[] => {
+    const sentenceKeywords = mergeKeywords(
+      keywords.filter((keyword) => includesKeyword(sentence, keyword.keyword)),
+      keywordsFromTextAcrossCategories(sentence, "ocr")
+    ).filter((keyword) => keyword.category !== "unknown");
+    const category = inferSentenceInsightCategory(sentence, sentenceKeywords);
+
+    if (!category || category === "unknown" || !isSentenceInsightValue(sentence, category)) {
+      return [];
+    }
+
+    return [{
+      text: trimSentenceInsight(sentence, category),
+      category,
+      keywords: unique(sentenceKeywords.map((keyword) => keyword.keyword)).slice(0, 10),
+      confidence,
+      source: "ocr"
+    }];
+  });
+}
+
+function normalizeProviderSentenceInsight(insight: ClassifiedSentenceInsight): ClassifiedSentenceInsight | undefined {
+  const text = cleanText(stripSourceSectionLabel(insight.text ?? ""));
+  const category = normalizeKeywordCategory(insight.category);
+
+  if (!text || !category || !isSentenceInsightValue(text, category)) {
+    return undefined;
+  }
+
+  return {
+    text: trimSentenceInsight(text, category),
+    category,
+    keywords: unique((insight.keywords ?? []).map(cleanText)).slice(0, 10),
+    confidence: typeof insight.confidence === "number" ? insight.confidence : 0.72,
+    source: insight.source === "llm" || insight.source === "mock" ? insight.source : "llm"
+  };
+}
+
+function splitEvidenceSentences(text: string): string[] {
+  const lines = text
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => cleanText(stripSourceSectionLabel(line)))
+    .filter(Boolean);
+  const semanticUnits = reconstructOcrSemanticUnits(lines);
+  const candidates = semanticUnits.flatMap(segmentSemanticUnit);
+
+  return unique(candidates
+    .map((value) => stripSourceSectionLabel(value.replace(/\s+/g, " ")))
+    .filter((value) => value.length >= 12)
+    .filter((value) => !isLikelyStandaloneOcrHeading(value))
+    .filter((value) => value.split(/\s+/).length >= 3 || /[가-힣ぁ-んァ-ン]/.test(value)))
+    .slice(0, 12);
+}
+
+function reconstructOcrSemanticUnits(lines: string[]): string[] {
+  const units: string[] = [];
+  let current = "";
+
+  for (const line of lines) {
+    if (!line || isLikelyStandaloneOcrHeading(line)) {
+      if (current) {
+        units.push(current);
+        current = "";
+      }
+      continue;
+    }
+
+    if (!current) {
+      current = line;
+      continue;
+    }
+
+    if (startsNewOcrSemanticUnit(current, line)) {
+      units.push(current);
+      current = line;
+      continue;
+    }
+
+    current = joinOcrContinuation(current, line);
+  }
+
+  if (current) {
+    units.push(current);
+  }
+
+  return unique(units.map(cleanText).filter((unit) => unit.length >= 12));
+}
+
+function startsNewOcrSemanticUnit(current: string, next: string): boolean {
+  if (isFullIngredientLabel(next)) {
+    return true;
+  }
+  if (isFullIngredientLabel(current)) {
+    return false;
+  }
+  if (isLikelyStandaloneOcrHeading(next)) {
+    return true;
+  }
+  if (shouldContinueOcrLine(current, next)) {
+    return false;
+  }
+
+  return /[.!?。！？]$/.test(current) && /^[A-Z가-힣ぁ-んァ-ン0-9]/.test(next);
+}
+
+function shouldContinueOcrLine(current: string, next: string): boolean {
+  const previousWords = current.split(/\s+/);
+  const nextWords = next.split(/\s+/);
+  const previousTail = previousWords.at(-1) ?? "";
+  const previousTwoWords = previousWords.slice(-2).join(" ");
+  const nextHead = nextWords[0] ?? "";
+
+  if (current.endsWith("-")) {
+    return true;
+  }
+  if (/^[a-z]/.test(nextHead)) {
+    return true;
+  }
+  if (/(?:,|:|;|\(|\[|with|and|or|of|for|to|that|which|by|from|in|on|as|is|are|was|were|into|using|including|combines?|contains?|supports?|helps?|working|enhances?)$/i.test(previousTail)
+    || /(?:a|an|the|a potent|5 other)$/i.test(previousTwoWords)) {
+    return true;
+  }
+  if (/^(?:and|or|with|that|which|while|working|helping|to|for|of|in|by|as|from|into|plus|including|containing)\b/i.test(next)) {
+    return true;
+  }
+  if (!/[.!?。！？]$/.test(current) && !isLikelyStandaloneOcrHeading(next)) {
+    return true;
+  }
+
+  return false;
+}
+
+function joinOcrContinuation(current: string, next: string): string {
+  if (current.endsWith("-")) {
+    return `${current.slice(0, -1)}${next}`;
+  }
+  return `${current} ${next}`;
+}
+
+function segmentSemanticUnit(value: string): string[] {
+  const cleaned = cleanText(value);
+  const sentences = cleaned
+    .split(/(?<=[.!?。！？])\s+(?=[A-Z0-9"“‘'가-힣ぁ-んァ-ン])/)
+    .map(cleanText)
+    .filter((item) => item.length >= 12);
+
+  return sentences.length > 0 ? sentences : [cleaned];
+}
+
+function isLikelyStandaloneOcrHeading(value: string): boolean {
+  const text = cleanText(value);
+  const words = text.split(/\s+/);
+
+  if (isFullIngredientLabel(text)) {
+    return false;
+  }
+  if (words.length > 8 || /[.!?。！？]/.test(text)) {
+    return false;
+  }
+  if (/\b(?:is|are|was|were|has|have|combines?|contains?|supports?|helps?|enhances?|improves?|diminish(?:es|ed)?)\b/i.test(text)) {
+    return false;
+  }
+
+  return /[A-Z가-힣]/.test(text) && /(effect|ingredient|benefit|formula|peptide|ginseng|효능|효과|성분|원료)/i.test(text);
+}
+
+function isFullIngredientLabel(value: string): boolean {
+  return /^(?:ingredients?|전성분|全成分)\s*:/i.test(cleanText(value));
+}
+
+function inferSentenceInsightCategory(sentence: string, keywords: ClassifiedKeyword[]): KeywordCategory | undefined {
+  const text = sentence.toLowerCase();
+
+  if (isNonProductCommerceText(sentence)) {
+    return "unknown";
+  }
+  if (/(how to use|directions?|apply|morning|night|사용|도포|바르|흡수|朝|夜)/i.test(sentence)) {
+    return "usage";
+  }
+  if (/(clinical|result|after\s+\d|showed|agreed|improvement|improved|enhances?|diminish|diminished|visible signs|wrinkles?|fine lines|firmness|firmer|elasticity|resilience|texture|even|효과|결과|개선|주름|피부결|탄력)/i.test(sentence)) {
+    return "effect";
+  }
+  if (/(ingredient|formula|blend|peptide|ginseng|retinol|niacinamide|hyaluronic|ceramide|panax|extract|성분|원료|인삼|펩타이드|레티놀)/i.test(sentence)) {
+    return "ingredient";
+  }
+  if (/(benefit|hydration|moisture|moisturizing|soothing|brightening|barrier|radiance|plumpness|보습|수분|진정|장벽|광채|자생력|고밀도)/i.test(sentence)) {
+    return "benefit";
+  }
+  if (/\b\d+(?:\.\d+)?\s?(?:%|weeks?|days?|hours?|ml|mL|oz|drops?|pumps?)\b|\b\d+(?:\.\d+)?\s?(?:점|개|명|회|주|일|시간|퍼센트)\b/i.test(sentence)) {
+    return "metric";
+  }
+  if (/(review|customer|rating|stars?|리뷰|후기|평점)/i.test(sentence)) {
+    return "review";
+  }
+  if (text.includes("?") || /(faq|question|answer|자주|질문|답변)/i.test(sentence)) {
+    return "faq";
+  }
+
+  const ranked = new Map<KeywordCategory, number>();
+  for (const keyword of keywords) {
+    ranked.set(keyword.category, (ranked.get(keyword.category) ?? 0) + keyword.confidence);
+  }
+
+  return [...ranked.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+}
+
+function isSentenceInsightValue(value: string, category: KeywordCategory): boolean {
+  const text = cleanText(value);
+
+  if (text.length < 12 || text.length > 900 || isNonProductCommerceText(text)) {
+    return false;
+  }
+  if (category === "product" || category === "price" || category === "trend") {
+    return false;
+  }
+  if (category === "metric") {
+    return isSemanticFieldValue(text, "metric") || /(clinical|result|agreed|showed|after\s+\d)/i.test(text);
+  }
+  if (category === "faq" || category === "review") {
+    return true;
+  }
+
+  return isSemanticFieldValue(text, category);
+}
+
+function trimSentenceInsight(value: string, category: KeywordCategory): string {
+  const limit = category === "ingredient" ? 520 : 360;
+  const text = cleanText(value);
+
+  return text.length > limit ? `${text.slice(0, limit).trim()}...` : text;
+}
+
+function sentenceBelongsToCandidate(sentence: string, candidateText: string): boolean {
+  const sentenceKey = normalizeFingerprint(sentence);
+  const candidateKey = normalizeFingerprint(candidateText);
+
+  if (sentenceKey.length < 12 || candidateKey.length < 12) {
+    return false;
+  }
+
+  return candidateKey.includes(sentenceKey.slice(0, 120)) || sentenceKey.includes(candidateKey.slice(0, 120));
+}
+
+function includesKeyword(text: string, keyword: string): boolean {
+  return text.toLowerCase().includes(keyword.toLowerCase());
+}
+
+function normalizeKeywordCategory(category: KeywordCategory): KeywordCategory | undefined {
+  return [
+    "product",
+    "price",
+    "benefit",
+    "effect",
+    "ingredient",
+    "usage",
+    "faq",
+    "review",
+    "metric",
+    "trend",
+    "unknown"
+  ].includes(category) ? category : undefined;
+}
+
+function mergeSentenceInsights(...groups: ClassifiedSentenceInsight[][]): ClassifiedSentenceInsight[] {
+  const seen = new Set<string>();
+  return groups.flat().filter((insight) => {
+    const key = `${insight.category}:${normalizeFingerprint(insight.text).slice(0, 160)}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return insight.text.length > 0;
+  });
+}
+
+function createOcrSentenceSignalBuckets(ocr: OcrExtraction): ProductSectionBuckets {
+  return createSentenceSignalBuckets(ocr.extractedTexts.flatMap((item) => item.sentenceInsights));
+}
+
+function createSentenceSignalBuckets(insights: ClassifiedSentenceInsight[]): ProductSectionBuckets {
+  const buckets: ProductSectionBuckets = {
+    benefits: [],
+    effects: [],
+    ingredients: [],
+    usage: [],
+    metrics: [],
+    sections: []
+  };
+
+  for (const insight of insights) {
+    if (insight.category === "benefit") {
+      buckets.benefits.push(insight.text);
+    }
+    if (insight.category === "effect") {
+      buckets.effects.push(insight.text);
+    }
+    if (insight.category === "ingredient") {
+      buckets.ingredients.push(insight.text);
+    }
+    if (insight.category === "usage") {
+      buckets.usage.push(insight.text);
+    }
+    if (insight.category === "metric" || /\d|%|weeks?|days?|hours?|주|일|시간/.test(insight.text)) {
+      buckets.metrics.push(...extractMetricPhrases(insight.text));
+    }
+  }
+
+  return {
+    benefits: semanticFieldValues(buckets.benefits, "benefit", 12),
+    effects: semanticFieldValues(buckets.effects, "effect", 12),
+    ingredients: semanticFieldValues(buckets.ingredients, "ingredient", 16),
+    usage: semanticFieldValues(buckets.usage, "usage", 12),
+    metrics: unique(buckets.metrics).slice(0, 16),
+    sections: []
+  };
+}
+
+function toGeoSentenceInsights(items: OcrExtraction["extractedTexts"]): GeoSentenceInsight[] {
+  return uniqueGeoSentenceInsights(items.flatMap((item) =>
+    item.sentenceInsights.map((insight) => ({
+      imageUrl: item.imageUrl,
+      text: insight.text,
+      category: insight.category,
+      keywords: insight.keywords
+    }))
+  )).slice(0, OCR_EVIDENCE_LIMIT);
+}
+
+function uniqueGeoSentenceInsights(insights: GeoSentenceInsight[]): GeoSentenceInsight[] {
+  const seen = new Set<string>();
+  return insights.filter((insight) => {
+    const key = `${insight.category}:${normalizeFingerprint(insight.text).slice(0, 160)}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return insight.text.length > 0;
+  });
 }
 
 function createKeywordClassificationRequest(
@@ -2630,29 +3107,35 @@ function collectImageTextCandidates($: ReturnType<typeof load>, source: string):
     .filter((item) => item.text.length >= 12 && scoreProductText(item.text, "") > 0 && isProductEvidenceCandidate("", item.text));
 }
 
-function collectImageOcrTargets($: ReturnType<typeof load>, source: string): string[] {
-  const candidates = $("img, picture source")
+function collectImageOcrTargets($: ReturnType<typeof load>, source: string, imageUrls: string[] = []): string[] {
+  const domCandidates = $("img, picture source")
     .toArray()
-    .map((node) => {
+    .flatMap((node) => {
       const element = $(node);
-      const imageUrl = imageUrlFromNode($, node, source);
+      const context = imageTechnicalContext($, node);
       const label = cleanText([
-        imageUrl,
+        ...imageUrlsFromNode($, node, source),
         element.attr("alt"),
         element.attr("title"),
         element.attr("aria-label"),
+        context,
         textAroundImage($, node)
       ].filter(Boolean).join(" "));
 
-      return {
+      return imageUrlsFromNode($, node, source).map((imageUrl) => ({
         imageUrl,
         score: scoreImageOcrTarget(label)
-      };
-    })
+      }));
+    });
+  const explicitCandidates = imageUrls.map((imageUrl) => ({
+    imageUrl,
+    score: scoreImageOcrTarget(imageUrl)
+  }));
+  const candidates = [...domCandidates, ...explicitCandidates]
     .filter((item): item is { imageUrl: string; score: number } =>
       typeof item.imageUrl === "string"
       && /^https?:\/\//i.test(item.imageUrl)
-      && !/\.(?:svg|gif)(?:[?#]|$)/i.test(item.imageUrl)
+      && isSupportedOcrImageUrl(item.imageUrl)
     )
     .sort((a, b) => b.score - a.score);
 
@@ -2661,13 +3144,23 @@ function collectImageOcrTargets($: ReturnType<typeof load>, source: string): str
 
 function scoreImageOcrTarget(value: string): number {
   const text = value.toLowerCase();
+  if (isReviewImageUrl(text)) {
+    return -100;
+  }
   const strongSignals = [
     /clinical|result|before|after|infographic|ingredient|benefit|efficacy|survey|study/,
     /wrinkle|firm|elastic|texture|radiance|ginseng|retinol|peptide|niacinamide/,
-    /use|how-to-use|routine|apply|direction/
+    /use|how-to-use|routine|apply|direction/,
+    /효능|효과|성분|전성분|원료|보습|수분|장벽|피지|유분|사용법|임상|결과/
   ].filter((pattern) => pattern.test(text)).length * 8;
-  const weakSignals = /(product|detail|pdp|brand\.com|sulwhasoo|serum|cream)/i.test(value) ? 3 : 0;
-  return strongSignals + weakSignals;
+  const productImageSignals = [
+    /\/upload\/product\//,
+    /dspimg|detail|pdp|prd|product|goods|contents|visual|main|description|technology|tech|ingredient|spec/,
+    /상세|기술|기술서|성분|효능|효과|제품\s*정보|상품\s*정보/,
+    /serum|cream|크림|세럼|앰플|토너/
+  ].filter((pattern) => pattern.test(text)).length * 12;
+  const weakSignals = /(product|detail|pdp|brand\.com|serum|cream|description|technology|ingredient|spec|상품|상세|기술|성분|효능|효과)/i.test(value) ? 3 : 0;
+  return strongSignals + productImageSignals + weakSignals;
 }
 
 function mergeOcrCandidates(candidates: OcrTextCandidate[]): OcrTextCandidate[] {
@@ -2693,20 +3186,71 @@ function mergeOcrCandidates(candidates: OcrTextCandidate[]): OcrTextCandidate[] 
 }
 
 function imageUrlFromNode($: ReturnType<typeof load>, node: CheerioInput, source: string): string | undefined {
+  return imageUrlsFromNode($, node, source)[0];
+}
+
+function imageUrlsFromNode($: ReturnType<typeof load>, node: CheerioInput, source: string): string[] {
   const element = $(node);
-  const srcset = element.attr("srcset") ?? element.attr("data-srcset");
-  return absoluteUrl(
+  return unique([
     element.attr("src") ??
       element.attr("data-src") ??
       element.attr("data-original") ??
-      element.attr("data-zoom") ??
-      firstSrcsetUrl(srcset),
-    source
-  );
+      element.attr("data-zoom"),
+    element.attr("data-src"),
+    element.attr("data-original"),
+    element.attr("data-lazy-src"),
+    element.attr("data-zoom"),
+    element.attr("data-image"),
+    element.attr("data-url"),
+    element.attr("data-mobile-src"),
+    element.attr("data-pc-src"),
+    element.attr("data-desktop-src"),
+    ...srcsetUrls(element.attr("srcset")),
+    ...srcsetUrls(element.attr("data-srcset"))
+  ].map((value) => absoluteUrl(value, source)).filter((value): value is string => Boolean(value)));
 }
 
 function firstSrcsetUrl(srcset: string | undefined): string | undefined {
-  return srcset?.split(",").map((item) => item.trim().split(/\s+/)[0]).find(Boolean);
+  return srcsetUrls(srcset)[0];
+}
+
+function srcsetUrls(srcset: string | undefined): string[] {
+  return srcset?.split(",").map((item) => item.trim().split(/\s+/)[0]).filter((value): value is string => Boolean(value)) ?? [];
+}
+
+function extractRawImageUrls(value: string, source: string): string[] {
+  const imageUrls: string[] = [];
+  const rawUrlPattern = /(?:https?:)?\/\/[^\s"'<>\\)]+?\.(?:jpe?g|png|webp|avif)(?:\?[^\s"'<>\\)]*)?/gi;
+  const relativeUrlPattern = /(?:^|[\s"'(=])((?:\/|\.{1,2}\/)[^\s"'<>\\)]+?\.(?:jpe?g|png|webp|avif)(?:\?[^\s"'<>\\)]*)?)/gi;
+
+  for (const match of value.matchAll(rawUrlPattern)) {
+    imageUrls.push(normalizeRawImageUrl(match[0], source));
+  }
+
+  for (const match of value.matchAll(relativeUrlPattern)) {
+    imageUrls.push(normalizeRawImageUrl(match[1] ?? "", source));
+  }
+
+  return unique(imageUrls.filter((imageUrl) => /^https?:\/\//i.test(imageUrl) && isSupportedOcrImageUrl(imageUrl)));
+}
+
+function normalizeRawImageUrl(value: string, source: string): string {
+  const trimmed = value.trim().replace(/&amp;/g, "&").replace(/[.,;:]+$/g, "");
+  const protocolSafe = trimmed.startsWith("//") ? `https:${trimmed}` : trimmed;
+  return absoluteUrl(protocolSafe, source) ?? protocolSafe;
+}
+
+function isSupportedOcrImageUrl(imageUrl: string): boolean {
+  const urlPath = imageUrl.split(/[?#]/)[0] ?? imageUrl;
+  if (isReviewImageUrl(imageUrl) || /\.(?:svg|gif)(?:[?#]|$)/i.test(imageUrl) || /\.$/.test(urlPath)) {
+    return false;
+  }
+  return /\.(?:jpe?g|png|webp|avif)(?:[?#]|$)/i.test(imageUrl)
+    || /\/upload\/product\/|dspimg|detail|pdp|product|goods|contents/i.test(imageUrl);
+}
+
+function isReviewImageUrl(imageUrl: string): boolean {
+  return /fileupload\/reviews|\/reviews?\//i.test(imageUrl);
 }
 
 function textAroundImage($: ReturnType<typeof load>, node: CheerioInput): string {
@@ -2714,6 +3258,20 @@ function textAroundImage($: ReturnType<typeof load>, node: CheerioInput): string
   const figureText = cleanText(element.closest("figure").find("figcaption").first().text());
   const parentText = cleanText(element.parent().text());
   return [figureText, parentText].filter((text) => text.length > 0).join(" ").slice(0, 520);
+}
+
+function imageTechnicalContext($: ReturnType<typeof load>, node: CheerioInput): string {
+  const element = $(node);
+  const tokens: string[] = [];
+  element.parents().slice(0, 6).each((_, parent) => {
+    const parentElement = $(parent);
+    tokens.push(nodeAttributeText($, parent));
+    const heading = cleanText(parentElement.children("h1,h2,h3,h4,h5,h6,summary").first().text());
+    if (heading) {
+      tokens.push(heading);
+    }
+  });
+  return cleanText(tokens.join(" ")).slice(0, 360);
 }
 
 function createApiTextCandidates(
@@ -2829,6 +3387,8 @@ function createGeoProductRawData(
 ): GeoProductRawData {
   const productOcrEvidence = ocr.extractedTexts.filter((item) => isProductEvidenceCandidate("", item.text));
   const ocrTexts = unique(productOcrEvidence.map((item) => item.text));
+  const ocrSentenceInsights = toGeoSentenceInsights(productOcrEvidence);
+  const ocrSentenceSignals = createSentenceSignalBuckets(productOcrEvidence.flatMap((item) => item.sentenceInsights));
   const productTexts = [
     product.name,
     product.price,
@@ -2871,12 +3431,12 @@ function createGeoProductRawData(
       bullets: summarizeContentBullets(item.body)
     })),
     ...ratingSummarySection(reviews)
-  ]).slice(0, 32);
+  ]).slice(0, OCR_EVIDENCE_LIMIT);
   const ratingSummary = createRatingSummary(reviews);
-  const benefits = semanticFieldValues(product.benefits, "benefit", 12);
-  const effects = semanticFieldValues(product.effects, "effect", 12);
-  const ingredients = semanticFieldValues(product.ingredients, "ingredient", 16);
-  const usage = semanticFieldValues(product.usage, "usage", 16);
+  const benefits = semanticFieldValues([...product.benefits, ...ocrSentenceSignals.benefits], "benefit", 12);
+  const effects = semanticFieldValues([...product.effects, ...ocrSentenceSignals.effects], "effect", 12);
+  const ingredients = semanticFieldValues([...product.ingredients, ...ocrSentenceSignals.ingredients], "ingredient", 16);
+  const usage = semanticFieldValues([...product.usage, ...ocrSentenceSignals.usage], "usage", 16);
   const reviewKeywords = unique([
     ...reviews.keywords.map((keyword) => keyword.keyword),
     ...reviews.items.flatMap((item) => keywordsFromText(item.body, "review").map((keyword) => keyword.keyword))
@@ -2931,7 +3491,8 @@ function createGeoProductRawData(
             imageUrl: item.imageUrl,
             text: item.text
           })),
-        textBlocks: ocrTexts.slice(0, 24)
+        textBlocks: ocrTexts.slice(0, OCR_EVIDENCE_LIMIT),
+        sentenceInsights: ocrSentenceInsights
       }
     },
     aiAnalysis: {
@@ -2954,8 +3515,9 @@ function createGeoProductRawData(
       ratingSummary
     },
     ocr: {
-      textBlocks: ocrTexts.slice(0, 24),
-      keywords: keywordGroups
+      textBlocks: ocrTexts.slice(0, OCR_EVIDENCE_LIMIT),
+      keywords: keywordGroups,
+      sentenceInsights: ocrSentenceInsights
     },
     rag: {
       chunks: ragChunks.map((chunk) => ({

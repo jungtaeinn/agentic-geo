@@ -11,6 +11,7 @@
 | PDP URL 추출 결과로 GEO artifact 생성 | `pdp-extractor-agent`의 `result.geoProduct`를 `product`로 전달 |
 | 내부 상품 API JSON을 바로 변환 | `product`와 `fieldMapping`을 함께 전달 |
 | locale/market별 표현 통제 | `hints.locale`, `hints.market`, RAG terminology map 사용 |
+| 리뷰 키워드 오타 보정 | `keywordNormalization.enabled` 또는 `customKeywordNormalizer` 사용 |
 | 자체 검색 인프라 연결 | `managed-vector-store-rag`와 `customRetriever` 계약 사용 |
 | 생성 결과 QA 자동화 | `diagnostics.validationWarnings`, `evidence`, `selectedRagChunks` 확인 |
 
@@ -76,6 +77,40 @@ console.log(run.result.content.html);
 console.log(run.diagnostics.validationWarnings);
 ```
 
+### Optional Review Keyword Normalization
+
+기본 실행은 deterministic 규칙만 사용합니다. 리뷰 키워드 오타 후보를 모델로 검수하려면 생성 옵션에서 명시적으로 켭니다. 모델은 원본 리뷰 키워드 후보만 보정할 수 있고, 번역/확장/새 효능 생성은 안전 필터에서 제외됩니다.
+
+```ts
+const run = await generatePdpGeo(
+  {
+    product: {
+      geoProduct: {
+        name: "Hydra Texture Cream",
+        reviews: {
+          keywords: ["피부걸", "흡수감"]
+        }
+      }
+    },
+    hints: {
+      locale: "ko-KR",
+      market: "KR"
+    }
+  },
+  {
+    provider: "openai",
+    apiKey: process.env.OPENAI_API_KEY,
+    model: process.env.OPENAI_MODEL,
+    keywordNormalization: {
+      enabled: true,
+      confidenceThreshold: 0.82
+    }
+  }
+);
+```
+
+테스트나 사내 사전/검수 agent가 있으면 네트워크 provider 대신 `customKeywordNormalizer`를 주입할 수 있습니다.
+
 ## REST Handler
 
 Web API `Request`/`Response` 기반 REST 핸들러를 만들 수 있습니다.
@@ -113,6 +148,11 @@ export const POST = createPdpGeoGeneratorRestHandler({
   },
   "rag": {
     "mode": "local-versioned-rag"
+  },
+  "keywordNormalization": {
+    "enabled": true,
+    "provider": "openai",
+    "model": "your-keyword-normalization-model"
   }
 }
 ```

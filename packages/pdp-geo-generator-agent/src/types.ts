@@ -19,6 +19,9 @@ export type PdpGeoEmbeddingProvider = "local" | "openai" | "custom";
 /** Reranker IDs used by the retrieval stage. */
 export type PdpGeoRerankerProvider = "local-hybrid" | "openai-file-search" | "custom";
 
+/** Model provider IDs accepted by optional model-backed refinement hooks. */
+export type PdpGeoProviderId = "mock" | "openai" | "gemini" | "azure-openai" | "custom";
+
 /** Schema graph targets supported by the generator. */
 export type PdpGeoSchemaTarget = "WebPage" | "Product" | "FAQPage" | "HowTo" | "BreadcrumbList";
 
@@ -92,7 +95,7 @@ export interface PdpGeoGenerationInput {
 
 /** Runtime options passed by apps or REST handlers. */
 export interface PdpGeoGeneratorOptions {
-  provider?: "mock" | "openai" | "gemini" | "azure-openai" | "custom";
+  provider?: PdpGeoProviderId;
   apiKey?: string;
   model?: string;
   endpoint?: string;
@@ -107,6 +110,8 @@ export interface PdpGeoGeneratorOptions {
   rag?: PdpGeoRagSettings;
   onProgress?: (step: PdpGeoGenerationStep) => void;
   customRetriever?: PdpGeoRetriever;
+  keywordNormalization?: PdpGeoKeywordNormalizationSettings;
+  customKeywordNormalizer?: PdpGeoKeywordNormalizer;
 }
 
 export interface PdpGeoFaqItem {
@@ -187,6 +192,46 @@ export interface PdpGeoRetriever {
   retrieve(request: PdpGeoRetrieverRequest): Promise<PdpGeoRetrievedChunk[]>;
 }
 
+export interface PdpGeoKeywordNormalizationRequest {
+  productName: string;
+  locale: PdpGeoLocale;
+  market?: string;
+  reviewKeywords: string[];
+  reviewBodies: string[];
+  benefits: string[];
+  effects: string[];
+  sourceTexts: string[];
+}
+
+export interface PdpGeoKeywordCorrection {
+  original: string;
+  normalized: string;
+  confidence: number;
+  reason?: string;
+}
+
+export interface PdpGeoKeywordNormalizationResult {
+  corrections: PdpGeoKeywordCorrection[];
+  warnings?: string[];
+  rawText?: string;
+}
+
+export interface PdpGeoKeywordNormalizer {
+  normalizeKeywords(request: PdpGeoKeywordNormalizationRequest): Promise<PdpGeoKeywordNormalizationResult>;
+}
+
+export interface PdpGeoKeywordNormalizationSettings {
+  enabled?: boolean;
+  provider?: PdpGeoProviderId;
+  apiKey?: string;
+  model?: string;
+  endpoint?: string;
+  deployment?: string;
+  apiVersion?: string;
+  confidenceThreshold?: number;
+  maxKeywords?: number;
+}
+
 export interface PdpGeoContentSections {
   productName: string;
   description: string;
@@ -215,8 +260,17 @@ export interface PdpGeoRecommendation {
 
 export interface PdpGeoEvidence {
   field: string;
-  source: "input" | "fieldMapping" | "rag" | "terminology" | "schema-validator" | "html-validator" | "repair";
+  source: "input" | "fieldMapping" | "rag" | "terminology" | "schema-validator" | "html-validator" | "repair" | "llm";
   value: string;
+}
+
+export type PdpGeoOcrSentenceIntent = "benefit" | "effect" | "ingredient" | "usage" | "review";
+
+export interface PdpGeoOcrSentenceDiagnostic {
+  text: string;
+  intents: PdpGeoOcrSentenceIntent[];
+  schemaFields: string[];
+  geoUse: string;
 }
 
 export interface PdpGeoTerminologyDiagnostics {
@@ -237,6 +291,7 @@ export interface PdpGeoTerminologyDiagnostics {
 
 export interface PdpGeoDiagnostics {
   normalizedProduct: PdpProductSignal;
+  ocrSentences: PdpGeoOcrSentenceDiagnostic[];
   recommendations: PdpGeoRecommendation[];
   evidence: PdpGeoEvidence[];
   selectedRagChunks: PdpGeoRetrievedChunk[];

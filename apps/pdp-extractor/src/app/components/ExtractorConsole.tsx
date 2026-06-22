@@ -214,8 +214,8 @@ const agentSteps: AgentStep[] = [
   },
   {
     id: "ocr",
-    title: "OCR 키워드 분류",
-    description: "이미지/상세 영역의 효능, 효과, 성분 키워드 분류"
+    title: "OCR 문장/키워드 분석",
+    description: "이미지/상세 영역의 효능, 효과, 성분 문장과 키워드 분류"
   },
   {
     id: "review",
@@ -524,7 +524,7 @@ export function ExtractorConsole() {
         id: createId(),
         role: "tool",
         command: `명령어 ${pending.length}개 실행함`,
-        body: "OCR 후보 수집, 리뷰 키워드 분류, RAG chunk 생성을 실행합니다."
+        body: "OCR 문장 후보 수집, 리뷰 키워드 분류, RAG chunk 생성을 실행합니다."
       }
     ]);
 
@@ -1351,7 +1351,7 @@ export function ExtractorConsole() {
                       <Loader2 className="spin" size={14} />
                       <span>pdp-extractor-agent 실행 중</span>
                     </div>
-                    <p>페이지 메타정보, DOM, 이미지 OCR 후보, 리뷰 키워드를 정리하고 있습니다.</p>
+                    <p>페이지 메타정보, DOM, 이미지 OCR 문장 후보, 리뷰 키워드를 정리하고 있습니다.</p>
                   </article>
                 )}
                 {isRefining && (
@@ -1837,7 +1837,7 @@ export function ExtractorConsole() {
                 <h3>적용 범위</h3>
                 <div className="settingsCard">
                   <strong>pdp-extractor-agent</strong>
-                  <p>저장한 AI 연동 설정은 URL/REST API 추출 중 OCR 키워드 분류 단계에서 사용됩니다. 키는 서버에 영구 저장하지 않고 이 브라우저의 로컬 저장소에만 보관합니다.</p>
+                  <p>저장한 AI 연동 설정은 URL/REST API 추출 중 OCR 문장/키워드 분석 단계에서 사용됩니다. 키는 서버에 영구 저장하지 않고 이 브라우저의 로컬 저장소에만 보관합니다.</p>
                 </div>
               </section>
 

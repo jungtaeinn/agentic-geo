@@ -6,10 +6,10 @@ If the source example is written in Korean but the requested output locale is En
 
 ## Core Principle
 
-GEO output should help generative engines quote and verify the product from structured, evidence-rich facts.
+GEO output should help generative engines cite and verify the product from structured, evidence-rich facts. Citation readiness means varied, natural product expressions and complete facts, not public citation labels, quote phrases, or repeated stock claim sentences.
 
 - Prefer product-specific facts over generic SEO claims.
-- Compose descriptions from: target customer + core benefit + ingredient or technology + use context + source-supported or review-backed detail.
+- Compose descriptions from: target customer + core benefit + ingredient or technology + routine fit + source-supported or review-backed detail.
 - Never expose internal wording such as "GEO-ready", "PDP name", "schema optimization", or "for generative engines" inside public schema/content.
 - Do not use analysis labels such as "usage", "review", "benefit", or "keyword" as product category values.
 - Do not create FAQ, review, or HowTo content from isolated tokens. Use complete questions, answers, review summaries, and actionable usage steps.
@@ -20,6 +20,7 @@ Public JSON-LD values and PDP content should read like customer-facing product i
 
 - Do not expose internal labels such as "evidence signal", "review signals", "main benefit signal", "ingredient signal", "technology signals", "GEO", "RAG", "schema optimization", or "citation optimization".
 - Prefer natural public wording such as "customer reviews mention", "available product information includes", "the formula includes", "key ingredients and technologies include", or "reported product details include".
+- When adding expression variety, vary ingredient, benefit, texture, routine, and review wording naturally; do not add phrases whose only purpose is to look quotable.
 - Keep diagnostic terms in diagnostics only. Do not place diagnostic labels in `WebPage.description`, `Product.description`, `positiveNotes`, `additionalProperty.value`, `FAQPage.mainEntity`, or `HowTo.step`.
 
 ## Recommended JSON-LD Graph Shape
@@ -37,7 +38,7 @@ For multilingual PDPs, represent each locale as a separate `WebPage` node when U
 
 ## Schema.org + GEO Description Direction
 
-Schema.org treats `description` as the description of the item being marked up. Therefore, `WebPage.description` should describe the PDP as a page or content resource, while `Product.description` should describe the product entity itself. GEO adds another constraint: each description should be easy for a generative engine to quote, verify, and connect to the correct entity without collapsing page context and product facts into the same sentence.
+Schema.org treats `description` as the description of the item being marked up. Therefore, `WebPage.description` should describe the PDP as a page or content resource, while `Product.description` should describe the product entity itself. GEO adds another constraint: each description should be easy for a generative engine to cite, verify, and connect to the correct entity without collapsing page context and product facts into the same sentence.
 
 ### WebPage.description
 
@@ -66,7 +67,7 @@ Role: describe the product as the commercial entity being sold or evaluated.
 
 Recommended composition:
 
-`[Product name] is a [product type] for [target customer/concern]. It supports [specific benefits/effects] with [key ingredients/technologies]. It can be used [usage/routine context]. Representative customer reviews mention or describe [review phrase/body]. Reported product details include [metric/result/evidence only when supported].`
+`[Product name] is a [product type] for [target customer/concern]. It supports [specific benefits/effects] with [key ingredients/technologies]. It can be used [usage/routine context]. Representative customer reviews mention [texture, comfort, or satisfaction phrasing]. Product details should connect supported results or evidence with key actives, visible benefits, texture, comfort, and routine fit.`
 
 Use `Product.description` to expose:
 
@@ -89,7 +90,7 @@ Avoid:
 ## Product Entity Best Practice
 
 The `Product` node should be dense but verifiable.
-Do not reuse the same description for `WebPage.description` and `Product.description`. The WebPage description should explain what the page covers at a higher level while still naming the key benefit areas, ingredients or technologies, review language, reported results, and target-customer decision context. Product.description should be a product-specific, citation-ready entity description that explains who the product is for, what benefits and major ingredients it has, what representative customer reviews say, how the product can be used, and which supported result details are available.
+Do not reuse the same description for `WebPage.description` and `Product.description`. The WebPage description should explain what the page covers at a higher level while still naming the key benefit areas, ingredients or technologies, review language, reported results, and target-customer decision context. Product.description should be a product-specific, answer-ready entity description that explains who the product is for, what benefits and major ingredients it has, what representative customer reviews say, how the product can be used, and which supported result details are available.
 
 Recommended fields:
 
@@ -103,7 +104,7 @@ Recommended fields:
 - `offers`: list variants as separate offers when volume, SKU, price, currency, and availability differ.
 - `award`: include only clear awards, rankings, certifications, or sales claims with period and source context.
 - `additionalProperty`: use `PropertyValue` entries to preserve facts that generative engines can quote.
-- Keep each `additionalProperty.value` atomic and single-line. Do not place a multiline `Quick facts` paragraph in Product schema; split it into target customer, key benefit, key ingredients, use context, customer reviews, and reported details instead.
+- Keep each `additionalProperty.value` atomic and single-line. Do not place a multiline Quick facts paragraph in Product schema; split it into target customer, key benefit, key ingredients, customer reviews, and reported details instead. Put actual usage instructions in HowTo or the generated usage section, not as a separate use-context property.
 
 Recommended `additionalProperty` groups:
 
@@ -121,18 +122,44 @@ Recommended `additionalProperty` groups:
 - Renewal, discontinuation, or replacement guidance.
 - Gift suitability or purchase-context cue when relevant.
 
+## OCR Sentence Diagnostics and English RAG Use
+
+OCR output should be treated as source text evidence, not as a keyword bag. When the source contains OCR `lines`, `blocks`, `paragraphs`, `text`, or `sentenceInsights`, reconstruct semantically complete sentences by joining headings with their related body copy and keeping ingredient, benefit, usage, and review claims intact.
+
+Classify each OCR sentence by intent before generation:
+
+- Ingredient or technology: ingredient names, active complexes, formula systems, full ingredient lists, patented technology, or brand science.
+- Benefit or effect: hydration, barrier support, sebum control, firming, elasticity, soothing, texture, resilience, visible results, or other source-backed efficacy language.
+- Usage or routine: application timing, order, amount, routine pairing, or step-by-step directions.
+- Customer or review language: repeated customer phrases, texture reactions, satisfaction, comfort, absorption, or skin-feel comments.
+
+Store this analysis in diagnostics as sentence-level metadata such as `ocrSentences[].text`, `ocrSentences[].intents`, `ocrSentences[].schemaFields`, and `ocrSentences[].geoUse`. These diagnostics guide generation and review, but the labels themselves must not appear in public JSON-LD or HTML.
+
+Use classified OCR sentences as supporting source evidence that blends with other RAG chunks, product facts, review language, and mapped fields. Do not create separate OCR-only benefit, ingredient, or FAQ content when broader product/RAG evidence is available.
+
+When OCR data is absent, keep the same blended generation strategy using mapped product facts, selected RAG chunks, source text, full ingredient data, usage instructions, and customer review language.
+
+Blend classified OCR sentence meaning into:
+
+- `Product.description` and `WebPage.description` with answer-ready product, benefit, ingredient, texture, and comparison context.
+- `Product.additionalProperty` values such as Key ingredients, Ingredient/effect detail, Full ingredients, skin type, texture, and technology. Usage instructions should live in HowTo or usage content, not as a separate use-context fact.
+- Benefit sections and FAQ answers with varied topic, benefit, ingredient, texture, and comparison language.
+- `HowTo.step` only when the OCR sentence describes a real usage action.
+
+For English output, rewrite Korean or multilingual OCR meaning into natural English commerce language. Preserve the claim, ingredient, usage, and evidence hierarchy; do not translate word-for-word if it creates stiff or broken sentences. Full ingredients detected from OCR should be represented as complete ingredient information when available. Image URLs, file names, broken URL fragments, OCR artifacts, and diagnostic labels should be excluded from public schema/content.
+
 ## Description Pattern
 
-Descriptions should be rewritten for citation, not copied mechanically.
-Avoid shallow descriptions that only say the page "organises information" or that the product is simply a "hydration serum". A strong Product description should expose the target customer, major benefit keywords, key ingredients or technologies, practical use context, representative customer review language, and any supported clinical, satisfaction, or reported-result detail.
+Descriptions should be rewritten into diverse, answer-ready product content, not copied mechanically.
+Avoid shallow descriptions that only say the page "organises information" or that the product is simply a "hydration serum". A strong Product description should expose the target customer, major benefit keywords, key ingredients or technologies, routine fit when it improves the product story, representative customer review language, and any supported clinical, satisfaction, or reported-result detail.
 
 Good structure:
 
-`[Product name] is a [product type] for [target customer or concern] that helps [core benefits] with [ingredient/technology]. [Source-supported or review-backed detail] explains [specific outcome/use context].`
+`[Product name] is a [product type] for [target customer or concern] that helps [core benefits] with [ingredient/technology]. [Source-supported or review-backed detail] explains [specific outcome or routine fit].`
 
 Korean example structure:
 
-`60년 인삼 연구로 완성된 [제품명]은 [대상 고민]을 위한 [제품 유형]으로, [핵심 성분/기술]을 통해 [효능]을 돕습니다. [임상/만족도/고객 리뷰에서 반복되는 표현]을 바탕으로 [사용 맥락]에서 인용하기 좋은 설명을 구성합니다.`
+`60년 인삼 연구로 완성된 [제품명]은 [대상 고민]을 위한 [제품 유형]으로, [핵심 성분/기술]을 통해 [효능]을 돕습니다. [임상/만족도/고객 리뷰에서 반복되는 표현]을 바탕으로 [사용 루틴], [사용감], [비교 기준]을 구체적으로 설명합니다.`
 
 English example structure:
 
@@ -161,12 +188,12 @@ Recommended FAQ types:
 - Gift suitability or purchase context.
 - Natural-language customer questions, such as "I am starting to worry about wrinkles and firmness" or "I want a lightweight anti-aging cream."
 
-Answers should contain concise, quotable facts. Include metrics only when they exist in the input evidence. Do not invent study populations, durations, rankings, or regulatory claims.
+Answers should contain concise, reusable product facts with varied benefit, ingredient, review, and use-context wording. Include metrics only when they exist in the input evidence. Do not invent study populations, durations, rankings, or regulatory claims.
 
 ## HowTo Best Practice
 
 HowTo steps must be complete actions, not keyword fragments.
-Rewrite source usage text into answer-ready steps. Remove source section labels such as "How to use", deduplicate repeated instructions, and add benefit or ingredient context only when it helps citation readiness without making every step repetitive.
+Rewrite source usage text into answer-ready steps. Remove source section labels such as "How to use", deduplicate repeated instructions, and add benefit, key active, texture, or routine details only when they improve search/answer usefulness without making every step repetitive.
 
 Good step shape:
 
@@ -188,7 +215,7 @@ When selecting facts, prefer this order:
 2. Ingredient or technology explanation with product-specific role.
 3. Clinical, regulatory, award, or satisfaction evidence with metric and context.
 4. Usage instructions and routine pairing.
-5. Customer review phrases and repeated customer benefit language.
+5. Customer review phrases and repeated customer benefit phrasing.
 6. Locale terminology and market-specific expression mapping.
 
 If evidence is weak, make the claim softer and attach diagnostics recommendations rather than forcing it into schema.

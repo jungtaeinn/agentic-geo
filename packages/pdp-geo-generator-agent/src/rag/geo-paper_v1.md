@@ -4,7 +4,8 @@ Generative Engine Optimization focuses on improving visibility and citation in g
 
 - Source checked on 2026-06-17: https://generative-engines.com/GEO/.
 - Prefer content that is easy to synthesize into answers: clear definitions, entity names, factual attributes, concise claims, and evidence-backed phrases.
+- Treat citation readiness as natural expression coverage across product, ingredient, benefit, routine, and review facts; do not insert public citation labels or stock quotable phrases.
 - Domain-specific optimization matters; PDP copy should prioritize product, category, ingredient, usage, review, and FAQ facts.
 - Minor content changes can improve visibility when they clarify facts and source attribution.
 - Avoid generic keyword stuffing. Use structured, human-readable sections and schema markup that reflect visible content.
-- Evaluate generated artifacts by citation readiness, not only classic SEO rankings.
+- Evaluate generated artifacts by citation readiness, not only classic SEO rankings, while keeping public copy natural.
