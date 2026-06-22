@@ -768,7 +768,8 @@ button:disabled {
 }
 
 .processStep strong,
-.processStep span {
+.processStep span,
+.processStep small {
   display: block;
 }
 
@@ -783,6 +784,14 @@ button:disabled {
   color: rgba(255, 255, 255, 0.42);
   font-size: 11px;
   line-height: 1.35;
+}
+
+.processStep small {
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.34);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .processStep.pending {
@@ -947,7 +956,8 @@ button:disabled {
 }
 
 .diagnosticSection b,
-.diagnosticSection span {
+.diagnosticSection span,
+.diagnosticSection small {
   display: block;
 }
 
@@ -968,6 +978,13 @@ button:disabled {
   color: rgba(255, 255, 255, 0.48);
   font-size: 11px;
   line-height: 1.4;
+}
+
+.diagnosticSection small {
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.34);
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .sourceList {

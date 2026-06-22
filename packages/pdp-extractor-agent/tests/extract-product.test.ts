@@ -126,6 +126,31 @@ describe("extractProductFromHtml", () => {
     expect(diagnostics.process.find((step) => step.id === "json")?.status).toBe("done");
   });
 
+  it("includes runtime RAG profile prompt and documents in the final chunks", async () => {
+    const { result } = await extractProductFromHtml(
+      html,
+      "https://example.com/products/hydra",
+      {
+        analysisPrompt: "Runtime extraction prompt for PDP benefit classification.",
+        ragDocuments: [
+          {
+            name: "runtime-rag-rules_v1.md",
+            content: "Runtime RAG document content for downstream GEO audit."
+          }
+        ]
+      }
+    );
+
+    expect(result.geoProduct.rag.chunks.some((chunk) =>
+      chunk.id === "rag-profile-analysis-prompt"
+      && chunk.text.includes("Runtime extraction prompt")
+    )).toBe(true);
+    expect(result.geoProduct.rag.chunks.some((chunk) =>
+      chunk.id === "rag-profile-file-1"
+      && chunk.text.includes("Runtime RAG document content")
+    )).toBe(true);
+  });
+
   it("normalizes Shopify product JSON returned from a URL request", async () => {
     const { result, diagnostics } = await extractProductFromHtml(
       JSON.stringify({

@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { runMockProductExtraction } from "@agentic-geo/pdp-extractor-agent/mock";
 import { refineGeoProductResult } from "@agentic-geo/pdp-extractor-agent";
-import type { ProductExtractionDiagnostics, ProductExtractionResult } from "@agentic-geo/pdp-extractor-agent/types";
+import type { ProductExtractionDiagnostics, ProductExtractionResult, ProductExtractionStep } from "@agentic-geo/pdp-extractor-agent/types";
 import {
   AlertCircle,
   ArrowLeft,
@@ -538,14 +538,6 @@ export function ExtractorConsole() {
         ragProfileSettings
       );
       const { results, failures } = extraction;
-      setAgentProcess((current) => ({
-        ...current,
-        completedSourceCount: results.length + failures.length
-      }));
-      for (const stepId of ["extract", "ocr", "review", "rag", "json"] satisfies AgentStepId[]) {
-        setAgentProcess((current) => ({ ...current, currentStepId: stepId }));
-        await waitForStep();
-      }
       const resultBySource = new Map(results.map((result) => [result.source, result]));
       const failureBySource = new Map(failures.map((failure) => [failure.source, failure]));
       const finishedAt = new Date().toISOString();
@@ -1403,12 +1395,14 @@ export function ExtractorConsole() {
                       const stepMessage = "message" in step && typeof step.message === "string" && step.message.length > 0
                         ? step.message
                         : step.description;
+                      const stepTiming = isProductExtractionStep(step) ? formatStepTiming(step) : "";
                       return (
                         <li className={`processStep ${stepStatus}`} key={step.id}>
                           <StepStatusIcon status={stepStatus} />
                           <div>
                             <strong>{step.title}</strong>
                             <span>{stepMessage}</span>
+                            {stepTiming && <small>{stepTiming}</small>}
                           </div>
                         </li>
                       );
@@ -2077,12 +2071,17 @@ function DiagnosticLog({ diagnostics }: Readonly<{ diagnostics?: ProductExtracti
       </div>
       <div className="diagnosticSection">
         <strong>Process</strong>
-        {diagnostics.process.map((step) => (
-          <p key={step.id}>
-            <b>{step.title}</b>
-            <span>{step.message ?? step.description}</span>
-          </p>
-        ))}
+        {diagnostics.process.map((step) => {
+          const stepTiming = formatStepTiming(step);
+
+          return (
+            <p key={step.id}>
+              <b>{step.title}</b>
+              <span>{step.message ?? step.description}</span>
+              {stepTiming && <small>{stepTiming}</small>}
+            </p>
+          );
+        })}
       </div>
       <div className="diagnosticSection">
         <strong>Warnings</strong>
@@ -2913,6 +2912,46 @@ function getStepStatus(stepId: AgentStepId, process: AgentProcessState): AgentSt
 
 function isAgentStepStatus(value: unknown): value is AgentStepStatus {
   return value === "pending" || value === "running" || value === "done" || value === "error";
+}
+
+function isProductExtractionStep(step: AgentStep | ProductExtractionStep): step is ProductExtractionStep {
+  return "status" in step && isAgentStepStatus(step.status);
+}
+
+function formatStepTiming(step: Pick<ProductExtractionStep, "startedAt" | "completedAt" | "status">): string {
+  if (!step.startedAt) {
+    return "";
+  }
+
+  const startedAt = Date.parse(step.startedAt);
+
+  if (Number.isNaN(startedAt)) {
+    return "";
+  }
+
+  if (!step.completedAt) {
+    return step.status === "running" ? "진행 중" : "";
+  }
+
+  const completedAt = Date.parse(step.completedAt);
+
+  if (Number.isNaN(completedAt) || completedAt < startedAt) {
+    return "";
+  }
+
+  return `완료 ${formatDuration(completedAt - startedAt)}`;
+}
+
+function formatDuration(milliseconds: number): string {
+  if (milliseconds < 1000) {
+    return `${milliseconds}ms`;
+  }
+
+  if (milliseconds < 10_000) {
+    return `${(milliseconds / 1000).toFixed(1)}s`;
+  }
+
+  return `${Math.round(milliseconds / 1000)}s`;
 }
 
 function formatProcessProgress(process: AgentProcessState): string {
