@@ -2,7 +2,10 @@ import { mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import { createKeywordClassificationPrompt } from "../src/llm/prompt";
+import {
+  createKeywordClassificationPrompt,
+  createKeywordClassificationPromptParts
+} from "../src/llm/prompt";
 import {
   readProductExtractorRagProfile,
   resetProductExtractorRagProfile,
@@ -11,7 +14,7 @@ import {
 
 describe("RAG profile synchronization", () => {
   it("injects runtime analysis prompt and RAG files into the LLM classification prompt", () => {
-    const prompt = createKeywordClassificationPrompt({
+    const request = {
       source: "https://example.com/product",
       productName: "Ginseng Cream",
       analysisPrompt: "효능은 상품 가치 문장만 benefits로 분류합니다.",
@@ -27,12 +30,20 @@ describe("RAG profile synchronization", () => {
           text: "[효능] 피부 자생력과 고밀도 탄력을 지원합니다."
         }
       ]
-    });
+    };
+    const prompt = createKeywordClassificationPrompt(request);
+    const promptParts = createKeywordClassificationPromptParts(request);
 
     expect(prompt).toContain("효능은 상품 가치 문장만 benefits로 분류합니다.");
     expect(prompt).toContain("geo-classification-rules_v2.md");
     expect(prompt).toContain("혜택 적용가, 배송, 반품 문구는 상품 효능에서 제외합니다.");
     expect(prompt).toContain("[효능] 피부 자생력과 고밀도 탄력을 지원합니다.");
+    expect(promptParts.system).toContain("Runtime RAG profile");
+    expect(promptParts.system).toContain("효능은 상품 가치 문장만 benefits로 분류합니다.");
+    expect(promptParts.system).toContain("geo-classification-rules_v2.md");
+    expect(promptParts.system).not.toContain("[효능] 피부 자생력과 고밀도 탄력을 지원합니다.");
+    expect(promptParts.user).toContain("[효능] 피부 자생력과 고밀도 탄력을 지원합니다.");
+    expect(promptParts.user).not.toContain("geo-classification-rules_v2.md");
   });
 
   it("reads, writes, and resets package-managed RAG profile files", async () => {

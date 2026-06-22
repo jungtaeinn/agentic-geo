@@ -236,6 +236,26 @@ export const productExtractorRagManifest = {
 
 앱의 설정 화면에서 추가한 커스텀 문서는 `src/rag/custom` 아래에 저장됩니다.
 
+### LLM 프롬프트에서의 RAG 구성
+
+OCR/상세 영역 키워드 분류에 provider LLM을 사용할 때는 RAG 정보를 다음처럼 분리해 전달합니다.
+
+| 영역 | 들어가는 정보 | 목적 |
+| --- | --- | --- |
+| system prompt | 기본 분류 규칙, 출력 JSON 스키마, 금지사항, `analysisPrompt`, RAG 문서 요약 | agent가 일관된 정책으로 분류하도록 고정 |
+| user prompt | 현재 source URL, 상품명, OCR/상세 영역 evidence 텍스트 | 실제 상품 사실을 분류할 근거 제공 |
+
+이 구조에서는 RAG 프로필을 “상품 사실”로 취급하지 않습니다. RAG 프로필은 benefit/effect/ingredient/usage 같은 분류 기준과 제외 규칙을 잡아주는 정책/참고 자료이고, 실제 claim은 user prompt에 들어온 PDP evidence에서만 가져옵니다. 그래서 `analysisPrompt`나 RAG 문서에 있는 예시는 분류 판단을 도울 수는 있지만, 원문 evidence에 없는 상품 효능이나 성분을 새로 만들면 안 됩니다.
+
+provider별 전달 방식:
+
+- OpenAI Responses API: `instructions`에 system prompt, `input`에 user evidence를 전달합니다.
+- Azure OpenAI Chat Completions: `system` message와 `user` message를 분리합니다.
+- Gemini generateContent: `systemInstruction`과 user `contents`를 분리합니다.
+- system prompt를 지원하지 않는 환경을 위해 `createKeywordClassificationPrompt`는 두 영역을 합친 호환 문자열도 제공합니다.
+
+`result.geoProduct.rag.chunks`는 위 프롬프트와 별개의 산출물입니다. 추출이 끝난 뒤 상품/리뷰/FAQ/OCR/source 근거를 downstream `pdp-geo-generator-agent`가 검색하거나 감사할 수 있도록 만든 데이터입니다.
+
 ## 주요 타입
 
 | 타입 | 설명 |

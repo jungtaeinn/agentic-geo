@@ -1,4 +1,4 @@
-import { createKeywordClassificationPrompt } from "../prompt";
+import { createKeywordClassificationPromptParts } from "../prompt";
 import type {
   KeywordClassificationRequest,
   KeywordClassificationResponse,
@@ -18,6 +18,7 @@ export class GeminiKeywordClassifier implements KeywordClassifier {
       throw new Error("GEMINI_MODEL is required for the Gemini keyword classifier.");
     }
 
+    const prompt = createKeywordClassificationPromptParts(request);
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${this.config.model}:generateContent`, {
       method: "POST",
       headers: {
@@ -25,7 +26,8 @@ export class GeminiKeywordClassifier implements KeywordClassifier {
         "x-goog-api-key": this.config.apiKey
       },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: createKeywordClassificationPrompt(request) }] }]
+        systemInstruction: { parts: [{ text: prompt.system }] },
+        contents: [{ role: "user", parts: [{ text: prompt.user }] }]
       })
     });
 

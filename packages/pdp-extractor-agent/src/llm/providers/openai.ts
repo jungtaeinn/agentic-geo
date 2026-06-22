@@ -1,4 +1,4 @@
-import { createKeywordClassificationPrompt } from "../prompt";
+import { createKeywordClassificationPromptParts } from "../prompt";
 import type {
   ImageTextExtractionRequest,
   ImageTextExtractionResponse,
@@ -20,6 +20,7 @@ export class OpenAIKeywordClassifier implements KeywordClassifier {
       throw new Error("OPENAI_MODEL is required for the OpenAI keyword classifier.");
     }
 
+    const prompt = createKeywordClassificationPromptParts(request);
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
@@ -28,7 +29,8 @@ export class OpenAIKeywordClassifier implements KeywordClassifier {
       },
       body: JSON.stringify({
         model: this.config.model,
-        input: createKeywordClassificationPrompt(request)
+        instructions: prompt.system,
+        input: prompt.user
       })
     });
 

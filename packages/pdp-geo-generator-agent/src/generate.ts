@@ -45,6 +45,15 @@ interface TerminologyConcept {
   notes?: string;
 }
 
+interface GeoOptimizationGuidance {
+  sources: string[];
+  principles: string[];
+  useAnswerReadyFaq: boolean;
+  useStepwiseUsage: boolean;
+  useEvidenceBackedClaims: boolean;
+  useTargetCustomerContext: boolean;
+}
+
 const defaultTargets: PdpGeoSchemaTarget[] = ["WebPage", "Product", "FAQPage", "HowTo", "BreadcrumbList"];
 
 const genericCategoryPattern = /^(usage|use|how to use|direction|directions|review|reviews|rating|ratings|benefit|benefits|effect|effects|ingredient|ingredients|content|section|product|item|type)$/i;
@@ -52,6 +61,7 @@ const genericCategoryPattern = /^(usage|use|how to use|direction|directions|revi
 /** Builds deterministic GEO artifacts from normalized product signals and selected RAG chunks. */
 export function generatePdpGeoArtifacts(input: GenerateArtifactsInput): GenerateArtifactsOutput {
   const terminologyConcepts = readTerminologyConcepts(input.ragDocuments);
+  const guidance = createGeoOptimizationGuidance(input.ragChunks, input.ragDocuments);
   const terminology = createTerminologyDiagnostics(input.locale, input.market);
   const recommendations: PdpGeoRecommendation[] = [];
   const evidence: PdpGeoEvidence[] = [];
@@ -63,14 +73,15 @@ export function generatePdpGeoArtifacts(input: GenerateArtifactsInput): Generate
     input.locale,
     terminology
   );
-  const faq = ensureFaq(input.product, input.locale, productName);
+  const optimizedUsageSteps = createOptimizedUsageSteps(input.product, productName, input.locale, guidance);
+  const faq = ensureFaq(input.product, input.locale, productName, guidance, optimizedUsageSteps);
   const sections: PdpGeoContentSections = {
     productName,
-    description: applyAvoidTerms(createGeoDescription(input.product, productName, input.locale, localizedTerms), terminologyConcepts, input.locale, terminology),
-    quickFacts: applyAvoidTerms(createQuickFacts(input.product, input.locale, localizedTerms), terminologyConcepts, input.locale, terminology),
-    benefits: applyAvoidTerms(createBenefitsSection(input.product, input.locale), terminologyConcepts, input.locale, terminology),
+    description: applyAvoidTerms(createGeoDescription(input.product, productName, input.locale, localizedTerms, guidance, optimizedUsageSteps), terminologyConcepts, input.locale, terminology),
+    quickFacts: applyAvoidTerms(createQuickFacts(input.product, input.locale, localizedTerms, guidance, optimizedUsageSteps), terminologyConcepts, input.locale, terminology),
+    benefits: applyAvoidTerms(createBenefitsSection(input.product, input.locale, guidance), terminologyConcepts, input.locale, terminology),
     ingredients: applyAvoidTerms(createIngredientsSection(input.product, input.locale), terminologyConcepts, input.locale, terminology),
-    howToUse: applyAvoidTerms(createHowToUseSection(input.product, input.locale), terminologyConcepts, input.locale, terminology),
+    howToUse: applyAvoidTerms(createHowToUseSection(input.product, input.locale, optimizedUsageSteps), terminologyConcepts, input.locale, terminology),
     faq: applyAvoidTerms(createFaqSection(faq, input.locale), terminologyConcepts, input.locale, terminology)
   };
 
@@ -83,11 +94,18 @@ export function generatePdpGeoArtifacts(input: GenerateArtifactsInput): Generate
     });
   }
 
-  recommendations.push(...createRecommendations(input.product, sections, detectedConcepts, input.locale));
+  recommendations.push(...createRecommendations(input.product, sections, detectedConcepts, input.locale, guidance));
   evidence.push(
     { field: "content.productName", source: "input", value: input.product.name },
     { field: "content.description", source: "rag", value: `Description follows target customer + benefits + ingredients/technology + use context + review keywords + evidence. ${input.ragChunks.length} RAG chunks selected.` }
   );
+  if (guidance.sources.length > 0) {
+    evidence.push({
+      field: "rag.geoOptimizationGuidance",
+      source: "rag",
+      value: `Reconstructed HowTo, FAQ, and benefit content with GEO guidance from: ${guidance.sources.join(", ")}`
+    });
+  }
   const officialDocSources = selectedOfficialDocSources(input.ragChunks);
   if (officialDocSources.length > 0) {
     recommendations.push({
@@ -108,6 +126,7 @@ export function generatePdpGeoArtifacts(input: GenerateArtifactsInput): Generate
     description: sections.description,
     quickFacts: sections.quickFacts,
     faq,
+    optimizedUsageSteps,
     locale: input.locale,
     market: input.market,
     sourceUrl: input.sourceUrl,
@@ -145,7 +164,14 @@ function createGeoProductName(product: PdpProductSignal, locale: PdpGeoLocale, l
   return `${base} ${category}`;
 }
 
-function createGeoDescription(product: PdpProductSignal, productName: string, locale: PdpGeoLocale, localizedTerms: string[]): string {
+function createGeoDescription(
+  product: PdpProductSignal,
+  productName: string,
+  locale: PdpGeoLocale,
+  localizedTerms: string[],
+  guidance: GeoOptimizationGuidance,
+  optimizedUsageSteps: string[] = []
+): string {
   const targetCustomer = inferTargetCustomer(product, locale);
   const benefit = selectPrimaryBenefit(product, localizedTerms) ?? fallback(locale, {
     "ko-KR": "제품의 핵심 케어",
@@ -160,9 +186,10 @@ function createGeoDescription(product: PdpProductSignal, productName: string, lo
     "en-GB": "product"
   });
   const ingredient = selectKeyIngredients(product, 2).join(", ");
-  const usage = first(selectUsageInstructions(product));
+  const usage = first(optimizedUsageSteps) ?? first(selectUsageInstructions(product));
   const reviewKeyword = selectReviewKeywords(product).slice(0, 3).join(", ");
   const evidence = selectEvidenceSignal(product);
+  const evidenceSignal = guidance.useEvidenceBackedClaims ? evidence : undefined;
 
   switch (locale) {
     case "ko-KR":
@@ -171,7 +198,7 @@ function createGeoDescription(product: PdpProductSignal, productName: string, lo
         ingredient ? `${truncate(ingredient, 90)} 성분/기술 신호를 함께 제시합니다` : undefined,
         usage ? `${truncate(usage, 90)} 루틴에서 사용하기 좋습니다` : undefined,
         reviewKeyword ? `고객 리뷰에서 반복되는 ${reviewKeyword} 같은 긍정 표현을 반영합니다` : undefined,
-        evidence ? `근거 신호: ${truncate(evidence, 80)}` : undefined
+        evidenceSignal ? `근거 신호: ${truncate(evidenceSignal, 80)}` : undefined
       ]);
     case "ja-JP":
       return compactSentence([
@@ -179,7 +206,7 @@ function createGeoDescription(product: PdpProductSignal, productName: string, lo
         ingredient ? `${truncate(ingredient, 90)}などの成分・技術シグナルを整理します` : undefined,
         usage ? `${truncate(usage, 90)}という使用シーンに合わせて説明します` : undefined,
         reviewKeyword ? `レビューで見られる${reviewKeyword}という好意的な表現も反映します` : undefined,
-        evidence ? `根拠シグナル: ${truncate(evidence, 80)}` : undefined
+        evidenceSignal ? `根拠シグナル: ${truncate(evidenceSignal, 80)}` : undefined
       ]);
     case "en-GB":
     case "en-US":
@@ -189,7 +216,7 @@ function createGeoDescription(product: PdpProductSignal, productName: string, lo
         ingredient ? `It connects that benefit to ingredient and technology signals such as ${truncate(ingredient, 100)}` : undefined,
         usage ? `It fits routines such as ${truncate(usage, 95)}` : undefined,
         reviewKeyword ? `Review signals highlight ${reviewKeyword}` : undefined,
-        evidence ? `Evidence signal: ${truncate(evidence, 90)}` : undefined
+        evidenceSignal ? `Evidence signal: ${truncate(evidenceSignal, 90)}` : undefined
       ]);
   }
 }
@@ -415,14 +442,20 @@ function cleanSignal(value: string): string {
   return value.replace(/\s+/g, " ").replace(/\s+([,.])/g, "$1").trim();
 }
 
-function createQuickFacts(product: PdpProductSignal, locale: PdpGeoLocale, localizedTerms: string[]): string {
+function createQuickFacts(
+  product: PdpProductSignal,
+  locale: PdpGeoLocale,
+  localizedTerms: string[],
+  guidance: GeoOptimizationGuidance,
+  optimizedUsageSteps: string[] = []
+): string {
   const facts = [
     labelValue(locale, "Target", inferTargetCustomer(product, locale)),
     labelValue(locale, "Key benefit", selectPrimaryBenefit(product, localizedTerms)),
     labelValue(locale, "Key ingredients", selectKeyIngredients(product, 3).join(", ")),
-    labelValue(locale, "Use context", first(selectUsageInstructions(product))),
+    labelValue(locale, "Use context", first(optimizedUsageSteps) ?? first(selectUsageInstructions(product))),
     labelValue(locale, "Review signals", selectReviewKeywords(product).slice(0, 4).join(", ")),
-    labelValue(locale, "Evidence", selectEvidenceSignal(product))
+    labelValue(locale, "Evidence", guidance.useEvidenceBackedClaims ? selectEvidenceSignal(product) : undefined)
   ].filter((value): value is string => Boolean(value));
 
   return facts.length > 0 ? facts.join("\n") : fallback(locale, {
@@ -433,13 +466,55 @@ function createQuickFacts(product: PdpProductSignal, locale: PdpGeoLocale, local
   });
 }
 
-function createBenefitsSection(product: PdpProductSignal, locale: PdpGeoLocale): string {
-  const values = selectBenefitSignals(product).slice(0, 8);
+function createBenefitsSection(product: PdpProductSignal, locale: PdpGeoLocale, guidance: GeoOptimizationGuidance): string {
+  const values = createOptimizedBenefitBullets(product, locale, guidance).slice(0, 8);
   return values.length > 0 ? values.map((value) => `- ${value}`).join("\n") : fallback(locale, {
     "ko-KR": "상품 JSON에서 확인된 효능/혜택 정보가 충분하지 않습니다.",
     "ja-JP": "商品JSONから確認できるベネフィット情報が十分ではありません。",
     "en-US": "The product JSON does not include enough benefit signals.",
     "en-GB": "The product JSON does not include enough benefit signals."
+  });
+}
+
+function createOptimizedBenefitBullets(product: PdpProductSignal, locale: PdpGeoLocale, guidance: GeoOptimizationGuidance): string[] {
+  const benefits = selectBenefitSignals(product).slice(0, 6);
+  const targetCustomer = guidance.useTargetCustomerContext ? inferTargetCustomer(product, locale) : undefined;
+  const ingredients = selectKeyIngredients(product, 3);
+  const ingredient = ingredients.join(", ");
+  const usage = first(selectUsageInstructions(product));
+  const evidence = guidance.useEvidenceBackedClaims ? selectEvidenceSignal(product) : undefined;
+
+  return benefits.map((benefit, index) => {
+    const context = index === 0 ? targetCustomer : undefined;
+    const ingredientSignal = index <= 1 ? ingredient : undefined;
+    const usageSignal = index === 2 ? usage : undefined;
+    const evidenceSignal = index === 0 ? evidence : undefined;
+
+    switch (locale) {
+      case "ko-KR":
+        return compactSentence([
+          `${benefit}: ${context ? `${context}에게 설명하기 쉬운 핵심 케어입니다` : "상품 원문에서 확인된 효능/장점입니다"}`,
+          ingredientSignal ? `${truncate(ingredientSignal, 90)} 성분/기술 신호와 연결됩니다` : undefined,
+          usageSignal ? `${truncate(usageSignal, 90)} 사용 맥락에서 이해할 수 있습니다` : undefined,
+          evidenceSignal ? `근거 신호는 ${truncate(evidenceSignal, 70)}입니다` : undefined
+        ]);
+      case "ja-JP":
+        return compactSentence([
+          `${benefit}: ${context ? `${context}に伝えやすい主なベネフィットです` : "商品情報から確認できるベネフィットです"}`,
+          ingredientSignal ? `${truncate(ingredientSignal, 90)}などの成分・技術シグナルとつながります` : undefined,
+          usageSignal ? `${truncate(usageSignal, 90)}という使用シーンで理解できます` : undefined,
+          evidenceSignal ? `根拠シグナルは${truncate(evidenceSignal, 70)}です` : undefined
+        ]);
+      case "en-GB":
+      case "en-US":
+      default:
+        return compactSentence([
+          `${benefit}: ${context ? `a core care point for ${context}` : "a benefit confirmed in the product evidence"}`,
+          ingredientSignal ? `It is connected to ingredient or technology signals such as ${truncate(ingredientSignal, 90)}` : undefined,
+          usageSignal ? `It is easiest to understand in the use context: ${truncate(usageSignal, 90)}` : undefined,
+          evidenceSignal ? `Evidence signal: ${truncate(evidenceSignal, 70)}` : undefined
+        ]);
+    }
   });
 }
 
@@ -453,8 +528,74 @@ function createIngredientsSection(product: PdpProductSignal, locale: PdpGeoLocal
   });
 }
 
-function createHowToUseSection(product: PdpProductSignal, locale: PdpGeoLocale): string {
+function createOptimizedUsageSteps(
+  product: PdpProductSignal,
+  productName: string,
+  locale: PdpGeoLocale,
+  guidance: GeoOptimizationGuidance
+): string[] {
   const usage = selectUsageInstructions(product);
+  if (usage.length === 0) {
+    return [];
+  }
+
+  const rawSteps = guidance.useStepwiseUsage
+    ? unique(usage.flatMap(splitUsageInstruction)).slice(0, 4)
+    : usage.slice(0, 4);
+  const benefit = first(selectBenefitSignals(product));
+  const ingredient = first(selectKeyIngredients(product, 1));
+
+  return rawSteps.map((step) => rewriteUsageStep(step, productName, locale, benefit, ingredient, guidance));
+}
+
+function splitUsageInstruction(value: string): string[] {
+  const cleaned = cleanSignal(value)
+    .replace(/\bthen\b/gi, ". Then")
+    .replace(/\s*;\s*/g, ". ");
+  const sentences = cleaned
+    .split(/\.\s+/)
+    .map((item) => cleanSignal(item.replace(/\.$/, "")))
+    .filter((item) => item.length >= 12);
+
+  return sentences.length > 0 ? sentences : [cleaned];
+}
+
+function rewriteUsageStep(
+  step: string,
+  productName: string,
+  locale: PdpGeoLocale,
+  benefit: string | undefined,
+  ingredient: string | undefined,
+  guidance: GeoOptimizationGuidance
+): string {
+  const sourceStep = step.endsWith(".") ? step.slice(0, -1) : step;
+
+  switch (locale) {
+    case "ko-KR":
+      return compactSentence([
+        sourceStep,
+        guidance.useTargetCustomerContext && benefit ? `${productName}의 ${benefit} 케어 맥락과 연결됩니다` : undefined,
+        ingredient ? `${ingredient} 성분/기술 신호를 함께 확인할 수 있습니다` : undefined
+      ]);
+    case "ja-JP":
+      return compactSentence([
+        sourceStep,
+        guidance.useTargetCustomerContext && benefit ? `${productName}の${benefit}というケア文脈とつながります` : undefined,
+        ingredient ? `${ingredient}の成分・技術シグナルも確認できます` : undefined
+      ]);
+    case "en-GB":
+    case "en-US":
+    default:
+      return compactSentence([
+        sourceStep,
+        guidance.useTargetCustomerContext && benefit ? `This places ${productName} in a ${benefit} routine` : undefined,
+        ingredient ? `It also ties the step to ${ingredient}` : undefined
+      ]);
+  }
+}
+
+function createHowToUseSection(product: PdpProductSignal, locale: PdpGeoLocale, optimizedUsageSteps: string[]): string {
+  const usage = optimizedUsageSteps.length > 0 ? optimizedUsageSteps : selectUsageInstructions(product);
   return usage.length > 0 ? usage.map((value, index) => `${index + 1}. ${value}`).join("\n") : fallback(locale, {
     "ko-KR": "상품 JSON에서 확인된 사용법 정보가 충분하지 않습니다.",
     "ja-JP": "商品JSONから確認できる使用方法が十分ではありません。",
@@ -476,15 +617,20 @@ function createFaqSection(faq: PdpGeoFaqItem[], locale: PdpGeoLocale): string {
   return faq.map((item) => `Q. ${item.question}\nA. ${item.answer}`).join("\n\n");
 }
 
-function ensureFaq(product: PdpProductSignal, locale: PdpGeoLocale, productName: string): PdpGeoFaqItem[] {
-  if (product.faq.length > 0) {
-    return product.faq;
-  }
-
-  const faq: PdpGeoFaqItem[] = [];
+function ensureFaq(
+  product: PdpProductSignal,
+  locale: PdpGeoLocale,
+  productName: string,
+  guidance: GeoOptimizationGuidance,
+  optimizedUsageSteps: string[]
+): PdpGeoFaqItem[] {
+  const faq: PdpGeoFaqItem[] = product.faq.map((item) => optimizeSourceFaqItem(item, product, locale, productName, guidance, optimizedUsageSteps));
   const usage = first(selectUsageInstructions(product));
+  const optimizedUsage = first(optimizedUsageSteps) ?? usage;
   const ingredient = first(selectKeyIngredients(product, 1));
   const benefit = first(selectBenefitSignals(product));
+  const evidence = selectEvidenceSignal(product);
+  const reviewSignals = selectReviewKeywords(product).slice(0, 3).join(", ");
 
   if (benefit) {
     faq.push({
@@ -494,7 +640,7 @@ function ensureFaq(product: PdpProductSignal, locale: PdpGeoLocale, productName:
         "en-US": `What is the main benefit of ${productName}?`,
         "en-GB": `What is the main benefit of ${productName}?`
       }),
-      answer: benefit
+      answer: createBenefitFaqAnswer(product, locale, benefit, ingredient, evidence, guidance)
     });
   }
   if (ingredient) {
@@ -505,10 +651,10 @@ function ensureFaq(product: PdpProductSignal, locale: PdpGeoLocale, productName:
         "en-US": "What are the key ingredients or technology signals?",
         "en-GB": "What are the key ingredients or technology signals?"
       }),
-      answer: ingredient
+      answer: createIngredientFaqAnswer(locale, ingredient, benefit)
     });
   }
-  if (usage) {
+  if (optimizedUsage) {
     faq.push({
       question: fallback(locale, {
         "ko-KR": `어떻게 사용하면 좋나요?`,
@@ -516,11 +662,163 @@ function ensureFaq(product: PdpProductSignal, locale: PdpGeoLocale, productName:
         "en-US": "How should this product be used?",
         "en-GB": "How should this product be used?"
       }),
-      answer: usage
+      answer: optimizedUsage
+    });
+  }
+  if (guidance.useEvidenceBackedClaims && (evidence || reviewSignals)) {
+    faq.push({
+      question: fallback(locale, {
+        "ko-KR": "어떤 근거 신호를 확인할 수 있나요?",
+        "ja-JP": "どのような根拠シグナルがありますか？",
+        "en-US": "What evidence signals support this product information?",
+        "en-GB": "What evidence signals support this product information?"
+      }),
+      answer: createEvidenceFaqAnswer(locale, evidence, reviewSignals)
     });
   }
 
-  return faq;
+  return uniqueFaq(faq).slice(0, guidance.useAnswerReadyFaq ? 5 : 4);
+}
+
+function optimizeSourceFaqItem(
+  item: PdpGeoFaqItem,
+  product: PdpProductSignal,
+  locale: PdpGeoLocale,
+  productName: string,
+  guidance: GeoOptimizationGuidance,
+  optimizedUsageSteps: string[]
+): PdpGeoFaqItem {
+  const benefit = first(selectBenefitSignals(product));
+  const ingredient = first(selectKeyIngredients(product, 1));
+  const evidence = guidance.useEvidenceBackedClaims ? selectEvidenceSignal(product) : undefined;
+  const sourceAnswer = cleanSignal(item.answer);
+  const usageContext = first(optimizedUsageSteps);
+  const isUsageQuestion = /사용|use|apply|how|어떻게|使/i.test(item.question);
+  const answerBase = isUsageQuestion && usageContext ? usageContext : sourceAnswer;
+
+  return {
+    question: rewriteFaqQuestion(item.question, productName, locale, guidance),
+    answer: compactSentence([
+      answerBase,
+      benefit && !answerBase.toLowerCase().includes(benefit.toLowerCase()) ? localizedBenefitContext(locale, benefit, ingredient) : undefined,
+      evidence ? localizedEvidenceContext(locale, evidence) : undefined
+    ])
+  };
+}
+
+function rewriteFaqQuestion(question: string, productName: string, locale: PdpGeoLocale, guidance: GeoOptimizationGuidance): string {
+  const cleaned = cleanSignal(question);
+  if (!guidance.useAnswerReadyFaq || cleaned.toLowerCase().includes(productName.toLowerCase())) {
+    return cleaned;
+  }
+
+  if (/사용|use|apply|how|어떻게|使/i.test(cleaned)) {
+    return fallback(locale, {
+      "ko-KR": `${productName}은 어떻게 사용하면 좋나요?`,
+      "ja-JP": `${productName}はどのように使うとよいですか？`,
+      "en-US": `How should ${productName} be used?`,
+      "en-GB": `How should ${productName} be used?`
+    });
+  }
+  if (/성분|ingredient|formula|成分/i.test(cleaned)) {
+    return fallback(locale, {
+      "ko-KR": `${productName}의 주요 성분/기술은 무엇인가요?`,
+      "ja-JP": `${productName}の主な成分・技術は何ですか？`,
+      "en-US": `Which ingredients or technology signals are highlighted for ${productName}?`,
+      "en-GB": `Which ingredients or technology signals are highlighted for ${productName}?`
+    });
+  }
+
+  return cleaned;
+}
+
+function createBenefitFaqAnswer(
+  product: PdpProductSignal,
+  locale: PdpGeoLocale,
+  benefit: string,
+  ingredient: string | undefined,
+  evidence: string | undefined,
+  guidance: GeoOptimizationGuidance
+): string {
+  return compactSentence([
+    localizedBenefitContext(locale, benefit, ingredient),
+    guidance.useTargetCustomerContext ? localizedTargetContext(locale, inferTargetCustomer(product, locale)) : undefined,
+    guidance.useEvidenceBackedClaims && evidence ? localizedEvidenceContext(locale, evidence) : undefined
+  ]);
+}
+
+function createIngredientFaqAnswer(locale: PdpGeoLocale, ingredient: string, benefit: string | undefined): string {
+  return compactSentence([
+    fallback(locale, {
+      "ko-KR": `주요 성분/기술 신호는 ${ingredient}입니다`,
+      "ja-JP": `主な成分・技術シグナルは${ingredient}です`,
+      "en-US": `The key ingredient or technology signal is ${ingredient}`,
+      "en-GB": `The key ingredient or technology signal is ${ingredient}`
+    }),
+    benefit ? localizedBenefitContext(locale, benefit, undefined) : undefined
+  ]);
+}
+
+function createEvidenceFaqAnswer(locale: PdpGeoLocale, evidence: string | undefined, reviewSignals: string): string {
+  return compactSentence([
+    evidence ? localizedEvidenceContext(locale, evidence) : undefined,
+    reviewSignals ? fallback(locale, {
+      "ko-KR": `리뷰 신호로는 ${reviewSignals}를 확인할 수 있습니다`,
+      "ja-JP": `レビューシグナルとして${reviewSignals}を確認できます`,
+      "en-US": `Review signals include ${reviewSignals}`,
+      "en-GB": `Review signals include ${reviewSignals}`
+    }) : undefined
+  ]);
+}
+
+function localizedBenefitContext(locale: PdpGeoLocale, benefit: string, ingredient: string | undefined): string {
+  switch (locale) {
+    case "ko-KR":
+      return ingredient ? `${benefit}을 ${ingredient} 성분/기술 신호와 함께 확인할 수 있습니다` : `${benefit}을 핵심 효능/장점으로 확인할 수 있습니다`;
+    case "ja-JP":
+      return ingredient ? `${benefit}を${ingredient}の成分・技術シグナルと合わせて確認できます` : `${benefit}を主なベネフィットとして確認できます`;
+    case "en-GB":
+    case "en-US":
+    default:
+      return ingredient ? `${benefit} is connected with ${ingredient}` : `${benefit} is the main benefit signal`;
+  }
+}
+
+function localizedTargetContext(locale: PdpGeoLocale, targetCustomer: string): string {
+  return fallback(locale, {
+    "ko-KR": `대상 고객은 ${targetCustomer}입니다`,
+    "ja-JP": `対象は${targetCustomer}です`,
+    "en-US": `It is framed for ${targetCustomer}`,
+    "en-GB": `It is framed for ${targetCustomer}`
+  });
+}
+
+function localizedEvidenceContext(locale: PdpGeoLocale, evidence: string): string {
+  return fallback(locale, {
+    "ko-KR": `근거 신호는 ${truncate(evidence, 80)}입니다`,
+    "ja-JP": `根拠シグナルは${truncate(evidence, 80)}です`,
+    "en-US": `Evidence signal: ${truncate(evidence, 80)}`,
+    "en-GB": `Evidence signal: ${truncate(evidence, 80)}`
+  });
+}
+
+function uniqueFaq(values: PdpGeoFaqItem[]): PdpGeoFaqItem[] {
+  const seen = new Set<string>();
+  const results: PdpGeoFaqItem[] = [];
+
+  for (const item of values) {
+    const question = cleanSignal(item.question);
+    const answer = cleanSignal(item.answer);
+    const key = question.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ");
+
+    if (!question || !answer || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    results.push({ question, answer });
+  }
+
+  return results;
 }
 
 function createSchemaMarkup(input: {
@@ -529,6 +827,7 @@ function createSchemaMarkup(input: {
   description: string;
   quickFacts: string;
   faq: PdpGeoFaqItem[];
+  optimizedUsageSteps: string[];
   locale: PdpGeoLocale;
   market?: string;
   sourceUrl?: string;
@@ -537,7 +836,7 @@ function createSchemaMarkup(input: {
   const baseId = input.sourceUrl ?? `urn:agentic-geo:pdp:${slug(input.productName)}`;
   const productId = `${baseId}#product`;
   const webpageId = `${baseId}#webpage`;
-  const usageInstructions = selectUsageInstructions(input.product);
+  const usageInstructions = input.optimizedUsageSteps.length > 0 ? input.optimizedUsageSteps : selectUsageInstructions(input.product);
   const reviewItems = selectReviewItems(input.product);
   const category = sanitizeCategory(input.product.category) ?? inferProductType(input.product);
   const graph: Array<Record<string, unknown>> = [];
@@ -586,7 +885,7 @@ function createSchemaMarkup(input: {
         reviewRating: review.rating ? { "@type": "Rating", "ratingValue": review.rating } : undefined,
         datePublished: review.datePublished
       })),
-      additionalProperty: createAdditionalProperties(input.product, input.quickFacts),
+      additionalProperty: createAdditionalProperties(input.product, input.quickFacts, usageInstructions),
       positiveNotes: createPositiveNotes(input.product)
     }));
   }
@@ -650,11 +949,11 @@ function createSchemaMarkup(input: {
   };
 }
 
-function createAdditionalProperties(product: PdpProductSignal, quickFacts: string): JsonObject[] {
+function createAdditionalProperties(product: PdpProductSignal, quickFacts: string, usageInstructions: string[]): JsonObject[] {
   const entries: Array<[string, string | undefined]> = [
     ["Quick facts", quickFacts],
     ["Key ingredients", selectKeyIngredients(product, 5).join(", ")],
-    ["Use context", first(selectUsageInstructions(product))],
+    ["Use context", first(usageInstructions) ?? first(selectUsageInstructions(product))],
     ["Target concern", first(selectBenefitSignals(product))],
     ["Review signals", selectReviewKeywords(product).slice(0, 5).join(", ")],
     ["Options", product.options.slice(0, 5).join(", ")]
@@ -759,7 +1058,13 @@ function sectionLabels(locale: PdpGeoLocale): Record<keyof PdpGeoContentSections
   };
 }
 
-function createRecommendations(product: PdpProductSignal, sections: PdpGeoContentSections, concepts: TerminologyConcept[], locale: PdpGeoLocale): PdpGeoRecommendation[] {
+function createRecommendations(
+  product: PdpProductSignal,
+  sections: PdpGeoContentSections,
+  concepts: TerminologyConcept[],
+  locale: PdpGeoLocale,
+  guidance: GeoOptimizationGuidance
+): PdpGeoRecommendation[] {
   const recommendations: PdpGeoRecommendation[] = [];
 
   if (sections.productName !== product.name) {
@@ -788,6 +1093,18 @@ function createRecommendations(product: PdpProductSignal, sections: PdpGeoConten
       reason: "Review-backed positive keywords were included as citation-friendly product signals."
     });
   }
+  if (guidance.sources.length > 0) {
+    recommendations.push({
+      field: "howToUse",
+      message: sections.howToUse,
+      reason: `Reconstructed usage instructions into answer-ready steps using selected GEO RAG guidance: ${guidance.sources.join(", ")}.`
+    });
+    recommendations.push({
+      field: "faq",
+      message: sections.faq,
+      reason: "Reframed FAQ answers around product benefit, ingredient/technology, usage context, and evidence signals so generated answers stay grounded and quotable."
+    });
+  }
 
   return recommendations;
 }
@@ -798,6 +1115,44 @@ function selectedOfficialDocSources(chunks: PdpGeoRetrievedChunk[]): string[] {
       .filter((chunk) => chunk.kind === "official-docs" || /official|openai|google|gemini|perplexity/i.test(`${chunk.source} ${chunk.title ?? ""}`))
       .map((chunk) => chunk.source)
   )).slice(0, 4);
+}
+
+function createGeoOptimizationGuidance(
+  chunks: PdpGeoRetrievedChunk[],
+  documents: Array<{ name: string; content: string }>
+): GeoOptimizationGuidance {
+  const selected = chunks.map((chunk) => ({
+    source: chunk.source,
+    text: `${chunk.source}\n${chunk.title ?? ""}\n${chunk.text}`
+  }));
+  const policyDocuments = documents
+    .filter((document) => /analysis|best|geo|eeat|e-e-a-t|cep|locale|schema/i.test(document.name))
+    .slice(0, 6)
+    .map((document) => ({
+      source: document.name,
+      text: `${document.name}\n${document.content.slice(0, 2400)}`
+    }));
+  const guidanceText = [...selected, ...policyDocuments].map((item) => item.text).join("\n\n").toLowerCase();
+  const sources = unique([...selected, ...policyDocuments].map((item) => item.source)).slice(0, 8);
+  const useAnswerReadyFaq = /faq|question|answer|질문|답변|mainentity|answer-ready|search language|easy to synthesize|citation|cite|quotable/.test(guidanceText);
+  const useStepwiseUsage = /howto|how to|usage|use context|사용|使い方|step|routine|directions?/.test(guidanceText);
+  const useEvidenceBackedClaims = /evidence|ground|review|rating|source facts|do not invent|근거|리뷰|trust|e-e-a-t|eeat/.test(guidanceText);
+  const useTargetCustomerContext = /target customer|customer|category-entry|cep|use occasion|target concern|고객|사용 맥락|discovery/.test(guidanceText);
+  const principles = [
+    useAnswerReadyFaq ? "answer-ready FAQ" : undefined,
+    useStepwiseUsage ? "stepwise HowTo" : undefined,
+    useEvidenceBackedClaims ? "evidence-backed claims" : undefined,
+    useTargetCustomerContext ? "target customer context" : undefined
+  ].filter((value): value is string => Boolean(value));
+
+  return {
+    sources,
+    principles,
+    useAnswerReadyFaq: useAnswerReadyFaq || chunks.length > 0,
+    useStepwiseUsage: useStepwiseUsage || chunks.length > 0,
+    useEvidenceBackedClaims: useEvidenceBackedClaims || chunks.length > 0,
+    useTargetCustomerContext: useTargetCustomerContext || chunks.length > 0
+  };
 }
 
 function readTerminologyConcepts(documents: Array<{ name: string; content: string }>): TerminologyConcept[] {

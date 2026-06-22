@@ -6,6 +6,55 @@ describe("OpenAIKeywordClassifier image OCR", () => {
     vi.unstubAllGlobals();
   });
 
+  it("sends keyword classification RAG policy as instructions and evidence as user input", async () => {
+    const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) =>
+      new Response(JSON.stringify({
+        output_text: JSON.stringify({
+          keywords: [
+            {
+              keyword: "피부 자생력",
+              category: "benefit",
+              confidence: 0.82,
+              source: "llm"
+            }
+          ],
+          summary: "classified"
+        })
+      }), { status: 200 })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const classifier = new OpenAIKeywordClassifier({
+      provider: "openai",
+      apiKey: "test-key",
+      model: "gpt-5.4-mini"
+    });
+    const result = await classifier.classifyKeywords({
+      source: "https://example.com/products/ginseng-cream",
+      productName: "Ginseng Cream",
+      analysisPrompt: "효능은 상품 가치 문장만 benefits로 분류합니다.",
+      ragDocuments: [
+        {
+          name: "geo-classification-rules_v2.md",
+          content: "혜택 적용가, 배송, 반품 문구는 상품 효능에서 제외합니다."
+        }
+      ],
+      imageTexts: [
+        {
+          imageUrl: "https://example.com/products/ginseng-cream#section-1",
+          text: "[효능] 피부 자생력과 고밀도 탄력을 지원합니다."
+        }
+      ]
+    });
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+
+    expect(body.instructions).toContain("Runtime RAG profile");
+    expect(body.instructions).toContain("geo-classification-rules_v2.md");
+    expect(body.input).toContain("[효능] 피부 자생력과 고밀도 탄력을 지원합니다.");
+    expect(body.input).not.toContain("geo-classification-rules_v2.md");
+    expect(result.keywords[0]?.keyword).toBe("피부 자생력");
+  });
+
   it("sends Responses image inputs without an unsupported detail field", async () => {
     const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) =>
       new Response(JSON.stringify({

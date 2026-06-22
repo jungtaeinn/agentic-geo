@@ -148,10 +148,71 @@ describe("generatePdpGeo", () => {
     expect(product.category).not.toBe("usage");
     expect(product.review?.[0]?.reviewBody).toContain("smooth");
     expect(serialized).not.toContain("\"reviewBody\":\"rating\"");
-    expect(howTo.step).toHaveLength(1);
+    expect(howTo.step).toHaveLength(2);
     expect(howTo.step[0].text).toContain("Use morning and night");
+    expect(howTo.step[1].text).toContain("Warm three pumps");
     expect(serialized).not.toContain("\"text\":\"apply\"");
     expect(result.content.sections.howToUse).not.toContain("3. apply");
     expect(result.content.sections.description).not.toContain("PDP name");
+  });
+
+  it("reconstructs HowTo and FAQ with selected GEO RAG guidance instead of exposing raw source text only", async () => {
+    const { result } = await generatePdpGeo({
+      product: {
+        name: "Ginseng Barrier Serum",
+        description: "Daily serum for hydration and skin barrier care.",
+        category: "Serum",
+        benefits: ["hydration", "skin barrier support"],
+        ingredients: ["Niacinamide", "Panax Ginseng Root Extract"],
+        usage: ["Apply morning and night after serum."],
+        faq: [
+          {
+            question: "Can I use it daily?",
+            answer: "Apply morning and night after serum."
+          }
+        ],
+        reviews: {
+          rating: 4.7,
+          reviewCount: 128,
+          keywords: ["absorbs quickly", "hydration"]
+        }
+      },
+      hints: {
+        locale: "en-US",
+        market: "US",
+        category: "Serum"
+      },
+      rag: {
+        maxChunks: 10,
+        scoreThreshold: 0,
+        documents: [
+          {
+            name: "geo-answer-composition_v1.md",
+            content: [
+              "# GEO Answer Composition",
+              "",
+              "- Reconstruct PDP content into answer-ready FAQ and stepwise HowTo sections.",
+              "- Compose benefit statements from target customer, core benefit, ingredient or technology, use context, review signal, and evidence.",
+              "- Keep claims grounded in source facts and make generated answers easy to cite."
+            ].join("\n")
+          }
+        ]
+      }
+    });
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
+    const faq = graph.find((node) => node["@type"] === "FAQPage") as Record<string, any>;
+
+    expect(result.content.sections.howToUse).toContain("Apply morning and night after serum");
+    expect(result.content.sections.howToUse).toContain("hydration");
+    expect(result.content.sections.howToUse.trim()).not.toBe("1. Apply morning and night after serum.");
+    expect(result.content.sections.faq).toContain("How should Ginseng Barrier Serum be used?");
+    expect(result.content.sections.faq).toContain("Niacinamide");
+    expect(result.content.sections.faq).toContain("Evidence signal");
+    expect(howTo.step[0].text).toContain("hydration");
+    expect(faq.mainEntity.some((item: any) => item.name === "How should Ginseng Barrier Serum be used?")).toBe(true);
+    expect(result.diagnostics.evidence.some((item) => item.field === "rag.geoOptimizationGuidance")).toBe(true);
+    expect(result.diagnostics.recommendations.some((item) => item.field === "faq")).toBe(true);
   });
 });

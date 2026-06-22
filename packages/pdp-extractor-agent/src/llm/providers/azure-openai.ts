@@ -1,4 +1,4 @@
-import { createKeywordClassificationPrompt } from "../prompt";
+import { createKeywordClassificationPromptParts } from "../prompt";
 import type {
   KeywordClassificationRequest,
   KeywordClassificationResponse,
@@ -18,6 +18,7 @@ export class AzureOpenAIKeywordClassifier implements KeywordClassifier {
     const apiVersion = this.config.apiVersion ?? "2025-04-01-preview";
     const endpoint = this.config.endpoint.replace(/\/$/, "");
     const url = `${endpoint}/openai/deployments/${this.config.deployment}/chat/completions?api-version=${apiVersion}`;
+    const prompt = createKeywordClassificationPromptParts(request);
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -25,7 +26,10 @@ export class AzureOpenAIKeywordClassifier implements KeywordClassifier {
         "api-key": this.config.apiKey
       },
       body: JSON.stringify({
-        messages: [{ role: "user", content: createKeywordClassificationPrompt(request) }],
+        messages: [
+          { role: "system", content: prompt.system },
+          { role: "user", content: prompt.user }
+        ],
         temperature: 0.1
       })
     });
