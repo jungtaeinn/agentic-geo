@@ -64,7 +64,8 @@ export function createPdpGeoRagQuery(product: PdpProductSignal, locale: PdpGeoLo
     product.usage.length > 0 ? `Usage: ${product.usage.slice(0, 3).join(", ")}.` : undefined,
     product.reviews.keywords.length > 0 ? `Review keywords: ${product.reviews.keywords.slice(0, 6).join(", ")}.` : undefined,
     "Need schema.org Product FAQPage HowTo BreadcrumbList WebPage, E-E-A-T, CEP, GEO, locale terminology, additionalProperty, positiveNotes.",
-    "Use official OpenAI, Google Search Central, Gemini, and Perplexity docs for retrieval mode, embeddings, grounding, structured data, and citation evidence guidance."
+    "Need answer-ready FAQ intent, customer review language, WebPage/Product description separation, source-supported benefit/effect/HowTo reconstruction, and public wording without internal diagnostic labels.",
+    "Use official OpenAI, Google Search Central, Gemini, and Perplexity docs for retrieval mode, embeddings, grounding, structured data, and citation-ready source support guidance."
   ].filter(Boolean).join("\n");
 }
 
@@ -210,6 +211,15 @@ function splitLongSection(section: { title?: string; text: string }): Array<{ ti
   let current = "";
 
   for (const paragraph of paragraphs) {
+    if (paragraph.length > maxLength) {
+      if (current.trim()) {
+        chunks.push({ title: section.title, text: current.trim() });
+        current = "";
+      }
+      chunks.push(...splitLongParagraph(paragraph, maxLength).map((text) => ({ title: section.title, text })));
+      continue;
+    }
+
     if ((current + "\n\n" + paragraph).length > maxLength && current.trim()) {
       chunks.push({ title: section.title, text: current.trim() });
       current = paragraph;
@@ -220,6 +230,31 @@ function splitLongSection(section: { title?: string; text: string }): Array<{ ti
 
   if (current.trim()) {
     chunks.push({ title: section.title, text: current.trim() });
+  }
+
+  return chunks;
+}
+
+function splitLongParagraph(paragraph: string, maxLength: number): string[] {
+  const chunks: string[] = [];
+  let remaining = paragraph.trim();
+
+  while (remaining.length > maxLength) {
+    const preferredWindowStart = Math.floor(maxLength * 0.6);
+    const boundary = Math.max(
+      remaining.lastIndexOf(" ", maxLength),
+      remaining.lastIndexOf(",", maxLength),
+      remaining.lastIndexOf("}", maxLength),
+      remaining.lastIndexOf("]", maxLength)
+    );
+    const splitAt = boundary >= preferredWindowStart ? boundary + 1 : maxLength;
+
+    chunks.push(remaining.slice(0, splitAt).trim());
+    remaining = remaining.slice(splitAt).trim();
+  }
+
+  if (remaining) {
+    chunks.push(remaining);
   }
 
   return chunks;
@@ -265,6 +300,15 @@ function retrievalBoost(chunk: PdpGeoRagChunk, locale: PdpGeoLocale, market?: st
   }
   if (chunk.kind === "official-docs") {
     boost += 0.06;
+  }
+  if (chunk.kind === "best-practice" || chunk.kind === "geo-paper") {
+    boost += 0.08;
+  }
+  if (chunk.kind === "eeat" || chunk.kind === "cep") {
+    boost += 0.04;
+  }
+  if (/citation|cite|quotable|answer-ready|faqpage|mainentity|review|customer|webpage\.description|product\.description|claim support|evidence hierarchy|public wording/i.test(text)) {
+    boost += 0.04;
   }
   if (text.includes(locale)) {
     boost += 0.05;

@@ -116,6 +116,7 @@ function repairGraphNode(node: Record<string, unknown>, warnings: string[]): Rec
       return [{
         "@type": "HowToStep",
         position: numberValue(item.position) ?? index + 1,
+        name: stringValue(item.name),
         text
       }];
     });
