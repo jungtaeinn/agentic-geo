@@ -1,4 +1,5 @@
 export { generatePdpGeo } from "./agent";
+export { ModelBackedCopyRefiner, refinePdpGeoCopy } from "./copy-refiner";
 export { createPdpGeoGeneratorRestHandler, type PdpGeoGeneratorRestConfig, type PdpGeoGeneratorRestRequest } from "./rest";
 export { pdpGeoGeneratorRagManifest } from "./rag/manifest";
 export {
@@ -8,12 +9,17 @@ export {
   type StoredPdpGeoGeneratorRagDocument,
   type StoredPdpGeoGeneratorRagProfile
 } from "./rag/profile";
+export { createPdpGeoReasoning } from "./rag/reasoning";
 export type {
   JsonObject,
   JsonValue,
   PdpGeoBreadcrumbItem,
   PdpGeoContentArtifact,
   PdpGeoContentSections,
+  PdpGeoCopyRefinementRequest,
+  PdpGeoCopyRefinementResult,
+  PdpGeoCopyRefinementSettings,
+  PdpGeoCopyRefiner,
   PdpGeoDiagnostics,
   PdpGeoEmbeddingProvider,
   PdpGeoEvidence,
@@ -36,9 +42,22 @@ export type {
   PdpGeoOcrSentenceIntent,
   PdpGeoProviderId,
   PdpGeoRagChunk,
+  PdpGeoRagFieldTarget,
+  PdpGeoRagIntent,
+  PdpGeoRagKind,
   PdpGeoRagMode,
   PdpGeoRagProvider,
   PdpGeoRagSettings,
+  PdpGeoRagUsageDiagnostic,
+  PdpGeoRagUsageReference,
+  PdpGeoRagUrlResolvedDocument,
+  PdpGeoRagUrlResolver,
+  PdpGeoRagUrlResolverRequest,
+  PdpGeoReasoningDecision,
+  PdpGeoReasoningPrinciple,
+  PdpGeoReasoningResult,
+  PdpGeoReasoner,
+  PdpGeoReasonerRequest,
   PdpGeoRecommendation,
   PdpGeoRetrievedChunk,
   PdpGeoReviewItem,
@@ -46,5 +65,6 @@ export type {
   PdpGeoSchemaTarget,
   PdpGeoSourceInfo,
   PdpGeoTerminologyDiagnostics,
+  PdpGeoValidationRepair,
   PdpProductSignal
 } from "./types";

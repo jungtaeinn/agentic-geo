@@ -1,4 +1,5 @@
 import { pdpGeoGeneratorRagManifest } from "./rag/manifest";
+import { createPdpGeoReasoning, isPdpGeoReasoningEnabled } from "./rag/reasoning";
 import type {
   JsonObject,
   PdpGeoContentArtifact,
@@ -8,6 +9,7 @@ import type {
   PdpGeoGenerationHints,
   PdpGeoLocale,
   PdpGeoRecommendation,
+  PdpGeoReasoningResult,
   PdpGeoRetrievedChunk,
   PdpGeoReviewItem,
   PdpGeoSchemaMarkup,
@@ -27,6 +29,7 @@ interface GenerateArtifactsInput {
     name: string;
     content: string;
   }>;
+  reasoning?: PdpGeoReasoningResult;
 }
 
 interface GenerateArtifactsOutput {
@@ -48,6 +51,7 @@ interface TerminologyConcept {
 interface GeoOptimizationGuidance {
   sources: string[];
   principles: string[];
+  reasoning: PdpGeoReasoningResult;
   useAnswerReadyFaq: boolean;
   useStepwiseUsage: boolean;
   useEvidenceBackedClaims: boolean;
@@ -62,7 +66,13 @@ const genericCategoryPattern = /^(usage|use|how to use|direction|directions|revi
 /** Builds deterministic GEO artifacts from normalized product signals and selected RAG chunks. */
 export function generatePdpGeoArtifacts(input: GenerateArtifactsInput): GenerateArtifactsOutput {
   const terminologyConcepts = readTerminologyConcepts(input.ragDocuments);
-  const guidance = createGeoOptimizationGuidance(input.ragChunks, input.ragDocuments);
+  const reasoning = input.reasoning ?? createPdpGeoReasoning({
+    product: input.product,
+    locale: input.locale,
+    market: input.market,
+    ragChunks: input.ragChunks
+  });
+  const guidance = createGeoOptimizationGuidance(input.ragChunks, reasoning);
   const terminology = createTerminologyDiagnostics(input.locale, input.market);
   const recommendations: PdpGeoRecommendation[] = [];
   const evidence: PdpGeoEvidence[] = [];
@@ -107,6 +117,16 @@ export function generatePdpGeoArtifacts(input: GenerateArtifactsInput): Generate
       value: `Reconstructed HowTo, FAQ, and benefit content with GEO guidance from: ${guidance.sources.join(", ")}`
     });
   }
+  const enabledReasoning = guidance.reasoning.decisions.filter((decision) => decision.enabled);
+  if (enabledReasoning.length > 0) {
+    evidence.push({
+      field: "rag.reasoning",
+      source: "rag",
+      value: enabledReasoning
+        .map((decision) => `${decision.principle}: ${decision.ragSources.join(", ")} + ${decision.productEvidence.length} product evidence item(s)`)
+        .join(" / ")
+    });
+  }
   const officialDocSources = selectedOfficialDocSources(input.ragChunks);
   if (officialDocSources.length > 0) {
     recommendations.push({
@@ -139,7 +159,7 @@ export function generatePdpGeoArtifacts(input: GenerateArtifactsInput): Generate
     targets: input.hints?.schemaTargets ?? defaultTargets
   });
   const content = {
-    html: createAccordionHtml(sections, input.locale),
+    html: createPdpGeoContentHtml(sections, input.locale),
     sections
   };
 
@@ -215,17 +235,21 @@ function createWebPageDescription(
   switch (locale) {
     case "ko-KR":
       return compactSentence([
-        `${productName} 상품 페이지는 ${context.targetCustomer}이 ${context.productType}을 비교할 때 필요한 효능, 성분, 사용법, 고객 리뷰 근거를 상세히 정리합니다`,
-        context.benefitPhrase ? `효능 영역에서는 ${context.benefitPhrase}를 다룹니다` : undefined,
+        `${productName} 상품 페이지는 ${context.targetCustomer}이 ${context.productType}을 비교할 때 필요한 구체적인 상품 정보와 확인 근거를 정리합니다`,
+        context.benefitPhrase ? `핵심 효능은 ${context.benefitPhrase}입니다` : undefined,
         context.ingredientPhrase ? `성분 영역은 ${context.ingredientPhrase}${context.ingredientDetail ? ` 등 주요 성분 설명` : ""}을 중심으로 구성됩니다` : undefined,
+        context.pageFactPhrase ? createWebPageFactDescription(locale, context.pageFactPhrase) : undefined,
+        context.usage ? createWebPageUsageDescription(locale, context.usage) : undefined,
         context.reviewPhrase ? `리뷰 기반 표현으로는 ${context.reviewPhrase}가 함께 노출됩니다` : undefined,
         context.reportedDetail ? createWebPageEvidenceDescription(locale, context.reportedDetail) : undefined
       ]);
     case "ja-JP":
       return compactSentence([
-        `${productName}の商品ページは${context.targetCustomer}が${context.productType}を検討するために、ベネフィット、成分、使い方、レビュー根拠を整理します`,
-        context.benefitPhrase ? `ベネフィットとして${context.benefitPhrase}を扱います` : undefined,
+        `${productName}の商品ページは${context.targetCustomer}が${context.productType}を検討するために、具体的な商品情報と確認根拠を整理します`,
+        context.benefitPhrase ? `主なベネフィットは${context.benefitPhrase}です` : undefined,
         context.ingredientPhrase ? `成分情報では${context.ingredientPhrase}${context.ingredientDetail ? `などの主要成分説明` : ""}を確認できます` : undefined,
+        context.pageFactPhrase ? createWebPageFactDescription(locale, context.pageFactPhrase) : undefined,
+        context.usage ? createWebPageUsageDescription(locale, context.usage) : undefined,
         context.reviewPhrase ? `レビュー由来の表現として${context.reviewPhrase}も示します` : undefined,
         context.reportedDetail ? `確認できる結果・情報として${truncate(context.reportedDetail, 420)}を参照できます` : undefined
       ]);
@@ -233,9 +257,11 @@ function createWebPageDescription(
     case "en-US":
     default:
       return compactSentence([
-        `This ${productName} product page helps ${context.targetCustomer} evaluate the ${lowercaseEnglishProductType(context.productType)} through skin-care benefits, key actives, usage routine, texture, and customer reviews`,
-        context.benefitPhrase ? `It covers benefits such as ${context.benefitPhrase}` : undefined,
+        `This ${productName} product page summarizes specific product facts about the ${lowercaseEnglishProductType(context.productType)} for ${context.targetCustomer}`,
+        context.benefitPhrase ? `The page identifies benefits such as ${context.benefitPhrase}` : undefined,
         context.ingredientPhrase ? `It surfaces key ingredients and technologies including ${context.ingredientPhrase}${context.ingredientDetail ? `, with formula details such as ${context.ingredientDetail}` : ""}` : undefined,
+        context.pageFactPhrase ? createWebPageFactDescription(locale, context.pageFactPhrase) : undefined,
+        context.usage ? createWebPageUsageDescription(locale, context.usage) : undefined,
         context.reviewPhrase ? `It also reflects customer review language such as ${context.reviewPhrase}` : undefined,
         context.reportedDetail ? createWebPageEvidenceDescription(locale, context.reportedDetail) : undefined
       ]);
@@ -256,6 +282,8 @@ interface DescriptionContext {
   representativeReviews: string[];
   representativeReviewPhrase?: string;
   sourceBackedSentences: string[];
+  sourceFactSentences: string[];
+  pageFactPhrase?: string;
   reportedDetail?: string;
 }
 
@@ -279,7 +307,9 @@ function createDescriptionContext(
   const reviewKeywords = selectPublicReviewKeywords(product, locale).slice(0, 5);
   const representativeReviews = selectRepresentativeReviewPhrases(product, locale, 2);
   const sourceBackedSentences = selectOptimizedSourceBackedClaimSentences(product, locale, 5);
+  const sourceFactSentences = selectSourceBackedClaimSentences(product, 5);
   const reportedDetails = selectReportedDetails(product, 2);
+  const pageFactPhrase = first(sourceFactSentences) ?? first(sourceBackedSentences);
 
   return {
     productType,
@@ -295,27 +325,38 @@ function createDescriptionContext(
     representativeReviews,
     representativeReviewPhrase: formatDescriptionList(representativeReviews, locale, 2),
     sourceBackedSentences,
+    sourceFactSentences,
+    pageFactPhrase,
     reportedDetail: first(reportedDetails) ?? (product.description && benefits.length === 0 ? normalizePublicEvidenceText(product.description, locale) : undefined)
   };
 }
 
 function createProductIngredientDescription(locale: PdpGeoLocale, context: DescriptionContext): string | undefined {
-  if (!context.ingredientPhrase) {
+  if (!context.ingredientPhrase && !context.ingredientDetail) {
     return undefined;
   }
 
   switch (locale) {
     case "ko-KR":
+      if (!context.ingredientPhrase && context.ingredientDetail) {
+        return `포뮬러 설명은 ${normalizeFormulaDetailText(context.ingredientDetail)} 내용을 중심으로 합니다`;
+      }
       return context.ingredientDetail
-        ? createKoreanIngredientDetailDescription(context.ingredientPhrase, context.ingredientDetail)
+        ? createKoreanIngredientDetailDescription(context.ingredientPhrase ?? "", context.ingredientDetail)
         : `주요 성분/기술은 ${context.ingredientPhrase}입니다`;
     case "ja-JP":
+      if (!context.ingredientPhrase && context.ingredientDetail) {
+        return `処方説明では${normalizeFormulaDetailText(context.ingredientDetail)}を確認できます`;
+      }
       return context.ingredientDetail
         ? `主な成分・技術は${context.ingredientPhrase}で、成分説明は${context.ingredientDetail}に焦点を当てています`
         : `主な成分・技術は${context.ingredientPhrase}です`;
     case "en-GB":
     case "en-US":
     default:
+      if (!context.ingredientPhrase && context.ingredientDetail) {
+        return `Formula details include ${lowercaseFirst(normalizeFormulaDetailText(context.ingredientDetail))}`;
+      }
       return context.ingredientDetail
         ? `The formula highlights ${context.ingredientPhrase}; the active-ingredient story focuses on ${context.ingredientDetail}`
         : `The formula highlights ${context.ingredientPhrase}`;
@@ -338,10 +379,10 @@ function createProductUsageDescription(locale: PdpGeoLocale, usage?: string): st
 
 function createProductEvidenceDescription(locale: PdpGeoLocale, evidence: string): string {
   const cleanEvidence = trimTrailingSentencePunctuation(truncateAtCompleteSentence(evidence, 420));
-  const assessment = cleanEvidence.match(/^In a ([^,]+),\s*(.+)$/i);
+  const assessment = cleanEvidence.match(/^In an? ([^,]+),\s*(.+)$/i);
 
   if (assessment) {
-    const context = assessment[1];
+    const context = assessment[1] ?? "";
     const result = lowercaseFirst(assessment[2] ?? "");
     switch (locale) {
       case "ko-KR":
@@ -351,7 +392,7 @@ function createProductEvidenceDescription(locale: PdpGeoLocale, evidence: string
       case "en-GB":
       case "en-US":
       default:
-        return `Reported results come from a ${context}, where ${result}`;
+        return `Reported results come from ${indefiniteArticle(context)} ${context}, where ${result}`;
     }
   }
 
@@ -381,8 +422,29 @@ function createWebPageEvidenceDescription(locale: PdpGeoLocale, evidence: string
   return fallback(locale, {
     "ko-KR": `확인된 결과/정보로 ${cleanEvidence}를 참고할 수 있습니다`,
     "ja-JP": `確認できる結果・情報として${cleanEvidence}を参照できます`,
-    "en-US": `Product details pair ${cleanEvidence} with key ingredients, visible benefits, texture, comfort, and routine fit`,
-    "en-GB": `Product details pair ${cleanEvidence} with key ingredients, visible benefits, texture, comfort, and routine fit`
+    "en-US": `Reported page evidence includes ${cleanEvidence}`,
+    "en-GB": `Reported page evidence includes ${cleanEvidence}`
+  });
+}
+
+function createWebPageFactDescription(locale: PdpGeoLocale, fact: string): string {
+  const cleanFact = normalizePublicFactText(truncateAtCompleteSentence(fact, 260));
+  return fallback(locale, {
+    "ko-KR": `상품 상세 근거에는 ${cleanFact} 내용이 포함됩니다`,
+    "ja-JP": `商品詳細の根拠として${cleanFact}を確認できます`,
+    "en-US": `The page states that ${lowercaseFirst(cleanFact)}`,
+    "en-GB": `The page states that ${lowercaseFirst(cleanFact)}`
+  });
+}
+
+function createWebPageUsageDescription(locale: PdpGeoLocale, usage: string): string {
+  const normalizedUsage = formatUsageForProductDescription(usage, locale) ?? normalizeUsageInstruction(usage);
+  const cleanUsage = trimTrailingSentencePunctuation(truncate(normalizedUsage, 180));
+  return fallback(locale, {
+    "ko-KR": `사용법은 ${cleanUsage} 루틴을 안내합니다`,
+    "ja-JP": `使い方では${cleanUsage}のルーティンを案内します`,
+    "en-US": `Usage guidance covers ${cleanUsage}`,
+    "en-GB": `Usage guidance covers ${cleanUsage}`
   });
 }
 
@@ -608,6 +670,7 @@ function selectIngredientDetails(product: PdpProductSignal, normalizedIngredient
     .map(stripSourceSectionLabel)
     .map(normalizeIngredientDetail)
     .filter((value): value is string => Boolean(value))
+    .filter((value) => !isNonCitationEvidenceArtifact(value))
     .filter((value) => value.length >= 35 && value.length <= 220)
     .filter((value) => !/^water\s*\/\s*aqua/i.test(value) && value.split(",").length <= 6)
     .filter((value) => ingredientNames.length === 0 || ingredientNames.some((ingredient) => value.toLowerCase().includes(ingredient.split(" ")[0] ?? ingredient)))
@@ -670,8 +733,8 @@ function formatFullIngredientStatement(value: string, locale: PdpGeoLocale): str
 }
 
 function normalizeIngredientDetail(value: string): string | undefined {
-  const text = value
-    .replace(/\s*-\s*/g, ": ")
+  const text = normalizePublicFactText(value)
+    .replace(/\s+-\s+/g, ": ")
     .replace(/\s*:\s*/g, ": ")
     .replace(/\s+/g, " ")
     .trim();
@@ -868,6 +931,9 @@ function isRepresentativeReviewPhrase(value: string): boolean {
   if (normalized.length < 8 || normalized.length > 220) {
     return false;
   }
+  if (isRatingSummaryText(normalized)) {
+    return false;
+  }
   if (/^(review|reviews|rating|ratings|star|stars|smooth|moisture|hydration|firmness|elasticity|plumpness)$/i.test(normalized)) {
     return false;
   }
@@ -883,7 +949,7 @@ function selectEvidenceSignal(product: PdpProductSignal, locale: PdpGeoLocale = 
     ? sourceBackedSentences[4] ?? sourceBackedSentences[3] ?? sourceBackedSentences[2] ?? sourceBackedSentences[1] ?? sourceBackedSentences[0]
     : sourceBackedSentences[0];
   const metric = first(product.metrics
-    .filter((metricValue) => !isUrlOrImageArtifact(metricValue))
+    .filter((metricValue) => !isNonCitationEvidenceArtifact(metricValue))
     .filter(isCitationEvidenceMetric)
     .filter((metricValue) => !isTerseDurationMetric(metricValue))
     .slice(0, 3));
@@ -1114,7 +1180,7 @@ function parseOcrEvidenceInsight(value: string, locale: PdpGeoLocale): OcrEviden
   if (!topic || !detail || topic.length > 60 || detail.length < 10 || detail.length > 420) {
     return undefined;
   }
-  if (isQuestionLikeText(topic) || isQuestionLikeText(detail) || isUrlOrImageArtifact(text) || isCommerceOrNavigationText(text)) {
+  if (isQuestionLikeText(topic) || isQuestionLikeText(detail) || isNonCitationEvidenceArtifact(text) || isCommerceOrNavigationText(text)) {
     return undefined;
   }
 
@@ -1417,7 +1483,7 @@ function extractClaimIngredientTerms(value: string): string[] {
 }
 
 function splitClaimSentences(value: string): string[] {
-  const text = stripSourceSectionLabel(value)
+  const text = normalizePublicFactText(stripSourceSectionLabel(value))
     .replace(/\r\n?/g, "\n")
     .split("\n")
     .map(cleanSignal)
@@ -1429,12 +1495,12 @@ function splitClaimSentences(value: string): string[] {
 }
 
 function normalizeSourceBackedClaimSentence(value: string): string | undefined {
-  const text = cleanSignal(value)
+  const text = normalizePublicFactText(value)
     .replace(/\s+/g, " ")
     .replace(/\s+([,.])/g, "$1")
     .trim();
 
-  if (text.length < 45 || text.length > 420 || hasTruncationMarker(text) || isQuestionLikeText(text) || isCommerceOrNavigationText(text)) {
+  if (text.length < 45 || text.length > 420 || hasTruncationMarker(text) || isQuestionLikeText(text) || isCommerceOrNavigationText(text) || isNonCitationEvidenceArtifact(text)) {
     return undefined;
   }
   if (/^(ingredients?|전성분)\s*:/i.test(text) || /^water\s*\/\s*aqua/i.test(text)) {
@@ -1448,7 +1514,7 @@ function normalizeSourceBackedClaimSentence(value: string): string | undefined {
   }
 
   const hasTechnology = /ingredient|formula|blend|technology|peptide|ginseng|retinol|niacinamide|hyaluronic|ceramide|zinc|dermaon|actives?|성분|원료|기술|포뮬러|펩타이드|인삼|레티놀|히알루론산|세라마이드|징크|캡슐/i.test(text);
-  const hasOutcome = /enhances?|helps?|supports?|improves?|diminish(?:es|ed)?|visible signs?|firmness|firmer|elasticity|resilience|wrinkles?|fine lines?|aging|texture|barrier|hydration|moisture|soothing|oil|sebum|radiance|탄력|주름|개선|피부결|보습|장벽|수분|속수분|피지|유분|흡수|지속|컨트롤|밸런스|민감|산뜻/i.test(text);
+  const hasOutcome = /enhances?|helps?|supports?|improves?|diminish(?:es|ed)?|visible signs?|firmness|firmer|elasticity|resilience|wrinkles?|fine lines?|aging|texture|barrier|hydration|hydrate|hydrated|moisture|soothing|oil|sebum|radiance|grime|cleanse|cleanses|cleansing|makeup residue|탄력|주름|개선|피부결|보습|장벽|수분|속수분|피지|유분|흡수|지속|컨트롤|밸런스|민감|산뜻/i.test(text);
 
   if (!hasTechnology || !hasOutcome) {
     return undefined;
@@ -1464,9 +1530,9 @@ function isCommerceOrNavigationText(value: string): boolean {
 function selectReportedDetails(product: PdpProductSignal, limit: number): string[] {
   const candidates = [
     ...product.effects,
-    ...product.metrics.filter((value) => !isUrlOrImageArtifact(value)),
+    ...product.metrics.filter((value) => !isNonCitationEvidenceArtifact(value)),
     ...product.benefits.filter(isReportedEvidenceCandidate),
-    ...product.sourceTexts.filter((value) => !isUrlOrImageArtifact(value)).filter(isReportedEvidenceCandidate).slice(0, 12)
+    ...product.sourceTexts.filter((value) => !isNonCitationEvidenceArtifact(value)).filter(isReportedEvidenceCandidate).slice(0, 12)
   ];
 
   return unique(candidates
@@ -1489,7 +1555,7 @@ function normalizeReportedDetail(value: string): string | undefined {
     .replace(/\s+/g, " ")
     .trim();
 
-  if (!text || isUrlOrImageArtifact(text) || hasTruncationMarker(text) || isQuestionLikeText(text) || !isReportedEvidenceCandidate(text)) {
+  if (!text || isNonCitationEvidenceArtifact(text) || hasTruncationMarker(text) || isQuestionLikeText(text) || !isReportedEvidenceCandidate(text)) {
     return undefined;
   }
 
@@ -1512,7 +1578,7 @@ function normalizeReportedDetail(value: string): string | undefined {
 }
 
 function isReportedEvidenceCandidate(value: string): boolean {
-  if (isUrlOrImageArtifact(value)) {
+  if (isNonCitationEvidenceArtifact(value)) {
     return false;
   }
   return /%|weeks?|days?|hours?|clinical|instrumental|study|users?|women|men|subjects?|participants?|agreed|showed|after\s+\d|self-assess|rating|reviews?/i.test(value);
@@ -1538,10 +1604,11 @@ function normalizeAgreedAssessmentDetail(text: string): string | undefined {
   const duration = text.match(/(\d+\s+weeks?)/i)?.[1];
   const sample = text.match(/\b(\d+\s+(?:women|men|users|subjects))\b/i)?.[1];
   const assessment = /self-assess/i.test(text) ? "self-assessment" : "assessment";
+  const assessmentArticle = /^[aeiou]/i.test(assessment) ? "an" : "a";
   const timing = duration ? ` after ${duration} of use` : "";
   const sampleContext = sample ? ` of ${sample}` : "";
 
-  return `In a ${assessment}${sampleContext}${timing}, ${formatDescriptionList(claims, "en-US", 4)}`;
+  return `In ${assessmentArticle} ${assessment}${sampleContext}${timing}, ${formatDescriptionList(claims, "en-US", 4)}`;
 }
 
 function cleanAssessmentClaim(value: string): string | undefined {
@@ -1592,7 +1659,7 @@ function isTerseDurationMetric(value: string): boolean {
 
 function extractBenefitSignalCandidates(value: string): string[] {
   const cleaned = stripSourceSectionLabel(value);
-  if (!cleaned) {
+  if (!cleaned || isNonCitationEvidenceArtifact(cleaned)) {
     return [];
   }
   if (/^anti[-\s]?aging moisturizing visibly firming$/i.test(cleaned)) {
@@ -1621,7 +1688,7 @@ function normalizeBenefitSignal(value: string): string | undefined {
     .replace(/\s*:\s*$/g, "")
     .replace(/\s+/g, " ")
     .trim();
-  if (!cleaned) {
+  if (!cleaned || isNonCitationEvidenceArtifact(cleaned)) {
     return undefined;
   }
   if (/^anti[-\s]?aging moisturizing visibly firming$/i.test(cleaned)) {
@@ -1717,6 +1784,9 @@ function isStandaloneBenefitCandidate(value: string): boolean {
   if (normalized.length < 3 || normalized.length > 90) {
     return false;
   }
+  if (normalized.split(/\s+/).length > 6) {
+    return false;
+  }
   if (/^(formulated|enriched|while|after|with|and|or|this|our|their|instrumental result)\b/i.test(normalized)) {
     return false;
   }
@@ -1733,11 +1803,12 @@ function isStandaloneBenefitCandidate(value: string): boolean {
 }
 
 function normalizeUsageInstruction(value: string): string {
-  return stripSourceSectionLabel(value)
+  const normalized = stripSourceSectionLabel(value)
     .replace(/\bStep\s+\d+\b\.?/gi, "")
     .replace(/^\d+\.\s*/, "")
     .replace(/\s+/g, " ")
     .trim();
+  return isNonCitationEvidenceArtifact(normalized) ? "" : normalized;
 }
 
 function stripSourceSectionLabel(value: string): string {
@@ -1776,7 +1847,27 @@ function sanitizeCategory(value?: string): string | undefined {
 }
 
 function inferProductType(product: PdpProductSignal): string | undefined {
-  return sanitizeCategory(product.category);
+  return sanitizeCategory(product.category) ?? productTypeFromName(product.name);
+}
+
+function productTypeFromName(value: string): string | undefined {
+  const name = cleanSignal(value);
+  if (/cleansing\s+foam|foam\s+cleanser|cleanser|cleaning\s+foam/i.test(name)) {
+    return "Cleanser";
+  }
+  if (/serum|ampoule|essence/i.test(name)) {
+    return "Serum";
+  }
+  if (/cream|moisturi[sz]er/i.test(name)) {
+    return "Cream";
+  }
+  if (/toner|skin water/i.test(name)) {
+    return "Toner";
+  }
+  if (/mask/i.test(name)) {
+    return "Mask";
+  }
+  return undefined;
 }
 
 function splitIngredientSignal(value: string): string[] {
@@ -1790,6 +1881,9 @@ function splitIngredientSignal(value: string): string[] {
 function normalizeIngredientSignal(value: string): string | undefined {
   const text = cleanSignal(value);
   if (!text || text.length < 3) {
+    return undefined;
+  }
+  if (isNonCitationEvidenceArtifact(text)) {
     return undefined;
   }
   if (/^(ingredients?|ingredient list|key ingredients|full ingredients|전성분|全成分)$/i.test(text)) {
@@ -1860,7 +1954,7 @@ function isUsefulBenefitSignal(value: string): boolean {
   if (normalized.length < 3 || normalized.length > 180) {
     return false;
   }
-  if (/^(review|rating|usage|ingredient|effect|benefit)$/i.test(normalized)) {
+  if (/^(reviews?|ratings?|usage|use|ingredients?|effects?|benefits?|positive notes?|key benefit|key benefits)$/i.test(normalized)) {
     return false;
   }
   return true;
@@ -1896,10 +1990,22 @@ function isMeaningfulReviewBody(value: string): boolean {
   if (normalized.length < 20) {
     return false;
   }
+  if (isRatingSummaryText(normalized)) {
+    return false;
+  }
   if (/^(review|rating|smooth|moisture|hydration|firmness|elasticity|plumpness)$/i.test(normalized)) {
     return false;
   }
   return normalized.split(/\s+/).length >= 4 || /[가-힣ぁ-んァ-ン]/.test(normalized);
+}
+
+function isRatingSummaryText(value: string): boolean {
+  const normalized = cleanSignal(value)
+    .replace(/\s*·\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return /^(?:rating|평점|評価)?\s*\d(?:\.\s*\d+)?\s*(?:\/\s*5)?\s*(?:stars?)?\s+\d[\d,]*\s+(?:reviews?|ratings?|리뷰|후기)$/i.test(normalized)
+    || /^(?:rating|평점|評価)\s+\d(?:\.\s*\d+)?\s*(?:\/\s*5)?$/i.test(normalized);
 }
 
 function cleanSignal(value: string): string {
@@ -1945,7 +2051,7 @@ function isBrokenMarketingFragment(value: string): boolean {
 
 function isUsefulPublicListValue(value: string): boolean {
   const text = cleanSignal(value);
-  if (!text || text.length > 280 || hasTruncationMarker(text) || isQuestionLikeText(text) || isBrokenMarketingFragment(text)) {
+  if (!text || text.length > 280 || hasTruncationMarker(text) || isQuestionLikeText(text) || isBrokenMarketingFragment(text) || isNonCitationEvidenceArtifact(text)) {
     return false;
   }
   if (/^(review|reviews|rating|ratings|star|stars|ingredient|ingredients|effect|benefit)$/i.test(text)) {
@@ -1956,10 +2062,14 @@ function isUsefulPublicListValue(value: string): boolean {
 
 function normalizePublicEvidenceText(value: string, locale: PdpGeoLocale): string | undefined {
   const text = sanitizeProductSchemaText(value, locale);
-  if (!text || isUrlOrImageArtifact(text) || hasTruncationMarker(text) || isQuestionLikeText(text) || isBrokenMarketingFragment(text)) {
+  if (!text || isNonCitationEvidenceArtifact(text) || hasTruncationMarker(text) || isQuestionLikeText(text) || isBrokenMarketingFragment(text)) {
     return undefined;
   }
   return text;
+}
+
+function isNonCitationEvidenceArtifact(value: string): boolean {
+  return isUrlOrImageArtifact(value) || isVisualDescriptionArtifact(value);
 }
 
 function isUrlOrImageArtifact(value: string): boolean {
@@ -1971,6 +2081,21 @@ function isUrlOrImageArtifact(value: string): boolean {
   return /https?:\/\/|www\.|data:image\//i.test(normalized)
     || /\.(?:jpe?g|png|webp|gif|avif|svg)(?:\?|$)/i.test(normalized)
     || /fileupload\/reviews/i.test(normalized);
+}
+
+function isVisualDescriptionArtifact(value: string): boolean {
+  const text = cleanSignal(value);
+  if (!text) {
+    return false;
+  }
+
+  const visualMarker = /\b(?:product\s+shot|pack\s*shot|model|person\s+applying|applying\s+(?:a\s+)?(?:skincare\s+)?product|face\s+shot|thumbnail|hero\s+image|lifestyle\s+image|image|photo|bottle|tube|jar|package|packaging|facial\s+cleanser)\b/i;
+  if (!visualMarker.test(text)) {
+    return false;
+  }
+
+  const citationReadyFact = /(?:\d+(?:\.\d+)?%|after\s+\d|clinical|study|participants?|agreed|showed|ingredients?|formula|technology|how\s+to\s+use|directions?|apply|massage|rinse|water\s*\/\s*aqua|glycerin|niacinamide|retinol|peptide|ceramide|hyaluronic|extract|성분|전성분|사용법|효과|개선|수분|보습|장벽|탄력|피지|주름)/i;
+  return !citationReadyFact.test(text);
 }
 
 function createQuickFacts(
@@ -2618,7 +2743,7 @@ function createSchemaMarkup(input: {
   const webpageId = `${baseId}#webpage`;
   const usageInstructions = input.optimizedUsageSteps.length > 0 ? input.optimizedUsageSteps : selectUsageInstructions(input.product);
   const reviewItems = selectReviewItems(input.product, input.locale);
-  const rawCategory = sanitizeCategory(input.product.category) ?? inferProductType(input.product);
+  const rawCategory = sanitizeCategory(input.product.category);
   const category = rawCategory ? localizeProductTypeForLocale(rawCategory, input.locale) : undefined;
   const graph: Array<Record<string, unknown>> = [];
 
@@ -2830,7 +2955,7 @@ function createKoreanReviewUseFeelProperty(product: PdpProductSignal): string | 
 }
 
 function sanitizeProductSchemaText(value: string, locale: PdpGeoLocale): string {
-  return value
+  return normalizePublicFactText(value)
     .replace(/\\[rn]/g, " ")
     .replace(/\s+/g, " ")
     .replace(/\bAGREED\b/g, "agreed")
@@ -2842,8 +2967,27 @@ function sanitizeProductSchemaText(value: string, locale: PdpGeoLocale): string 
     .trim();
 }
 
+function normalizeFormulaDetailText(value: string): string {
+  return trimTrailingSentencePunctuation(normalizePublicFactText(value)
+    .replace(/\s+and\s+(?=(?:Sulwhasoo|[A-Z][A-Za-z]+(?:’s|'s)?\s+proprietary)\b)/g, ". ")
+    .replace(/\.\s+and\s+/g, ". ")
+    .replace(/\s+/g, " ")
+    .trim());
+}
+
+function normalizePublicFactText(value: string): string {
+  return cleanSignal(value)
+    .replace(/\\[rn]/g, " ")
+    .replace(/:([^\s])/g, ": $1")
+    .replace(/([a-z])(?=(?:Mulberry|Mountain|Sulwhasoo|Korean|Ginseng|Retinol|Niacinamide|Ceramide|Hyaluronic|Panax|Water|Aqua)\b)/g, "$1. ")
+    .replace(/([.!?。！？])(?=\S)/g, "$1 ")
+    .replace(/\s+([,.!?。！？])/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function isUsefulSchemaPropertyValue(name: string, value: string): boolean {
-  if (!value || isUrlOrImageArtifact(value) || hasTruncationMarker(value) || isQuestionLikeText(value) || isBrokenMarketingFragment(value)) {
+  if (!value || isNonCitationEvidenceArtifact(value) || hasTruncationMarker(value) || isQuestionLikeText(value) || isBrokenMarketingFragment(value)) {
     return false;
   }
   if (name === "Key ingredients") {
@@ -2853,7 +2997,7 @@ function isUsefulSchemaPropertyValue(name: string, value: string): boolean {
     });
   }
   if (name === "Reported details") {
-    return !isQuestionLikeText(value) && !isUrlOrImageArtifact(value);
+    return !isQuestionLikeText(value) && !isNonCitationEvidenceArtifact(value);
   }
   return true;
 }
@@ -2877,7 +3021,7 @@ function createPositiveNotes(product: PdpProductSignal, locale: PdpGeoLocale): J
   };
 }
 
-function createAccordionHtml(sections: PdpGeoContentSections, locale: PdpGeoLocale): string {
+export function createPdpGeoContentHtml(sections: PdpGeoContentSections, locale: PdpGeoLocale): string {
   const labels = sectionLabels(locale);
   const entries: Array<[keyof PdpGeoContentSections, string]> = [
     ["productName", sections.productName],
@@ -3014,43 +3158,28 @@ function selectedOfficialDocSources(chunks: PdpGeoRetrievedChunk[]): string[] {
 
 function createGeoOptimizationGuidance(
   chunks: PdpGeoRetrievedChunk[],
-  documents: Array<{ name: string; content: string }>
+  reasoning: PdpGeoReasoningResult
 ): GeoOptimizationGuidance {
-  const selected = chunks.map((chunk) => ({
-    source: chunk.source,
-    text: `${chunk.source}\n${chunk.title ?? ""}\n${chunk.text}`
-  }));
-  const policyDocuments = documents
-    .filter((document) => /analysis|best|geo|eeat|e-e-a-t|cep|locale|schema/i.test(document.name))
-    .slice(0, 6)
-    .map((document) => ({
-      source: document.name,
-      text: `${document.name}\n${document.content.slice(0, 2400)}`
-    }));
-  const guidanceText = [...selected, ...policyDocuments].map((item) => item.text).join("\n\n").toLowerCase();
-  const sources = unique([...selected, ...policyDocuments].map((item) => item.source)).slice(0, 8);
-  const useAnswerReadyFaq = /faq|question|answer|질문|답변|mainentity|answer-ready|search language|easy to synthesize|citation|cite|quotable/.test(guidanceText);
-  const useStepwiseUsage = /howto|how to|usage|routine fit|사용|使い方|step|routine|directions?/.test(guidanceText);
-  const useEvidenceBackedClaims = /evidence|ground|review|rating|source facts|do not invent|근거|리뷰|trust|e-e-a-t|eeat/.test(guidanceText);
-  const useTargetCustomerContext = /target customer|customer|category-entry|cep|use occasion|target concern|고객|사용 루틴|discovery/.test(guidanceText);
-  const useReviewIntentFaq = /review|customer voice|customer language|repeated customer|사용감|리뷰|후기|rating|satisfaction/.test(guidanceText);
-  const principles = [
-    useAnswerReadyFaq ? "answer-ready FAQ" : undefined,
-    useStepwiseUsage ? "stepwise HowTo" : undefined,
-    useEvidenceBackedClaims ? "evidence-backed claims" : undefined,
-    useTargetCustomerContext ? "target customer context" : undefined,
-    useReviewIntentFaq ? "review-intent FAQ" : undefined
-  ].filter((value): value is string => Boolean(value));
+  const sources = unique([
+    ...reasoning.selectedSources,
+    ...chunks.map(formatRagSource)
+  ]).slice(0, 8);
+  const principles = reasoning.principles;
 
   return {
     sources,
+    reasoning,
     principles,
-    useAnswerReadyFaq: useAnswerReadyFaq || chunks.length > 0,
-    useStepwiseUsage: useStepwiseUsage || chunks.length > 0,
-    useEvidenceBackedClaims: useEvidenceBackedClaims || chunks.length > 0,
-    useTargetCustomerContext: useTargetCustomerContext || chunks.length > 0,
-    useReviewIntentFaq: useReviewIntentFaq || chunks.length > 0
+    useAnswerReadyFaq: isPdpGeoReasoningEnabled(reasoning, "answer-ready FAQ"),
+    useStepwiseUsage: isPdpGeoReasoningEnabled(reasoning, "stepwise HowTo"),
+    useEvidenceBackedClaims: isPdpGeoReasoningEnabled(reasoning, "evidence-backed claims"),
+    useTargetCustomerContext: isPdpGeoReasoningEnabled(reasoning, "target customer context"),
+    useReviewIntentFaq: isPdpGeoReasoningEnabled(reasoning, "review-intent FAQ")
   };
+}
+
+function formatRagSource(chunk: Pick<PdpGeoRetrievedChunk, "source" | "title">): string {
+  return chunk.title ? `${chunk.source}#${chunk.title}` : chunk.source;
 }
 
 function readTerminologyConcepts(documents: Array<{ name: string; content: string }>): TerminologyConcept[] {
@@ -3199,6 +3328,10 @@ function ensurePublicSentence(value: string, locale: PdpGeoLocale): string {
 
 function lowercaseSentenceStart(value: string): string {
   return value.charAt(0).toLowerCase() + value.slice(1);
+}
+
+function indefiniteArticle(value: string): "a" | "an" {
+  return /^[aeiou]/i.test(value.trim()) ? "an" : "a";
 }
 
 function fallback(locale: PdpGeoLocale, values: Record<PdpGeoLocale, string>): string {

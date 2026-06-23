@@ -30,7 +30,29 @@ interface GeoGeneratorRequest {
     model?: string;
     endpoint?: string;
     deployment?: string;
+    deployments?: {
+      ocr?: string;
+      reasoning?: string;
+      embedding?: string;
+    };
     apiVersion?: string;
+    embedding?: {
+      provider?: "local" | "azure-openai";
+      apiKey?: string;
+      endpoint?: string;
+      deployment?: string;
+      apiVersion?: string;
+      model?: string;
+    };
+    reranker?: {
+      provider?: "local-hybrid" | "cohere" | "azure-ai-search-semantic";
+      apiKey?: string;
+      endpoint?: string;
+      model?: string;
+      indexName?: string;
+      semanticConfiguration?: string;
+      queryLanguage?: string;
+    };
   };
   rag?: PdpGeoGenerationInput["rag"];
   extractorRag?: {
@@ -59,6 +81,7 @@ interface GeoGeneratorLog {
 }
 
 const provider = (process.env.AGENTIC_GEO_PROVIDER ?? "mock") as Provider;
+const rerankerProvider = (process.env.AGENTIC_GEO_RERANKER_PROVIDER as "cohere" | "azure-ai-search-semantic" | "local-hybrid" | undefined) ?? "cohere";
 
 export async function POST(request: Request): Promise<Response> {
   try {
@@ -92,8 +115,29 @@ export async function POST(request: Request): Promise<Response> {
             apiKey: body.llm?.apiKey ?? process.env.OPENAI_API_KEY ?? process.env.GEMINI_API_KEY ?? process.env.AZURE_OPENAI_API_KEY,
             model: body.llm?.model ?? process.env.OPENAI_MODEL ?? process.env.GEMINI_MODEL,
             endpoint: body.llm?.endpoint ?? process.env.AZURE_OPENAI_ENDPOINT,
-            deployment: body.llm?.deployment ?? process.env.AZURE_OPENAI_DEPLOYMENT,
+            deployment: body.llm?.deployments?.reasoning ?? body.llm?.deployment ?? process.env.AZURE_OPENAI_REASONING_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
+            deployments: body.llm?.deployments ?? {
+              ocr: process.env.AZURE_OPENAI_OCR_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
+              reasoning: process.env.AZURE_OPENAI_REASONING_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
+              embedding: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT
+            },
             apiVersion: body.llm?.apiVersion ?? process.env.AZURE_OPENAI_API_VERSION,
+            embedding: body.llm?.embedding ?? {
+              provider: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT ? "azure-openai" : "local",
+              apiKey: process.env.AZURE_OPENAI_API_KEY,
+              endpoint: process.env.AZURE_OPENAI_ENDPOINT,
+              deployment: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT,
+              apiVersion: process.env.AZURE_OPENAI_API_VERSION
+            },
+            reranker: body.llm?.reranker ?? {
+              provider: rerankerProvider,
+              apiKey: rerankerProvider === "azure-ai-search-semantic" ? process.env.AZURE_AI_SEARCH_API_KEY : process.env.AZURE_COHERE_RERANK_API_KEY,
+              endpoint: rerankerProvider === "azure-ai-search-semantic" ? process.env.AZURE_AI_SEARCH_ENDPOINT : process.env.AZURE_COHERE_RERANK_ENDPOINT,
+              model: rerankerProvider === "cohere" ? process.env.AZURE_COHERE_RERANK_MODEL : undefined,
+              indexName: process.env.AZURE_AI_SEARCH_INDEX_NAME,
+              semanticConfiguration: process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION,
+              queryLanguage: process.env.AZURE_AI_SEARCH_QUERY_LANGUAGE
+            },
             analysisPrompt: generatorRagProfile?.analysisPrompt,
             ragDocuments: generatorRagProfile?.documents.map((document) => ({
               name: document.name,
@@ -138,8 +182,29 @@ export async function POST(request: Request): Promise<Response> {
             apiKey: body.llm?.apiKey ?? process.env.OPENAI_API_KEY ?? process.env.GEMINI_API_KEY ?? process.env.AZURE_OPENAI_API_KEY,
             model: body.llm?.model ?? process.env.OPENAI_MODEL ?? process.env.GEMINI_MODEL,
             endpoint: body.llm?.endpoint ?? process.env.AZURE_OPENAI_ENDPOINT,
-            deployment: body.llm?.deployment ?? process.env.AZURE_OPENAI_DEPLOYMENT,
+            deployment: body.llm?.deployments?.reasoning ?? body.llm?.deployment ?? process.env.AZURE_OPENAI_REASONING_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
+            deployments: body.llm?.deployments ?? {
+              ocr: process.env.AZURE_OPENAI_OCR_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
+              reasoning: process.env.AZURE_OPENAI_REASONING_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
+              embedding: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT
+            },
             apiVersion: body.llm?.apiVersion ?? process.env.AZURE_OPENAI_API_VERSION,
+            embedding: body.llm?.embedding ?? {
+              provider: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT ? "azure-openai" : "local",
+              apiKey: process.env.AZURE_OPENAI_API_KEY,
+              endpoint: process.env.AZURE_OPENAI_ENDPOINT,
+              deployment: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT,
+              apiVersion: process.env.AZURE_OPENAI_API_VERSION
+            },
+            reranker: body.llm?.reranker ?? {
+              provider: rerankerProvider,
+              apiKey: rerankerProvider === "azure-ai-search-semantic" ? process.env.AZURE_AI_SEARCH_API_KEY : process.env.AZURE_COHERE_RERANK_API_KEY,
+              endpoint: rerankerProvider === "azure-ai-search-semantic" ? process.env.AZURE_AI_SEARCH_ENDPOINT : process.env.AZURE_COHERE_RERANK_ENDPOINT,
+              model: rerankerProvider === "cohere" ? process.env.AZURE_COHERE_RERANK_MODEL : undefined,
+              indexName: process.env.AZURE_AI_SEARCH_INDEX_NAME,
+              semanticConfiguration: process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION,
+              queryLanguage: process.env.AZURE_AI_SEARCH_QUERY_LANGUAGE
+            },
             analysisPrompt: body.extractorRag?.analysisPrompt ?? extractorRagProfile?.analysisPrompt,
             ragDocuments: (body.extractorRag?.documents ?? extractorRagProfile?.documents ?? []).map((document) => ({
               name: document.name,
@@ -163,8 +228,29 @@ export async function POST(request: Request): Promise<Response> {
             apiKey: body.llm?.apiKey ?? process.env.OPENAI_API_KEY ?? process.env.GEMINI_API_KEY ?? process.env.AZURE_OPENAI_API_KEY,
             model: body.llm?.model ?? process.env.OPENAI_MODEL ?? process.env.GEMINI_MODEL,
             endpoint: body.llm?.endpoint ?? process.env.AZURE_OPENAI_ENDPOINT,
-            deployment: body.llm?.deployment ?? process.env.AZURE_OPENAI_DEPLOYMENT,
+            deployment: body.llm?.deployments?.reasoning ?? body.llm?.deployment ?? process.env.AZURE_OPENAI_REASONING_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
+            deployments: body.llm?.deployments ?? {
+              ocr: process.env.AZURE_OPENAI_OCR_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
+              reasoning: process.env.AZURE_OPENAI_REASONING_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
+              embedding: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT
+            },
             apiVersion: body.llm?.apiVersion ?? process.env.AZURE_OPENAI_API_VERSION,
+            embedding: body.llm?.embedding ?? {
+              provider: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT ? "azure-openai" : "local",
+              apiKey: process.env.AZURE_OPENAI_API_KEY,
+              endpoint: process.env.AZURE_OPENAI_ENDPOINT,
+              deployment: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT,
+              apiVersion: process.env.AZURE_OPENAI_API_VERSION
+            },
+            reranker: body.llm?.reranker ?? {
+              provider: rerankerProvider,
+              apiKey: rerankerProvider === "azure-ai-search-semantic" ? process.env.AZURE_AI_SEARCH_API_KEY : process.env.AZURE_COHERE_RERANK_API_KEY,
+              endpoint: rerankerProvider === "azure-ai-search-semantic" ? process.env.AZURE_AI_SEARCH_ENDPOINT : process.env.AZURE_COHERE_RERANK_ENDPOINT,
+              model: rerankerProvider === "cohere" ? process.env.AZURE_COHERE_RERANK_MODEL : undefined,
+              indexName: process.env.AZURE_AI_SEARCH_INDEX_NAME,
+              semanticConfiguration: process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION,
+              queryLanguage: process.env.AZURE_AI_SEARCH_QUERY_LANGUAGE
+            },
             analysisPrompt: generatorRagProfile?.analysisPrompt,
             ragDocuments: generatorRagProfile?.documents.map((document) => ({
               name: document.name,

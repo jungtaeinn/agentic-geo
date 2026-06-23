@@ -76,6 +76,10 @@ export interface PdpGeoRagSettings {
   scoreThreshold?: number;
   rewriteQuery?: boolean;
   managedSearchEndpoint?: string;
+  resolveUrls?: boolean;
+  maxResolvedUrlDocuments?: number;
+  urlFetchTimeoutMs?: number;
+  allowedUrlDomains?: string[];
   documents?: Array<{
     name: string;
     content: string;
@@ -100,7 +104,29 @@ export interface PdpGeoGeneratorOptions {
   model?: string;
   endpoint?: string;
   deployment?: string;
+  deployments?: {
+    ocr?: string;
+    reasoning?: string;
+    embedding?: string;
+  };
   apiVersion?: string;
+  embedding?: {
+    provider?: "local" | "azure-openai";
+    apiKey?: string;
+    endpoint?: string;
+    deployment?: string;
+    apiVersion?: string;
+    model?: string;
+  };
+  reranker?: {
+    provider?: "local-hybrid" | "cohere" | "azure-ai-search-semantic";
+    apiKey?: string;
+    endpoint?: string;
+    model?: string;
+    indexName?: string;
+    semanticConfiguration?: string;
+    queryLanguage?: string;
+  };
   analysisPrompt?: string;
   ragDocuments?: Array<{
     name: string;
@@ -110,8 +136,12 @@ export interface PdpGeoGeneratorOptions {
   rag?: PdpGeoRagSettings;
   onProgress?: (step: PdpGeoGenerationStep) => void;
   customRetriever?: PdpGeoRetriever;
+  customReasoner?: PdpGeoReasoner;
+  customUrlResolver?: PdpGeoRagUrlResolver;
   keywordNormalization?: PdpGeoKeywordNormalizationSettings;
   customKeywordNormalizer?: PdpGeoKeywordNormalizer;
+  copyRefinement?: PdpGeoCopyRefinementSettings;
+  customCopyRefiner?: PdpGeoCopyRefiner;
 }
 
 export interface PdpGeoFaqItem {
@@ -161,12 +191,28 @@ export interface PdpProductSignal {
   sourceTexts: string[];
 }
 
+export type PdpGeoRagKind = "schema" | "eeat" | "cep" | "best-practice" | "geo-research" | "official-docs" | "locale" | "terminology" | "product" | "custom";
+export type PdpGeoRagIntent = "faq" | "howTo" | "claims" | "customer" | "review" | "schema" | "locale" | "evidence" | "retrieval" | "general";
+export type PdpGeoRagFieldTarget =
+  | "WebPage.description"
+  | "Product.description"
+  | "Product.additionalProperty"
+  | "Product.positiveNotes"
+  | "FAQPage.mainEntity"
+  | "HowTo.step"
+  | "BreadcrumbList"
+  | "PDP.content"
+  | "diagnostics"
+  | "retrieval";
+
 export interface PdpGeoRagChunk {
   id: string;
   source: string;
   title?: string;
   text: string;
-  kind: "schema" | "eeat" | "cep" | "best-practice" | "geo-paper" | "official-docs" | "locale" | "terminology" | "product" | "custom";
+  kind: PdpGeoRagKind;
+  intents?: PdpGeoRagIntent[];
+  fieldTargets?: PdpGeoRagFieldTarget[];
   metadata: Record<string, string | number | boolean>;
   score?: number;
 }
@@ -192,6 +238,88 @@ export interface PdpGeoRetriever {
   retrieve(request: PdpGeoRetrieverRequest): Promise<PdpGeoRetrievedChunk[]>;
 }
 
+export interface PdpGeoRagUrlResolverRequest {
+  url: string;
+  sourceDocumentName: string;
+  sourceDocumentVersion?: string;
+}
+
+export interface PdpGeoRagUrlResolvedDocument {
+  url: string;
+  title?: string;
+  content: string;
+  contentType?: string;
+}
+
+export interface PdpGeoRagUrlResolver {
+  resolve(request: PdpGeoRagUrlResolverRequest): Promise<PdpGeoRagUrlResolvedDocument | undefined>;
+}
+
+export type PdpGeoReasoningPrinciple =
+  | "answer-ready FAQ"
+  | "stepwise HowTo"
+  | "evidence-backed claims"
+  | "target customer context"
+  | "review-intent FAQ";
+
+export interface PdpGeoReasoningDecision {
+  principle: PdpGeoReasoningPrinciple;
+  enabled: boolean;
+  confidence: number;
+  ragSources: string[];
+  productEvidence: string[];
+  rationale: string;
+}
+
+export interface PdpGeoReasoningResult {
+  mode: "explicit-rag-product-reasoning";
+  queryIntents: string[];
+  selectedSources: string[];
+  productEvidence: {
+    benefits: string[];
+    effects: string[];
+    ingredients: string[];
+    usage: string[];
+    reviews: string[];
+    faq: string[];
+    sourceBackedClaims: string[];
+  };
+  decisions: PdpGeoReasoningDecision[];
+  principles: PdpGeoReasoningPrinciple[];
+}
+
+export interface PdpGeoReasonerRequest {
+  product: PdpProductSignal;
+  locale: PdpGeoLocale;
+  market?: string;
+  ragChunks: PdpGeoRetrievedChunk[];
+}
+
+export interface PdpGeoReasoner {
+  reason(request: PdpGeoReasonerRequest): Promise<PdpGeoReasoningResult> | PdpGeoReasoningResult;
+}
+
+export interface PdpGeoRagUsageReference {
+  source: string;
+  title?: string;
+  kind: PdpGeoRagKind;
+  intents: PdpGeoRagIntent[];
+  fieldTargets: PdpGeoRagFieldTarget[];
+  score: number;
+  usage: string;
+  excerpt: string;
+}
+
+export interface PdpGeoRagUsageDiagnostic {
+  principle: PdpGeoReasoningPrinciple;
+  enabled: boolean;
+  confidence: number;
+  rationale: string;
+  ragSources: string[];
+  productEvidenceCount: number;
+  references: PdpGeoRagUsageReference[];
+}
+
 export interface PdpGeoKeywordNormalizationRequest {
   productName: string;
   locale: PdpGeoLocale;
@@ -214,6 +342,7 @@ export interface PdpGeoKeywordNormalizationResult {
   corrections: PdpGeoKeywordCorrection[];
   warnings?: string[];
   rawText?: string;
+  usage?: PdpGeoTokenUsage;
 }
 
 export interface PdpGeoKeywordNormalizer {
@@ -230,6 +359,41 @@ export interface PdpGeoKeywordNormalizationSettings {
   apiVersion?: string;
   confidenceThreshold?: number;
   maxKeywords?: number;
+}
+
+export interface PdpGeoCopyRefinementRequest {
+  product: PdpProductSignal;
+  locale: PdpGeoLocale;
+  market?: string;
+  schemaMarkup: PdpGeoSchemaMarkup;
+  content: PdpGeoContentArtifact;
+  ragChunks: PdpGeoRetrievedChunk[];
+  reasoning?: PdpGeoReasoningResult;
+}
+
+export interface PdpGeoCopyRefinementResult {
+  schemaDescriptions?: {
+    webPage?: string;
+    product?: string;
+  };
+  contentSections?: Partial<Pick<PdpGeoContentSections, "description">>;
+  warnings?: string[];
+  rawText?: string;
+  usage?: PdpGeoTokenUsage;
+}
+
+export interface PdpGeoCopyRefiner {
+  refineCopy(request: PdpGeoCopyRefinementRequest): Promise<PdpGeoCopyRefinementResult> | PdpGeoCopyRefinementResult;
+}
+
+export interface PdpGeoCopyRefinementSettings {
+  enabled?: boolean;
+  provider?: PdpGeoProviderId;
+  apiKey?: string;
+  model?: string;
+  endpoint?: string;
+  deployment?: string;
+  apiVersion?: string;
 }
 
 export interface PdpGeoContentSections {
@@ -264,10 +428,46 @@ export interface PdpGeoEvidence {
   value: string;
 }
 
+export interface PdpGeoValidationRepair {
+  field: string;
+  source: "schema-validator" | "html-validator" | "sentence-qa";
+  issue: string;
+  action: string;
+  before?: JsonValue;
+  after?: JsonValue;
+  evidence?: string[];
+}
+
+export interface PdpGeoTokenUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+}
+
+export interface PdpGeoRuntimePipelineStep {
+  stage: "chunking" | "embedding" | "retrieval" | "reranking" | "ocr" | "final";
+  label: string;
+  provider?: string;
+  service?: string;
+  model?: string;
+  deployment?: string;
+  mode?: string;
+  called: boolean;
+  tokenUsage?: PdpGeoTokenUsage;
+  details?: string;
+}
+
+export interface PdpGeoRuntimeUsage {
+  steps: PdpGeoRuntimePipelineStep[];
+  tokenTotals: PdpGeoTokenUsage;
+  tokenNote?: string;
+}
+
 export type PdpGeoOcrSentenceIntent = "benefit" | "effect" | "ingredient" | "usage" | "review";
 
 export interface PdpGeoOcrSentenceDiagnostic {
   text: string;
+  imageUrls?: string[];
   intents: PdpGeoOcrSentenceIntent[];
   schemaFields: string[];
   geoUse: string;
@@ -295,8 +495,12 @@ export interface PdpGeoDiagnostics {
   recommendations: PdpGeoRecommendation[];
   evidence: PdpGeoEvidence[];
   selectedRagChunks: PdpGeoRetrievedChunk[];
+  reasoning?: PdpGeoReasoningResult;
+  ragUsage: PdpGeoRagUsageDiagnostic[];
+  runtimeUsage?: PdpGeoRuntimeUsage;
   terminology: PdpGeoTerminologyDiagnostics;
   validationWarnings: string[];
+  validationRepairs?: PdpGeoValidationRepair[];
   ragMode: PdpGeoRagMode;
   generatedAt: string;
 }
@@ -369,6 +573,10 @@ export const PdpGeoGenerationInputSchema = z.object({
     scoreThreshold: z.number().min(0).max(1).optional(),
     rewriteQuery: z.boolean().optional(),
     managedSearchEndpoint: z.string().optional(),
+    resolveUrls: z.boolean().optional(),
+    maxResolvedUrlDocuments: z.number().int().positive().optional(),
+    urlFetchTimeoutMs: z.number().int().positive().optional(),
+    allowedUrlDomains: z.array(z.string()).optional(),
     documents: z.array(z.object({
       name: z.string(),
       content: z.string(),

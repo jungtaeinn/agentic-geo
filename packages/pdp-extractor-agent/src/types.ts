@@ -154,6 +154,33 @@ export interface GeoRagChunk {
   text: string;
 }
 
+/** Provider token usage when a model API returns usage metadata. */
+export interface AiTokenUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+}
+
+/** Runtime model/search step audit shown in diagnostics. */
+export interface RuntimePipelineStep {
+  stage: "ocr" | "embedding" | "retrieval" | "reranking" | "final";
+  label: string;
+  provider?: string;
+  service?: string;
+  model?: string;
+  deployment?: string;
+  mode?: string;
+  called: boolean;
+  tokenUsage?: AiTokenUsage;
+  details?: string;
+}
+
+export interface RuntimePipelineUsage {
+  steps: RuntimePipelineStep[];
+  tokenTotals: AiTokenUsage;
+  tokenNote?: string;
+}
+
 /** Product-centered raw data prepared for downstream GEO schema/content agents. */
 export interface GeoProductRawData {
   name: string;
@@ -271,6 +298,7 @@ export interface ProductExtractionDiagnostics {
   process: ProductExtractionStep[];
   evidence: ExtractionEvidence[];
   warnings: AgentWarning[];
+  runtimeUsage?: RuntimePipelineUsage;
   generatedAt: string;
   ragProfile: string;
 }

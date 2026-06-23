@@ -7,7 +7,7 @@ export const pdpGeoGeneratorRagManifest = {
     eeat: "eeat_v1.md",
     cep: "cep_v1.md",
     bestPractice: "best-practice_v1.md",
-    geoPaper: "geo-paper_v1.md",
+    geoResearch: "geo-research_v1.md",
     officialAiSearchPlatformDocs: "official-ai-search-platform-docs_v1.md",
     localeExpressionGuidelines: "locale-expression-guidelines_v1.md",
     localeTerminologyMap: "locale-terminology-map_v1.json"

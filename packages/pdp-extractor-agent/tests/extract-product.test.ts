@@ -99,7 +99,7 @@ describe("extractProductFromHtml", () => {
     expect(result.geoProduct.ingredients.some((text) => text.includes("PANAX GINSENG ROOT EXTRACT"))).toBe(true);
   });
 
-  it("normalizes product, review, OCR, and RAG data from PDP HTML", async () => {
+  it("normalizes product, review, HTML sections, OCR, and RAG data from PDP HTML", async () => {
     const { result, diagnostics } = await extractProductFromHtml(html, "https://example.com/products/hydra");
 
     expect(result.geoProduct.name).toBe("Hydra Barrier Cream");
@@ -109,21 +109,84 @@ describe("extractProductFromHtml", () => {
     expect(result.geoProduct.rag.chunks.some((chunk) => chunk.kind === "ocr")).toBe(true);
     expect(diagnostics.evidence.some((item) => item.field === "page.obstructionsRemoved")).toBe(true);
     expect(diagnostics.evidence.some((item) => item.field === "page.scrollSections")).toBe(true);
-    expect(result.geoProduct.ocr.textBlocks.length).toBeGreaterThan(1);
-    expect(result.geoProduct.ocr.textBlocks.some((text) => text.includes("After 6 weeks"))).toBe(true);
+    expect(result.geoProduct.ocr.textBlocks.length).toBeGreaterThan(0);
+    expect(result.geoProduct.sourceExtraction.html.sections.some((section) => section.text.includes("After 6 weeks"))).toBe(true);
+    expect(result.geoProduct.ocr.textBlocks.some((text) => text.includes("After 6 weeks"))).toBe(false);
     expect(result.geoProduct.metrics.some((metric) => metric.includes("6 weeks"))).toBe(true);
     expect(result.geoProduct.benefits.some((text) => text.includes("rejuvenating abilities"))).toBe(true);
     expect(result.geoProduct.ingredients.some((text) => text.includes("KOREAN GINSENG ACTIVES"))).toBe(true);
     expect(result.geoProduct.ingredients.some((text) => text.includes("PANAX GINSENG ROOT EXTRACT"))).toBe(true);
     expect(result.geoProduct.usage.some((text) => text.includes("Apply two pumps"))).toBe(true);
-    expect(result.geoProduct.rag.chunks.some((chunk) => chunk.kind === "ocr" && chunk.text.includes("Korean Ginseng"))).toBe(true);
+    expect(result.geoProduct.rag.chunks.some((chunk) => chunk.kind === "source" && chunk.text.includes("Korean Ginseng"))).toBe(true);
     expect(JSON.stringify(result)).not.toContain("confidence");
     expect(result.geoProduct.sourceExtraction.ocr.imageTexts.some((item) => item.imageUrl.includes("detail.jpg"))).toBe(true);
-    expect(result.geoProduct.aiAnalysis.keywords.ingredient).toContain("GINSENG");
+    expect(result.geoProduct.aiAnalysis.keywords.ingredient.some((keyword) => keyword.toLowerCase() === "ginseng")).toBe(true);
     expect(result.geoProduct.categorizedProductInfo.ingredients.some((text) => text.includes("PANAX GINSENG ROOT EXTRACT"))).toBe(true);
     expect(result.geoProduct.customerReviewAnalysis.rating).toBe(4.8);
     expect(diagnostics.process.map((step) => step.id)).toEqual(["input", "fetch", "extract", "ocr", "review", "rag", "json"]);
     expect(diagnostics.process.find((step) => step.id === "json")?.status).toBe("done");
+  });
+
+  it("keeps HTML ingredient lists out of OCR sentence diagnostics", async () => {
+    const ingredientList = [
+      "WATER / AQUA / EAU",
+      "POTASSIUM COCOYL GLYCINATE",
+      "DISODIUM COCOAMPHODIACETATE",
+      "COCAMIDOPROPYL BETAINE",
+      "ACRYLATES/BEHENETH-25 METHACRYLATE COPOLYMER",
+      "PEG-200 HYDROGENATED GLYCERYL PALMATE",
+      "SODIUM CHLORIDE",
+      "PENTYLENE GLYCOL",
+      "1,2-HEXANEDIOL",
+      "SODIUM METHYL COCOYL TAURATE",
+      "CAPRYLYL/CAPRYL GLUCOSIDE",
+      "PEG-7 GLYCERYL COCOATE",
+      "FRAGRANCE / PARFUM",
+      "ISOSTEARIC ACID",
+      "POTASSIUM HYDROXIDE",
+      "BUTYLENE GLYCOL",
+      "LIMONENE",
+      "DISODIUM EDTA",
+      "ETHYLHEXYLGLYCERIN",
+      "SODIUM BENZOATE",
+      "TETRASODIUM EDTA",
+      "COIX LACRYMA-JOBI MA-YUEN SEED EXTRACT",
+      "CITRUS UNSHIU PEEL EXTRACT"
+    ].join(", ");
+    const ingredientHtml = `
+      <main>
+        <h1>Gentle Cleansing Foam</h1>
+        <section class="ingredients">
+          <h2>Ingredients</h2>
+          <p>${ingredientList}</p>
+        </section>
+      </main>
+    `;
+
+    const { result } = await extractProductFromHtml(ingredientHtml, "https://example.com/products/gentle-cleansing-foam");
+
+    expect(result.geoProduct.ingredients.some((text) => text.includes("CITRUS UNSHIU PEEL EXTRACT"))).toBe(true);
+    expect(result.geoProduct.sourceExtraction.html.sections.some((section) => section.text.includes("CITRUS UNSHIU PEEL EXTRACT"))).toBe(true);
+    expect(result.geoProduct.rag.chunks.some((chunk) => chunk.kind === "source" && chunk.text.includes("CITRUS UNSHIU PEEL EXTRACT"))).toBe(true);
+    expect(result.geoProduct.sourceExtraction.ocr.textBlocks.some((text) => text.includes("WATER / AQUA"))).toBe(false);
+    expect(result.geoProduct.ocr.sentenceInsights.some((item) => item.text.includes("WATER / AQUA"))).toBe(false);
+  });
+
+  it("does not treat visual alt text as OCR sentence evidence", async () => {
+    const visualAltHtml = `
+      <main>
+        <h1>Gentle Cleansing Foam</h1>
+        <img
+          src="/model-applying-cleanser.png"
+          alt="Sulwhasoo Gentle Cleansing Foam, facial cleanser, model applying product to face"
+        />
+      </main>
+    `;
+
+    const { result } = await extractProductFromHtml(visualAltHtml, "https://example.com/products/gentle-cleansing-foam");
+
+    expect(result.geoProduct.sourceExtraction.ocr.imageTexts.some((item) => item.text.includes("model applying product"))).toBe(false);
+    expect(result.geoProduct.ocr.sentenceInsights.some((item) => item.text.includes("model applying product"))).toBe(false);
   });
 
   it("includes runtime RAG profile prompt and documents in the final chunks", async () => {

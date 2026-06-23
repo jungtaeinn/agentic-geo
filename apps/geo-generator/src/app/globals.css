@@ -506,6 +506,45 @@ button:disabled {
   padding: 0;
 }
 
+.windowActions .modalCopyButton {
+  display: inline-flex;
+  width: auto;
+  min-width: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 7px;
+  transition: background 160ms ease, color 160ms ease, min-width 160ms ease;
+}
+
+.windowActions .modalCopyButton .modalCopyLabel {
+  max-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  opacity: 0;
+  transition: max-width 160ms ease, opacity 160ms ease;
+  white-space: nowrap;
+}
+
+.windowActions .modalCopyButton.copied {
+  min-width: 68px;
+  background: rgba(64, 214, 141, 0.14);
+  color: #e4ffee;
+}
+
+.windowActions .modalCopyButton.copied:hover {
+  background: rgba(64, 214, 141, 0.18);
+  color: #f5fff8;
+}
+
+.windowActions .modalCopyButton.copied .modalCopyLabel {
+  max-width: 48px;
+  opacity: 1;
+}
+
 .languageToggle button {
   width: 34px;
   height: 24px;
@@ -921,10 +960,26 @@ button:disabled {
 }
 
 .processStep {
+  min-width: 0;
+}
+
+.processStepButton {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
   gap: 8px;
   align-items: start;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.processStepButton:hover {
+  background: rgba(255, 255, 255, 0.045);
 }
 
 .processStep strong,
@@ -1040,30 +1095,43 @@ button:disabled {
   color: rgba(255, 255, 255, 0.86);
 }
 
-.outputSummary dl {
+.outputSummary dl,
+.outputMetricGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   margin: 0;
 }
 
-.outputSummary dl div {
+.outputSummary dl div,
+.outputMetricButton {
   min-width: 0;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.04);
   padding: 7px;
+  text-align: left;
 }
 
-.outputSummary dt {
+.outputMetricButton:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.075);
+}
+
+.outputSummary dt,
+.outputMetricButton span {
+  display: block;
   overflow: hidden;
   color: rgba(255, 255, 255, 0.46);
   font-size: 10px;
+  font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.outputSummary dd {
+.outputSummary dd,
+.outputMetricButton strong {
+  display: block;
   margin: 5px 0 0;
   color: #fff;
   font-size: 13px;
@@ -1087,11 +1155,12 @@ button:disabled {
 
 .diagnosticStats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
   gap: 5px;
 }
 
-.diagnosticStats span {
+.diagnosticStats span,
+.diagnosticStats button {
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 7px;
@@ -1102,6 +1171,12 @@ button:disabled {
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.diagnosticStats button:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.075);
+  color: #fff;
 }
 
 .diagnosticSection {
@@ -1116,16 +1191,25 @@ button:disabled {
   font-weight: 800;
 }
 
-.diagnosticSection p {
+.diagnosticSection p,
+.diagnosticEntryButton {
   margin: 0;
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.035);
   padding: 7px;
+  text-align: left;
+}
+
+.diagnosticEntryButton:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .diagnosticSection b,
-.diagnosticSection span {
+.diagnosticSection span,
+.diagnosticEntryButton b,
+.diagnosticEntryButton span {
   display: block;
 }
 
@@ -1272,6 +1356,16 @@ button:disabled {
   font-size: 11px;
   font-style: normal;
   font-weight: 600;
+}
+
+.ragReferenceList button em.ragReferenceUsage {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: rgba(255, 255, 255, 0.58);
+  line-height: 1.35;
+  white-space: normal;
 }
 
 .composerDock {
@@ -2034,6 +2128,186 @@ button:disabled {
   gap: 10px;
 }
 
+.azureProviderSettings {
+  display: grid;
+  gap: 14px;
+}
+
+.azureConnectionGrid {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.85fr) minmax(240px, 1.35fr) minmax(190px, 0.9fr);
+  gap: 8px;
+}
+
+.azureCredentialNote,
+.azureStepNote {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.azureInlineField {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  min-height: 66px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 10px;
+}
+
+.azureInlineField span {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.azureInlineField input,
+.azurePipelineStep input,
+.azurePipelineStep select {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  outline: 0;
+  background: rgba(0, 0, 0, 0.16);
+  color: #fff;
+  padding: 0 10px;
+}
+
+.azureInlineField input:focus,
+.azurePipelineStep input:focus,
+.azurePipelineStep select:focus {
+  border-color: rgba(102, 168, 255, 0.58);
+}
+
+.azurePipelineBlock {
+  display: grid;
+  gap: 8px;
+}
+
+.azurePipelineHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.azurePipelineHeader h4 {
+  margin: 0;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 760;
+  line-height: 1.2;
+}
+
+.azurePipelineHeader button {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.075);
+  color: var(--text-soft);
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.azurePipelineHeader button:hover {
+  background: rgba(255, 255, 255, 0.11);
+  color: #fff;
+}
+
+.azurePipelineHeader button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.azureModelMessage {
+  color: var(--muted-strong);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.azureModelMessage.error {
+  color: var(--red);
+}
+
+.azurePipeline {
+  display: grid;
+  gap: 8px;
+}
+
+.azurePipelineStep {
+  display: grid;
+  grid-template-columns: 28px minmax(170px, 0.36fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 12px;
+}
+
+.azureStepNumber {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid rgba(102, 168, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(102, 168, 255, 0.11);
+  color: #d4e6ff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.azureStepMeta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.azureStepMeta strong {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.azureStepMeta em {
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.25;
+}
+
+.azureStepControl {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.azureStepFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.azureStepFields .azureInlineField {
+  min-height: auto;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
 .settingField {
   display: grid;
   grid-template-columns: minmax(140px, 0.34fr) minmax(0, 1fr);
@@ -2592,6 +2866,26 @@ button:disabled {
   .providerGrid.threeColumns,
   .settingField {
     grid-template-columns: 1fr;
+  }
+
+  .azureConnectionGrid,
+  .azurePipelineStep,
+  .azureStepFields {
+    grid-template-columns: 1fr;
+  }
+
+  .azurePipelineStep {
+    gap: 9px;
+  }
+
+  .azureStepNumber {
+    width: 24px;
+    height: 24px;
+  }
+
+  .azurePipelineHeader {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .modelSelectControl {

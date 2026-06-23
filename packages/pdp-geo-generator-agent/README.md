@@ -111,6 +111,29 @@ const run = await generatePdpGeo(
 
 테스트나 사내 사전/검수 agent가 있으면 네트워크 provider 대신 `customKeywordNormalizer`를 주입할 수 있습니다.
 
+### Optional Gen AI Copy Refinement
+
+상품 근거 조립과 schema/content 구조 생성은 deterministic 로직으로 먼저 수행합니다. 다만 `Product.description`, `WebPage.description`, `content.sections.description`처럼 AI answer에 노출될 공개 문장은 규칙 기반 정규화만으로 “어떤 상품 fact를 골라 조합해야 하는지”까지 판단하기 어렵기 때문에, provider API가 설정되어 있으면 생성 직후 Gen AI copy refinement를 선택적으로 실행할 수 있습니다.
+
+이 단계는 `geo-research`(기존 `geo-paper`), `cep`, `eeat` RAG를 전략 근거로 삼아, 가져온 상품 정보 데이터 안에서 AI가 인용하거나 답변에 활용하기 좋은 키워드와 문장을 선별한 뒤 자연스럽게 조합합니다. 새 효능/성분/수치/리뷰를 만들지 않고, 이미 추출된 상품 신호와 선택된 RAG chunk 안에서만 재구성합니다. 모델 결과가 너무 짧거나 길거나 `RAG`, `GEO`, `CEP`, `E-E-A-T`, 이미지 캡션성 표현 같은 내부/시각 아티팩트를 포함하면 폐기하고 deterministic 문장을 유지합니다.
+
+```ts
+const run = await generatePdpGeo(input, {
+  provider: "azure-openai",
+  apiKey: process.env.AZURE_OPENAI_API_KEY,
+  endpoint: process.env.AZURE_OPENAI_ENDPOINT,
+  deployments: {
+    reasoning: process.env.AZURE_OPENAI_REASONING_DEPLOYMENT
+  },
+  apiVersion: process.env.AZURE_OPENAI_API_VERSION,
+  copyRefinement: {
+    enabled: true
+  }
+});
+```
+
+테스트나 내부 LLM gateway를 쓰는 경우 `customCopyRefiner`를 주입할 수 있습니다. copy refinement 호출 여부와 token usage는 `diagnostics.runtimeUsage.steps`의 `final` 단계에 기록되고, 적용/거절 근거와 전략 RAG 출처는 `diagnostics.evidence`에 남습니다.
+
 ## REST Handler
 
 Web API `Request`/`Response` 기반 REST 핸들러를 만들 수 있습니다.
@@ -153,6 +176,9 @@ export const POST = createPdpGeoGeneratorRestHandler({
     "enabled": true,
     "provider": "openai",
     "model": "your-keyword-normalization-model"
+  },
+  "copyRefinement": {
+    "enabled": true
   }
 }
 ```
@@ -191,13 +217,21 @@ src/rag/
   eeat_v1.md
   cep_v1.md
   best-practice_v1.md
-  geo-paper_v1.md
+  geo-research_v1.md
   official-ai-search-platform-docs_v1.md
   locale-expression-guidelines_v1.md
   locale-terminology-map_v1.json
   manifest.ts
   profile.ts
 ```
+
+문서명은 기능 중심으로 유지합니다. `eeat_v1.md`는 trust/evidence quality, `cep_v1.md`는 customer entry point intent, `geo-research_v1.md`는 generative search/GEO research guidance를 담당합니다. 이 세 문서는 모든 reasoning principle의 공통 RAG 근거로 들어가고, schema/best-practice/official-docs/locale 문서는 원칙별로 추가됩니다.
+
+RAG routing은 문서 전체가 아니라 chunk intent 기준으로 동작합니다. 로컬 기본 문서와 사용자가 추가한 custom RAG 문서는 heading/text를 분석해 `faq`, `howTo`, `claims`, `customer`, `review`, `schema`, `locale`, `evidence`, `retrieval`, `general` intent와 schema/content field target을 부여합니다. Reasoning은 FAQ/HowTo/claims/customer/review principle별로 해당 intent와 field target을 우선 선택해 `best-practice_v1.md#FAQ Best Practice`처럼 섹션 단위 출처를 유지합니다.
+
+`rag.resolveUrls: true`를 사용하면 RAG 문서에 포함된 URL을 최대 `maxResolvedUrlDocuments`개까지 가져와 같은 chunk/intent 분석 흐름에 넣습니다. 기본 URL resolver는 HTML/text/markdown/JSON 계열만 처리하고 localhost/private IP를 차단합니다. 운영 환경에서 사내 프록시, 캐시, 논문 파서, allowlist가 필요하면 `customUrlResolver`로 교체할 수 있습니다.
+
+Resolved URL content는 전체 원문이 아니라 GEO-relevant excerpt로 축약됩니다. URL 유형은 `official-paper`, `schema-reference`, `provider-doc`, `official-doc`, `other`로 분류되며, official paper는 citation readiness/visibility/source attribution, schema reference는 type/property compatibility, provider docs는 retrieval/embedding/grounding/source-evidence mechanics, official docs는 structured data eligibility와 product evidence guidance 중심으로 발췌합니다.
 
 `manifest.ts`는 현재 사용하는 파일 조합을 고정합니다.
 
@@ -210,7 +244,7 @@ export const pdpGeoGeneratorRagManifest = {
     eeat: "eeat_v1.md",
     cep: "cep_v1.md",
     bestPractice: "best-practice_v1.md",
-    geoPaper: "geo-paper_v1.md",
+    geoResearch: "geo-research_v1.md",
     officialAiSearchPlatformDocs: "official-ai-search-platform-docs_v1.md",
     localeExpressionGuidelines: "locale-expression-guidelines_v1.md",
     localeTerminologyMap: "locale-terminology-map_v1.json"
@@ -249,6 +283,7 @@ export const pdpGeoGeneratorRagManifest = {
 | `src/agent.ts` | 생성 pipeline의 중심 로직 |
 | `src/normalize.ts` | 임의 product JSON을 `PdpProductSignal`로 정규화 |
 | `src/generate.ts` | schema.org JSON-LD와 HTML content 생성 |
+| `src/copy-refiner.ts` | Gen AI 기반 public copy refinement와 provider adapter |
 | `src/validate.ts` | JSON-LD/HTML 검증과 repair |
 | `src/rag/retrieval.ts` | local/managed RAG 검색과 reranking |
 | `src/rest.ts` | REST 핸들러 생성기 |

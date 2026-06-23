@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { pdpGeoGeneratorRagManifest } from "../src";
 import { defaultPdpGeoGeneratorRagProfile } from "../src/rag/default-profile";
 import { readPdpGeoGeneratorRagProfile } from "../src/rag/profile";
-import { createPdpGeoRagQuery, LocalVersionedRagRetriever, resolvePdpGeoRagSettings } from "../src/rag/retrieval";
+import { createPdpGeoReasoning } from "../src/rag/reasoning";
+import { createPdpGeoRagQuery, LocalVersionedRagRetriever, resolvePdpGeoRagSettings, retrievePdpGeoRagChunks } from "../src/rag/retrieval";
 
 describe("readPdpGeoGeneratorRagProfile", () => {
   it("reads managed GEO generator RAG files including locale terminology", async () => {
@@ -19,7 +20,7 @@ describe("readPdpGeoGeneratorRagProfile", () => {
       pdpGeoGeneratorRagManifest.documents.eeat,
       pdpGeoGeneratorRagManifest.documents.cep,
       pdpGeoGeneratorRagManifest.documents.bestPractice,
-      pdpGeoGeneratorRagManifest.documents.geoPaper,
+      pdpGeoGeneratorRagManifest.documents.geoResearch,
       pdpGeoGeneratorRagManifest.documents.officialAiSearchPlatformDocs,
       pdpGeoGeneratorRagManifest.documents.localeExpressionGuidelines,
       pdpGeoGeneratorRagManifest.documents.localeTerminologyMap
@@ -121,5 +122,227 @@ describe("readPdpGeoGeneratorRagProfile", () => {
 
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks.every((chunk) => chunk.text.length <= 1100)).toBe(true);
+  });
+
+  it("classifies added RAG document sections into GEO generation intents", async () => {
+    const product = {
+      name: "Reference Serum",
+      benefits: ["hydration"],
+      effects: [],
+      ingredients: ["Niacinamide"],
+      usage: ["Apply after toner."],
+      metrics: [],
+      faq: [],
+      reviews: {
+        keywords: ["lightweight texture"],
+        items: []
+      },
+      images: [],
+      options: [],
+      breadcrumbs: [],
+      sourceTexts: []
+    };
+    const chunks = await new LocalVersionedRagRetriever().retrieve({
+      query: createPdpGeoRagQuery(product, "en-US", "US"),
+      product,
+      locale: "en-US",
+      market: "US",
+      documents: [{
+        name: "custom-geo-playbook.md",
+        version: "v1",
+        content: [
+          "# Custom GEO Playbook",
+          "",
+          "## FAQ Generation Rules",
+          "FAQ answers should combine customer questions, ingredient facts, and review language.",
+          "",
+          "## Usage Routine Rules",
+          "HowTo steps should be complete usage actions with order and amount.",
+          "",
+          "## Claim Evidence Rules",
+          "Claims must use source-supported evidence, clinical metrics, and Product additionalProperty only when visible."
+        ].join("\n")
+      }],
+      settings: resolvePdpGeoRagSettings({
+        maxChunks: 10,
+        scoreThreshold: 0
+      })
+    });
+
+    expect(chunks.find((chunk) => chunk.title === "FAQ Generation Rules")?.intents).toContain("faq");
+    expect(chunks.find((chunk) => chunk.title === "FAQ Generation Rules")?.fieldTargets).toContain("FAQPage.mainEntity");
+    expect(chunks.find((chunk) => chunk.title === "Usage Routine Rules")?.intents).toContain("howTo");
+    expect(chunks.find((chunk) => chunk.title === "Usage Routine Rules")?.fieldTargets).toContain("HowTo.step");
+    expect(chunks.find((chunk) => chunk.title === "Claim Evidence Rules")?.intents).toContain("claims");
+    expect(chunks.find((chunk) => chunk.title === "Claim Evidence Rules")?.fieldTargets).toContain("Product.additionalProperty");
+  });
+
+  it("resolves URLs embedded in RAG documents and classifies resolved content", async () => {
+    const product = {
+      name: "Reference Serum",
+      benefits: ["hydration"],
+      effects: [],
+      ingredients: ["Niacinamide"],
+      usage: ["Apply after toner."],
+      metrics: [],
+      faq: [],
+      reviews: {
+        keywords: ["lightweight texture"],
+        items: []
+      },
+      images: [],
+      options: [],
+      breadcrumbs: [],
+      sourceTexts: []
+    };
+    const chunks = await retrievePdpGeoRagChunks({
+      query: createPdpGeoRagQuery(product, "en-US", "US"),
+      product,
+      locale: "en-US",
+      market: "US",
+      documents: [{
+        name: "custom-geo-links.md",
+        version: "v1",
+        content: "Read the latest GEO trend note: https://example.com/geo-trends"
+      }],
+      settings: resolvePdpGeoRagSettings({
+        resolveUrls: true,
+        maxResolvedUrlDocuments: 1,
+        maxChunks: 10,
+        scoreThreshold: 0
+      })
+    }, {
+      urlResolver: {
+        async resolve(request) {
+          expect(request.url).toBe("https://example.com/geo-trends");
+          return {
+            url: request.url,
+            title: "GEO Trend Note",
+            content: [
+              "## Authentication Setup",
+              "Install the SDK, create an API key, configure billing, and run curl commands.",
+              "",
+              "## Review-led FAQ Eligibility",
+              "Generative search answers prefer customer review questions when FAQ answers include source-backed review language.",
+              "",
+              "## Evidence-backed Claims",
+              "Claims need citation-ready metrics, source support, and Product additionalProperty mapping."
+            ].join("\n"),
+            contentType: "text/markdown"
+          };
+        }
+      }
+    });
+
+    const faqChunk = chunks.find((chunk) => chunk.source === "https://example.com/geo-trends" && chunk.title === "Review-led FAQ Eligibility");
+    const claimChunk = chunks.find((chunk) => chunk.source === "https://example.com/geo-trends" && chunk.title === "Evidence-backed Claims");
+    const authChunk = chunks.find((chunk) => chunk.source === "https://example.com/geo-trends" && chunk.title === "Authentication Setup");
+
+    expect(authChunk).toBeUndefined();
+    expect(faqChunk?.intents).toEqual(expect.arrayContaining(["faq", "review"]));
+    expect(faqChunk?.fieldTargets).toContain("FAQPage.mainEntity");
+    expect(claimChunk?.intents).toEqual(expect.arrayContaining(["claims", "evidence"]));
+    expect(claimChunk?.fieldTargets).toContain("Product.additionalProperty");
+  });
+
+  it("builds explicit GEO reasoning from selected RAG chunks and product evidence", () => {
+    const reasoning = createPdpGeoReasoning({
+      locale: "en-US",
+      market: "US",
+      product: {
+        name: "Ginseng Barrier Serum",
+        benefits: ["hydration", "skin barrier support"],
+        effects: ["firmer-looking skin"],
+        ingredients: ["Niacinamide", "Panax Ginseng Root Extract"],
+        usage: ["Apply morning and night after toner."],
+        metrics: [],
+        faq: [],
+        reviews: {
+          keywords: ["absorbs quickly"],
+          items: [{ body: "It absorbs quickly and keeps skin hydrated.", rating: 5 }]
+        },
+        images: [],
+        options: [],
+        breadcrumbs: [],
+        sourceTexts: ["Daily serum for hydration and skin barrier care."]
+      },
+      ragChunks: [
+        {
+          id: "best-faq-1",
+          source: pdpGeoGeneratorRagManifest.documents.bestPractice,
+          title: "FAQ Best Practice",
+          kind: "best-practice",
+          intents: ["faq"],
+          fieldTargets: ["FAQPage.mainEntity"],
+          text: "Compose answer-ready FAQ and stepwise HowTo from source-backed evidence.",
+          metadata: {},
+          score: 0.92
+        },
+        {
+          id: "best-howto-1",
+          source: pdpGeoGeneratorRagManifest.documents.bestPractice,
+          title: "HowTo Best Practice",
+          kind: "best-practice",
+          intents: ["howTo"],
+          fieldTargets: ["HowTo.step"],
+          text: "Rewrite source usage text into complete HowTo steps.",
+          metadata: {},
+          score: 0.91
+        },
+        {
+          id: "schema-1",
+          source: pdpGeoGeneratorRagManifest.documents.schemaOrgProduct,
+          title: "FAQPage and HowTo schema",
+          kind: "schema",
+          intents: ["faq", "howTo", "schema"],
+          fieldTargets: ["FAQPage.mainEntity", "HowTo.step"],
+          text: "Use FAQPage and HowTo only when product facts support them.",
+          metadata: {},
+          score: 0.9
+        },
+        {
+          id: "eeat-1",
+          source: pdpGeoGeneratorRagManifest.documents.eeat,
+          kind: "eeat",
+          intents: ["claims", "review", "howTo", "evidence"],
+          fieldTargets: ["Product.description", "Product.positiveNotes"],
+          text: "Trust signals and evidence hierarchy should guide all public claims.",
+          metadata: {},
+          score: 0.88
+        },
+        {
+          id: "cep-1",
+          source: pdpGeoGeneratorRagManifest.documents.cep,
+          kind: "cep",
+          intents: ["customer", "faq"],
+          fieldTargets: ["WebPage.description", "FAQPage.mainEntity"],
+          text: "Category entry points connect customer intent to product answers.",
+          metadata: {},
+          score: 0.87
+        },
+        {
+          id: "geo-research-1",
+          source: pdpGeoGeneratorRagManifest.documents.geoResearch,
+          kind: "geo-research",
+          intents: ["faq", "howTo", "claims", "customer", "review"],
+          fieldTargets: ["PDP.content"],
+          text: "Generative search answers need citation-ready, entity-rich source support.",
+          metadata: {},
+          score: 0.86
+        }
+      ]
+    });
+
+    expect(reasoning.mode).toBe("explicit-rag-product-reasoning");
+    expect(reasoning.principles).toEqual(expect.arrayContaining(["answer-ready FAQ", "stepwise HowTo", "review-intent FAQ"]));
+    expect(reasoning.decisions.find((decision) => decision.principle === "answer-ready FAQ")?.productEvidence.join(" ")).toContain("hydration");
+    expect(reasoning.decisions.find((decision) => decision.principle === "answer-ready FAQ")?.ragSources)
+      .toContain(`${pdpGeoGeneratorRagManifest.documents.bestPractice}#FAQ Best Practice`);
+    expect(reasoning.decisions.find((decision) => decision.principle === "answer-ready FAQ")?.ragSources)
+      .not.toContain(`${pdpGeoGeneratorRagManifest.documents.bestPractice}#HowTo Best Practice`);
+    expect(reasoning.decisions.find((decision) => decision.principle === "stepwise HowTo")?.ragSources)
+      .toContain(`${pdpGeoGeneratorRagManifest.documents.bestPractice}#HowTo Best Practice`);
+    expect(reasoning.decisions.find((decision) => decision.principle === "stepwise HowTo")?.ragSources)
+      .not.toContain(`${pdpGeoGeneratorRagManifest.documents.bestPractice}#FAQ Best Practice`);
   });
 });

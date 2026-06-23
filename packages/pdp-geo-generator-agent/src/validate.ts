@@ -1,4 +1,4 @@
-import type { JsonObject, PdpGeoContentArtifact, PdpGeoContentSections, PdpGeoLocale, PdpGeoSchemaMarkup } from "./types";
+import type { JsonObject, JsonValue, PdpGeoContentArtifact, PdpGeoContentSections, PdpGeoLocale, PdpGeoSchemaMarkup, PdpGeoValidationRepair } from "./types";
 
 interface ValidateAndRepairInput {
   schemaMarkup: PdpGeoSchemaMarkup;
@@ -12,6 +12,7 @@ interface ValidateAndRepairOutput {
   schemaMarkup: PdpGeoSchemaMarkup;
   content: PdpGeoContentArtifact;
   validationWarnings: string[];
+  validationRepairs: PdpGeoValidationRepair[];
 }
 
 const allowedGraphTypes = new Set(["WebPage", "Product", "FAQPage", "HowTo", "BreadcrumbList", "Question", "Answer", "HowToStep", "Offer", "AggregateRating", "Review", "Rating", "PropertyValue", "ItemList", "ListItem", "Brand", "Person"]);
@@ -19,65 +20,130 @@ const allowedGraphTypes = new Set(["WebPage", "Product", "FAQPage", "HowTo", "Br
 /** Validates and repairs generated JSON-LD and simple accordion HTML. */
 export function validateAndRepairPdpGeoArtifacts(input: ValidateAndRepairInput): ValidateAndRepairOutput {
   const validationWarnings: string[] = [];
+  const validationRepairs: PdpGeoValidationRepair[] = [];
   const locale = input.locale ?? "en-US";
-  const fallbackProductName = repairGeneratedText(input.fallbackProductName, locale, "fallbackProductName", validationWarnings);
-  const fallbackDescription = repairGeneratedText(input.fallbackDescription, locale, "fallbackDescription", validationWarnings);
-  const jsonLd = repairJsonLd(input.schemaMarkup.jsonLd, fallbackProductName, fallbackDescription, locale, validationWarnings);
+  const fallbackProductName = repairGeneratedText(input.fallbackProductName, locale, "fallbackProductName", validationWarnings, validationRepairs);
+  const fallbackDescription = repairGeneratedText(input.fallbackDescription, locale, "fallbackDescription", validationWarnings, validationRepairs);
+  const jsonLd = repairJsonLd(input.schemaMarkup.jsonLd, fallbackProductName, fallbackDescription, locale, validationWarnings, validationRepairs);
   const schemaMarkup = {
     jsonLd,
     scriptTag: `<script type="application/ld+json">${escapeScriptJson(JSON.stringify(jsonLd, null, 2))}</script>`
   };
-  const sections = repairContentSections(input.content.sections, locale, validationWarnings);
-  sanitizeAccordionHtml(input.content.html, validationWarnings);
+  const sections = repairContentSections(input.content.sections, locale, validationWarnings, validationRepairs);
+  const sanitizedHtml = sanitizeAccordionHtml(input.content.html, validationWarnings, validationRepairs);
   const content = {
     ...input.content,
     sections,
     html: createAccordionHtml(sections, locale)
   };
+  if (sanitizedHtml !== input.content.html || content.html !== input.content.html) {
+    addRepair(validationWarnings, validationRepairs, {
+      field: "content.html",
+      source: "html-validator",
+      issue: "Generated HTML was not trusted as final output because it may contain unsafe markup or may not match the repaired section data.",
+      action: "Rebuilt the accordion HTML from repaired content.sections so public HTML matches validated copy.",
+      before: input.content.html,
+      after: content.html,
+      evidence: ["content.sections", "html sanitizer"]
+    }, "Generated HTML was rebuilt from repaired content sections.");
+  }
 
   return {
     schemaMarkup,
     content,
-    validationWarnings
+    validationWarnings,
+    validationRepairs
   };
 }
 
-function repairJsonLd(value: JsonObject, fallbackProductName: string, fallbackDescription: string, locale: PdpGeoLocale, warnings: string[]): JsonObject {
+function repairJsonLd(
+  value: JsonObject,
+  fallbackProductName: string,
+  fallbackDescription: string,
+  locale: PdpGeoLocale,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[]
+): JsonObject {
   const root = isRecord(value) ? { ...value } : {};
   if (root["@context"] !== "https://schema.org") {
+    const before = root["@context"];
     root["@context"] = "https://schema.org";
-    addWarning(warnings, "JSON-LD @context was repaired to https://schema.org.");
+    addRepair(warnings, repairs, {
+      field: "@context",
+      source: "schema-validator",
+      issue: "JSON-LD context was missing or not schema.org.",
+      action: "Set @context to https://schema.org.",
+      before: toJsonValue(before),
+      after: "https://schema.org",
+      evidence: ["schema.org JSON-LD requirement"]
+    }, "JSON-LD @context was repaired to https://schema.org.");
   }
 
   const rawGraph: unknown[] = Array.isArray(root["@graph"]) ? root["@graph"] : [];
-  const graph = rawGraph.filter(isRecord).map((node) => repairGraphNode(node, locale, warnings));
+  const graph = rawGraph.filter(isRecord).map((node) => repairGraphNode(node, locale, warnings, repairs));
   if (graph.length === 0) {
-    graph.push({
+    const addedProduct = {
       "@type": "Product",
       "@id": `urn:agentic-geo:pdp:${slug(fallbackProductName)}#product`,
       name: fallbackProductName,
       description: fallbackDescription
-    });
-    addWarning(warnings, "JSON-LD @graph was missing and a minimal Product node was added.");
+    };
+    graph.push(addedProduct);
+    addRepair(warnings, repairs, {
+      field: "@graph",
+      source: "schema-validator",
+      issue: "JSON-LD @graph was missing or empty.",
+      action: "Added a minimal Product node from fallback product name and description.",
+      before: toJsonValue(root["@graph"]),
+      after: addedProduct,
+      evidence: ["fallbackProductName", "fallbackDescription"]
+    }, "JSON-LD @graph was missing and a minimal Product node was added.");
   }
 
   const product = graph.find((node) => node["@type"] === "Product");
   if (!product) {
-    graph.push({
+    const addedProduct = {
       "@type": "Product",
       "@id": `urn:agentic-geo:pdp:${slug(fallbackProductName)}#product`,
       name: fallbackProductName,
       description: fallbackDescription
-    });
-    addWarning(warnings, "JSON-LD Product node was missing and was added.");
+    };
+    graph.push(addedProduct);
+    addRepair(warnings, repairs, {
+      field: "@graph.Product",
+      source: "schema-validator",
+      issue: "Product node was missing from JSON-LD graph.",
+      action: "Added a Product node from fallback product name and description.",
+      before: null,
+      after: addedProduct,
+      evidence: ["fallbackProductName", "fallbackDescription"]
+    }, "JSON-LD Product node was missing and was added.");
   } else {
     if (typeof product.name !== "string" || product.name.trim().length === 0) {
+      const before = product.name;
       product.name = fallbackProductName;
-      addWarning(warnings, "Product.name was missing and was repaired.");
+      addRepair(warnings, repairs, {
+        field: "Product.name",
+        source: "schema-validator",
+        issue: "Product.name was missing or blank.",
+        action: "Filled Product.name with fallback product name.",
+        before: toJsonValue(before),
+        after: fallbackProductName,
+        evidence: ["fallbackProductName"]
+      }, "Product.name was missing and was repaired.");
     }
     if (typeof product.description !== "string" || product.description.trim().length === 0) {
+      const before = product.description;
       product.description = fallbackDescription;
-      addWarning(warnings, "Product.description was missing and was repaired.");
+      addRepair(warnings, repairs, {
+        field: "Product.description",
+        source: "schema-validator",
+        issue: "Product.description was missing or blank.",
+        action: "Filled Product.description with fallback description.",
+        before: toJsonValue(before),
+        after: fallbackDescription,
+        evidence: ["fallbackDescription"]
+      }, "Product.description was missing and was repaired.");
     }
   }
 
@@ -87,10 +153,23 @@ function repairJsonLd(value: JsonObject, fallbackProductName: string, fallbackDe
   }) as JsonObject;
 }
 
-function repairGraphNode(node: Record<string, unknown>, locale: PdpGeoLocale, warnings: string[]): Record<string, unknown> {
+function repairGraphNode(
+  node: Record<string, unknown>,
+  locale: PdpGeoLocale,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[]
+): Record<string, unknown> {
   const type = node["@type"];
   if (typeof type === "string" && !allowedGraphTypes.has(type)) {
-    addWarning(warnings, `Unsupported schema.org node type "${type}" was kept for compatibility but flagged.`);
+    addRepair(warnings, repairs, {
+      field: `${type}.@type`,
+      source: "schema-validator",
+      issue: `Unsupported schema.org node type "${type}" was detected.`,
+      action: "Kept the node for compatibility but flagged it for review.",
+      before: type,
+      after: type,
+      evidence: ["allowedGraphTypes"]
+    }, `Unsupported schema.org node type "${type}" was kept for compatibility but flagged.`);
   }
 
   if (node["@type"] === "FAQPage" && Array.isArray(node.mainEntity)) {
@@ -99,12 +178,20 @@ function repairGraphNode(node: Record<string, unknown>, locale: PdpGeoLocale, wa
       const acceptedAnswer = isRecord(item.acceptedAnswer) ? item.acceptedAnswer : undefined;
       const answer = stringValue(acceptedAnswer?.text);
       if (!name || !answer) {
-        addWarning(warnings, "Invalid FAQ question without answer was removed.");
+        addRepair(warnings, repairs, {
+          field: "FAQPage.mainEntity",
+          source: "schema-validator",
+          issue: "FAQ question was missing a question name or accepted answer text.",
+          action: "Removed the invalid FAQ item from mainEntity.",
+          before: toJsonValue(item),
+          after: null,
+          evidence: ["FAQPage.mainEntity.name", "FAQPage.mainEntity.acceptedAnswer.text"]
+        }, "Invalid FAQ question without answer was removed.");
         return [];
       }
-      const repairedQuestion = repairGeneratedText(name, locale, "FAQPage.mainEntity.name", warnings);
-      const repairedAnswer = repairGeneratedText(answer, locale, "FAQPage.mainEntity.acceptedAnswer.text", warnings);
-      const aligned = repairFaqQuestionAnswerAlignment(repairedQuestion, repairedAnswer, locale, warnings);
+      const repairedQuestion = repairGeneratedText(name, locale, "FAQPage.mainEntity.name", warnings, repairs);
+      const repairedAnswer = repairGeneratedText(answer, locale, "FAQPage.mainEntity.acceptedAnswer.text", warnings, repairs);
+      const aligned = repairFaqQuestionAnswerAlignment(repairedQuestion, repairedAnswer, locale, warnings, repairs);
 
       return [{
         "@type": "Question",
@@ -121,23 +208,31 @@ function repairGraphNode(node: Record<string, unknown>, locale: PdpGeoLocale, wa
     node.step = node.step.filter(isRecord).flatMap((item, index) => {
       const text = stringValue(item.text);
       if (!text) {
-        addWarning(warnings, "Invalid HowTo step without text was removed.");
+        addRepair(warnings, repairs, {
+          field: "HowTo.step",
+          source: "schema-validator",
+          issue: "HowTo step was missing text.",
+          action: "Removed the invalid HowTo step.",
+          before: toJsonValue(item),
+          after: null,
+          evidence: ["HowTo.step.text"]
+        }, "Invalid HowTo step without text was removed.");
         return [];
       }
       return [{
         "@type": "HowToStep",
         position: numberValue(item.position) ?? index + 1,
-        name: stringValue(item.name) ? repairGeneratedText(stringValue(item.name) ?? "", locale, "HowTo.step.name", warnings) : undefined,
-        text: repairGeneratedText(text, locale, "HowTo.step.text", warnings)
+        name: stringValue(item.name) ? repairGeneratedText(stringValue(item.name) ?? "", locale, "HowTo.step.name", warnings, repairs) : undefined,
+        text: repairGeneratedText(text, locale, "HowTo.step.text", warnings, repairs)
       }];
     });
   }
 
-  const repaired = repairSchemaTextFields(node, locale, warnings);
-  return cleanJson(pruneInvalidSchemaText(repaired, locale, warnings));
+  const repaired = repairSchemaTextFields(node, locale, warnings, repairs);
+  return cleanJson(pruneInvalidSchemaText(repaired, locale, warnings, repairs));
 }
 
-function sanitizeAccordionHtml(html: string, warnings: string[]): string {
+function sanitizeAccordionHtml(html: string, warnings: string[], repairs: PdpGeoValidationRepair[]): string {
   let next = html;
   const before = next;
   next = next.replace(/<script[\s\S]*?<\/script>/gi, "");
@@ -146,28 +241,55 @@ function sanitizeAccordionHtml(html: string, warnings: string[]): string {
   next = next.replace(/<(\/?)(?!div\b|button\b|ul\b|li\b|p\b|br\b)([a-z][a-z0-9-]*)([^>]*)>/gi, "");
 
   if (next !== before) {
-    addWarning(warnings, "Generated HTML contained unsafe or unsupported tags/attributes and was sanitized.");
+    addRepair(warnings, repairs, {
+      field: "content.html",
+      source: "html-validator",
+      issue: "Generated HTML contained unsafe or unsupported tags or attributes.",
+      action: "Removed script tags, inline event handlers, inline styles, and unsupported tags before rebuilding final accordion HTML.",
+      before,
+      after: next,
+      evidence: ["HTML allowlist: div, button, ul, li, p, br"]
+    }, "Generated HTML contained unsafe or unsupported tags/attributes and was sanitized.");
   }
   if (!/class="geo-content-accordion"/.test(next)) {
-    addWarning(warnings, "Generated HTML did not include the expected accordion wrapper.");
+    addRepair(warnings, repairs, {
+      field: "content.html",
+      source: "html-validator",
+      issue: "Generated HTML did not include the expected geo-content-accordion wrapper.",
+      action: "Flagged HTML for rebuild from repaired content sections.",
+      before: next,
+      after: "createAccordionHtml(content.sections)",
+      evidence: ["expected wrapper: class=\"geo-content-accordion\""]
+    }, "Generated HTML did not include the expected accordion wrapper.");
   }
 
   return next;
 }
 
-function repairContentSections(sections: PdpGeoContentSections, locale: PdpGeoLocale, warnings: string[]): PdpGeoContentSections {
+function repairContentSections(
+  sections: PdpGeoContentSections,
+  locale: PdpGeoLocale,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[]
+): PdpGeoContentSections {
   return {
-    productName: repairGeneratedText(sections.productName, locale, "content.sections.productName", warnings),
-    description: repairGeneratedText(sections.description, locale, "content.sections.description", warnings),
-    quickFacts: repairGeneratedText(sections.quickFacts, locale, "content.sections.quickFacts", warnings),
-    benefits: repairGeneratedText(sections.benefits, locale, "content.sections.benefits", warnings),
-    ingredients: repairGeneratedText(sections.ingredients, locale, "content.sections.ingredients", warnings),
-    howToUse: repairGeneratedText(sections.howToUse, locale, "content.sections.howToUse", warnings),
-    faq: repairGeneratedText(sections.faq, locale, "content.sections.faq", warnings)
+    productName: repairGeneratedText(sections.productName, locale, "content.sections.productName", warnings, repairs),
+    description: repairGeneratedText(sections.description, locale, "content.sections.description", warnings, repairs),
+    quickFacts: repairGeneratedText(sections.quickFacts, locale, "content.sections.quickFacts", warnings, repairs),
+    benefits: repairGeneratedText(sections.benefits, locale, "content.sections.benefits", warnings, repairs),
+    ingredients: repairGeneratedText(sections.ingredients, locale, "content.sections.ingredients", warnings, repairs),
+    howToUse: repairGeneratedText(sections.howToUse, locale, "content.sections.howToUse", warnings, repairs),
+    faq: repairGeneratedText(sections.faq, locale, "content.sections.faq", warnings, repairs)
   };
 }
 
-function repairFaqQuestionAnswerAlignment(question: string, answer: string, locale: PdpGeoLocale, warnings: string[]): { question: string; answer: string } {
+function repairFaqQuestionAnswerAlignment(
+  question: string,
+  answer: string,
+  locale: PdpGeoLocale,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[]
+): { question: string; answer: string } {
   if (locale !== "ko-KR") {
     return { question, answer };
   }
@@ -175,24 +297,42 @@ function repairFaqQuestionAnswerAlignment(question: string, answer: string, loca
   const intent = classifyKoreanQuestionIntent(question);
   if (intent === "evidence" && !isKoreanEvidenceAnswer(answer) && isKoreanProductContextAnswer(answer)) {
     const productName = extractKoreanProductNameFromQuestion(question);
-    addWarning(warnings, "FAQ question/answer intent mismatch was repaired during final sentence QA.");
-    return {
+    const repaired = {
       question: productName
         ? `${productName}의 성분, 효능, 사용감은 어떤 정보로 정리되나요?`
         : "상품의 성분, 효능, 사용감은 어떤 정보로 정리되나요?",
       answer: ensureKoreanFaqAnswerSourceContext(answer)
     };
+    addRepair(warnings, repairs, {
+      field: "FAQPage.mainEntity",
+      source: "sentence-qa",
+      issue: "FAQ asked for evidence/source context but the answer did not clearly cite product detail or review evidence.",
+      action: "Rewrote the question and answer so the FAQ explicitly frames product-detail and review evidence.",
+      before: { question, answer },
+      after: repaired,
+      evidence: ["question intent: evidence", "answer lacked product-detail/review source context"]
+    }, "FAQ question/answer intent mismatch was repaired during final sentence QA.");
+    return repaired;
   }
 
   if (intent === "review" && !/리뷰|후기|사용감|만족|체감|피부결|촉촉|보습력|흡수감/.test(answer) && isKoreanProductContextAnswer(answer)) {
     const productName = extractKoreanProductNameFromQuestion(question);
-    addWarning(warnings, "FAQ review question/answer intent mismatch was repaired during final sentence QA.");
-    return {
+    const repaired = {
       question: productName
         ? `${productName}의 성분과 효능은 어떤 제품 정보로 설명되나요?`
         : "상품의 성분과 효능은 어떤 제품 정보로 설명되나요?",
       answer
     };
+    addRepair(warnings, repairs, {
+      field: "FAQPage.mainEntity",
+      source: "sentence-qa",
+      issue: "FAQ question was review-oriented but the answer was product-context oriented.",
+      action: "Reframed the question to match the product-context answer.",
+      before: { question, answer },
+      after: repaired,
+      evidence: ["question intent: review", "answer intent: product context"]
+    }, "FAQ review question/answer intent mismatch was repaired during final sentence QA.");
+    return repaired;
   }
 
   return { question, answer };
@@ -248,19 +388,25 @@ function extractKoreanProductNameFromQuestion(question: string): string | undefi
   return undefined;
 }
 
-function repairSchemaTextFields<T>(value: T, locale: PdpGeoLocale, warnings: string[], path: string[] = []): T {
+function repairSchemaTextFields<T>(
+  value: T,
+  locale: PdpGeoLocale,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[],
+  path: string[] = []
+): T {
   if (Array.isArray(value)) {
-    return value.map((item, index) => repairSchemaTextFields(item, locale, warnings, [...path, String(index)])) as T;
+    return value.map((item, index) => repairSchemaTextFields(item, locale, warnings, repairs, [...path, String(index)])) as T;
   }
   if (value && typeof value === "object") {
     const entries = Object.entries(value as Record<string, unknown>).map(([key, item]) => [
       key,
-      repairSchemaTextFields(item, locale, warnings, [...path, key])
+      repairSchemaTextFields(item, locale, warnings, repairs, [...path, key])
     ]);
     return Object.fromEntries(entries) as T;
   }
   if (typeof value === "string" && shouldRepairSchemaString(path, value)) {
-    return repairGeneratedText(value, locale, path.join("."), warnings) as T;
+    return repairGeneratedText(value, locale, path.join("."), warnings, repairs) as T;
   }
   return value;
 }
@@ -276,13 +422,26 @@ function shouldRepairSchemaString(path: string[], value: string): boolean {
   return true;
 }
 
-function pruneInvalidSchemaText(node: Record<string, unknown>, locale: PdpGeoLocale, warnings: string[]): Record<string, unknown> {
+function pruneInvalidSchemaText(
+  node: Record<string, unknown>,
+  locale: PdpGeoLocale,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[]
+): Record<string, unknown> {
   if (node["@type"] === "Product" && Array.isArray(node.additionalProperty)) {
     node.additionalProperty = node.additionalProperty.filter(isRecord).flatMap((item) => {
       const name = stringValue(item.name);
       const value = stringValue(item.value);
       if (!name || !value || isInvalidPropertyValue(name, value, locale)) {
-        addWarning(warnings, "Invalid or awkward PropertyValue text was removed during final sentence QA.");
+        addRepair(warnings, repairs, {
+          field: "Product.additionalProperty",
+          source: "sentence-qa",
+          issue: "PropertyValue was blank, question-like, URL-like, truncated, or contained internal/generated wording.",
+          action: "Removed the invalid PropertyValue from Product.additionalProperty.",
+          before: toJsonValue(item),
+          after: null,
+          evidence: ["PropertyValue.name", "PropertyValue.value", "final sentence QA"]
+        }, "Invalid or awkward PropertyValue text was removed during final sentence QA.");
         return [];
       }
       return [{
@@ -297,7 +456,15 @@ function pruneInvalidSchemaText(node: Record<string, unknown>, locale: PdpGeoLoc
     const items = node.positiveNotes.itemListElement.filter(isRecord).flatMap((item) => {
       const name = stringValue(item.name);
       if (!name || hasTruncationMarker(name) || isBrokenGeneratedFragment(name)) {
-        addWarning(warnings, "Invalid positiveNotes item was removed during final sentence QA.");
+        addRepair(warnings, repairs, {
+          field: "Product.positiveNotes.itemListElement",
+          source: "sentence-qa",
+          issue: "positiveNotes item was blank, truncated, or contained broken generated fragments.",
+          action: "Removed the invalid positiveNotes item and renumbered the remaining list items.",
+          before: toJsonValue(item),
+          after: null,
+          evidence: ["ListItem.name", "final sentence QA"]
+        }, "Invalid positiveNotes item was removed during final sentence QA.");
         return [];
       }
       return [item];
@@ -332,7 +499,13 @@ function isInvalidPropertyValue(name: string, value: string, locale: PdpGeoLocal
   return false;
 }
 
-function repairGeneratedText(value: string, locale: PdpGeoLocale, path: string, warnings: string[]): string {
+function repairGeneratedText(
+  value: string,
+  locale: PdpGeoLocale,
+  path: string,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[]
+): string {
   let next = value
     .replace(/\\"/g, "\"")
     .replace(/\\[rn]/g, " ")
@@ -363,7 +536,15 @@ function repairGeneratedText(value: string, locale: PdpGeoLocale, path: string, 
   next = normalizeRepeatedPunctuation(next).trim();
 
   if (next !== value.trim()) {
-    addWarning(warnings, `Final sentence QA repaired generated text at ${path}.`);
+    addRepair(warnings, repairs, {
+      field: path,
+      source: "sentence-qa",
+      issue: describeGeneratedTextIssue(value, next),
+      action: "Normalized public copy by removing artifacts, fixing particles/spacing, dropping truncated fragments, and rewriting internal generation phrasing.",
+      before: value.trim(),
+      after: next,
+      evidence: ["generated schema/content text", "locale sentence QA"]
+    }, `Final sentence QA repaired generated text at ${path}.`);
   }
 
   return next;
@@ -392,6 +573,29 @@ function repairEnglishSentenceQuality(value: string): string {
     .replace(/\btexture language\b/gi, "texture")
     .replace(/\s{2,}/g, " ")
     .trim();
+}
+
+function describeGeneratedTextIssue(before: string, after: string): string {
+  const issues: string[] = [];
+  if (hasUrlOrImageArtifact(before)) {
+    issues.push("URL/image artifact leaked into public copy");
+  }
+  if (hasTruncationMarker(before)) {
+    issues.push("truncated fragment was present");
+  }
+  if (isBrokenGeneratedFragment(before) || /Evidence signal|Review signals|technology signals|benefit terms|ingredient terms|use-feel|product discovery context/i.test(before)) {
+    issues.push("internal generation/RAG label appeared in public copy");
+  }
+  if (/([가-힣]{1,40})(?:을|를|은|는|이|가|와|과)(?=[\s,.!?。！？]|$)/.test(before) && before !== after) {
+    issues.push("Korean particle or spacing was awkward");
+  }
+  if (/\s{2,}|\\[rn]|\\"/.test(before)) {
+    issues.push("escaping or spacing artifact was present");
+  }
+  if (issues.length === 0) {
+    issues.push("final sentence QA changed generated text for public readability");
+  }
+  return issues.join("; ");
 }
 
 function repairKoreanEvidenceFragments(value: string): string {
@@ -678,6 +882,42 @@ function addWarning(warnings: string[], warning: string): void {
   if (!warnings.includes(warning)) {
     warnings.push(warning);
   }
+}
+
+function addRepair(
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[],
+  repair: PdpGeoValidationRepair,
+  warning: string
+): void {
+  addWarning(warnings, warning);
+  repairs.push({
+    ...repair,
+    before: repair.before === undefined ? undefined : toJsonValue(repair.before),
+    after: repair.after === undefined ? undefined : toJsonValue(repair.after)
+  });
+}
+
+function toJsonValue(value: unknown): JsonValue | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => toJsonValue(item))
+      .filter((item): item is JsonValue => item !== undefined);
+  }
+  if (typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .map(([key, item]) => [key, toJsonValue(item)] as const)
+        .filter(([, item]) => item !== undefined)
+    ) as JsonValue;
+  }
+  return String(value);
 }
 
 function cleanJson<T>(value: T): T {

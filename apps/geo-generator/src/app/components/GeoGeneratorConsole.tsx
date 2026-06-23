@@ -38,6 +38,7 @@ import type {
   PdpGeoGenerationStageId,
   PdpGeoGenerationStep,
   PdpGeoLocale,
+  PdpGeoOcrSentenceDiagnostic,
   PdpGeoRagMode
 } from "@agentic-geo/pdp-geo-generator-agent/types";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -53,6 +54,7 @@ type ModelLoadStatus = "idle" | "loading" | "ready" | "error";
 type RagProfileTarget = "extractor" | "generator";
 type WorkspaceMode = "extractor" | "generator";
 type ExtractorOutputView = "result" | "logs";
+type ModalCopyTarget = "panel-detail" | "rag-reference";
 
 interface PanelRagReference {
   id: string;
@@ -61,6 +63,18 @@ interface PanelRagReference {
   kind: string;
   text: string;
   score?: number;
+  principle?: string;
+  usage?: string;
+  intents?: string[];
+  fieldTargets?: string[];
+  metadata?: Record<string, string | number | boolean>;
+}
+
+interface PanelDetail {
+  label: string;
+  title: string;
+  subtitle?: string;
+  text: string;
   metadata?: Record<string, string | number | boolean>;
 }
 
@@ -135,7 +149,18 @@ interface ProviderSettings {
   azureApiKey: string;
   azureEndpoint: string;
   azureDeployment: string;
+  azureOcrDeployment: string;
+  azureReasoningDeployment: string;
+  azureEmbeddingDeployment: string;
   azureApiVersion: string;
+  azureRerankerProvider: "cohere" | "azure-ai-search-semantic";
+  azureCohereRerankApiKey: string;
+  azureCohereRerankEndpoint: string;
+  azureCohereRerankModel: string;
+  azureAiSearchApiKey: string;
+  azureAiSearchEndpoint: string;
+  azureAiSearchIndexName: string;
+  azureAiSearchSemanticConfiguration: string;
 }
 
 interface RuntimeLlmConfig {
@@ -144,7 +169,29 @@ interface RuntimeLlmConfig {
   model?: string;
   endpoint?: string;
   deployment?: string;
+  deployments?: {
+    ocr?: string;
+    reasoning?: string;
+    embedding?: string;
+  };
   apiVersion?: string;
+  embedding?: {
+    provider?: "local" | "azure-openai";
+    apiKey?: string;
+    endpoint?: string;
+    deployment?: string;
+    apiVersion?: string;
+    model?: string;
+  };
+  reranker?: {
+    provider?: "local-hybrid" | "cohere" | "azure-ai-search-semantic";
+    apiKey?: string;
+    endpoint?: string;
+    model?: string;
+    indexName?: string;
+    semanticConfiguration?: string;
+    queryLanguage?: string;
+  };
 }
 
 interface RagAttachment {
@@ -217,7 +264,18 @@ const defaultProviderSettings: ProviderSettings = {
   azureApiKey: "",
   azureEndpoint: "",
   azureDeployment: "",
-  azureApiVersion: "2024-10-21"
+  azureOcrDeployment: "gpt-5.5",
+  azureReasoningDeployment: "gpt-5.5",
+  azureEmbeddingDeployment: "text-embedding-3-small",
+  azureApiVersion: "2025-04-01-preview",
+  azureRerankerProvider: "cohere",
+  azureCohereRerankApiKey: "",
+  azureCohereRerankEndpoint: "",
+  azureCohereRerankModel: "",
+  azureAiSearchApiKey: "",
+  azureAiSearchEndpoint: "",
+  azureAiSearchIndexName: "",
+  azureAiSearchSemanticConfiguration: "default"
 };
 
 const defaultRagProfileSettings: RagProfileSettings = {
@@ -351,7 +409,7 @@ const uiCopy = {
       rag: "RAG 프로필",
       close: "설정 닫기",
       runDescription: "입력 처리 방식, 지역/마켓, REST API 요청 헤더를 함께 관리합니다.",
-      aiDescription: "OpenAI, Gemini, Azure OpenAI 키를 등록하고 연결 테스트 후 GEO 생성에 사용합니다.",
+      aiDescription: "OpenAI, Gemini, Azure API 키를 등록하고 연결 테스트 후 GEO 생성에 사용합니다.",
       ragDescription: "Extractor와 Generator가 참조하는 RAG 파일을 확인하고 편집합니다.",
       inputSection: "입력 처리 모드",
       localeSection: "Locale",
@@ -514,7 +572,7 @@ const uiCopy = {
       rag: "RAG profile",
       close: "Close settings",
       runDescription: "Manage input handling, locale/market, and REST API request headers together.",
-      aiDescription: "Connect OpenAI, Gemini, or Azure OpenAI and use the tested settings for GEO generation.",
+      aiDescription: "Connect OpenAI, Gemini, or Azure API settings and use the tested settings for GEO generation.",
       ragDescription: "Review and edit the RAG files used by the Extractor and Generator agents.",
       inputSection: "Input handling mode",
       localeSection: "Locale",
@@ -669,10 +727,32 @@ export function GeoGeneratorConsole() {
   const [outputView, setOutputView] = useState<OutputView>("schema");
   const [extractorOutputView, setExtractorOutputView] = useState<ExtractorOutputView>("result");
   const [selectedRagReference, setSelectedRagReference] = useState<PanelRagReference | null>(null);
+  const [selectedPanelDetail, setSelectedPanelDetail] = useState<PanelDetail | null>(null);
+  const [copiedModalTarget, setCopiedModalTarget] = useState<ModalCopyTarget | null>(null);
   const [isDragActive, setIsDragActive] = useState(false);
   const [composerStatus, setComposerStatus] = useState("");
   const [composerAttachments, setComposerAttachments] = useState<ComposerAttachment[]>([]);
   const text = uiCopy[uiLanguage];
+  const modalCopiedLabel = uiLanguage === "ko" ? "복사됨" : "Copied";
+  const openPanelDetail = (detail: PanelDetail) => {
+    setCopiedModalTarget(null);
+    setSelectedPanelDetail(detail);
+  };
+  const copyModalText = async (value: string, target: ModalCopyTarget) => {
+    await copyText(value);
+    setCopiedModalTarget(target);
+    window.setTimeout(() => {
+      setCopiedModalTarget((current) => current === target ? null : current);
+    }, 1600);
+  };
+  const closePanelDetail = () => {
+    setCopiedModalTarget(null);
+    setSelectedPanelDetail(null);
+  };
+  const closeRagReference = () => {
+    setCopiedModalTarget(null);
+    setSelectedRagReference(null);
+  };
 
   const selectedResult = results[selectedIndex];
   const selectedLog = selectedResult ? logs.find((log) => log.source === selectedResult.source) : undefined;
@@ -819,7 +899,7 @@ export function GeoGeneratorConsole() {
     setConnectionStatus(isAuthorizedAiSettings(storedProviderSettings) ? "connected" : "idle");
     setConnectionMessage(isAuthorizedAiSettings(storedProviderSettings)
       ? `${providerLabel(storedProviderSettings.provider, "ko")} 연결 테스트가 완료된 설정을 불러왔습니다.`
-      : "OpenAI, Gemini, Azure OpenAI 중 하나를 연결하면 Extractor와 Generator 실행에 함께 사용됩니다.");
+      : "OpenAI, Gemini, Azure API 중 하나를 연결하면 Extractor와 Generator 실행에 함께 사용됩니다.");
     setModelMessage("AI 키를 입력한 뒤 모델 목록을 불러올 수 있습니다.");
     setRagMessage("Extractor와 Generator RAG 프로필을 불러오고 있습니다.");
     setIsHistoryReady(true);
@@ -1361,7 +1441,12 @@ export function GeoGeneratorConsole() {
         return { ...current, geminiModel: value };
       }
       if (provider === "azure-openai") {
-        return { ...current, azureDeployment: value };
+        return {
+          ...current,
+          azureDeployment: value,
+          azureOcrDeployment: current.azureOcrDeployment || value,
+          azureReasoningDeployment: current.azureReasoningDeployment || value
+        };
       }
       return current;
     });
@@ -1850,7 +1935,7 @@ export function GeoGeneratorConsole() {
 
               {activeMode === "extractor" ? (
                 <>
-                  <ProcessGroup title={text.panel.extractor} steps={extractorOnlyPanelSteps} fallback={getExtractorSteps(uiLanguage)} runtimeProcess={activeExtractorPipelineProcess} uiLanguage={uiLanguage} group="extractor" skippedMessage={text.artifact.skipped} />
+                  <ProcessGroup title={text.panel.extractor} steps={extractorOnlyPanelSteps} fallback={getExtractorSteps(uiLanguage)} runtimeProcess={activeExtractorPipelineProcess} uiLanguage={uiLanguage} group="extractor" skippedMessage={text.artifact.skipped} onOpenDetail={openPanelDetail} />
 
                   <div className="panelDivider" />
                   <div className="panelBlock">
@@ -1865,9 +1950,9 @@ export function GeoGeneratorConsole() {
                           ))}
                         </div>
                         {extractorOutputView === "logs" ? (
-                          <ExtractorDiagnosticLog diagnostics={selectedExtractorLog} text={text} uiLanguage={uiLanguage} />
+                          <ExtractorDiagnosticLog diagnostics={selectedExtractorLog} text={text} uiLanguage={uiLanguage} onOpenDetail={openPanelDetail} />
                         ) : (
-                          <ExtractorOutputSummary result={selectedExtractorResult} text={text} uiLanguage={uiLanguage} />
+                          <ExtractorOutputSummary result={selectedExtractorResult} text={text} uiLanguage={uiLanguage} onOpenDetail={openPanelDetail} />
                         )}
                         <button
                           className="copyPanelButton"
@@ -1885,7 +1970,7 @@ export function GeoGeneratorConsole() {
                             logs
                           </button>
                         </div>
-                        <ExtractorDiagnosticLog diagnostics={selectedExtractorLog} text={text} uiLanguage={uiLanguage} />
+                        <ExtractorDiagnosticLog diagnostics={selectedExtractorLog} text={text} uiLanguage={uiLanguage} onOpenDetail={openPanelDetail} />
                       </>
                     ) : activeExtractorPipelineProcess ? (
                       <strong>
@@ -1900,9 +1985,19 @@ export function GeoGeneratorConsole() {
                 </>
               ) : (
                 <>
-                  <ProcessGroup title={text.panel.extractor} steps={extractorPanelSteps} fallback={getExtractorSteps(uiLanguage)} runtimeProcess={activeGeneratorPipelineProcess} skipped={activeGeneratorPipelineProcess?.skipExtractor ?? selectedResult?.sourceType === "manual-json"} uiLanguage={uiLanguage} group="extractor" skippedMessage={text.artifact.skipped} />
+                  <ProcessGroup title={text.panel.extractor} steps={extractorPanelSteps} fallback={getExtractorSteps(uiLanguage)} runtimeProcess={activeGeneratorPipelineProcess} skipped={activeGeneratorPipelineProcess?.skipExtractor ?? selectedResult?.sourceType === "manual-json"} uiLanguage={uiLanguage} group="extractor" skippedMessage={text.artifact.skipped} onOpenDetail={openPanelDetail} />
                   <div className="panelDivider" />
-                  <ProcessGroup title={text.panel.generator} steps={generatorPanelSteps} fallback={getGeneratorSteps(uiLanguage)} runtimeProcess={activeGeneratorPipelineProcess} uiLanguage={uiLanguage} group="generator" skippedMessage={text.artifact.skipped} />
+                  <ProcessGroup
+                    title={text.panel.generator}
+                    steps={generatorPanelSteps}
+                    fallback={getGeneratorSteps(uiLanguage)}
+                    runtimeProcess={activeGeneratorPipelineProcess}
+                    uiLanguage={uiLanguage}
+                    group="generator"
+                    skippedMessage={text.artifact.skipped}
+                    onOpenDetail={openPanelDetail}
+                    createStepDetail={(step, status, localized) => createGeneratorProcessPanelDetail(step, status, localized, selectedResult, selectedDiagnostics, selectedLog, uiLanguage)}
+                  />
 
                   <div className="panelDivider" />
                   <div className="panelBlock">
@@ -1917,9 +2012,9 @@ export function GeoGeneratorConsole() {
                       ))}
                     </div>
                     {outputView === "diagnostics" ? (
-                      <GeoDiagnosticLog diagnostics={selectedDiagnostics} process={selectedLog?.generatorProcess} text={text} uiLanguage={uiLanguage} />
+                      <GeoDiagnosticLog diagnostics={selectedDiagnostics} process={selectedLog?.generatorProcess} text={text} uiLanguage={uiLanguage} onOpenDetail={openPanelDetail} />
                     ) : (
-                      <GeoOutputSummary result={selectedResult} view={outputView} text={text} uiLanguage={uiLanguage} />
+                      <GeoOutputSummary result={selectedResult} view={outputView} text={text} uiLanguage={uiLanguage} onOpenDetail={openPanelDetail} />
                     )}
                     <button
                       className="copyPanelButton"
@@ -1937,7 +2032,7 @@ export function GeoGeneratorConsole() {
                         diagnostics
                       </button>
                     </div>
-                    <GeoDiagnosticLog diagnostics={selectedDiagnostics} process={selectedLog?.generatorProcess} text={text} uiLanguage={uiLanguage} />
+                    <GeoDiagnosticLog diagnostics={selectedDiagnostics} process={selectedLog?.generatorProcess} text={text} uiLanguage={uiLanguage} onOpenDetail={openPanelDetail} />
                   </>
                 ) : activePipelineProcess ? (
                   <strong>
@@ -1986,6 +2081,7 @@ export function GeoGeneratorConsole() {
                         <FileText size={14} />
                         <span>
                           <strong>{reference.title}</strong>
+                          {reference.usage && <em className="ragReferenceUsage">{reference.usage}</em>}
                           <em>{formatRagReferenceMeta(reference)}</em>
                         </span>
                       </button>
@@ -2296,41 +2392,19 @@ export function GeoGeneratorConsole() {
                     )}
 
                     {providerSettings.provider === "azure-openai" && (
-                      <div className="settingsFields">
-                        <SettingField
-                          label="Azure API Key"
-                          type="password"
-                          value={providerSettings.azureApiKey}
-                          placeholder="Azure OpenAI key"
-                          onChange={(value) => updateProviderSetting("azureApiKey", value)}
-                        />
-                        <SettingField
-                          label="Endpoint"
-                          value={providerSettings.azureEndpoint}
-                          placeholder="https://resource-name.openai.azure.com"
-                          onChange={(value) => updateProviderSetting("azureEndpoint", value)}
-                        />
-                        <ModelSelectField
-                          label="Deployment"
-                          value={providerSettings.azureDeployment}
-                          options={activeModelOptions}
-                          status={modelLoadStatus}
-                          message={modelMessage || modelIdleMessage(uiLanguage)}
-                          placeholder={modelPlaceholder(uiLanguage)}
-                          refreshLabel={text.settings.loadModels}
-                          loadingLabel={text.settings.loadingModels}
-                          onRefresh={() => {
-                            void loadProviderModels();
-                          }}
-                          onChange={(value) => updateProviderSetting("azureDeployment", value)}
-                        />
-                        <SettingField
-                          label="API Version"
-                          value={providerSettings.azureApiVersion}
-                          placeholder="2024-10-21"
-                          onChange={(value) => updateProviderSetting("azureApiVersion", value)}
-                        />
-                      </div>
+                      <AzureProviderSettings
+                        deploymentListId="geo-generator-azure-deployments"
+                        deploymentOptions={activeModelOptions}
+                        loadingLabel={text.settings.loadingModels}
+                        modelLoadStatus={modelLoadStatus}
+                        modelMessage={modelMessage || modelIdleMessage(uiLanguage)}
+                        onChange={updateProviderSetting}
+                        onRefreshDeployments={() => {
+                          void loadProviderModels();
+                        }}
+                        refreshLabel={text.settings.loadModels}
+                        settings={providerSettings}
+                      />
                     )}
                   </section>
 
@@ -2573,6 +2647,47 @@ export function GeoGeneratorConsole() {
         </div>
       )}
 
+      {selectedPanelDetail && (
+        <div className="ragReferenceOverlay" role="dialog" aria-modal="true" aria-labelledby="panel-detail-title">
+          <section className="ragReferenceModal panelDetailModal">
+            <header>
+              <div>
+                <span>{selectedPanelDetail.label}</span>
+                <h2 id="panel-detail-title">{selectedPanelDetail.title}</h2>
+                {selectedPanelDetail.subtitle && <p>{selectedPanelDetail.subtitle}</p>}
+              </div>
+              <div className="windowActions">
+                <button
+                  className={`modalCopyButton${copiedModalTarget === "panel-detail" ? " copied" : ""}`}
+                  type="button"
+                  onClick={() => void copyModalText(selectedPanelDetail.text, "panel-detail")}
+                  aria-label={copiedModalTarget === "panel-detail" ? modalCopiedLabel : text.artifact.copyAria}
+                >
+                  {copiedModalTarget === "panel-detail" ? <CheckCircle2 size={15} /> : <Copy size={15} />}
+                  <span className="modalCopyLabel" aria-live="polite">
+                    {copiedModalTarget === "panel-detail" ? modalCopiedLabel : text.artifact.copy}
+                  </span>
+                </button>
+                <button type="button" onClick={closePanelDetail} aria-label={uiLanguage === "ko" ? "상세 닫기" : "Close detail"}>
+                  <X size={17} />
+                </button>
+              </div>
+            </header>
+            {selectedPanelDetail.metadata && Object.keys(selectedPanelDetail.metadata).length > 0 && (
+              <dl className="ragReferenceMeta">
+                {Object.entries(selectedPanelDetail.metadata).slice(0, 8).map(([key, value]) => (
+                  <div key={key}>
+                    <dt>{key}</dt>
+                    <dd>{String(value)}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+            <pre>{selectedPanelDetail.text}</pre>
+          </section>
+        </div>
+      )}
+
       {selectedRagReference && (
         <div className="ragReferenceOverlay" role="dialog" aria-modal="true" aria-labelledby="rag-reference-title">
           <section className="ragReferenceModal">
@@ -2581,12 +2696,21 @@ export function GeoGeneratorConsole() {
                 <span>{text.panel.ragModalTitle}</span>
                 <h2 id="rag-reference-title">{selectedRagReference.title}</h2>
                 <p>{formatRagReferenceMeta(selectedRagReference)}</p>
+                {selectedRagReference.usage && <p>{selectedRagReference.usage}</p>}
               </div>
               <div className="windowActions">
-                <button type="button" onClick={() => copyText(selectedRagReference.text)} aria-label={text.artifact.copyAria}>
-                  <Copy size={15} />
+                <button
+                  className={`modalCopyButton${copiedModalTarget === "rag-reference" ? " copied" : ""}`}
+                  type="button"
+                  onClick={() => void copyModalText(selectedRagReference.text, "rag-reference")}
+                  aria-label={copiedModalTarget === "rag-reference" ? modalCopiedLabel : text.artifact.copyAria}
+                >
+                  {copiedModalTarget === "rag-reference" ? <CheckCircle2 size={15} /> : <Copy size={15} />}
+                  <span className="modalCopyLabel" aria-live="polite">
+                    {copiedModalTarget === "rag-reference" ? modalCopiedLabel : text.artifact.copy}
+                  </span>
                 </button>
-                <button type="button" onClick={() => setSelectedRagReference(null)} aria-label={text.panel.closeRagModal}>
+                <button type="button" onClick={closeRagReference} aria-label={text.panel.closeRagModal}>
                   <X size={17} />
                 </button>
               </div>
@@ -2639,11 +2763,13 @@ function ResultArtifact({ result, text }: { result: GeoGeneratorResult; text: (t
 }
 
 function GeoOutputSummary({
+  onOpenDetail,
   result,
   text,
   uiLanguage,
   view
 }: Readonly<{
+  onOpenDetail: (detail: PanelDetail) => void;
   result: GeoGeneratorResult;
   text: (typeof uiCopy)[UiLanguage];
   uiLanguage: UiLanguage;
@@ -2657,24 +2783,40 @@ function GeoOutputSummary({
     return (
       <div className="outputSummary">
         <strong>{productName}</strong>
-        <dl>
-          <div>
-            <dt>{uiLanguage === "ko" ? "섹션" : "Sections"}</dt>
-            <dd>{countContentSections(sections)}</dd>
-          </div>
-          <div>
-            <dt>FAQ</dt>
-            <dd>{countTextItems(sections.faq)}</dd>
-          </div>
-          <div>
-            <dt>HowTo</dt>
-            <dd>{countTextItems(sections.howToUse)}</dd>
-          </div>
-          <div>
-            <dt>HTML</dt>
-            <dd>{formatCompactNumber(result.generator.content.html.length)}</dd>
-          </div>
-        </dl>
+        <div className="outputMetricGrid">
+          <OutputMetricButton
+            label={uiLanguage === "ko" ? "섹션" : "Sections"}
+            value={countContentSections(sections)}
+            detail={createPanelDetail("Content detail", uiLanguage === "ko" ? "Content 섹션" : "Content sections", productName, sections, {
+              sections: countContentSections(sections)
+            })}
+            onOpenDetail={onOpenDetail}
+          />
+          <OutputMetricButton
+            label="FAQ"
+            value={countTextItems(sections.faq)}
+            detail={createPanelDetail("Content detail", "FAQ", productName, sections.faq, {
+              items: countTextItems(sections.faq)
+            })}
+            onOpenDetail={onOpenDetail}
+          />
+          <OutputMetricButton
+            label="HowTo"
+            value={countTextItems(sections.howToUse)}
+            detail={createPanelDetail("Content detail", "HowTo", productName, sections.howToUse, {
+              steps: countTextItems(sections.howToUse)
+            })}
+            onOpenDetail={onOpenDetail}
+          />
+          <OutputMetricButton
+            label="HTML"
+            value={formatCompactNumber(result.generator.content.html.length)}
+            detail={createPanelDetail("Content detail", "HTML", productName, result.generator.content.html, {
+              length: result.generator.content.html.length
+            })}
+            onOpenDetail={onOpenDetail}
+          />
+        </div>
       </div>
     );
   }
@@ -2682,33 +2824,56 @@ function GeoOutputSummary({
   return (
     <div className="outputSummary">
       <strong>{productName}</strong>
-      <dl>
-        <div>
-          <dt>Schema</dt>
-          <dd>{countSchemaNodes(result.generator.schemaMarkup.jsonLd)}</dd>
-        </div>
-        <div>
-          <dt>{uiLanguage === "ko" ? "추천" : "Reco."}</dt>
-          <dd>{diagnostics.recommendations.length}</dd>
-        </div>
-        <div>
-          <dt>{text.panel.evidence}</dt>
-          <dd>{diagnostics.evidence.length}</dd>
-        </div>
-        <div>
-          <dt>RAG</dt>
-          <dd>{diagnostics.selectedRagChunks.length}</dd>
-        </div>
-      </dl>
+      <div className="outputMetricGrid">
+        <OutputMetricButton
+          label="Schema"
+          value={countSchemaNodes(result.generator.schemaMarkup.jsonLd)}
+          detail={createPanelDetail("Output detail", "Schema", productName, result.generator.schemaMarkup, {
+            nodes: countSchemaNodes(result.generator.schemaMarkup.jsonLd)
+          })}
+          onOpenDetail={onOpenDetail}
+        />
+        <OutputMetricButton
+          label={uiLanguage === "ko" ? "추천" : "Reco."}
+          value={diagnostics.recommendations.length}
+          detail={createPanelDetail("Diagnostics detail", text.panel.recommendations, productName, diagnostics.recommendations, {
+            count: diagnostics.recommendations.length
+          })}
+          onOpenDetail={onOpenDetail}
+        />
+        <OutputMetricButton
+          label={text.panel.evidence}
+          value={diagnostics.evidence.length}
+          detail={createPanelDetail("Diagnostics detail", text.panel.evidence, productName, diagnostics.evidence, {
+            count: diagnostics.evidence.length
+          })}
+          onOpenDetail={onOpenDetail}
+        />
+        <OutputMetricButton
+          label="RAG"
+          value={diagnostics.selectedRagChunks.length}
+          detail={createPanelDetail("RAG detail", "Selected RAG", productName, {
+            selectedRagChunks: diagnostics.selectedRagChunks,
+            ragUsage: diagnostics.ragUsage ?? [],
+            reasoning: diagnostics.reasoning
+          }, {
+            chunks: diagnostics.selectedRagChunks.length,
+            usage: diagnostics.ragUsage?.length ?? 0
+          })}
+          onOpenDetail={onOpenDetail}
+        />
+      </div>
     </div>
   );
 }
 
 function ExtractorOutputSummary({
+  onOpenDetail,
   result,
   text,
   uiLanguage
 }: Readonly<{
+  onOpenDetail: (detail: PanelDetail) => void;
   result: ProductExtractionResult;
   text: (typeof uiCopy)[UiLanguage];
   uiLanguage: UiLanguage;
@@ -2718,35 +2883,341 @@ function ExtractorOutputSummary({
   return (
     <div className="outputSummary">
       <strong>{product.name}</strong>
-      <dl>
-        <div>
-          <dt>{uiLanguage === "ko" ? "리뷰 키워드" : "Review keys"}</dt>
-          <dd>{product.reviews.keywords.length}</dd>
-        </div>
-        <div>
-          <dt>{uiLanguage === "ko" ? "OCR 블록" : "OCR blocks"}</dt>
-          <dd>{product.ocr.textBlocks.length}</dd>
-        </div>
-        <div>
-          <dt>{uiLanguage === "ko" ? "HTML 분석" : "HTML sections"}</dt>
-          <dd>{product.contentAnalysis.sections.length}</dd>
-        </div>
-        <div>
-          <dt>RAG</dt>
-          <dd>{product.rag.chunks.length}</dd>
-        </div>
-      </dl>
+      <div className="outputMetricGrid">
+        <OutputMetricButton
+          label={uiLanguage === "ko" ? "리뷰 키워드" : "Review keys"}
+          value={product.reviews.keywords.length}
+          detail={createPanelDetail("Extractor detail", uiLanguage === "ko" ? "리뷰 신호" : "Review signals", product.name, product.reviews, {
+            keywords: product.reviews.keywords.length,
+            reviews: product.reviews.items.length
+          })}
+          onOpenDetail={onOpenDetail}
+        />
+        <OutputMetricButton
+          label={uiLanguage === "ko" ? "OCR 블록" : "OCR blocks"}
+          value={product.ocr.textBlocks.length}
+          detail={createPanelDetail("Extractor detail", uiLanguage === "ko" ? "OCR 블록" : "OCR blocks", product.name, product.ocr, {
+            blocks: product.ocr.textBlocks.length
+          })}
+          onOpenDetail={onOpenDetail}
+        />
+        <OutputMetricButton
+          label={uiLanguage === "ko" ? "HTML 분석" : "HTML sections"}
+          value={product.contentAnalysis.sections.length}
+          detail={createPanelDetail("Extractor detail", uiLanguage === "ko" ? "HTML 분석" : "HTML analysis", product.name, product.contentAnalysis, {
+            sections: product.contentAnalysis.sections.length
+          })}
+          onOpenDetail={onOpenDetail}
+        />
+        <OutputMetricButton
+          label="RAG"
+          value={product.rag.chunks.length}
+          detail={createPanelDetail("RAG detail", "Extractor RAG", product.name, product.rag, {
+            chunks: product.rag.chunks.length
+          })}
+          onOpenDetail={onOpenDetail}
+        />
+      </div>
       <span>{text.panel.evidence}: {product.sourceExtraction.html.sections.length + product.sourceExtraction.ocr.textBlocks.length}</span>
     </div>
   );
 }
 
+function OutputMetricButton({
+  detail,
+  label,
+  onOpenDetail,
+  value
+}: Readonly<{
+  detail: PanelDetail;
+  label: string;
+  onOpenDetail: (detail: PanelDetail) => void;
+  value: number | string;
+}>) {
+  return (
+    <button className="outputMetricButton" type="button" onClick={() => onOpenDetail(detail)} title={detail.title}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </button>
+  );
+}
+
+function createPanelDetail(
+  label: string,
+  title: string,
+  subtitle: string | undefined,
+  data: unknown,
+  metadata?: Record<string, string | number | boolean>
+): PanelDetail {
+  return {
+    label,
+    title,
+    subtitle,
+    text: stringifyPanelData(data),
+    metadata
+  };
+}
+
+function createGeneratorProcessPanelDetail(
+  step: ProcessStep,
+  status: ProcessStep["status"],
+  localized: Pick<ProcessStep, "title" | "description">,
+  result: GeoGeneratorResult | undefined,
+  diagnostics: PdpGeoDiagnostics | undefined,
+  log: GeoGeneratorLog | undefined,
+  uiLanguage: UiLanguage
+): PanelDetail | undefined {
+  if (!diagnostics) {
+    return undefined;
+  }
+
+  const stageId = String(step.id);
+  const validationRepairs = diagnostics.validationRepairs ?? [];
+  const stageBase = {
+    id: step.id,
+    title: step.title,
+    localized,
+    status,
+    message: step.message,
+    startedAt: "startedAt" in step ? step.startedAt : undefined,
+    completedAt: "completedAt" in step ? step.completedAt : undefined
+  };
+  const baseMetadata = {
+    id: stageId,
+    status
+  };
+
+  if (stageId === "validate" || stageId === "repair") {
+    const firstRepair = validationRepairs[0];
+    const title = localized.title;
+    const subtitle = firstRepair
+      ? `${validationRepairs.length}개 보정 · ${firstRepair.field}: ${firstRepair.issue}`
+      : diagnostics.validationWarnings.length > 0
+        ? `${diagnostics.validationWarnings.length}개 경고 · ${diagnostics.validationWarnings[0]}`
+        : (uiLanguage === "ko" ? "검증/보정 변경 없음" : "No validation or repair change");
+
+    return createPanelDetail("Generator process", title, subtitle, {
+      stage: stageBase,
+      summary: {
+        warningCount: diagnostics.validationWarnings.length,
+        repairCount: validationRepairs.length,
+        firstIssue: firstRepair?.issue,
+        firstAction: firstRepair?.action
+      },
+      brokenDataAndRepairs: validationRepairs.map((repair, index) => ({
+        index: index + 1,
+        field: repair.field,
+        source: repair.source,
+        issue: repair.issue,
+        action: repair.action,
+        before: repair.before,
+        after: repair.after,
+        evidence: repair.evidence ?? []
+      })),
+      warnings: diagnostics.validationWarnings,
+      repairEvidence: diagnostics.evidence.filter((item) => item.source === "repair" || item.source === "schema-validator" || item.source === "html-validator"),
+      finalArtifacts: result
+        ? {
+          schemaNodeCount: countSchemaNodes(result.generator.schemaMarkup.jsonLd),
+          contentSections: result.generator.content.sections,
+          htmlLength: result.generator.content.html.length
+        }
+        : undefined
+    }, {
+      ...baseMetadata,
+      warnings: diagnostics.validationWarnings.length,
+      repairs: validationRepairs.length
+    });
+  }
+
+  if (stageId === "retrieve" || stageId === "rerank") {
+    return createPanelDetail("Generator process", localized.title, localized.description, {
+      stage: stageBase,
+      queryIntents: diagnostics.reasoning?.queryIntents ?? [],
+      selectedRagChunks: diagnostics.selectedRagChunks.map((chunk) => ({
+        id: chunk.id,
+        source: chunk.source,
+        title: chunk.title,
+        kind: chunk.kind,
+        score: chunk.score,
+        intents: chunk.intents ?? [],
+        fieldTargets: chunk.fieldTargets ?? [],
+        excerpt: chunk.text.slice(0, 360)
+      })),
+      ragUsage: diagnostics.ragUsage ?? [],
+      reasoning: diagnostics.reasoning
+    }, {
+      ...baseMetadata,
+      chunks: diagnostics.selectedRagChunks.length,
+      ragUsage: diagnostics.ragUsage?.length ?? 0
+    });
+  }
+
+  if (stageId === "generate") {
+    return createPanelDetail("Generator process", localized.title, localized.description, {
+      stage: stageBase,
+      generatedFrom: {
+        normalizedProduct: diagnostics.normalizedProduct,
+        ragUsage: diagnostics.ragUsage ?? [],
+        ocrSentences: diagnostics.ocrSentences
+      },
+      generatedEvidence: diagnostics.evidence.filter((item) => item.source === "rag" || item.source === "terminology"),
+      recommendations: diagnostics.recommendations,
+      output: result
+        ? {
+          schemaMarkup: result.generator.schemaMarkup,
+          content: result.generator.content
+        }
+        : undefined
+    }, {
+      ...baseMetadata,
+      recommendations: diagnostics.recommendations.length,
+      evidence: diagnostics.evidence.length
+    });
+  }
+
+  if (stageId === "normalize") {
+    return createPanelDetail("Generator process", localized.title, localized.description, {
+      stage: stageBase,
+      normalizedProduct: diagnostics.normalizedProduct,
+      sourceEvidence: diagnostics.evidence.filter((item) => item.source === "input" || item.source === "fieldMapping" || item.source === "llm"),
+      ocrSentences: diagnostics.ocrSentences
+    }, {
+      ...baseMetadata,
+      evidence: diagnostics.evidence.length,
+      ocrSentences: diagnostics.ocrSentences.length
+    });
+  }
+
+  if (stageId === "artifact") {
+    return createPanelDetail("Generator process", localized.title, localized.description, {
+      stage: stageBase,
+      result: result?.generator,
+      diagnostics,
+      process: log?.generatorProcess ?? []
+    }, {
+      ...baseMetadata,
+      schemaNodes: result ? countSchemaNodes(result.generator.schemaMarkup.jsonLd) : 0,
+      evidence: diagnostics.evidence.length
+    });
+  }
+
+  return createPanelDetail("Generator process", localized.title, localized.description, {
+    stage: stageBase,
+    diagnosticsSummary: {
+      recommendations: diagnostics.recommendations.length,
+      evidence: diagnostics.evidence.length,
+      selectedRagChunks: diagnostics.selectedRagChunks.length,
+      validationWarnings: diagnostics.validationWarnings.length,
+      validationRepairs: validationRepairs.length
+    },
+    process: log?.generatorProcess ?? []
+  }, baseMetadata);
+}
+
+function stringifyPanelData(data: unknown): string {
+  if (typeof data === "string") {
+    return data.trim().length > 0 ? data : "(empty)";
+  }
+
+  return JSON.stringify(data, null, 2) ?? "(empty)";
+}
+
+type RuntimeUsageView = {
+  steps?: RuntimeStepView[];
+  tokenTotals?: TokenUsageView;
+  tokenNote?: string;
+};
+
+type RuntimeStepView = {
+  stage?: string;
+  label?: string;
+  provider?: string;
+  service?: string;
+  model?: string;
+  deployment?: string;
+  mode?: string;
+  called?: boolean;
+  tokenUsage?: TokenUsageView;
+  details?: string;
+};
+
+type TokenUsageView = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+};
+
+function PipelineUsageSummary({
+  label,
+  onOpenDetail,
+  usage,
+  uiLanguage
+}: Readonly<{
+  label: string;
+  onOpenDetail: (detail: PanelDetail) => void;
+  usage?: RuntimeUsageView;
+  uiLanguage: UiLanguage;
+}>) {
+  const steps = usage?.steps ?? [];
+
+  return (
+    <div className="diagnosticSection">
+      <strong>{uiLanguage === "ko" ? "사용 모델/검색 구성" : "Runtime pipeline"}</strong>
+      {steps.length === 0 ? (
+        <p>{uiLanguage === "ko" ? "기록된 모델/검색 구성이 없습니다." : "No runtime model/search usage recorded."}</p>
+      ) : (
+        steps.map((step, index) => (
+          <button
+            className="diagnosticEntryButton"
+            key={`${step.stage ?? "stage"}-${step.label ?? index}`}
+            type="button"
+            onClick={() => onOpenDetail(createPanelDetail(label, step.label ?? step.stage ?? "Runtime step", formatRuntimeStepSummary(step, uiLanguage), step, {
+              called: step.called ? "yes" : "no",
+              stage: step.stage ?? "unknown",
+              tokens: step.tokenUsage?.totalTokens ?? 0
+            }))}
+          >
+            <b>{step.label ?? step.stage}</b>
+            <span>{formatRuntimeStepSummary(step, uiLanguage)}</span>
+          </button>
+        ))
+      )}
+      {usage?.tokenNote && <p>{usage.tokenNote}</p>}
+    </div>
+  );
+}
+
+function formatRuntimeStepSummary(step: RuntimeStepView, uiLanguage: UiLanguage): string {
+  const runtimeName = [step.provider, step.service].filter(Boolean).join(" · ") || (uiLanguage === "ko" ? "설정 없음" : "No provider");
+  const modelName = step.deployment ? `deployment ${step.deployment}` : step.model ? `model ${step.model}` : step.mode ? `mode ${step.mode}` : "";
+  const called = step.called ? (uiLanguage === "ko" ? "호출됨" : "called") : (uiLanguage === "ko" ? "구성만 표시" : "configured");
+  const tokens = formatTokenUsage(step.tokenUsage, uiLanguage);
+  return [runtimeName, modelName, called, tokens].filter(Boolean).join(" · ");
+}
+
+function formatTokenUsage(usage: TokenUsageView | undefined, uiLanguage: UiLanguage): string {
+  if (!usage || (usage.inputTokens === undefined && usage.outputTokens === undefined && usage.totalTokens === undefined)) {
+    return uiLanguage === "ko" ? "tokens 해당 없음" : "tokens n/a";
+  }
+  const total = usage.totalTokens ?? ((usage.inputTokens ?? 0) + (usage.outputTokens ?? 0));
+  const input = usage.inputTokens !== undefined ? `in ${formatCompactNumber(usage.inputTokens)}` : undefined;
+  const output = usage.outputTokens !== undefined ? `out ${formatCompactNumber(usage.outputTokens)}` : undefined;
+  return [`tokens ${formatCompactNumber(total)}`, input, output].filter(Boolean).join(" / ");
+}
+
+function formatTokenTotal(usage: RuntimeUsageView | undefined, uiLanguage: UiLanguage): string {
+  return formatTokenUsage(usage?.tokenTotals, uiLanguage).replace(/^tokens\s*/i, "");
+}
+
 function ExtractorDiagnosticLog({
   diagnostics,
+  onOpenDetail,
   text,
   uiLanguage
 }: Readonly<{
   diagnostics?: ProductExtractionDiagnostics;
+  onOpenDetail: (detail: PanelDetail) => void;
   text: (typeof uiCopy)[UiLanguage];
   uiLanguage: UiLanguage;
 }>) {
@@ -2756,14 +3227,18 @@ function ExtractorDiagnosticLog({
 
   const warnings = diagnostics.warnings.slice(0, 8);
   const evidence = diagnostics.evidence.slice(0, 8);
+  const runtimeUsage = diagnostics.runtimeUsage;
 
   return (
     <div className="diagnosticLog">
       <div className="diagnosticStats">
-        <span>process {diagnostics.process.length}</span>
-        <span>warnings {diagnostics.warnings.length}</span>
-        <span>evidence {diagnostics.evidence.length}</span>
+        <button type="button" onClick={() => onOpenDetail(createPanelDetail("Extractor logs", "Pipeline usage", undefined, runtimeUsage ?? {}, { count: runtimeUsage?.steps.length ?? 0 }))}>pipeline {runtimeUsage?.steps.length ?? 0}</button>
+        <button type="button" onClick={() => onOpenDetail(createPanelDetail("Extractor logs", "Token usage", runtimeUsage?.tokenNote, runtimeUsage?.tokenTotals ?? {}, { totalTokens: runtimeUsage?.tokenTotals?.totalTokens ?? 0 }))}>tokens {formatTokenTotal(runtimeUsage, uiLanguage)}</button>
+        <button type="button" onClick={() => onOpenDetail(createPanelDetail("Extractor logs", "Process", undefined, diagnostics.process, { count: diagnostics.process.length }))}>process {diagnostics.process.length}</button>
+        <button type="button" onClick={() => onOpenDetail(createPanelDetail("Extractor logs", uiLanguage === "ko" ? "경고" : "Warnings", undefined, diagnostics.warnings, { count: diagnostics.warnings.length }))}>warnings {diagnostics.warnings.length}</button>
+        <button type="button" onClick={() => onOpenDetail(createPanelDetail("Extractor logs", text.panel.evidence, undefined, diagnostics.evidence, { count: diagnostics.evidence.length }))}>evidence {diagnostics.evidence.length}</button>
       </div>
+      <PipelineUsageSummary label="Extractor pipeline" usage={runtimeUsage} uiLanguage={uiLanguage} onOpenDetail={onOpenDetail} />
       <div className="diagnosticSection">
         <strong>Process</strong>
         {diagnostics.process.length === 0 ? (
@@ -2772,10 +3247,21 @@ function ExtractorDiagnosticLog({
           diagnostics.process.map((step) => {
             const localized = localizeProcessStep(step, "extractor", uiLanguage);
             return (
-              <p key={step.id}>
+              <button
+                className="diagnosticEntryButton"
+                key={step.id}
+                type="button"
+                onClick={() => onOpenDetail(createPanelDetail("Extractor process", localized.title, localized.description, {
+                  ...step,
+                  localized
+                }, {
+                  id: step.id,
+                  status: step.status
+                }))}
+              >
                 <b>{localized.title}</b>
                 <span>{step.message ?? localized.description}</span>
-              </p>
+              </button>
             );
           })
         )}
@@ -2786,10 +3272,17 @@ function ExtractorDiagnosticLog({
           <p>{uiLanguage === "ko" ? "경고가 없습니다." : "No warnings."}</p>
         ) : (
           warnings.map((warning) => (
-            <p key={`${warning.code}-${warning.message}`}>
+            <button
+              className="diagnosticEntryButton"
+              key={`${warning.code}-${warning.message}`}
+              type="button"
+              onClick={() => onOpenDetail(createPanelDetail("Extractor warning", warning.code, warning.message, warning, {
+                code: warning.code
+              }))}
+            >
               <b>{warning.code}</b>
               <span>{warning.message}</span>
-            </p>
+            </button>
           ))
         )}
       </div>
@@ -2799,10 +3292,18 @@ function ExtractorDiagnosticLog({
           <p>{text.panel.noEvidence}</p>
         ) : (
           evidence.map((item) => (
-            <p key={`${item.field}-${item.source}-${item.value.slice(0, 30)}`}>
+            <button
+              className="diagnosticEntryButton"
+              key={`${item.field}-${item.source}-${item.value.slice(0, 30)}`}
+              type="button"
+              onClick={() => onOpenDetail(createPanelDetail("Extractor evidence", `${item.field} · ${item.source}`, item.value, item, {
+                field: item.field,
+                source: item.source
+              }))}
+            >
               <b>{item.field} · {item.source}</b>
               <span>{item.value}</span>
-            </p>
+            </button>
           ))
         )}
       </div>
@@ -2811,6 +3312,8 @@ function ExtractorDiagnosticLog({
 }
 
 function ProcessGroup({
+  createStepDetail,
+  onOpenDetail,
   title,
   steps,
   fallback,
@@ -2820,6 +3323,8 @@ function ProcessGroup({
   group,
   skippedMessage
 }: {
+  createStepDetail?: (step: ProcessStep, status: ProcessStep["status"], localized: Pick<ProcessStep, "title" | "description">) => PanelDetail | undefined;
+  onOpenDetail: (detail: PanelDetail) => void;
   title: string;
   steps?: ProcessStep[];
   fallback: ProcessStep[];
@@ -2840,11 +3345,36 @@ function ProcessGroup({
           const localized = localizeProcessStep(step, group, uiLanguage);
           return (
             <li className={`processStep ${status}`} key={`${title}-${step.id}`}>
-              <StepStatusIcon status={status} />
-              <div>
-                <strong>{localized.title}</strong>
-                <span>{skipped ? skippedMessage : localized.description}</span>
-              </div>
+              <button
+                className="processStepButton"
+                type="button"
+                onClick={() => onOpenDetail(createStepDetail?.(step, status, localized) ?? createPanelDetail(`${title} log`, localized.title, skipped ? skippedMessage : localized.description, {
+                  ...step,
+                  status,
+                  localized,
+                  runtime: runtimeProcess
+                    ? {
+                      currentGroup: runtimeProcess.currentGroup,
+                      currentStepId: runtimeProcess.currentStepId,
+                      status: runtimeProcess.status,
+                      activeSource: runtimeProcess.activeSource,
+                      completedSourceCount: runtimeProcess.completedSourceCount,
+                      sourceCount: runtimeProcess.sourceCount,
+                      errorMessage: runtimeProcess.errorMessage
+                    }
+                    : undefined
+                }, {
+                  id: step.id,
+                  group,
+                  status
+                }))}
+              >
+                <StepStatusIcon status={status} />
+                <div>
+                  <strong>{localized.title}</strong>
+                  <span>{skipped ? skippedMessage : localized.description}</span>
+                </div>
+              </button>
             </li>
           );
         })}
@@ -2855,11 +3385,13 @@ function ProcessGroup({
 
 function GeoDiagnosticLog({
   diagnostics,
+  onOpenDetail,
   process,
   text,
   uiLanguage
 }: Readonly<{
   diagnostics?: PdpGeoDiagnostics;
+  onOpenDetail: (detail: PanelDetail) => void;
   process?: PdpGeoGenerationStep[];
   text: (typeof uiCopy)[UiLanguage];
   uiLanguage: UiLanguage;
@@ -2871,15 +3403,23 @@ function GeoDiagnosticLog({
   const processItems = process?.length ? process : [];
   const recommendations = diagnostics.recommendations.slice(0, 8);
   const evidence = diagnostics.evidence.slice(0, 8);
+  const ocrSentences = diagnostics.ocrSentences.slice(0, 6);
+  const ragUsage = (diagnostics.ragUsage ?? []).slice(0, 6);
   const ragChunks = diagnostics.selectedRagChunks.slice(0, 6);
+  const runtimeUsage = diagnostics.runtimeUsage;
 
   return (
     <div className="diagnosticLog">
       <div className="diagnosticStats">
-        <span>process {processItems.length}</span>
-        <span>recommendations {diagnostics.recommendations.length}</span>
-        <span>evidence {diagnostics.evidence.length}</span>
+        <button type="button" onClick={() => onOpenDetail(createPanelDetail("Generator diagnostics", "Pipeline usage", undefined, runtimeUsage ?? {}, { count: runtimeUsage?.steps.length ?? 0 }))}>pipeline {runtimeUsage?.steps.length ?? 0}</button>
+        <button type="button" onClick={() => onOpenDetail(createPanelDetail("Generator diagnostics", "Token usage", runtimeUsage?.tokenNote, runtimeUsage?.tokenTotals ?? {}, { totalTokens: runtimeUsage?.tokenTotals?.totalTokens ?? 0 }))}>tokens {formatTokenTotal(runtimeUsage, uiLanguage)}</button>
+        <button type="button" onClick={() => onOpenDetail(createPanelDetail("Generator logs", "Process", undefined, processItems, { count: processItems.length }))}>process {processItems.length}</button>
+        <button type="button" onClick={() => onOpenDetail(createPanelDetail("Generator diagnostics", text.panel.recommendations, undefined, diagnostics.recommendations, { count: diagnostics.recommendations.length }))}>recommendations {diagnostics.recommendations.length}</button>
+        <button type="button" onClick={() => onOpenDetail(createPanelDetail("Generator diagnostics", text.panel.evidence, undefined, diagnostics.evidence, { count: diagnostics.evidence.length }))}>evidence {diagnostics.evidence.length}</button>
+        <button type="button" onClick={() => onOpenDetail(createPanelDetail("Generator diagnostics", "OCR sentence sources", undefined, diagnostics.ocrSentences, { count: diagnostics.ocrSentences.length }))}>OCR {diagnostics.ocrSentences.length}</button>
+        <button type="button" onClick={() => onOpenDetail(createPanelDetail("Generator diagnostics", "RAG usage", undefined, diagnostics.ragUsage ?? [], { count: diagnostics.ragUsage?.length ?? 0 }))}>RAG usage {diagnostics.ragUsage?.length ?? 0}</button>
       </div>
+      <PipelineUsageSummary label="Generator pipeline" usage={runtimeUsage} uiLanguage={uiLanguage} onOpenDetail={onOpenDetail} />
       <div className="diagnosticSection">
         <strong>Process</strong>
         {processItems.length === 0 ? (
@@ -2888,10 +3428,21 @@ function GeoDiagnosticLog({
           processItems.map((step) => {
             const localized = localizeProcessStep(step, "generator", uiLanguage);
             return (
-              <p key={step.id}>
+              <button
+                className="diagnosticEntryButton"
+                key={step.id}
+                type="button"
+                onClick={() => onOpenDetail(createPanelDetail("Generator process", localized.title, step.message ?? localized.description, {
+                  ...step,
+                  localized
+                }, {
+                  id: step.id,
+                  status: step.status
+                }))}
+              >
                 <b>{localized.title}</b>
                 <span>{step.message ?? localized.description}</span>
-              </p>
+              </button>
             );
           })
         )}
@@ -2902,10 +3453,17 @@ function GeoDiagnosticLog({
           <p>{text.panel.noRecommendations}</p>
         ) : (
           recommendations.map((item) => (
-            <p key={`${item.field}-${item.message}-${item.reason}`}>
+            <button
+              className="diagnosticEntryButton"
+              key={`${item.field}-${item.message}-${item.reason}`}
+              type="button"
+              onClick={() => onOpenDetail(createPanelDetail("Generator recommendation", item.field, item.message, item, {
+                field: item.field
+              }))}
+            >
               <b>{item.field}</b>
               <span>{item.reason}</span>
-            </p>
+            </button>
           ))
         )}
       </div>
@@ -2915,27 +3473,333 @@ function GeoDiagnosticLog({
           <p>{text.panel.noEvidence}</p>
         ) : (
           evidence.map((item) => (
-            <p key={`${item.field}-${item.source}-${item.value.slice(0, 30)}`}>
+            <button
+              className="diagnosticEntryButton"
+              key={`${item.field}-${item.source}-${item.value.slice(0, 30)}`}
+              type="button"
+              onClick={() => onOpenDetail(createPanelDetail("Generator evidence", `${item.field} · ${item.source}`, item.value, item, {
+                field: item.field,
+                source: item.source
+              }))}
+            >
               <b>{item.field} · {item.source}</b>
               <span>{item.value}</span>
-            </p>
+            </button>
           ))
         )}
       </div>
       <div className="diagnosticSection">
-        <strong>RAG</strong>
-        {ragChunks.length === 0 ? (
+        <strong>{uiLanguage === "ko" ? "OCR 문장 출처" : "OCR sentence sources"}</strong>
+        {ocrSentences.length === 0 ? (
+          <p>{uiLanguage === "ko" ? "OCR 문장 진단이 없습니다." : "No OCR sentence diagnostics."}</p>
+        ) : (
+          ocrSentences.map((item) => (
+            <button
+              className="diagnosticEntryButton"
+              key={`${item.text}-${item.imageUrls?.join("|") ?? "unknown"}`}
+              type="button"
+              onClick={() => onOpenDetail(createPanelDetail("OCR sentence source", formatOcrSentenceSource(item, uiLanguage), item.text, item, {
+                images: item.imageUrls?.length ?? 0,
+                intents: item.intents.join(", ")
+              }))}
+            >
+              <b>{formatOcrSentenceSource(item, uiLanguage)}</b>
+              <span>{item.text}</span>
+            </button>
+          ))
+        )}
+      </div>
+      <div className="diagnosticSection">
+        <strong>{uiLanguage === "ko" ? "RAG 활용 판단" : "RAG usage"}</strong>
+        {ragUsage.length > 0 ? (
+          ragUsage.map((usage) => (
+            <button
+              className="diagnosticEntryButton"
+              key={usage.principle}
+              type="button"
+              onClick={() => onOpenDetail(createPanelDetail("RAG usage", usage.principle, formatRagUsageTitle(usage), usage, {
+                principle: usage.principle,
+                confidence: Math.round(usage.confidence * 100) / 100,
+                references: usage.references.length
+              }))}
+            >
+              <b>{formatRagUsageTitle(usage)}</b>
+              <span>{formatRagUsageBody(usage, uiLanguage)}</span>
+            </button>
+          ))
+        ) : ragChunks.length === 0 ? (
           <p>{uiLanguage === "ko" ? "선택된 RAG chunk가 없습니다." : "No selected RAG chunks."}</p>
         ) : (
           ragChunks.map((chunk) => (
-            <p key={chunk.id}>
+            <button
+              className="diagnosticEntryButton"
+              key={chunk.id}
+              type="button"
+              onClick={() => onOpenDetail(createPanelDetail("RAG chunk", chunk.title ?? chunk.source, `${chunk.kind} · ${chunk.source}`, chunk, {
+                kind: chunk.kind,
+                score: Math.round(chunk.score * 100) / 100
+              }))}
+            >
               <b>{chunk.kind} · {chunk.source}</b>
               <span>{chunk.title ?? chunk.text}</span>
-            </p>
+            </button>
           ))
         )}
       </div>
     </div>
+  );
+}
+
+type ProviderSettingUpdater = <Key extends keyof ProviderSettings>(key: Key, value: ProviderSettings[Key]) => void;
+
+function AzureProviderSettings({
+  deploymentListId,
+  deploymentOptions,
+  loadingLabel,
+  modelLoadStatus,
+  modelMessage,
+  onChange,
+  onRefreshDeployments,
+  refreshLabel,
+  settings
+}: Readonly<{
+  deploymentListId: string;
+  deploymentOptions: string[];
+  loadingLabel: string;
+  modelLoadStatus: ModelLoadStatus;
+  modelMessage: string;
+  onChange: ProviderSettingUpdater;
+  onRefreshDeployments: () => void;
+  refreshLabel: string;
+  settings: ProviderSettings;
+}>) {
+  return (
+    <div className="azureProviderSettings">
+      <div className="azureConnectionGrid">
+        <AzureTextField
+          label="Azure API Key"
+          type="password"
+          value={settings.azureApiKey}
+          placeholder="Shared Azure API key"
+          onChange={(value) => onChange("azureApiKey", value)}
+        />
+        <AzureTextField
+          label="Azure Endpoint"
+          value={settings.azureEndpoint}
+          placeholder="https://resource-name.openai.azure.com"
+          onChange={(value) => onChange("azureEndpoint", value)}
+        />
+        <AzureTextField
+          label="API Version"
+          value={settings.azureApiVersion}
+          placeholder="2025-04-01-preview"
+          onChange={(value) => onChange("azureApiVersion", value)}
+        />
+      </div>
+      <p className="azureCredentialNote">
+        OCR, Embedding, Final classification/reasoning은 위 Azure API Key와 Endpoint를 함께 사용합니다.
+      </p>
+
+      <section className="azurePipelineBlock">
+        <div className="azurePipelineHeader">
+          <h4>Model pipeline</h4>
+          <button type="button" disabled={modelLoadStatus === "loading"} onClick={onRefreshDeployments}>
+            {modelLoadStatus === "loading" ? loadingLabel : refreshLabel}
+          </button>
+        </div>
+        <small className={modelLoadStatus === "error" ? "azureModelMessage error" : "azureModelMessage"}>{modelMessage}</small>
+        <datalist id={deploymentListId}>
+          {deploymentOptions.map((option) => (
+            <option key={option} value={option} />
+          ))}
+        </datalist>
+        <div className="azurePipeline">
+          <AzureDeploymentStep
+            deploymentListId={deploymentListId}
+            order="1"
+            title="OCR"
+            subtitle="Structure extraction"
+            value={settings.azureOcrDeployment}
+            placeholder="gpt-5.5"
+            onChange={(value) => onChange("azureOcrDeployment", value)}
+          />
+          <AzureDeploymentStep
+            deploymentListId={deploymentListId}
+            order="2"
+            title="Embedding"
+            subtitle="RAG vectorization"
+            note="상단 Azure API 인증 사용"
+            value={settings.azureEmbeddingDeployment}
+            placeholder="text-embedding-3-small"
+            onChange={(value) => onChange("azureEmbeddingDeployment", value)}
+          />
+          <AzureRerankingStep order="3" settings={settings} onChange={onChange} />
+          <AzureDeploymentStep
+            deploymentListId={deploymentListId}
+            order="4"
+            title="Final classification/reasoning"
+            subtitle="Classification and analysis"
+            value={settings.azureReasoningDeployment}
+            placeholder="gpt-5.5"
+            onChange={(value) => onChange("azureReasoningDeployment", value)}
+          />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function AzureTextField({
+  label,
+  onChange,
+  placeholder,
+  type = "text",
+  value
+}: Readonly<{
+  label: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  type?: "password" | "text";
+  value: string;
+}>) {
+  return (
+    <label className="azureInlineField">
+      <span>{label}</span>
+      <input
+        type={type}
+        value={value}
+        placeholder={placeholder}
+        autoComplete="off"
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  );
+}
+
+function AzureDeploymentStep({
+  deploymentListId,
+  note,
+  onChange,
+  order,
+  placeholder,
+  subtitle,
+  title,
+  value
+}: Readonly<{
+  deploymentListId: string;
+  note?: string;
+  onChange: (value: string) => void;
+  order: string;
+  placeholder: string;
+  subtitle: string;
+  title: string;
+  value: string;
+}>) {
+  return (
+    <article className="azurePipelineStep">
+      <span className="azureStepNumber">{order}</span>
+      <div className="azureStepMeta">
+        <strong>{title}</strong>
+        <em>{subtitle}</em>
+      </div>
+      <div className="azureStepControl">
+        <input
+          list={deploymentListId}
+          value={value}
+          placeholder={placeholder}
+          autoComplete="off"
+          onChange={(event) => onChange(event.target.value)}
+        />
+        {note && <small className="azureStepNote">{note}</small>}
+      </div>
+    </article>
+  );
+}
+
+function AzureRerankingStep({
+  onChange,
+  order,
+  settings
+}: Readonly<{
+  onChange: ProviderSettingUpdater;
+  order: string;
+  settings: ProviderSettings;
+}>) {
+  const isCohere = settings.azureRerankerProvider === "cohere";
+
+  return (
+    <article className="azurePipelineStep azureRerankingStep">
+      <span className="azureStepNumber">{order}</span>
+      <div className="azureStepMeta">
+        <strong>Reranking</strong>
+        <em>별도 reranking/search 서비스</em>
+      </div>
+      <div className="azureStepControl">
+        <select
+          value={settings.azureRerankerProvider}
+          onChange={(event) => onChange("azureRerankerProvider", event.target.value as ProviderSettings["azureRerankerProvider"])}
+        >
+          <option value="cohere">Cohere Rerank via Azure Foundry</option>
+          <option value="azure-ai-search-semantic">Azure AI Search semantic ranker</option>
+        </select>
+        <small className="azureStepNote">
+          모델 배포 호출 단계가 아니므로 선택한 reranking/search 서비스의 Key/Endpoint를 사용합니다.
+        </small>
+        <div className="azureStepFields">
+          {isCohere ? (
+            <>
+              <AzureTextField
+                label="Cohere/Foundry Key"
+                type="password"
+                value={settings.azureCohereRerankApiKey}
+                placeholder="Cohere rerank key"
+                onChange={(value) => onChange("azureCohereRerankApiKey", value)}
+              />
+              <AzureTextField
+                label="Cohere/Foundry Endpoint"
+                value={settings.azureCohereRerankEndpoint}
+                placeholder="https://.../v2/rerank"
+                onChange={(value) => onChange("azureCohereRerankEndpoint", value)}
+              />
+              <AzureTextField
+                label="Model"
+                value={settings.azureCohereRerankModel}
+                placeholder="optional"
+                onChange={(value) => onChange("azureCohereRerankModel", value)}
+              />
+            </>
+          ) : (
+            <>
+              <AzureTextField
+                label="Azure AI Search Key"
+                type="password"
+                value={settings.azureAiSearchApiKey}
+                placeholder="Search key"
+                onChange={(value) => onChange("azureAiSearchApiKey", value)}
+              />
+              <AzureTextField
+                label="Azure AI Search Endpoint"
+                value={settings.azureAiSearchEndpoint}
+                placeholder="https://search-name.search.windows.net"
+                onChange={(value) => onChange("azureAiSearchEndpoint", value)}
+              />
+              <AzureTextField
+                label="Index"
+                value={settings.azureAiSearchIndexName}
+                placeholder="index name"
+                onChange={(value) => onChange("azureAiSearchIndexName", value)}
+              />
+              <AzureTextField
+                label="Semantic config"
+                value={settings.azureAiSearchSemanticConfiguration}
+                placeholder="default"
+                onChange={(value) => onChange("azureAiSearchSemanticConfiguration", value)}
+              />
+            </>
+          )}
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -2962,6 +3826,31 @@ function SettingField({
         autoComplete="off"
         onChange={(event) => onChange(event.target.value)}
       />
+    </label>
+  );
+}
+
+function SettingSelectField<Value extends string>({
+  label,
+  onChange,
+  options,
+  value
+}: Readonly<{
+  label: string;
+  onChange: (value: Value) => void;
+  options: Array<{ value: Value; label: string }>;
+  value: Value;
+}>) {
+  return (
+    <label className="settingField">
+      <span>{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value as Value)}>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }
@@ -3138,12 +4027,41 @@ function createRuntimeLlmConfig(settings: ProviderSettings): RuntimeLlmConfig {
   }
 
   if (settings.provider === "azure-openai") {
+    const azureApiKey = normalizeSecretInput(settings.azureApiKey);
+    const endpoint = settings.azureEndpoint.trim();
+    const apiVersion = settings.azureApiVersion.trim();
+    const ocrDeployment = settings.azureOcrDeployment.trim() || settings.azureDeployment.trim();
+    const reasoningDeployment = settings.azureReasoningDeployment.trim() || settings.azureDeployment.trim();
+    const embeddingDeployment = settings.azureEmbeddingDeployment.trim();
+    const cohereSelected = settings.azureRerankerProvider === "cohere";
+
     return {
       provider: "azure-openai",
-      apiKey: normalizeSecretInput(settings.azureApiKey),
-      endpoint: settings.azureEndpoint.trim(),
-      deployment: settings.azureDeployment.trim(),
-      apiVersion: settings.azureApiVersion.trim()
+      apiKey: azureApiKey,
+      endpoint,
+      deployment: reasoningDeployment,
+      deployments: {
+        ocr: ocrDeployment,
+        reasoning: reasoningDeployment,
+        embedding: embeddingDeployment
+      },
+      apiVersion,
+      embedding: {
+        provider: "azure-openai",
+        apiKey: azureApiKey,
+        endpoint,
+        deployment: embeddingDeployment,
+        apiVersion
+      },
+      reranker: {
+        provider: settings.azureRerankerProvider,
+        apiKey: cohereSelected ? normalizeSecretInput(settings.azureCohereRerankApiKey) : normalizeSecretInput(settings.azureAiSearchApiKey),
+        endpoint: cohereSelected ? settings.azureCohereRerankEndpoint.trim() : settings.azureAiSearchEndpoint.trim(),
+        model: cohereSelected ? settings.azureCohereRerankModel.trim() : undefined,
+        indexName: cohereSelected ? undefined : settings.azureAiSearchIndexName.trim(),
+        semanticConfiguration: cohereSelected ? undefined : settings.azureAiSearchSemanticConfiguration.trim(),
+        queryLanguage: "ko-kr"
+      }
     };
   }
 
@@ -3230,7 +4148,7 @@ function providerLabel(provider: ProviderId, language: UiLanguage): string {
     return language === "ko" ? "Mock 테스트" : "Mock";
   }
   if (provider === "azure-openai") {
-    return "Azure OpenAI";
+    return "Azure API";
   }
   if (provider === "gemini") {
     return "Gemini";
@@ -3382,8 +4300,8 @@ function modelFailedMessage(provider: string, language: UiLanguage): string {
 
 function providerInitialMessage(language: UiLanguage): string {
   return language === "ko"
-    ? "OpenAI, Gemini, Azure OpenAI 중 하나를 연결하면 Extractor와 Generator 실행에 함께 사용됩니다."
-    : "Connect OpenAI, Gemini, or Azure OpenAI to use it across Extractor and Generator runs.";
+    ? "OpenAI, Gemini, Azure API 중 하나를 연결하면 Extractor와 Generator 실행에 함께 사용됩니다."
+    : "Connect OpenAI, Gemini, or Azure API settings to use it across Extractor and Generator runs.";
 }
 
 function providerPendingMessage(language: UiLanguage): string {
@@ -3412,8 +4330,8 @@ function providerResetMessage(language: UiLanguage): string {
 
 function mockProviderMessage(language: UiLanguage): string {
   return language === "ko"
-    ? "Mock은 UI/UX와 JSON 결과 흐름을 빠르게 확인하는 데모 모드입니다. 실제 생성 품질 검증에는 OpenAI, Gemini, Azure OpenAI 중 하나를 연결해주세요."
-    : "Mock is for previewing the UI and JSON flow. Connect OpenAI, Gemini, or Azure OpenAI to validate real generation quality.";
+    ? "Mock은 UI/UX와 JSON 결과 흐름을 빠르게 확인하는 데모 모드입니다. 실제 생성 품질 검증에는 OpenAI, Gemini, Azure API 중 하나를 연결해주세요."
+    : "Mock is for previewing the UI and JSON flow. Connect OpenAI, Gemini, or Azure API settings to validate real generation quality.";
 }
 
 function aiScopeMessage(language: UiLanguage): string {
@@ -3747,8 +4665,30 @@ function getProviderValidationMessage(settings: ProviderSettings, language: UiLa
     return language === "ko" ? "Gemini 모델을 선택해주세요." : "Choose a Gemini model.";
   }
 
-  if (settings.provider === "azure-openai" && settings.azureDeployment.trim().length === 0) {
-    return language === "ko" ? "Azure Deployment를 선택해주세요." : "Choose an Azure deployment.";
+  if (settings.provider === "azure-openai") {
+    if ((settings.azureOcrDeployment.trim() || settings.azureDeployment.trim()).length === 0) {
+      return language === "ko" ? "Azure OCR/structure deployment를 입력해주세요." : "Enter an Azure OCR/structure deployment.";
+    }
+    if ((settings.azureReasoningDeployment.trim() || settings.azureDeployment.trim()).length === 0) {
+      return language === "ko" ? "Azure 최종 분류/분석 deployment를 입력해주세요." : "Enter an Azure final reasoning deployment.";
+    }
+    if (settings.azureEmbeddingDeployment.trim().length === 0) {
+      return language === "ko" ? "Azure embedding deployment를 입력해주세요." : "Enter an Azure embedding deployment.";
+    }
+    if (settings.azureRerankerProvider === "cohere") {
+      if (normalizeSecretInput(settings.azureCohereRerankApiKey).length === 0 || settings.azureCohereRerankEndpoint.trim().length === 0) {
+        return language === "ko"
+          ? "Cohere Rerank는 Cohere/Foundry Key와 Endpoint가 필요합니다."
+          : "Cohere Rerank needs a Cohere/Foundry key and endpoint.";
+      }
+    }
+    if (settings.azureRerankerProvider === "azure-ai-search-semantic") {
+      if (normalizeSecretInput(settings.azureAiSearchApiKey).length === 0 || settings.azureAiSearchEndpoint.trim().length === 0 || settings.azureAiSearchIndexName.trim().length === 0) {
+        return language === "ko"
+          ? "Azure AI Search semantic ranker는 별도 Search 서비스 Endpoint, Key, Index name이 필요합니다."
+          : "Azure AI Search semantic ranker needs a separate Search endpoint, key, and index name.";
+      }
+    }
   }
 
   return undefined;
@@ -3757,8 +4697,8 @@ function getProviderValidationMessage(settings: ProviderSettings, language: UiLa
 function getProviderCredentialValidationMessage(settings: ProviderSettings, language: UiLanguage): string | undefined {
   if (settings.provider === "mock") {
     return language === "ko"
-      ? "실제 AI 연동을 위해 OpenAI, Gemini, Azure OpenAI 중 하나를 선택해주세요."
-      : "Choose OpenAI, Gemini, or Azure OpenAI for a real AI connection.";
+      ? "실제 AI 연동을 위해 OpenAI, Gemini, Azure API 중 하나를 선택해주세요."
+      : "Choose OpenAI, Gemini, or Azure API settings for a real AI connection.";
   }
 
   if (settings.provider === "openai" && normalizeSecretInput(settings.openaiApiKey).length === 0) {
@@ -3789,7 +4729,7 @@ function getSelectedModel(settings: ProviderSettings): string {
     return settings.geminiModel.trim();
   }
   if (settings.provider === "azure-openai") {
-    return settings.azureDeployment.trim();
+    return settings.azureOcrDeployment.trim() || settings.azureDeployment.trim();
   }
   return "";
 }
@@ -4364,7 +5304,40 @@ function formatPanelSource(source: string): string {
 }
 
 function getGeneratorPanelRagReferences(diagnostics?: PdpGeoDiagnostics): PanelRagReference[] {
-  return (diagnostics?.selectedRagChunks ?? []).map((chunk, index) => ({
+  const chunks = diagnostics?.selectedRagChunks ?? [];
+  const usageReferences = (diagnostics?.ragUsage ?? []).flatMap((usage, usageIndex) => (
+    usage.references.map((reference, referenceIndex) => {
+      const matchedChunk = chunks.find((chunk) => chunk.source === reference.source && (chunk.title ?? "") === (reference.title ?? ""));
+      const title = reference.title ?? reference.source;
+      return {
+        id: `generator-rag-usage-${usageIndex}-${referenceIndex}-${reference.source}-${title}`,
+        title,
+        source: reference.source,
+        kind: reference.kind,
+        text: matchedChunk?.text ?? reference.excerpt,
+        score: reference.score,
+        principle: usage.principle,
+        usage: reference.usage,
+        intents: reference.intents,
+        fieldTargets: reference.fieldTargets,
+        metadata: {
+          principle: usage.principle,
+          confidence: Math.round(usage.confidence * 100) / 100,
+          enabled: usage.enabled,
+          evidence: usage.productEvidenceCount,
+          intents: reference.intents.join(", "),
+          fieldTargets: reference.fieldTargets.join(", "),
+          source: reference.source
+        }
+      } satisfies PanelRagReference;
+    })
+  ));
+
+  if (usageReferences.length > 0) {
+    return usageReferences;
+  }
+
+  return chunks.map((chunk, index) => ({
     id: `generator-rag-${chunk.id}-${index}`,
     title: chunk.title ?? chunk.source ?? chunk.id,
     source: chunk.source,
@@ -4391,10 +5364,43 @@ function getExtractorPanelRagReferences(result?: ProductExtractionResult): Panel
 
 function formatRagReferenceMeta(reference: PanelRagReference): string {
   return [
+    reference.principle,
     reference.kind,
     reference.source,
+    reference.fieldTargets?.length ? `targets ${reference.fieldTargets.slice(0, 3).join(", ")}` : undefined,
     typeof reference.score === "number" ? `score ${reference.score.toFixed(2)}` : undefined
   ].filter(Boolean).join(" · ");
+}
+
+function formatOcrSentenceSource(item: PdpGeoOcrSentenceDiagnostic, uiLanguage: UiLanguage): string {
+  const imageCount = item.imageUrls?.length ?? 0;
+  const firstImage = item.imageUrls?.[0];
+  if (!firstImage) {
+    return uiLanguage === "ko" ? "OCR 이미지 출처 없음" : "OCR source unknown";
+  }
+  const source = formatPanelSource(firstImage);
+  if (imageCount > 1) {
+    return uiLanguage === "ko" ? `OCR 이미지 ${imageCount}개 · ${source}` : `${imageCount} OCR images · ${source}`;
+  }
+  return uiLanguage === "ko" ? `OCR 이미지 · ${source}` : `OCR image · ${source}`;
+}
+
+function formatRagUsageTitle(usage: PdpGeoDiagnostics["ragUsage"][number]): string {
+  return `${usage.principle} · ${usage.enabled ? "enabled" : "disabled"} · confidence ${usage.confidence.toFixed(2)}`;
+}
+
+function formatRagUsageBody(usage: PdpGeoDiagnostics["ragUsage"][number], uiLanguage: UiLanguage): string {
+  const references = usage.references
+    .slice(0, 3)
+    .map((reference) => {
+      const title = reference.title ?? reference.source;
+      const targets = reference.fieldTargets.length > 0 ? ` (${reference.fieldTargets.slice(0, 3).join(", ")})` : "";
+      return `${reference.usage} · ${reference.kind}/${title}${targets}`;
+    })
+    .join(" | ");
+  const evidenceLabel = uiLanguage === "ko" ? "상품 근거" : "product evidence";
+  const noReferences = uiLanguage === "ko" ? "매칭된 RAG 원문 없음" : "no matched RAG reference";
+  return `${evidenceLabel} ${usage.productEvidenceCount} · ${references || noReferences} · ${usage.rationale}`;
 }
 
 function isHttpUrl(value: string): boolean {

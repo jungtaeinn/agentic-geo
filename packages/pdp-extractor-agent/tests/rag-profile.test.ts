@@ -11,6 +11,10 @@ import {
   resetProductExtractorRagProfile,
   writeProductExtractorRagProfile
 } from "../src/rag/profile";
+import {
+  createProductExtractorRagQuery,
+  retrieveProductExtractorRagDocuments
+} from "../src/rag/retrieval";
 
 describe("RAG profile synchronization", () => {
   it("injects runtime analysis prompt and RAG files into the LLM classification prompt", () => {
@@ -74,5 +78,49 @@ describe("RAG profile synchronization", () => {
 
     const rereadProfile = await readProductExtractorRagProfile(directory);
     expect(rereadProfile.documents.some((document) => document.content.includes("혜택 적용가는 benefits가 아닙니다."))).toBe(true);
+  });
+
+  it("retrieves RAG policy chunks with product evidence instead of attaching full files blindly", async () => {
+    const query = createProductExtractorRagQuery({
+      source: "https://example.com/product",
+      productName: "Hydra Barrier Cream",
+      imageTexts: [
+        {
+          imageUrl: "https://example.com/product#section-1",
+          text: "[How to Use] Apply morning and night after toner."
+        },
+        {
+          imageUrl: "https://example.com/product#section-2",
+          text: "[Coupon] Delivery and exchange notices are not product benefits."
+        }
+      ]
+    });
+    const retrieved = await retrieveProductExtractorRagDocuments({
+      query,
+      documents: [
+        {
+          name: "ocr-policy.md",
+          content: [
+            "# OCR Policy",
+            "",
+            "Classify usage instructions, benefits, ingredients, and sentence-level OCR evidence.",
+            "Exclude cart, coupon, delivery, exchange, refund, legal, and page chrome text from product benefit fields."
+          ].join("\n")
+        },
+        {
+          name: "unrelated.md",
+          content: "# Brand Voice\n\nUse short copy."
+        }
+      ],
+      settings: {
+        maxChunks: 1,
+        scoreThreshold: 0
+      }
+    });
+
+    expect(retrieved).toHaveLength(1);
+    expect(retrieved[0]?.sourceDocument).toBe("ocr-policy.md");
+    expect(retrieved[0]?.content).toContain("Retrieved RAG policy chunk");
+    expect(retrieved[0]?.content).toContain("Exclude cart, coupon, delivery");
   });
 });

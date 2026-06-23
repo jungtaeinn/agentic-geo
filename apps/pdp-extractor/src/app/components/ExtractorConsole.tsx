@@ -104,7 +104,18 @@ interface ProviderSettings {
   azureApiKey: string;
   azureEndpoint: string;
   azureDeployment: string;
+  azureOcrDeployment: string;
+  azureReasoningDeployment: string;
+  azureEmbeddingDeployment: string;
   azureApiVersion: string;
+  azureRerankerProvider: "cohere" | "azure-ai-search-semantic";
+  azureCohereRerankApiKey: string;
+  azureCohereRerankEndpoint: string;
+  azureCohereRerankModel: string;
+  azureAiSearchApiKey: string;
+  azureAiSearchEndpoint: string;
+  azureAiSearchIndexName: string;
+  azureAiSearchSemanticConfiguration: string;
 }
 
 interface RuntimeLlmConfig {
@@ -113,7 +124,29 @@ interface RuntimeLlmConfig {
   model?: string;
   endpoint?: string;
   deployment?: string;
+  deployments?: {
+    ocr?: string;
+    reasoning?: string;
+    embedding?: string;
+  };
   apiVersion?: string;
+  embedding?: {
+    provider?: "local" | "azure-openai";
+    apiKey?: string;
+    endpoint?: string;
+    deployment?: string;
+    apiVersion?: string;
+    model?: string;
+  };
+  reranker?: {
+    provider?: "local-hybrid" | "cohere" | "azure-ai-search-semantic";
+    apiKey?: string;
+    endpoint?: string;
+    model?: string;
+    indexName?: string;
+    semanticConfiguration?: string;
+    queryLanguage?: string;
+  };
 }
 
 interface RestApiSettings {
@@ -169,14 +202,25 @@ const defaultProviderSettings: ProviderSettings = {
   azureApiKey: "",
   azureEndpoint: "",
   azureDeployment: "",
-  azureApiVersion: "2024-10-21"
+  azureOcrDeployment: "gpt-5.5",
+  azureReasoningDeployment: "gpt-5.5",
+  azureEmbeddingDeployment: "text-embedding-3-small",
+  azureApiVersion: "2025-04-01-preview",
+  azureRerankerProvider: "cohere",
+  azureCohereRerankApiKey: "",
+  azureCohereRerankEndpoint: "",
+  azureCohereRerankModel: "",
+  azureAiSearchApiKey: "",
+  azureAiSearchEndpoint: "",
+  azureAiSearchIndexName: "",
+  azureAiSearchSemanticConfiguration: "default"
 };
 
 const providerLabels: Record<ProviderId, string> = {
   mock: "Mock 테스트",
   openai: "OpenAI",
   gemini: "Gemini",
-  "azure-openai": "Azure OpenAI"
+  "azure-openai": "Azure API"
 };
 
 const providerDescriptions: Record<ProviderId, string> = {
@@ -268,7 +312,7 @@ export function ExtractorConsole() {
   const [modelLoadStatus, setModelLoadStatus] = useState<ModelLoadStatus>("idle");
   const [modelMessage, setModelMessage] = useState("AI 키를 입력한 뒤 모델 목록을 불러올 수 있습니다.");
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("idle");
-  const [connectionMessage, setConnectionMessage] = useState("아직 실제 AI가 연동되지 않았습니다. OpenAI, Gemini, Azure OpenAI 중 하나를 연결해주세요.");
+  const [connectionMessage, setConnectionMessage] = useState("아직 실제 AI가 연동되지 않았습니다. OpenAI, Gemini, Azure API 중 하나를 연결해주세요.");
   const [copied, setCopied] = useState(false);
   const [agentProcess, setAgentProcess] = useState<AgentProcessState>({
     status: "idle",
@@ -968,7 +1012,12 @@ export function ExtractorConsole() {
         return { ...current, geminiModel: value };
       }
       if (provider === "azure-openai") {
-        return { ...current, azureDeployment: value };
+        return {
+          ...current,
+          azureDeployment: value,
+          azureOcrDeployment: current.azureOcrDeployment || value,
+          azureReasoningDeployment: current.azureReasoningDeployment || value
+        };
       }
       return current;
     });
@@ -1103,7 +1152,7 @@ export function ExtractorConsole() {
       ? "REST API 설정"
       : "RAG 프로필";
   const settingsDescription = activeSettingsPane === "provider"
-    ? "OpenAI, Gemini, Azure OpenAI 키를 등록하고 연결 테스트를 통과한 설정만 추출 실행에 사용합니다."
+    ? "OpenAI, Gemini, Azure API 키를 등록하고 연결 테스트를 통과한 설정만 추출 실행에 사용합니다."
     : activeSettingsPane === "rest"
       ? "REST API 주소를 입력했을 때 데이터 소스 타입과 요청 헤더를 어떻게 처리할지 설정합니다."
       : "페이지 내 상품 정보 추출을 위한 분석 프롬프트와 GEO 참고 파일을 RAG 데이터로 관리합니다.";
@@ -1518,7 +1567,7 @@ export function ExtractorConsole() {
               <KeyRound size={16} />
               <div>
                 <strong>AI 연동이 필요합니다</strong>
-                <span>설정에서 OpenAI, Gemini, Azure OpenAI 중 하나를 연결 테스트하면 추출과 GEO RAW 수정 요청을 실행할 수 있습니다.</span>
+                <span>설정에서 OpenAI, Gemini, Azure API 중 하나를 연결 테스트하면 추출과 GEO RAW 수정 요청을 실행할 수 있습니다.</span>
               </div>
               <button
                 type="button"
@@ -1744,7 +1793,7 @@ export function ExtractorConsole() {
                 {providerSettings.provider === "mock" && (
                   <div className="settingsCard">
                     <strong>Mock 테스트</strong>
-                    <p>API Key 없이 UI/UX와 JSON 결과 흐름을 빠르게 확인하는 데모 모드입니다. 실제 추출 실행 버튼을 활성화하려면 OpenAI, Gemini, Azure OpenAI 중 하나를 연결해주세요.</p>
+                    <p>API Key 없이 UI/UX와 JSON 결과 흐름을 빠르게 확인하는 데모 모드입니다. 실제 추출 실행 버튼을 활성화하려면 OpenAI, Gemini, Azure API 중 하나를 연결해주세요.</p>
                   </div>
                 )}
 
@@ -1797,39 +1846,17 @@ export function ExtractorConsole() {
                 )}
 
                 {providerSettings.provider === "azure-openai" && (
-                  <div className="settingsFields">
-                    <SettingField
-                      label="Azure API Key"
-                      type="password"
-                      value={providerSettings.azureApiKey}
-                      placeholder="Azure OpenAI key"
-                      onChange={(value) => updateProviderSetting("azureApiKey", value)}
-                    />
-                    <SettingField
-                      label="Endpoint"
-                      value={providerSettings.azureEndpoint}
-                      placeholder="https://resource-name.openai.azure.com"
-                      onChange={(value) => updateProviderSetting("azureEndpoint", value)}
-                    />
-                    <ModelSelectField
-                      label="Deployment"
-                      value={providerSettings.azureDeployment}
-                      options={activeModelOptions}
-                      status={modelLoadStatus}
-                      message={modelMessage}
-                      placeholder="배포 목록을 불러와 선택"
-                      onRefresh={() => {
-                        void loadProviderModels();
-                      }}
-                      onChange={(value) => updateProviderSetting("azureDeployment", value)}
-                    />
-                    <SettingField
-                      label="API Version"
-                      value={providerSettings.azureApiVersion}
-                      placeholder="2024-10-21"
-                      onChange={(value) => updateProviderSetting("azureApiVersion", value)}
-                    />
-                  </div>
+                  <AzureProviderSettings
+                    deploymentListId="pdp-extractor-azure-deployments"
+                    deploymentOptions={activeModelOptions}
+                    modelLoadStatus={modelLoadStatus}
+                    modelMessage={modelMessage}
+                    onChange={updateProviderSetting}
+                    onRefreshDeployments={() => {
+                      void loadProviderModels();
+                    }}
+                    settings={providerSettings}
+                  />
                 )}
               </section>
 
@@ -2126,6 +2153,255 @@ function StepStatusIcon({ status }: { status: AgentStepStatus }) {
   return <Circle className="processIcon pending" size={14} />;
 }
 
+type ProviderSettingUpdater = <Key extends keyof ProviderSettings>(key: Key, value: ProviderSettings[Key]) => void;
+
+function AzureProviderSettings({
+  deploymentListId,
+  deploymentOptions,
+  modelLoadStatus,
+  modelMessage,
+  onChange,
+  onRefreshDeployments,
+  settings
+}: Readonly<{
+  deploymentListId: string;
+  deploymentOptions: string[];
+  modelLoadStatus: ModelLoadStatus;
+  modelMessage: string;
+  onChange: ProviderSettingUpdater;
+  onRefreshDeployments: () => void;
+  settings: ProviderSettings;
+}>) {
+  return (
+    <div className="azureProviderSettings">
+      <div className="azureConnectionGrid">
+        <AzureTextField
+          label="Azure API Key"
+          type="password"
+          value={settings.azureApiKey}
+          placeholder="Azure API key"
+          onChange={(value) => onChange("azureApiKey", value)}
+        />
+        <AzureTextField
+          label="Azure Endpoint"
+          value={settings.azureEndpoint}
+          placeholder="https://resource-name.openai.azure.com"
+          onChange={(value) => onChange("azureEndpoint", value)}
+        />
+        <AzureTextField
+          label="API Version"
+          value={settings.azureApiVersion}
+          placeholder="2025-04-01-preview"
+          onChange={(value) => onChange("azureApiVersion", value)}
+        />
+      </div>
+      <p className="azureCredentialNote">
+        OCR, Embedding, Final classification/reasoning은 위 Azure API Key와 Endpoint를 함께 사용합니다.
+      </p>
+
+      <section className="azurePipelineBlock">
+        <div className="azurePipelineHeader">
+          <h4>모델 파이프라인</h4>
+          <button type="button" disabled={modelLoadStatus === "loading"} onClick={onRefreshDeployments}>
+            {modelLoadStatus === "loading" ? "불러오는 중" : "배포 목록 불러오기"}
+          </button>
+        </div>
+        <small className={modelLoadStatus === "error" ? "azureModelMessage error" : "azureModelMessage"}>{modelMessage}</small>
+        <datalist id={deploymentListId}>
+          {deploymentOptions.map((option) => (
+            <option key={option} value={option} />
+          ))}
+        </datalist>
+        <div className="azurePipeline">
+          <AzureDeploymentStep
+            deploymentListId={deploymentListId}
+            order="1"
+            title="OCR"
+            subtitle="구조 추출"
+            value={settings.azureOcrDeployment}
+            placeholder="gpt-5.5"
+            onChange={(value) => onChange("azureOcrDeployment", value)}
+          />
+          <AzureDeploymentStep
+            deploymentListId={deploymentListId}
+            order="2"
+            title="Embedding"
+            subtitle="RAG 벡터화"
+            note="상단 Azure API 인증 사용"
+            value={settings.azureEmbeddingDeployment}
+            placeholder="text-embedding-3-small"
+            onChange={(value) => onChange("azureEmbeddingDeployment", value)}
+          />
+          <AzureRerankingStep order="3" settings={settings} onChange={onChange} />
+          <AzureDeploymentStep
+            deploymentListId={deploymentListId}
+            order="4"
+            title="Final classification/reasoning"
+            subtitle="최종 분류/분석 추론"
+            value={settings.azureReasoningDeployment}
+            placeholder="gpt-5.5"
+            onChange={(value) => onChange("azureReasoningDeployment", value)}
+          />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function AzureTextField({
+  label,
+  onChange,
+  placeholder,
+  type = "text",
+  value
+}: Readonly<{
+  label: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  type?: "password" | "text";
+  value: string;
+}>) {
+  return (
+    <label className="azureInlineField">
+      <span>{label}</span>
+      <input
+        type={type}
+        value={value}
+        placeholder={placeholder}
+        autoComplete="off"
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  );
+}
+
+function AzureDeploymentStep({
+  deploymentListId,
+  note,
+  onChange,
+  order,
+  placeholder,
+  subtitle,
+  title,
+  value
+}: Readonly<{
+  deploymentListId: string;
+  note?: string;
+  onChange: (value: string) => void;
+  order: string;
+  placeholder: string;
+  subtitle: string;
+  title: string;
+  value: string;
+}>) {
+  return (
+    <article className="azurePipelineStep">
+      <span className="azureStepNumber">{order}</span>
+      <div className="azureStepMeta">
+        <strong>{title}</strong>
+        <em>{subtitle}</em>
+      </div>
+      <div className="azureStepControl">
+        <input
+          list={deploymentListId}
+          value={value}
+          placeholder={placeholder}
+          autoComplete="off"
+          onChange={(event) => onChange(event.target.value)}
+        />
+        {note && <small className="azureStepNote">{note}</small>}
+      </div>
+    </article>
+  );
+}
+
+function AzureRerankingStep({
+  onChange,
+  order,
+  settings
+}: Readonly<{
+  onChange: ProviderSettingUpdater;
+  order: string;
+  settings: ProviderSettings;
+}>) {
+  const isCohere = settings.azureRerankerProvider === "cohere";
+
+  return (
+    <article className="azurePipelineStep azureRerankingStep">
+      <span className="azureStepNumber">{order}</span>
+      <div className="azureStepMeta">
+        <strong>Reranking</strong>
+        <em>후보 재정렬</em>
+      </div>
+      <div className="azureStepControl">
+        <select
+          value={settings.azureRerankerProvider}
+          onChange={(event) => onChange("azureRerankerProvider", event.target.value as ProviderSettings["azureRerankerProvider"])}
+        >
+          <option value="cohere">Cohere Rerank via Azure Foundry</option>
+          <option value="azure-ai-search-semantic">Azure AI Search semantic ranker</option>
+        </select>
+        <small className="azureStepNote">
+          모델 배포 호출 단계가 아니므로 선택한 reranking/search 서비스의 Key/Endpoint를 사용합니다.
+        </small>
+        <div className="azureStepFields">
+          {isCohere ? (
+            <>
+              <AzureTextField
+                label="Cohere/Foundry Key"
+                type="password"
+                value={settings.azureCohereRerankApiKey}
+                placeholder="Cohere rerank key"
+                onChange={(value) => onChange("azureCohereRerankApiKey", value)}
+              />
+              <AzureTextField
+                label="Cohere/Foundry Endpoint"
+                value={settings.azureCohereRerankEndpoint}
+                placeholder="https://.../v2/rerank"
+                onChange={(value) => onChange("azureCohereRerankEndpoint", value)}
+              />
+              <AzureTextField
+                label="Model"
+                value={settings.azureCohereRerankModel}
+                placeholder="optional"
+                onChange={(value) => onChange("azureCohereRerankModel", value)}
+              />
+            </>
+          ) : (
+            <>
+              <AzureTextField
+                label="Azure AI Search Key"
+                type="password"
+                value={settings.azureAiSearchApiKey}
+                placeholder="Search key"
+                onChange={(value) => onChange("azureAiSearchApiKey", value)}
+              />
+              <AzureTextField
+                label="Azure AI Search Endpoint"
+                value={settings.azureAiSearchEndpoint}
+                placeholder="https://search-name.search.windows.net"
+                onChange={(value) => onChange("azureAiSearchEndpoint", value)}
+              />
+              <AzureTextField
+                label="Index"
+                value={settings.azureAiSearchIndexName}
+                placeholder="index name"
+                onChange={(value) => onChange("azureAiSearchIndexName", value)}
+              />
+              <AzureTextField
+                label="Semantic config"
+                value={settings.azureAiSearchSemanticConfiguration}
+                placeholder="default"
+                onChange={(value) => onChange("azureAiSearchSemanticConfiguration", value)}
+              />
+            </>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}
+
 function SettingField({
   label,
   onChange,
@@ -2149,6 +2425,31 @@ function SettingField({
         autoComplete="off"
         onChange={(event) => onChange(event.target.value)}
       />
+    </label>
+  );
+}
+
+function SettingSelectField<Value extends string>({
+  label,
+  onChange,
+  options,
+  value
+}: Readonly<{
+  label: string;
+  onChange: (value: Value) => void;
+  options: Array<{ value: Value; label: string }>;
+  value: Value;
+}>) {
+  return (
+    <label className="settingField">
+      <span>{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value as Value)}>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }
@@ -2415,12 +2716,41 @@ function createRuntimeLlmConfig(settings: ProviderSettings): RuntimeLlmConfig {
   }
 
   if (settings.provider === "azure-openai") {
+    const azureApiKey = normalizeSecretInput(settings.azureApiKey);
+    const endpoint = settings.azureEndpoint.trim();
+    const apiVersion = settings.azureApiVersion.trim();
+    const ocrDeployment = settings.azureOcrDeployment.trim() || settings.azureDeployment.trim();
+    const reasoningDeployment = settings.azureReasoningDeployment.trim() || settings.azureDeployment.trim();
+    const embeddingDeployment = settings.azureEmbeddingDeployment.trim();
+    const cohereSelected = settings.azureRerankerProvider === "cohere";
+
     return {
       provider: "azure-openai",
-      apiKey: normalizeSecretInput(settings.azureApiKey),
-      endpoint: settings.azureEndpoint.trim(),
-      deployment: settings.azureDeployment.trim(),
-      apiVersion: settings.azureApiVersion.trim()
+      apiKey: azureApiKey,
+      endpoint,
+      deployment: reasoningDeployment,
+      deployments: {
+        ocr: ocrDeployment,
+        reasoning: reasoningDeployment,
+        embedding: embeddingDeployment
+      },
+      apiVersion,
+      embedding: {
+        provider: "azure-openai",
+        apiKey: azureApiKey,
+        endpoint,
+        deployment: embeddingDeployment,
+        apiVersion
+      },
+      reranker: {
+        provider: settings.azureRerankerProvider,
+        apiKey: cohereSelected ? normalizeSecretInput(settings.azureCohereRerankApiKey) : normalizeSecretInput(settings.azureAiSearchApiKey),
+        endpoint: cohereSelected ? settings.azureCohereRerankEndpoint.trim() : settings.azureAiSearchEndpoint.trim(),
+        model: cohereSelected ? settings.azureCohereRerankModel.trim() : undefined,
+        indexName: cohereSelected ? undefined : settings.azureAiSearchIndexName.trim(),
+        semanticConfiguration: cohereSelected ? undefined : settings.azureAiSearchSemanticConfiguration.trim(),
+        queryLanguage: "ko-kr"
+      }
     };
   }
 
@@ -2629,8 +2959,26 @@ function getProviderValidationMessage(settings: ProviderSettings): string | unde
     return "Gemini 모델을 선택해주세요.";
   }
 
-  if (settings.provider === "azure-openai" && settings.azureDeployment.trim().length === 0) {
-    return "Azure Deployment를 선택해주세요.";
+  if (settings.provider === "azure-openai") {
+    if ((settings.azureOcrDeployment.trim() || settings.azureDeployment.trim()).length === 0) {
+      return "Azure OCR/structure deployment를 입력해주세요.";
+    }
+    if ((settings.azureReasoningDeployment.trim() || settings.azureDeployment.trim()).length === 0) {
+      return "Azure 최종 분류/분석 deployment를 입력해주세요.";
+    }
+    if (settings.azureEmbeddingDeployment.trim().length === 0) {
+      return "Azure embedding deployment를 입력해주세요.";
+    }
+    if (settings.azureRerankerProvider === "cohere") {
+      if (normalizeSecretInput(settings.azureCohereRerankApiKey).length === 0 || settings.azureCohereRerankEndpoint.trim().length === 0) {
+        return "Cohere Rerank Key와 Endpoint를 입력해주세요.";
+      }
+    }
+    if (settings.azureRerankerProvider === "azure-ai-search-semantic") {
+      if (normalizeSecretInput(settings.azureAiSearchApiKey).length === 0 || settings.azureAiSearchEndpoint.trim().length === 0 || settings.azureAiSearchIndexName.trim().length === 0) {
+        return "Azure AI Search semantic ranker 설정을 입력해주세요.";
+      }
+    }
   }
 
   return undefined;
@@ -2638,7 +2986,7 @@ function getProviderValidationMessage(settings: ProviderSettings): string | unde
 
 function getProviderCredentialValidationMessage(settings: ProviderSettings): string | undefined {
   if (settings.provider === "mock") {
-    return "실제 AI 연동을 위해 OpenAI, Gemini, Azure OpenAI 중 하나를 선택해주세요.";
+    return "실제 AI 연동을 위해 OpenAI, Gemini, Azure API 중 하나를 선택해주세요.";
   }
 
   if (settings.provider === "openai" && normalizeSecretInput(settings.openaiApiKey).length === 0) {
@@ -2669,7 +3017,7 @@ function getSelectedModel(settings: ProviderSettings): string {
     return settings.geminiModel.trim();
   }
   if (settings.provider === "azure-openai") {
-    return settings.azureDeployment.trim();
+    return settings.azureOcrDeployment.trim() || settings.azureDeployment.trim();
   }
   return "";
 }

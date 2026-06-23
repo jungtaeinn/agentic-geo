@@ -7,6 +7,7 @@ import type {
   KeywordClassifier,
   LlmProviderConfig
 } from "../types";
+import type { AiTokenUsage } from "../../types";
 
 /** OpenAI Responses API adapter for OCR keyword classification. */
 export class OpenAIKeywordClassifier implements KeywordClassifier {
@@ -106,11 +107,15 @@ export class OpenAIKeywordClassifier implements KeywordClassifier {
   ): Promise<ImageTextExtractionResponse> {
     const images: ImageTextExtractionResponse["images"] = [];
     const errors: string[] = [];
+    const usages: AiTokenUsage[] = [];
 
     for (const imageUrl of request.imageUrls) {
       try {
         const direct = await this.requestImageOcr(request, [{ displayUrl: imageUrl, inputUrl: imageUrl }]);
         images.push(...direct.images);
+        if (direct.usage) {
+          usages.push(direct.usage);
+        }
         continue;
       } catch (error) {
         if (isQuotaOrBillingError(error)) {
@@ -123,6 +128,9 @@ export class OpenAIKeywordClassifier implements KeywordClassifier {
         const dataUrl = await downloadImageAsDataUrl(imageUrl);
         const extracted = await this.requestImageOcr(request, [{ displayUrl: imageUrl, inputUrl: dataUrl }]);
         images.push(...extracted.images);
+        if (extracted.usage) {
+          usages.push(extracted.usage);
+        }
       } catch (error) {
         if (isQuotaOrBillingError(error)) {
           throw error;
@@ -136,7 +144,8 @@ export class OpenAIKeywordClassifier implements KeywordClassifier {
       rawText: [
         directError instanceof Error ? directError.message : String(directError),
         ...errors
-      ].join("\n")
+      ].join("\n"),
+      usage: mergeTokenUsages(usages)
     };
   }
 }
@@ -148,7 +157,11 @@ function parseProviderJson(text: string): KeywordClassificationResponse {
     parsed.output?.flatMap((item: { content?: Array<{ text?: string }> }) => item.content ?? []).map((item: { text?: string }) => item.text).join("\n") ??
     text;
   const jsonMatch = String(rawText).match(/\{[\s\S]*\}/);
-  return jsonMatch ? JSON.parse(jsonMatch[0]) : { keywords: [], summary: "No parseable JSON returned.", rawText };
+  const result = jsonMatch ? JSON.parse(jsonMatch[0]) as KeywordClassificationResponse : { keywords: [], summary: "No parseable JSON returned.", rawText };
+  return {
+    ...result,
+    usage: tokenUsageFromOpenAi(parsed.usage)
+  };
 }
 
 function createImageOcrPrompt(request: ImageTextExtractionRequest): string {
@@ -199,7 +212,7 @@ function parseImageOcrJson(text: string, imageUrls: string[]): ImageTextExtracti
   const jsonMatch = String(rawText).match(/\{[\s\S]*\}/);
 
   if (!jsonMatch) {
-    return { images: [], rawText };
+    return { images: [], rawText, usage: tokenUsageFromOpenAi(parsed.usage) };
   }
 
   const payload = JSON.parse(jsonMatch[0]) as {
@@ -216,8 +229,45 @@ function parseImageOcrJson(text: string, imageUrls: string[]): ImageTextExtracti
         text: image.text ?? ""
       }))
       .filter((image) => image.imageUrl.length > 0 && image.text.trim().length > 0),
-    rawText
+    rawText,
+    usage: tokenUsageFromOpenAi(parsed.usage)
   };
+}
+
+function tokenUsageFromOpenAi(value: unknown): AiTokenUsage | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const usage = value as Record<string, unknown>;
+  return compactTokenUsage({
+    inputTokens: numberField(usage.input_tokens) ?? numberField(usage.prompt_tokens),
+    outputTokens: numberField(usage.output_tokens) ?? numberField(usage.completion_tokens),
+    totalTokens: numberField(usage.total_tokens)
+  });
+}
+
+function mergeTokenUsages(usages: AiTokenUsage[]): AiTokenUsage | undefined {
+  const merged = usages.reduce<AiTokenUsage>((total, usage) => ({
+    inputTokens: sumOptional(total.inputTokens, usage.inputTokens),
+    outputTokens: sumOptional(total.outputTokens, usage.outputTokens),
+    totalTokens: sumOptional(total.totalTokens, usage.totalTokens)
+  }), {});
+  return compactTokenUsage(merged);
+}
+
+function compactTokenUsage(usage: AiTokenUsage): AiTokenUsage | undefined {
+  return usage.inputTokens !== undefined || usage.outputTokens !== undefined || usage.totalTokens !== undefined ? usage : undefined;
+}
+
+function sumOptional(left: number | undefined, right: number | undefined): number | undefined {
+  if (left === undefined && right === undefined) {
+    return undefined;
+  }
+  return (left ?? 0) + (right ?? 0);
+}
+
+function numberField(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 async function downloadImageAsDataUrl(imageUrl: string): Promise<string> {

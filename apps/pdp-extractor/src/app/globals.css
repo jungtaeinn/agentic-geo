@@ -1647,6 +1647,191 @@ button:disabled {
   gap: 10px;
 }
 
+.azureProviderSettings {
+  display: grid;
+  gap: 14px;
+}
+
+.azureConnectionGrid {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.85fr) minmax(240px, 1.35fr) minmax(190px, 0.9fr);
+  gap: 8px;
+}
+
+.azureInlineField {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  min-height: 66px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 10px;
+}
+
+.azureInlineField span {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.azureCredentialNote,
+.azureStepNote {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.azureStepNote {
+  display: block;
+}
+
+.azureInlineField input,
+.azurePipelineStep input,
+.azurePipelineStep select {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  outline: 0;
+  background: rgba(0, 0, 0, 0.16);
+  color: #fff;
+  padding: 0 10px;
+}
+
+.azureInlineField input:focus,
+.azurePipelineStep input:focus,
+.azurePipelineStep select:focus {
+  border-color: rgba(102, 168, 255, 0.58);
+}
+
+.azurePipelineBlock {
+  display: grid;
+  gap: 8px;
+}
+
+.azurePipelineHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.azurePipelineHeader h4 {
+  margin: 0;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 760;
+  line-height: 1.2;
+}
+
+.azurePipelineHeader button {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.075);
+  color: var(--text-soft);
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.azurePipelineHeader button:hover {
+  background: rgba(255, 255, 255, 0.11);
+  color: #fff;
+}
+
+.azurePipelineHeader button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.azureModelMessage {
+  color: var(--muted-strong);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.azureModelMessage.error {
+  color: var(--red);
+}
+
+.azurePipeline {
+  display: grid;
+  gap: 8px;
+}
+
+.azurePipelineStep {
+  display: grid;
+  grid-template-columns: 28px minmax(170px, 0.36fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 12px;
+}
+
+.azureStepNumber {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid rgba(102, 168, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(102, 168, 255, 0.11);
+  color: #d4e6ff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.azureStepMeta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.azureStepMeta strong {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.azureStepMeta em {
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.25;
+}
+
+.azureStepControl {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.azureStepFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.azureStepFields .azureInlineField {
+  min-height: auto;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
 .settingField {
   display: grid;
   grid-template-columns: minmax(140px, 0.34fr) minmax(0, 1fr);
@@ -2031,6 +2216,26 @@ button:disabled {
   .providerGrid.threeColumns,
   .settingField {
     grid-template-columns: 1fr;
+  }
+
+  .azureConnectionGrid,
+  .azurePipelineStep,
+  .azureStepFields {
+    grid-template-columns: 1fr;
+  }
+
+  .azurePipelineStep {
+    gap: 9px;
+  }
+
+  .azureStepNumber {
+    width: 24px;
+    height: 24px;
+  }
+
+  .azurePipelineHeader {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .modelSelectControl {

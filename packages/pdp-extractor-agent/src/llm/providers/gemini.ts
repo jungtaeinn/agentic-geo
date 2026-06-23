@@ -5,6 +5,7 @@ import type {
   KeywordClassifier,
   LlmProviderConfig
 } from "../types";
+import type { AiTokenUsage } from "../../types";
 
 /** Gemini generateContent adapter for OCR keyword classification. */
 export class GeminiKeywordClassifier implements KeywordClassifier {
@@ -37,9 +38,31 @@ export class GeminiKeywordClassifier implements KeywordClassifier {
 
     const payload = await response.json() as {
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      usageMetadata?: unknown;
     };
     const rawText = payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("\n") ?? "";
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-    return jsonMatch ? JSON.parse(jsonMatch[0]) : { keywords: [], summary: "No parseable JSON returned.", rawText };
+    const result = jsonMatch ? JSON.parse(jsonMatch[0]) as KeywordClassificationResponse : { keywords: [], summary: "No parseable JSON returned.", rawText };
+    return {
+      ...result,
+      usage: tokenUsageFromGemini(payload.usageMetadata)
+    };
   }
+}
+
+function tokenUsageFromGemini(value: unknown): AiTokenUsage | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const usage = value as Record<string, unknown>;
+  const result: AiTokenUsage = {
+    inputTokens: numberField(usage.promptTokenCount),
+    outputTokens: numberField(usage.candidatesTokenCount),
+    totalTokens: numberField(usage.totalTokenCount)
+  };
+  return result.inputTokens !== undefined || result.outputTokens !== undefined || result.totalTokens !== undefined ? result : undefined;
+}
+
+function numberField(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }

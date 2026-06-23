@@ -1,4 +1,4 @@
-import { AzureOpenAIKeywordClassifier } from "./providers/azure-openai";
+import { AzureApiKeywordClassifier } from "./providers/azure-openai";
 import { GeminiKeywordClassifier } from "./providers/gemini";
 import { MockKeywordClassifier } from "./providers/mock";
 import { OpenAIKeywordClassifier } from "./providers/openai";
@@ -12,7 +12,7 @@ export function createKeywordClassifier(config: LlmProviderConfig): KeywordClass
     case "gemini":
       return new GeminiKeywordClassifier(config);
     case "azure-openai":
-      return new AzureOpenAIKeywordClassifier(config);
+      return new AzureApiKeywordClassifier(config);
     case "mock":
     default:
       return new MockKeywordClassifier();

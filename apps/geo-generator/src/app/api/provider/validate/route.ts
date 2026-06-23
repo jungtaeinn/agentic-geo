@@ -6,7 +6,24 @@ interface ProviderValidationRequest {
   model?: string;
   endpoint?: string;
   deployment?: string;
+  deployments?: {
+    ocr?: string;
+    reasoning?: string;
+    embedding?: string;
+  };
   apiVersion?: string;
+  embedding?: {
+    provider?: "local" | "azure-openai";
+    deployment?: string;
+  };
+  reranker?: {
+    provider?: "local-hybrid" | "cohere" | "azure-ai-search-semantic";
+    apiKey?: string;
+    endpoint?: string;
+    model?: string;
+    indexName?: string;
+    semanticConfiguration?: string;
+  };
   listOnly?: boolean;
 }
 
@@ -55,7 +72,7 @@ async function validateProvider(config: Required<Pick<ProviderValidationRequest,
     return validateGemini(config);
   }
 
-  return validateAzureOpenAI(config);
+  return validateAzureApi(config);
 }
 
 async function validateOpenAI(config: ProviderValidationRequest): Promise<ProviderValidationResult> {
@@ -142,7 +159,7 @@ async function validateGemini(config: ProviderValidationRequest): Promise<Provid
   return connected("gemini", "Gemini API Key와 모델 접근을 확인했습니다.", models);
 }
 
-async function validateAzureOpenAI(config: ProviderValidationRequest): Promise<ProviderValidationResult> {
+async function validateAzureApi(config: ProviderValidationRequest): Promise<ProviderValidationResult> {
   const apiKey = normalizeSecretInput(config.apiKey);
   const endpoint = config.endpoint?.trim().replace(/\/$/, "");
   const apiVersion = config.apiVersion?.trim() || "2024-10-21";
@@ -159,29 +176,57 @@ async function validateAzureOpenAI(config: ProviderValidationRequest): Promise<P
   });
 
   if (!response.ok) {
-    return failed("azure-openai", `Azure OpenAI 연결 확인 실패: ${response.status}`, await readProviderError(response));
+    return failed("azure-openai", `Azure API 연결 확인 실패: ${response.status}`, await readProviderError(response));
   }
 
   const payload = await response.json() as { data?: Array<{ id?: string; model?: string }> };
   const deployments = sortModelIds(payload.data?.map((item) => item.id ?? item.model).filter(isString) ?? []);
 
   if (config.listOnly) {
-    return connected("azure-openai", "Azure OpenAI 배포 목록을 불러왔습니다.", deployments);
+    return connected("azure-openai", "Azure 배포 목록을 불러왔습니다.", deployments);
   }
 
-  if (!config.deployment?.trim()) {
-    return failed("azure-openai", "Azure Deployment를 선택해주세요.", "모델 목록을 불러온 뒤 배포를 선택할 수 있습니다.");
+  const requestedDeployments = uniqueValues([
+    config.deployments?.ocr,
+    config.deployments?.reasoning,
+    config.deployments?.embedding,
+    config.embedding?.deployment,
+    config.deployment
+  ].map((value) => value?.trim()).filter(isString));
+  const ocrDeployment = config.deployments?.ocr?.trim() || config.deployment?.trim();
+  const reasoningDeployment = config.deployments?.reasoning?.trim() || config.deployment?.trim();
+  const embeddingDeployment = config.deployments?.embedding?.trim() || config.embedding?.deployment?.trim();
+
+  if (!ocrDeployment || !reasoningDeployment) {
+    return failed("azure-openai", "Azure OCR/Reasoning Deployment를 입력해주세요.", "OCR/structure extraction과 최종 분류/분석 추론에 사용할 Azure 배포가 필요합니다.");
   }
 
-  if (!deployments.includes(config.deployment.trim())) {
-    return failed(
-      "azure-openai",
-      `Azure OpenAI 연결은 되었지만 '${config.deployment.trim()}' 배포를 확인하지 못했습니다.`,
-      "Azure OpenAI Studio에서 배포 이름을 확인하거나 모델 목록에서 선택해주세요."
-    );
+  for (const deployment of requestedDeployments) {
+    if (!deployments.includes(deployment)) {
+      return failed(
+        "azure-openai",
+        `Azure API 연결은 되었지만 '${deployment}' 배포를 확인하지 못했습니다.`,
+        "Azure AI Foundry 또는 Azure Portal에서 역할별 deployment 이름을 확인하거나 모델 목록에서 선택해주세요."
+      );
+    }
   }
 
-  return connected("azure-openai", "Azure OpenAI 연결 설정이 유효합니다.", deployments);
+  if (!embeddingDeployment) {
+    return failed("azure-openai", "Azure Embedding Deployment를 입력해주세요.", "RAG embedding에는 text-embedding-3-small deployment가 필요합니다.");
+  }
+
+  const rerankerProvider = config.reranker?.provider ?? "cohere";
+  if (rerankerProvider === "cohere") {
+    if (!normalizeSecretInput(config.reranker?.apiKey) || !config.reranker?.endpoint?.trim()) {
+      return failed("azure-openai", "Cohere Rerank는 Cohere/Foundry Key와 Endpoint가 필요합니다.", "OCR, Embedding, Final reasoning은 Azure API Key와 Endpoint를 공유하지만 Cohere Rerank는 별도 reranking endpoint로 호출됩니다.");
+    }
+  }
+
+  if (rerankerProvider === "azure-ai-search-semantic" && (!config.reranker?.endpoint?.trim() || !normalizeSecretInput(config.reranker?.apiKey) || !config.reranker?.indexName?.trim())) {
+    return failed("azure-openai", "Azure AI Search semantic ranker 설정을 입력해주세요.", "Azure AI Search는 별도 Search 서비스이므로 Search Endpoint, API Key, Index name이 필요합니다.");
+  }
+
+  return connected("azure-openai", "Azure API 공통 인증과 선택한 reranking 서비스 설정이 유효합니다.", deployments);
 }
 
 function connected(provider: ProviderId, message: string, models: string[] = []): ProviderValidationResult {
@@ -198,6 +243,10 @@ function isString(value: unknown): value is string {
 
 function sortModelIds(models: string[]): string[] {
   return Array.from(new Set(models)).sort((a, b) => a.localeCompare(b));
+}
+
+function uniqueValues(values: string[]): string[] {
+  return Array.from(new Set(values));
 }
 
 function normalizeSecretInput(value?: string): string {

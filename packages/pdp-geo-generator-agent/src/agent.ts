@@ -1,7 +1,9 @@
 import { generatePdpGeoArtifacts } from "./generate";
+import { refinePdpGeoCopy } from "./copy-refiner";
 import { normalizeProductReviewKeywords } from "./keyword-normalizer";
 import { normalizePdpProduct } from "./normalize";
 import { readPdpGeoGeneratorRagProfile } from "./rag/profile";
+import { createPdpGeoReasoning } from "./rag/reasoning";
 import { createPdpGeoRagQuery, resolvePdpGeoRagSettings, retrievePdpGeoRagChunks } from "./rag/retrieval";
 import { pdpGeoGeneratorRagManifest } from "./rag/manifest";
 import { validateAndRepairPdpGeoArtifacts } from "./validate";
@@ -12,7 +14,16 @@ import {
   type PdpGeoGenerationRun,
   type PdpGeoGenerationStageId,
   type PdpGeoGenerationStep,
-  type PdpGeoGeneratorOptions
+  type PdpGeoGeneratorOptions,
+  type PdpGeoRagFieldTarget,
+  type PdpGeoRagIntent,
+  type PdpGeoRagUsageDiagnostic,
+  type PdpGeoRuntimePipelineStep,
+  type PdpGeoRuntimeUsage,
+  type PdpGeoTokenUsage,
+  type PdpGeoReasoningPrinciple,
+  type PdpGeoReasoningResult,
+  type PdpGeoRetrievedChunk
 } from "./types";
 
 const pipelineSteps: Array<Pick<PdpGeoGenerationStep, "id" | "title" | "description">> = [
@@ -156,26 +167,61 @@ export async function generatePdpGeo(
     },
     {
       apiKey: options.apiKey,
-      customRetriever: options.customRetriever
+      customRetriever: options.customRetriever,
+      urlResolver: options.customUrlResolver
     }
   );
   process.done("retrieve", `${retrieved.length}개 RAG chunk를 검색했습니다.`);
 
   process.start("rerank", "검색된 chunk를 schema/locale/GEO 관련성 기준으로 정렬합니다.");
   const selectedRagChunks = retrieved.slice(0, ragSettings.maxChunks ?? 8);
-  process.done("rerank", `${selectedRagChunks.length}개 chunk를 최종 컨텍스트로 선택했습니다.`);
+  const reasoningRequest = {
+    product: normalized.product,
+    locale: normalized.locale,
+    market: normalized.market,
+    ragChunks: selectedRagChunks
+  };
+  const reasoning = await (options.customReasoner?.reason(reasoningRequest) ?? createPdpGeoReasoning(reasoningRequest));
+  process.done("rerank", `${selectedRagChunks.length}개 chunk를 최종 컨텍스트로 선택하고 ${reasoning.principles.length}개 RAG+상품근거 판단을 구성했습니다.`);
 
   process.start("generate", "GEO 최적화 schema markup과 PDP content를 생성합니다.");
-  const generated = generatePdpGeoArtifacts({
+  let generated = generatePdpGeoArtifacts({
     product: normalized.product,
     locale: normalized.locale,
     market: normalized.market,
     sourceUrl: parsed.source?.url,
     hints: parsed.hints,
     ragChunks: selectedRagChunks,
-    ragDocuments
+    ragDocuments,
+    reasoning
   });
-  process.done("generate", "Product, FAQPage, HowTo, BreadcrumbList, WebPage와 HTML 섹션을 생성했습니다.");
+  const copyRefinement = await refinePdpGeoCopy(
+    {
+      product: normalized.product,
+      locale: normalized.locale,
+      market: normalized.market,
+      schemaMarkup: generated.schemaMarkup,
+      content: generated.content,
+      ragChunks: selectedRagChunks,
+      reasoning
+    },
+    options
+  );
+  generated = {
+    ...generated,
+    schemaMarkup: copyRefinement.schemaMarkup,
+    content: copyRefinement.content,
+    evidence: [
+      ...generated.evidence,
+      ...copyRefinement.evidence
+    ]
+  };
+  process.done(
+    "generate",
+    copyRefinement.applied
+      ? "Product, FAQPage, HowTo, BreadcrumbList, WebPage와 HTML 섹션을 생성하고 Gen AI 문장 refinement를 적용했습니다."
+      : "Product, FAQPage, HowTo, BreadcrumbList, WebPage와 HTML 섹션을 생성했습니다."
+  );
 
   process.start("validate", "JSON-LD와 HTML 문법을 검증합니다.");
   const repaired = validateAndRepairPdpGeoArtifacts({
@@ -185,13 +231,22 @@ export async function generatePdpGeo(
     fallbackDescription: generated.content.sections.description,
     locale: normalized.locale
   });
-  process.done("validate", `${repaired.validationWarnings.length}개 검증 경고를 확인했습니다.`);
+  process.done("validate", createValidationStepMessage(repaired.validationWarnings, repaired.validationRepairs));
 
   process.start("repair", "검증 경고에 대한 안전 보정을 적용합니다.");
-  process.done("repair", repaired.validationWarnings.length > 0 ? "방어 보정을 적용했습니다." : "추가 보정 없이 통과했습니다.");
+  process.done("repair", createRepairStepMessage(repaired.validationRepairs));
 
   process.start("artifact", "최종 GEO 아티팩트를 직렬화합니다.");
   const generatedAt = new Date().toISOString();
+  const ragUsage = createRagUsageDiagnostics(selectedRagChunks, reasoning);
+  const runtimeUsage = createGeneratorRuntimeUsage(options, ragSettings, {
+    keywordNormalizationUsage: keywordNormalization.usage,
+    copyRefinementUsage: copyRefinement.usage,
+    copyRefinementCalled: copyRefinement.called,
+    retrievedCount: retrieved.length,
+    selectedRagCount: selectedRagChunks.length,
+    ragDocumentCount: ragDocuments.length
+  });
   const diagnostics: PdpGeoDiagnostics = {
     normalizedProduct: normalized.product,
     ocrSentences: normalized.ocrSentences,
@@ -206,8 +261,12 @@ export async function generatePdpGeo(
       }))
     ],
     selectedRagChunks,
+    reasoning,
+    ragUsage,
+    runtimeUsage,
     terminology: generated.terminology,
     validationWarnings: repaired.validationWarnings,
+    validationRepairs: repaired.validationRepairs,
     ragMode: ragSettings.mode,
     generatedAt
   };
@@ -276,6 +335,256 @@ function createPipelineTracker(onProgress?: PdpGeoGeneratorOptions["onProgress"]
       return steps.map((step) => ({ ...step }));
     }
   };
+}
+
+function createValidationStepMessage(warnings: string[], repairs: Array<{ field: string; issue: string }>): string {
+  if (warnings.length === 0) {
+    return "검증 경고 없이 통과했습니다.";
+  }
+  const firstRepair = repairs[0];
+  if (firstRepair) {
+    return `${warnings.length}개 검증 경고를 확인했습니다. 첫 문제: ${firstRepair.field} - ${firstRepair.issue}`;
+  }
+  return `${warnings.length}개 검증 경고를 확인했습니다. ${warnings.slice(0, 2).join(" / ")}`;
+}
+
+function createRepairStepMessage(repairs: Array<{ field: string; action: string }>): string {
+  if (repairs.length === 0) {
+    return "추가 보정 없이 통과했습니다.";
+  }
+  const firstRepair = repairs[0];
+  if (!firstRepair) {
+    return `${repairs.length}개 보정을 적용했습니다.`;
+  }
+  return `${repairs.length}개 보정을 적용했습니다. 첫 보정: ${firstRepair.field} - ${firstRepair.action}`;
+}
+
+function createGeneratorRuntimeUsage(
+  options: PdpGeoGeneratorOptions,
+  ragSettings: ReturnType<typeof resolvePdpGeoRagSettings>,
+  context: {
+    keywordNormalizationUsage?: PdpGeoTokenUsage;
+    copyRefinementUsage?: PdpGeoTokenUsage;
+    copyRefinementCalled?: boolean;
+    retrievedCount: number;
+    selectedRagCount: number;
+    ragDocumentCount: number;
+  }
+): PdpGeoRuntimeUsage {
+  const provider = runtimeProviderLabel(options.provider);
+  const finalDeployment = options.deployments?.reasoning ?? options.deployment;
+  const embeddingProvider = options.embedding?.provider ?? ragSettings.embeddingProvider;
+  const rerankerProvider = options.reranker?.provider ?? ragSettings.rerankerProvider;
+  const finalTokenUsage = mergeTokenUsages([
+    context.keywordNormalizationUsage,
+    context.copyRefinementUsage
+  ].filter((usage): usage is PdpGeoTokenUsage => Boolean(usage)));
+  const finalDetails = [
+    context.keywordNormalizationUsage ? "Model-backed keyword normalization was called during product normalization." : undefined,
+    context.copyRefinementCalled ? "Model-backed copy refinement was called after deterministic schema/content generation." : undefined
+  ].filter(Boolean).join(" ");
+  const steps: PdpGeoRuntimePipelineStep[] = [
+    {
+      stage: "chunking",
+      label: "Chunking",
+      provider: "deterministic",
+      service: "section-aware deterministic chunking",
+      called: true,
+      details: `${context.ragDocumentCount} RAG documents prepared as section-aware chunks. No model is used.`
+    },
+    {
+      stage: "embedding",
+      label: "Embedding",
+      provider: embeddingProvider === "azure-openai" ? "azure-api" : embeddingProvider,
+      service: embeddingProvider === "azure-openai" ? "Azure API embedding deployment" : `${embeddingProvider} embedding`,
+      model: options.embedding?.model ?? ragSettings.embeddingModel,
+      deployment: options.embedding?.deployment ?? options.deployments?.embedding,
+      called: ragSettings.mode === "managed-vector-store-rag",
+      details: ragSettings.mode === "managed-vector-store-rag"
+        ? "Managed/vector retrieval mode is configured."
+        : "Generator local-versioned RAG currently uses deterministic local scoring unless a managed retriever is configured."
+    },
+    {
+      stage: "retrieval",
+      label: "Retrieval",
+      provider: ragSettings.provider,
+      service: ragSettings.mode === "managed-vector-store-rag" ? `${ragSettings.provider} managed vector search` : "local-versioned RAG hybrid search",
+      mode: ragSettings.mode,
+      called: true,
+      details: `${context.retrievedCount} chunks retrieved before ${context.selectedRagCount} chunks were selected for generation.`
+    },
+    {
+      stage: "reranking",
+      label: "Reranking",
+      provider: rerankerProvider,
+      service: rerankerProvider === "azure-ai-search-semantic" ? "Azure AI Search semantic ranker" : rerankerProvider === "cohere" ? "Cohere Rerank" : `${rerankerProvider} ordering`,
+      model: options.reranker?.provider === "cohere" ? options.reranker.model : undefined,
+      called: ragSettings.mode === "managed-vector-store-rag" && ragSettings.rerankerProvider !== "local-hybrid",
+      details: "Generator RAG reranking follows the configured RAG retriever/reranker. Local-versioned mode defaults to deterministic score ordering."
+    },
+    {
+      stage: "ocr",
+      label: "OCR/structure extraction",
+      provider,
+      service: options.provider === "azure-openai" ? "Azure API model deployment" : provider,
+      model: options.provider === "azure-openai" ? undefined : options.model,
+      deployment: options.provider === "azure-openai" ? options.deployments?.ocr ?? options.deployment : undefined,
+      called: false,
+      details: "Generator consumes OCR evidence from the extractor result; it does not run image OCR itself."
+    },
+    {
+      stage: "final",
+      label: "Final classification/reasoning",
+      provider,
+      service: options.provider === "azure-openai" ? "Azure API model deployment" : provider,
+      model: options.provider === "azure-openai" ? undefined : options.model,
+      deployment: options.provider === "azure-openai" ? finalDeployment : undefined,
+      called: Boolean(context.keywordNormalizationUsage || context.copyRefinementCalled),
+      tokenUsage: finalTokenUsage,
+      details: finalDetails || "Schema/content reasoning is deterministic in the current generator path; no final model usage metadata was returned."
+    }
+  ];
+  const tokenTotals = mergeTokenUsages(steps.map((step) => step.tokenUsage).filter((usage): usage is PdpGeoTokenUsage => Boolean(usage)));
+  const calledModelWithoutTokenUsage = steps.some((step) => step.called && (step.stage === "final" || step.stage === "ocr") && !step.tokenUsage);
+
+  return {
+    steps,
+    tokenTotals: tokenTotals ?? {},
+    tokenNote: tokenTotals
+      ? "Token counts are summed from provider usage metadata returned by model APIs."
+      : calledModelWithoutTokenUsage
+        ? "A model-backed generator step was called, but the provider did not return token usage metadata."
+      : "No generator model call returned token usage; deterministic chunking/retrieval/reranking stages do not consume LLM tokens."
+  };
+}
+
+function mergeTokenUsages(usages: PdpGeoTokenUsage[]): PdpGeoTokenUsage | undefined {
+  const merged = usages.reduce<PdpGeoTokenUsage>((total, usage) => ({
+    inputTokens: sumOptional(total.inputTokens, usage.inputTokens),
+    outputTokens: sumOptional(total.outputTokens, usage.outputTokens),
+    totalTokens: sumOptional(total.totalTokens, usage.totalTokens)
+  }), {});
+  return merged.inputTokens !== undefined || merged.outputTokens !== undefined || merged.totalTokens !== undefined ? merged : undefined;
+}
+
+function sumOptional(left: number | undefined, right: number | undefined): number | undefined {
+  if (left === undefined && right === undefined) {
+    return undefined;
+  }
+  return (left ?? 0) + (right ?? 0);
+}
+
+function runtimeProviderLabel(provider: PdpGeoGeneratorOptions["provider"]): string {
+  if (provider === "azure-openai") {
+    return "azure-api";
+  }
+  return provider ?? "mock";
+}
+
+function createRagUsageDiagnostics(
+  chunks: PdpGeoRetrievedChunk[],
+  reasoning: PdpGeoReasoningResult
+): PdpGeoRagUsageDiagnostic[] {
+  const chunkByReasoningSource = new Map<string, PdpGeoRetrievedChunk>();
+
+  for (const chunk of chunks) {
+    const keys = [
+      formatRagSource(chunk),
+      chunk.source,
+      chunk.title ? `${chunk.source}#${chunk.title}` : undefined
+    ].filter((value): value is string => Boolean(value));
+
+    for (const key of keys) {
+      if (!chunkByReasoningSource.has(key)) {
+        chunkByReasoningSource.set(key, chunk);
+      }
+    }
+  }
+
+  return reasoning.decisions
+    .map((decision): PdpGeoRagUsageDiagnostic => {
+      const references = decision.ragSources
+        .map((source) => chunkByReasoningSource.get(source))
+        .filter((chunk): chunk is PdpGeoRetrievedChunk => Boolean(chunk))
+        .map((chunk) => {
+          const fieldTargets = readChunkFieldTargets(chunk);
+          return {
+            source: chunk.source,
+            title: chunk.title,
+            kind: chunk.kind,
+            intents: readChunkIntents(chunk),
+            fieldTargets,
+            score: chunk.score,
+            usage: describeRagUsage(decision.principle, fieldTargets),
+            excerpt: compactRagExcerpt(chunk.text)
+          };
+        });
+
+      return {
+        principle: decision.principle,
+        enabled: decision.enabled,
+        confidence: decision.confidence,
+        rationale: decision.rationale,
+        ragSources: decision.ragSources,
+        productEvidenceCount: decision.productEvidence.length,
+        references
+      };
+    })
+    .filter((item) => item.enabled || item.references.length > 0);
+}
+
+function describeRagUsage(principle: PdpGeoReasoningPrinciple, fieldTargets: PdpGeoRagFieldTarget[]): string {
+  const base = {
+    "answer-ready FAQ": "FAQ 질문/답변 구성 근거",
+    "stepwise HowTo": "HowTo 단계와 사용 루틴 구성 근거",
+    "evidence-backed claims": "효능/성분 주장 근거와 과장 방지 기준",
+    "target customer context": "고객 맥락과 PDP 설명 문장 구성 근거",
+    "review-intent FAQ": "리뷰 언어를 FAQ/고객 질문으로 변환하는 근거"
+  } satisfies Record<PdpGeoReasoningPrinciple, string>;
+  const targetSummary = fieldTargets.length > 0 ? ` · 대상: ${fieldTargets.slice(0, 4).join(", ")}` : "";
+  return `${base[principle]}${targetSummary}`;
+}
+
+function readChunkIntents(chunk: PdpGeoRetrievedChunk): PdpGeoRagIntent[] {
+  const values = chunk.intents?.length ? chunk.intents : parseMetadataList(chunk.metadata.sectionIntents);
+  return values.filter(isPdpGeoRagIntent);
+}
+
+function readChunkFieldTargets(chunk: PdpGeoRetrievedChunk): PdpGeoRagFieldTarget[] {
+  const values = chunk.fieldTargets?.length ? chunk.fieldTargets : parseMetadataList(chunk.metadata.fieldTargets);
+  return values.filter(isPdpGeoRagFieldTarget);
+}
+
+function parseMetadataList(value: string | number | boolean | undefined): string[] {
+  return typeof value === "string" ? value.split(",").map((item) => item.trim()).filter(Boolean) : [];
+}
+
+function formatRagSource(chunk: Pick<PdpGeoRetrievedChunk, "source" | "title">): string {
+  return chunk.title ? `${chunk.source}#${chunk.title}` : chunk.source;
+}
+
+function compactRagExcerpt(text: string): string {
+  const compact = text.replace(/\s+/g, " ").trim();
+  return compact.length > 260 ? `${compact.slice(0, 257)}...` : compact;
+}
+
+function isPdpGeoRagIntent(value: string): value is PdpGeoRagIntent {
+  return ["faq", "howTo", "claims", "customer", "review", "schema", "locale", "evidence", "retrieval", "general"].includes(value);
+}
+
+function isPdpGeoRagFieldTarget(value: string): value is PdpGeoRagFieldTarget {
+  return [
+    "WebPage.description",
+    "Product.description",
+    "Product.additionalProperty",
+    "Product.positiveNotes",
+    "FAQPage.mainEntity",
+    "HowTo.step",
+    "BreadcrumbList",
+    "PDP.content",
+    "diagnostics",
+    "retrieval"
+  ].includes(value);
 }
 
 function mergeRagDocuments(documents: Array<{ name: string; content: string; version?: string }>): Array<{ name: string; content: string; version?: string }> {

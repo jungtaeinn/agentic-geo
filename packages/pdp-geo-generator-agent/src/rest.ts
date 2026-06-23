@@ -12,8 +12,9 @@ import type {
 export interface PdpGeoGeneratorRestRequest extends Omit<PdpGeoGenerationInput, "product"> {
   product?: unknown;
   products?: unknown[];
-  llm?: Partial<Pick<PdpGeoGeneratorRestConfig, "provider" | "apiKey" | "model" | "endpoint" | "deployment" | "apiVersion">>;
+  llm?: Partial<Pick<PdpGeoGeneratorRestConfig, "provider" | "apiKey" | "model" | "endpoint" | "deployment" | "deployments" | "apiVersion" | "embedding" | "reranker" | "copyRefinement">>;
   keywordNormalization?: PdpGeoGeneratorRestConfig["keywordNormalization"];
+  copyRefinement?: PdpGeoGeneratorRestConfig["copyRefinement"];
 }
 
 export interface PdpGeoGeneratorRestFailure {
@@ -45,6 +46,13 @@ export function createPdpGeoGeneratorRestHandler(config: PdpGeoGeneratorRestConf
           ? {
               ...config.keywordNormalization,
               ...body.keywordNormalization
+            }
+          : undefined,
+        copyRefinement: config.copyRefinement || body.copyRefinement || body.llm?.copyRefinement
+          ? {
+              ...config.copyRefinement,
+              ...body.llm?.copyRefinement,
+              ...body.copyRefinement
             }
           : undefined
       };
@@ -123,6 +131,7 @@ function createFailureDiagnostics(error: string): Partial<PdpGeoDiagnostics> {
       }
     ],
     selectedRagChunks: [],
+    ragUsage: [],
     validationWarnings: [error],
     ragMode: "local-versioned-rag",
     generatedAt

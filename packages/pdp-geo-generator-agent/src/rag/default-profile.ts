@@ -157,10 +157,10 @@ export const defaultPdpGeoGeneratorRagProfile: PdpGeoGeneratorRagProfile = {
       ].join("\n")
     },
     {
-      name: pdpGeoGeneratorRagManifest.documents.geoPaper,
+      name: pdpGeoGeneratorRagManifest.documents.geoResearch,
       version: "v1",
       content: [
-        "# GEO Paper Guidance v1",
+        "# GEO Research Guidance v1",
         "",
         "Generative Engine Optimization focuses on improving visibility and citation in generative search answers.",
         "",

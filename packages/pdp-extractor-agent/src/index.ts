@@ -6,6 +6,14 @@ export {
 } from "./refine";
 export { productExtractorRagManifest } from "./rag/manifest";
 export {
+  createProductExtractorRagQuery,
+  retrieveProductExtractorRagDocuments,
+  type ProductExtractorRagDocumentInput,
+  type ProductExtractorRagEvidenceInput,
+  type ProductExtractorRagRetrievedDocument,
+  type ProductExtractorRagSettings
+} from "./rag/retrieval";
+export {
   createProductExtractorRestHandler,
   type ProductExtractorRestConfig,
   type ProductExtractorRestRequest

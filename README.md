@@ -15,7 +15,7 @@ Agentic GEO는 서비스에서 필요한 GEO(Generative Engine Optimization) 작
 ```mermaid
 flowchart TD
   U["Service or operator input<br/>PDP URL / REST API / Product JSON"] --> APP["apps/geo-generator<br/>orchestration layer"]
-  AI["AI provider runtime<br/>OpenAI / Gemini / Azure OpenAI / Mock"]
+  AI["AI provider runtime<br/>OpenAI / Gemini / Azure API / Mock"]
 
   subgraph APP_LAYER["Application Layer"]
     APP --> ROUTER{"Input strategy"}
@@ -123,11 +123,19 @@ packages/pdp-geo-generator-agent/src/rag/
   eeat_v1.md
   cep_v1.md
   best-practice_v1.md
-  geo-paper_v1.md
+  geo-research_v1.md
   official-ai-search-platform-docs_v1.md
   locale-expression-guidelines_v1.md
   locale-terminology-map_v1.json
 ```
+
+RAG 문서명은 역할 중심으로 관리합니다. `eeat_v1.md`는 신뢰/근거 품질, `cep_v1.md`는 customer entry point와 구매 의도, `geo-research_v1.md`는 generative search/GEO 리서치 기반 원칙을 담습니다. 이 세 문서는 FAQ, HowTo, claims, customer context, review-intent FAQ 전 영역에 공통 근거로 사용하고, `schema`, `best-practice`, `official-docs`, `locale` 문서는 영역별 보강 근거로 조합합니다.
+
+추가 RAG 문서는 파일 단위가 아니라 chunk 단위로 GEO intent를 분석합니다. heading, 본문, 표/문단 단서를 기준으로 `faq`, `howTo`, `claims`, `customer`, `review`, `schema`, `locale`, `evidence`, `retrieval`, `general` intent와 `FAQPage.mainEntity`, `HowTo.step`, `Product.description`, `WebPage.description`, `Product.additionalProperty` 같은 field target을 chunk metadata에 남깁니다. 생성 reasoning 단계에서는 각 요소에 맞는 intent/field target chunk를 우선 사용하므로, 예를 들어 한 문서 안의 FAQ 지침은 FAQ 생성에, HowTo 지침은 사용법 생성에, evidence 지침은 claim/additionalProperty 구성에 연결됩니다.
+
+RAG 문서 안에 연구 논문, GEO 트렌드 리포트, 공식 가이드 URL이 들어 있는 경우 `rag.resolveUrls: true`를 켜면 URL 내용을 가져와 별도 RAG 문서처럼 chunking합니다. 가져온 HTML/텍스트도 동일하게 intent와 field target을 분석하므로 URL 문서의 FAQ 지침, HowTo 지침, evidence/claim 지침이 생성 요소에 맞게 라우팅됩니다. 기본 resolver는 `http/https`만 허용하고 localhost/private IP는 차단하며, `allowedUrlDomains`, `maxResolvedUrlDocuments`, `urlFetchTimeoutMs`로 범위를 제한할 수 있습니다.
+
+URL 문서는 원문 전체를 넣지 않고 공식 논문/공식문서에서 GEO 생성에 필요한 부분만 발췌합니다. `official-paper`, `schema-reference`, `provider-doc`, `official-doc` 유형으로 분류한 뒤 citation readiness, source evidence, structured data eligibility, schema type/property compatibility, retrieval/grounding mechanics처럼 FAQ/HowTo/claims/customer/review reasoning에 도움이 되는 문단만 남깁니다. SDK 설치법, 인증, 가격, 사이트 내비게이션, 코드블록 예시 URL은 기본적으로 제외합니다.
 
 Validation flow는 생성된 JSON-LD와 HTML을 그대로 반환하지 않고 다음 항목을 확인합니다.
 
@@ -170,16 +178,18 @@ pnpm dev:pdp-extractor
 
 ## AI Provider
 
-AI provider는 sub agent가 상품 데이터를 단순 파싱하는 수준을 넘어 의미 기반으로 해석하고 생성하도록 돕는 실행 계층입니다. 로컬 개발과 테스트는 `mock`으로도 가능하지만, 실제 품질 검증에서는 OpenAI, Gemini, Azure OpenAI 같은 provider를 연결해 리뷰 키워드 분류, OCR 후보 해석, FAQ 추론, GEO content 생성, locale 표현 판단을 수행합니다.
+AI provider는 sub agent가 상품 데이터를 단순 파싱하는 수준을 넘어 의미 기반으로 해석하고 생성하도록 돕는 실행 계층입니다. 로컬 개발과 테스트는 `mock`으로도 가능하지만, 실제 품질 검증에서는 OpenAI, Gemini, Azure API 같은 provider를 연결해 리뷰 키워드 분류, OCR 후보 해석, FAQ 추론, GEO content 생성, locale 표현 판단을 수행합니다.
 
 지원 provider:
 
 - `mock`
 - `openai`
 - `gemini`
-- `azure-openai`
+- `azure-openai` (UI에서는 `Azure API`로 표시)
 
 환경 변수 예시:
+
+기존 설정과 배포 호환성을 위해 환경 변수명은 `AZURE_OPENAI_*`를 유지하지만, 앱 UI에서는 이 연동을 `Azure API`로 표시합니다.
 
 ```env
 AGENTIC_GEO_PROVIDER=openai
@@ -194,8 +204,46 @@ AGENTIC_GEO_PROVIDER=azure-openai
 AZURE_OPENAI_API_KEY=
 AZURE_OPENAI_ENDPOINT=
 AZURE_OPENAI_DEPLOYMENT=
-AZURE_OPENAI_API_VERSION=
+AZURE_OPENAI_OCR_DEPLOYMENT=gpt-5.5
+AZURE_OPENAI_REASONING_DEPLOYMENT=gpt-5.5
+AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-large
+AZURE_OPENAI_API_VERSION=2025-04-01-preview
+
+AGENTIC_GEO_RERANKER_PROVIDER=azure-ai-search-semantic
+AZURE_AI_SEARCH_API_KEY=
+AZURE_AI_SEARCH_ENDPOINT=
+AZURE_AI_SEARCH_INDEX_NAME=
+AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION=default
+AZURE_AI_SEARCH_QUERY_LANGUAGE=ko-kr
 ```
+
+### Azure API + Azure AI Search 권장 파이프라인
+
+긴 PDP 상세페이지 이미지, 성분표, 표, 문단 구조를 안정적으로 추출하고 GEO RAW JSON과 schema/content 생성까지 이어가려면 Azure에서 배포한 GPT/embedding 모델과 Azure AI Search 검색 계층을 역할별로 분리하는 구성이 좋습니다. 이 구성에서 모든 단계가 모델은 아닙니다. 모델이 필요한 단계와 검색 알고리즘/서비스로 처리되는 단계를 분리하면 비용, 품질, 운영 범위를 더 명확하게 조정할 수 있습니다.
+
+| 단계 | 권장 구성 | 모델 여부 | 역할 |
+| --- | --- | --- | --- |
+| Chunking | section-aware deterministic chunking | 모델 없음 | 상세페이지 HTML/OCR 텍스트를 제목, 문단, 표 row, 성분표, FAQ, 사용법 같은 구조 단위로 재현 가능하게 나눕니다. |
+| Embedding | `text-embedding-3-large` | embedding 모델 | chunk와 query를 벡터로 변환해 의미 기반 검색이 가능하게 합니다. 품질 우선 구성에서는 `3-large`가 적합하고, 비용 우선이면 `3-small`로 낮출 수 있습니다. |
+| Retrieval | Azure AI Search hybrid search | 검색 서비스/알고리즘 | BM25 키워드 검색과 vector search를 함께 사용해 정확한 성분명/수치/고유명사와 의미적으로 가까운 문맥을 동시에 찾습니다. |
+| Reranking | Azure AI Search semantic ranker | 랭킹 기능 | hybrid search가 가져온 후보를 query와 문맥 관련성 기준으로 다시 정렬합니다. 앱에서는 Cohere Rerank도 선택할 수 있지만, Azure 중심 구성에서는 semantic ranker를 기본 후보로 둘 수 있습니다. |
+| OCR/structure extraction | `gpt-5.5` | vision/reasoning 모델 | 긴 상세페이지 이미지에서 보이는 텍스트, 표, 성분표, 문단 순서, footnote, 수치 정보를 JSON-friendly 구조로 추출합니다. |
+| Final classification/reasoning | `gpt-5.5` | reasoning 모델 | OCR evidence와 RAG 검색 결과를 근거로 benefit/effect/ingredient/usage/FAQ/review 신호를 최종 분류하고, `geo-research`/`geo-paper`, CEP, E-E-A-T 기준으로 AI 노출 가치가 높은 상품 키워드와 문장을 선별해 schema/content description을 조합합니다. |
+
+실행 흐름은 다음처럼 이해하면 됩니다.
+
+```txt
+PDP URL/REST API/HTML
+  -> OCR/structure extraction: gpt-5.5
+  -> section-aware deterministic chunking
+  -> Embedding: text-embedding-3-large
+  -> Retrieval: Azure AI Search hybrid search
+  -> Reranking: Azure AI Search semantic ranker
+  -> Final classification/reasoning + public copy refinement: gpt-5.5
+  -> GEO RAW JSON / schemaMarkup / PDP content / diagnostics
+```
+
+`Chunking`, `Retrieval`, `Reranking`은 LLM 생성 모델을 직접 호출하는 단계가 아니라 검색 품질을 만드는 처리 계층입니다. 반대로 `Embedding`, `OCR/structure extraction`, `Final classification/reasoning`은 명시적인 모델 deployment가 필요합니다. Azure 설정 화면에서는 이 역할별 deployment와 search/reranking 설정을 분리해 입력할 수 있습니다.
 
 ## More Docs
 

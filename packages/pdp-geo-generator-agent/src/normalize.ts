@@ -364,7 +364,8 @@ function isAllowedFieldSignal(value: string, field: ProductSignalField): boolean
 
 function isUsefulSourceText(value: string): boolean {
   const text = cleanSourceSignalText(value);
-  if (text.length < 2 || text.length > 700 || isUrlLikeText(text) || isOcrFootnote(text)) {
+  const maxLength = isFullIngredientList(text) ? fullIngredientListTextLimit : 700;
+  if (text.length < 2 || text.length > maxLength || isUrlLikeText(text) || isOcrFootnote(text) || isLikelyVisualImageDescription(text)) {
     return false;
   }
   return /[A-Za-z가-힣]/.test(text);
@@ -394,6 +395,9 @@ function isQuestionLikeSourceText(value: string): boolean {
 
 function isConciseBenefitSignal(value: string): boolean {
   const text = cleanSourceSignalText(value);
+  if (/^(benefits?|효능|효과|장점|ベネフィット)$/i.test(text)) {
+    return false;
+  }
   if (text.length > 90 || /[.。]/.test(text) || isBrokenSourceFragment(text)) {
     return false;
   }
@@ -410,6 +414,9 @@ function isEffectSignal(value: string): boolean {
 
 function isIngredientSignal(value: string): boolean {
   const text = cleanSourceSignalText(value);
+  if (isFullIngredientList(text)) {
+    return text.length <= fullIngredientListTextLimit;
+  }
   if (text.length > 360) {
     return false;
   }
@@ -460,11 +467,18 @@ function isLikelyFaqAnswer(value: string): boolean {
 }
 
 type OcrSentenceCategory = PdpGeoOcrSentenceIntent;
+const fullIngredientListTextLimit = 2400;
 
 interface OcrSentenceInsightInput {
   text: string;
+  imageUrl?: string;
   category: OcrSentenceCategory;
   keywords: string[];
+}
+
+interface OcrTextCandidateInput {
+  text: string;
+  imageUrl?: string;
 }
 
 function sentenceInsightItems(source: unknown): OcrSentenceInsightInput[] {
@@ -484,6 +498,7 @@ function readSentenceInsights(value: unknown): OcrSentenceInsightInput[] {
     }
     const text = stringValue(item.text);
     const category = stringValue(item.category);
+    const imageUrl = ocrImageUrlFromRecord(item);
     const keywords = flattenTextValues(item.keywords).slice(0, 10);
 
     if (!text) {
@@ -492,6 +507,7 @@ function readSentenceInsights(value: unknown): OcrSentenceInsightInput[] {
 
     return inferOcrSentenceCategories(text, keywords, category).map((inferredCategory) => ({
       text,
+      imageUrl,
       category: inferredCategory,
       keywords
     }));
@@ -508,7 +524,7 @@ function sentenceInsightTexts(items: OcrSentenceInsightInput[], category: "benef
 function uniqueSentenceInsights(items: OcrSentenceInsightInput[]): OcrSentenceInsightInput[] {
   const seen = new Set<string>();
   return items.filter((item) => {
-    const key = `${item.category}:${item.text.toLowerCase()}`;
+    const key = `${item.category}:${item.text.toLowerCase()}:${item.imageUrl ?? ""}`;
     if (seen.has(key)) {
       return false;
     }
@@ -518,11 +534,14 @@ function uniqueSentenceInsights(items: OcrSentenceInsightInput[]): OcrSentenceIn
 }
 
 function createOcrSentenceDiagnostics(items: OcrSentenceInsightInput[], locale: PdpGeoLocale): PdpGeoOcrSentenceDiagnostic[] {
-  const grouped = new Map<string, { text: string; intents: OcrSentenceCategory[] }>();
+  const grouped = new Map<string, { text: string; imageUrls: string[]; intents: OcrSentenceCategory[] }>();
 
   for (const item of items) {
     const key = item.text.toLowerCase();
-    const existing = grouped.get(key) ?? { text: item.text, intents: [] };
+    const existing = grouped.get(key) ?? { text: item.text, imageUrls: [], intents: [] };
+    if (item.imageUrl) {
+      existing.imageUrls = unique([...existing.imageUrls, item.imageUrl]);
+    }
     existing.intents = uniqueCategories([...existing.intents, item.category]);
     grouped.set(key, existing);
   }
@@ -530,6 +549,7 @@ function createOcrSentenceDiagnostics(items: OcrSentenceInsightInput[], locale: 
   return Array.from(grouped.values())
     .map((item) => ({
       text: item.text,
+      imageUrls: item.imageUrls.length > 0 ? item.imageUrls : undefined,
       intents: item.intents,
       schemaFields: schemaFieldsForOcrIntents(item.intents),
       geoUse: geoUseForOcrSentence(item.intents, locale)
@@ -580,14 +600,15 @@ function geoUseForOcrSentence(intents: OcrSentenceCategory[], _locale: PdpGeoLoc
 }
 
 function readOcrTextInsights(source: unknown): OcrSentenceInsightInput[] {
-  return ocrTextCandidates(source).flatMap((text) => inferOcrSentenceCategories(text).map((category) => ({
-    text,
+  return ocrTextCandidates(source).flatMap((candidate) => inferOcrSentenceCategories(candidate.text).map((category) => ({
+    text: candidate.text,
+    imageUrl: candidate.imageUrl,
     category,
-    keywords: extractOcrKeywords(text)
+    keywords: extractOcrKeywords(candidate.text)
   })));
 }
 
-function ocrTextCandidates(source: unknown): string[] {
+function ocrTextCandidates(source: unknown): OcrTextCandidateInput[] {
   const roots = [
     getByPath(source, "sourceExtraction.ocr"),
     getByPath(source, "sourceExtraction.images"),
@@ -596,40 +617,83 @@ function ocrTextCandidates(source: unknown): string[] {
     getByPath(source, "aiAnalysis.ocr")
   ].filter((value) => value !== undefined);
 
-  return unique(roots
+  return uniqueOcrTextCandidates(roots
     .flatMap(readOcrTextsFromNode)
-    .flatMap(splitOcrTextIntoSemanticSentences)
-    .map(cleanOcrSentence)
-    .filter(isUsefulOcrSentence))
+    .flatMap((candidate) => splitOcrTextIntoSemanticSentences(candidate.text).map((text) => ({
+      text: cleanOcrSentence(text),
+      imageUrl: candidate.imageUrl
+    })))
+    .filter((candidate) => isUsefulOcrSentence(candidate.text)))
     .slice(0, 80);
 }
 
-function readOcrTextsFromNode(value: unknown): string[] {
-  const results: string[] = [];
+function readOcrTextsFromNode(value: unknown): OcrTextCandidateInput[] {
+  const results: OcrTextCandidateInput[] = [];
 
-  visit(value, (node, key) => {
+  const collect = (node: unknown, key?: string, imageUrl?: string, depth = 0) => {
+    if (depth > 8) {
+      return;
+    }
+    const scopedImageUrl = isRecord(node) ? ocrImageUrlFromRecord(node) ?? imageUrl : imageUrl;
     if (Array.isArray(node) && key && /lines?|blocks?|paragraphs?|sentences?|textBlocks?/i.test(key)) {
       const joined = flattenTextValues(node)
         .filter((text) => !isUrlLikeText(text))
         .join("\n");
       if (joined) {
-        results.push(joined);
+        results.push({ text: joined, imageUrl: scopedImageUrl });
       }
       return;
     }
-    if (typeof node !== "string") {
+    if (typeof node === "string") {
+      const text = cleanOcrRawText(htmlToText(node));
+      if (!text || isUrlLikeText(text)) {
+        return;
+      }
+      if (!key || /(?:text|ocr|line|block|paragraph|sentence|caption|description|body|fullText|rawText|recognizedText|copy)/i.test(key) || text.includes("\n")) {
+        results.push({ text, imageUrl: scopedImageUrl });
+      }
       return;
     }
-    const text = cleanOcrRawText(htmlToText(node));
-    if (!text || isUrlLikeText(text)) {
+
+    if (Array.isArray(node)) {
+      node.forEach((item, index) => collect(item, String(index), scopedImageUrl, depth + 1));
       return;
     }
-    if (!key || /(?:text|ocr|line|block|paragraph|sentence|caption|description|body|fullText|rawText|recognizedText|copy)/i.test(key) || text.includes("\n")) {
-      results.push(text);
+
+    if (isRecord(node)) {
+      Object.entries(node).forEach(([childKey, childValue]) => collect(childValue, childKey, scopedImageUrl, depth + 1));
     }
-  });
+  };
+
+  collect(value);
 
   return results;
+}
+
+function uniqueOcrTextCandidates(values: OcrTextCandidateInput[]): OcrTextCandidateInput[] {
+  const seen = new Set<string>();
+  return values.filter((candidate) => {
+    const text = cleanText(candidate.text);
+    const key = `${text.toLowerCase()}:${candidate.imageUrl ?? ""}`;
+    if (!text || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function ocrImageUrlFromRecord(value: Record<string, unknown>): string | undefined {
+  return [
+    value.imageUrl,
+    value.sourceImage,
+    value.sourceImageUrl,
+    value.sourceUrl,
+    value.src,
+    value.url
+  ].map(stringValue).find((candidate): candidate is string =>
+    Boolean(candidate && !candidate.startsWith("data:") && (/^https?:\/\//i.test(candidate) || candidate.includes("#")))
+  );
 }
 
 function cleanOcrRawText(value: string): string {
@@ -789,13 +853,43 @@ function cleanOcrSentence(value: string): string {
 
 function isUsefulOcrSentence(value: string): boolean {
   const text = cleanText(value);
-  if (text.length < 8 || text.length > 700 || isUrlLikeText(text) || isOcrFootnote(text)) {
+  const maxLength = isFullIngredientList(text) ? fullIngredientListTextLimit : 700;
+  if (text.length < 8 || text.length > maxLength || isUrlLikeText(text) || isOcrFootnote(text) || isLikelyVisualImageDescription(text)) {
     return false;
   }
   if (/^\d+(?:\.\d+)?\s*(?:ml|mL|oz|fl\.?\s*oz)$/i.test(text)) {
     return false;
   }
   return /[A-Za-z가-힣]/.test(text);
+}
+
+function isLikelyVisualImageDescription(value: string): boolean {
+  const text = cleanText(value);
+  const lower = text.toLowerCase();
+  const visualTerms = /(product\s+shot|pack\s*shot|model|modeling|person\s+applying|applying\s+(?:a\s+)?(?:skincare\s+)?product|applies product|face shot|lifestyle|thumbnail|hero image|visual|image|photo|bottle|tube|jar|package|packaging|facial cleanser)/i;
+  const ocrTextSignals = /(ingredients?:|how to use|directions?|after\s+\d|agreed|clinical|result|%|water\s*\/\s*aqua|glycerin|niacinamide|retinol|peptide|ceramide|hyaluronic|extract|성분|전성분|사용법|효과|개선|수분|보습|장벽|피지|탄력|주름)/i;
+
+  if (!visualTerms.test(text) || ocrTextSignals.test(text)) {
+    return false;
+  }
+
+  const commaParts = text.split(",").map((part) => part.trim()).filter(Boolean);
+  return commaParts.length >= 2 || lower.split(/\s+/).length <= 18;
+}
+
+function isFullIngredientList(value: string): boolean {
+  const text = cleanText(value);
+  if (/^(?:ingredients?|전성분|全成分)\s*:/i.test(text)) {
+    return true;
+  }
+
+  const commaCount = (text.match(/,/g) ?? []).length;
+  if (commaCount < 8) {
+    return false;
+  }
+
+  const matches = text.match(/\b(?:water|aqua|eau|glycerin|glycol|sodium|potassium|cocoyl|cocoate|betaine|acrylates?|peg-\d+|chloride|edta|extract|fragrance|parfum|limonene|benzoate|hydroxide|caprylyl|capryl|citrus|niacinamide|retinol|panthenol|ceramide|hyaluronic|butylene)\b/gi) ?? [];
+  return new Set(matches.map((match) => match.toLowerCase())).size >= 5;
 }
 
 function isOcrFootnote(value: string): boolean {
@@ -1168,11 +1262,23 @@ function isMeaningfulReviewBody(value: string): boolean {
   if (normalized.length < 20) {
     return false;
   }
+  if (isRatingSummaryText(normalized)) {
+    return false;
+  }
   if (/^(review|rating|smooth|moisture|hydration|firmness|elasticity|plumpness)$/i.test(normalized)) {
     return false;
   }
 
   return normalized.split(/\s+/).length >= 4 || /[가-힣ぁ-んァ-ン]/.test(normalized);
+}
+
+function isRatingSummaryText(value: string): boolean {
+  const normalized = cleanText(value)
+    .replace(/\s*·\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return /^(?:rating|평점|評価)?\s*\d(?:\.\s*\d+)?\s*(?:\/\s*5)?\s*(?:stars?)?\s+\d[\d,]*\s+(?:reviews?|ratings?|리뷰|후기)$/i.test(normalized)
+    || /^(?:rating|평점|評価)\s+\d(?:\.\s*\d+)?\s*(?:\/\s*5)?$/i.test(normalized);
 }
 
 function uniqueBreadcrumbs(values: PdpGeoBreadcrumbItem[]): PdpGeoBreadcrumbItem[] {

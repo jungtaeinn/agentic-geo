@@ -1,7 +1,35 @@
-import type { ClassifiedKeyword, ClassifiedSentenceInsight } from "../types";
+import type { AiTokenUsage, ClassifiedKeyword, ClassifiedSentenceInsight } from "../types";
 
 /** Provider IDs supported by the first extractor agent. */
 export type LlmProviderId = "mock" | "openai" | "gemini" | "azure-openai";
+
+/** Azure deployment names mapped to pipeline roles. */
+export interface AzureRoleDeployments {
+  ocr?: string;
+  reasoning?: string;
+  embedding?: string;
+}
+
+/** Optional embedding runtime used by RAG retrieval. */
+export interface EmbeddingRuntimeConfig {
+  provider?: "local" | "azure-openai";
+  apiKey?: string;
+  endpoint?: string;
+  deployment?: string;
+  apiVersion?: string;
+  model?: string;
+}
+
+/** Optional reranker runtime used after initial retrieval. */
+export interface RerankerRuntimeConfig {
+  provider?: "local-hybrid" | "cohere" | "azure-ai-search-semantic";
+  apiKey?: string;
+  endpoint?: string;
+  model?: string;
+  indexName?: string;
+  semanticConfiguration?: string;
+  queryLanguage?: string;
+}
 
 /** Runtime credentials and endpoint settings for model-backed extraction. */
 export interface LlmProviderConfig {
@@ -10,7 +38,10 @@ export interface LlmProviderConfig {
   model?: string;
   endpoint?: string;
   deployment?: string;
+  deployments?: AzureRoleDeployments;
   apiVersion?: string;
+  embedding?: EmbeddingRuntimeConfig;
+  reranker?: RerankerRuntimeConfig;
 }
 
 /** OCR/vision text classification request passed to provider adapters. */
@@ -21,6 +52,9 @@ export interface KeywordClassificationRequest {
   ragDocuments?: Array<{
     name: string;
     content: string;
+    score?: number;
+    sourceDocument?: string;
+    chunkId?: string;
   }>;
   imageTexts: Array<{
     imageUrl: string;
@@ -34,6 +68,7 @@ export interface KeywordClassificationResponse {
   sentenceInsights?: ClassifiedSentenceInsight[];
   summary: string;
   rawText?: string;
+  usage?: AiTokenUsage;
 }
 
 /** Vision OCR request passed to providers that can read image URLs directly. */
@@ -50,6 +85,7 @@ export interface ImageTextExtractionResponse {
     text: string;
   }>;
   rawText?: string;
+  usage?: AiTokenUsage;
 }
 
 /** Common interface for model-backed or mock keyword classifiers. */

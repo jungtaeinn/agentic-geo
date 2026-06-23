@@ -1,7 +1,13 @@
 import { load } from "cheerio";
 import { createKeywordClassifier } from "./llm/providers";
+import type { AzureRoleDeployments, EmbeddingRuntimeConfig, RerankerRuntimeConfig } from "./llm/types";
 import { defaultProductExtractorRagProfile } from "./rag/default-profile";
 import { productExtractorRagManifest } from "./rag/manifest";
+import {
+  createProductExtractorRagQuery,
+  retrieveProductExtractorRagDocuments,
+  type ProductExtractorRagSettings
+} from "./rag/retrieval";
 import {
   ProductExtractionInputSchema,
   type AgentWarning,
@@ -24,7 +30,10 @@ import {
   type ProductProfile,
   type RagChunk,
   type ReviewItem,
-  type ReviewSummary
+  type ReviewSummary,
+  type AiTokenUsage,
+  type RuntimePipelineStep,
+  type RuntimePipelineUsage
 } from "./types";
 
 /** Options for swapping model providers without changing the public input contract. */
@@ -34,17 +43,22 @@ export interface ProductExtractorOptions {
   model?: string;
   endpoint?: string;
   deployment?: string;
+  deployments?: AzureRoleDeployments;
   apiVersion?: string;
+  embedding?: EmbeddingRuntimeConfig;
+  reranker?: RerankerRuntimeConfig;
   analysisPrompt?: string;
   ragDocuments?: Array<{
     name: string;
     content: string;
+    version?: string;
   }>;
+  rag?: ProductExtractorRagSettings;
   onProgress?: (step: ProductExtractionStep) => void;
 }
 
 const OCR_EVIDENCE_LIMIT = 80;
-const IMAGE_OCR_BATCH_SIZE = 12;
+const IMAGE_OCR_BATCH_SIZE = 10;
 
 const modalNoiseSelector = [
   "[role='dialog']",
@@ -168,6 +182,7 @@ export async function extractProductFromHtml(
   const $ = load(html);
   const evidence: ExtractionEvidence[] = [];
   const warnings: AgentWarning[] = [];
+  const runtimeSteps: RuntimePipelineStep[] = [];
   evidence.push({ field: "runtime.provider", source: "api", value: resolveProviderConfig(runtimeOptions).provider });
   const jsonLdNodes = readJsonLdNodes($);
   const productNode = findJsonLdNode(jsonLdNodes, "Product");
@@ -198,7 +213,7 @@ export async function extractProductFromHtml(
     evidence.push({ field: "page.clientStateProductData", source: "dom", value: `${clientStateData.textBlocks.length} product sections and ${clientStateData.reviews.items.length} review signals collected from embedded client state JSON.` });
   }
   if (pageTextBlocks.length > 0) {
-    evidence.push({ field: "page.scrollSections", source: "dom", value: `${pageTextBlocks.length} long-scroll product text sections collected for OCR/RAG.` });
+    evidence.push({ field: "page.scrollSections", source: "dom", value: `${pageTextBlocks.length} long-scroll product text sections collected for HTML parsing and RAG.` });
   }
 
   const selectedDescription = selectProductDescription(productNode, clientStateData, $, bodyText, name);
@@ -244,10 +259,10 @@ export async function extractProductFromHtml(
   };
   process.done("extract", `${name} 상품 기본정보를 정규화했습니다.`);
 
-  process.start("ocr", "이미지 대체 텍스트와 OCR 후보 텍스트를 문장/키워드 근거로 분류합니다.");
-  const ocr = await extractOcrKeywords($, source, name, pageTextBlocks, images, runtimeOptions, warnings);
-  const sectionBuckets = createProductSectionBuckets(pageTextBlocks, ocr);
-  process.done("ocr", `${ocr.imagesScanned}개 이미지/스크롤 섹션 후보에서 OCR 문장과 키워드를 분류했습니다.`);
+  process.start("ocr", "이미지 OCR과 이미지 대체 텍스트 후보를 문장/키워드 근거로 분류합니다.");
+  const ocr = await extractOcrKeywords($, source, name, images, runtimeOptions, warnings, runtimeSteps);
+  const sectionBuckets = createProductSectionBuckets(pageTextBlocks);
+  process.done("ocr", `${ocr.imagesScanned}개 이미지 OCR/대체 텍스트 후보에서 OCR 문장과 키워드를 분류했습니다.`);
 
   process.start("review", "JSON-LD와 리뷰 영역에서 고객 표현을 추출합니다.");
   const reviews = mergeReviewSummaries(extractReviews($, productNode, bodyText), clientStateData.reviews);
@@ -300,7 +315,7 @@ export async function extractProductFromHtml(
     });
   }
 
-  const ragChunks = createRagChunks(source, product, resultReviews, ocr, runtimeOptions);
+  const ragChunks = await createRagChunks(source, product, resultReviews, ocr, runtimeOptions, runtimeSteps);
   process.done("rag", `${ragChunks.length}개 RAG chunk를 생성했습니다.`);
   process.start("json", "최종 JSON 결과를 직렬화합니다.");
   const generatedAt = new Date().toISOString();
@@ -322,6 +337,7 @@ export async function extractProductFromHtml(
       process: process.snapshot(),
       evidence,
       warnings,
+      runtimeUsage: createExtractorRuntimeUsage(runtimeOptions, runtimeSteps),
       generatedAt,
       ragProfile: result.ragProfile
     }
@@ -392,6 +408,7 @@ async function extractProductFromApiPayload(
 
   process.start("ocr", `${payloadLabel}이 제공한 상품 상세 텍스트를 OCR 문장/키워드 근거로 분류합니다.`);
   const warnings: AgentWarning[] = [];
+  const runtimeSteps: RuntimePipelineStep[] = [];
   const imageTexts = mergeOcrCandidates([
     ...arrayValues(productSource.ocrTexts).map((text, index) => ({
       imageUrl: product.images[index] ?? `${source}#image-${index + 1}`,
@@ -399,7 +416,7 @@ async function extractProductFromApiPayload(
     })),
     ...apiTextCandidates
   ]).slice(0, OCR_EVIDENCE_LIMIT);
-  const classified = await classifyOcrCandidates(source, product.name, imageTexts, runtimeOptions, warnings);
+  const classified = await classifyOcrCandidates(source, product.name, imageTexts, runtimeOptions, warnings, runtimeSteps);
   const ocr: OcrExtraction = {
     imagesScanned: imageTexts.length,
     extractedTexts: imageTexts.map((item) => {
@@ -460,7 +477,7 @@ async function extractProductFromApiPayload(
   };
   process.done("review", `${reviewItems.length}개 리뷰 항목과 ${reviews.keywords.length}개 키워드를 정리했습니다.`);
   process.start("rag", "API 상품/리뷰/OCR 근거를 RAG chunk로 구성합니다.");
-  const ragChunks = createRagChunks(source, enrichedProduct, reviews, ocr, runtimeOptions);
+  const ragChunks = await createRagChunks(source, enrichedProduct, reviews, ocr, runtimeOptions, runtimeSteps);
   process.done("rag", `${ragChunks.length}개 RAG chunk를 생성했습니다.`);
   process.start("json", "최종 JSON 결과를 직렬화합니다.");
   const generatedAt = new Date().toISOString();
@@ -494,6 +511,7 @@ async function extractProductFromApiPayload(
       process: process.snapshot(),
       evidence,
       warnings,
+      runtimeUsage: createExtractorRuntimeUsage(runtimeOptions, runtimeSteps),
       generatedAt,
       ragProfile: result.ragProfile
     }
@@ -2008,7 +2026,7 @@ function isProductMetricEvidenceText(text: string): boolean {
   return /\b\d+(?:\.\d+)?\s?%|\b\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?\s?(?:weeks?|days?|hours?|drops?|pumps?|times?)\b|주|일|시간|회/g.test(text) && hasProductCareSignal(text);
 }
 
-function createProductSectionBuckets(pageTextBlocks: PageTextBlock[], ocr: OcrExtraction): ProductSectionBuckets {
+function createProductSectionBuckets(pageTextBlocks: PageTextBlock[]): ProductSectionBuckets {
   const buckets: ProductSectionBuckets = {
     benefits: [],
     effects: [],
@@ -2017,7 +2035,6 @@ function createProductSectionBuckets(pageTextBlocks: PageTextBlock[], ocr: OcrEx
     metrics: [],
     sections: []
   };
-  const ocrByTitleAndText = new Map(ocr.extractedTexts.map((item) => [normalizeFingerprint(item.text), item]));
 
   for (const block of pageTextBlocks) {
     const text = stripSectionTitle(block.title, block.text);
@@ -2025,8 +2042,7 @@ function createProductSectionBuckets(pageTextBlocks: PageTextBlock[], ocr: OcrEx
       continue;
     }
 
-    const ocrEvidence = ocrByTitleAndText.get(normalizeFingerprint(`[${block.title}] ${block.text}`));
-    const category = sectionCategory(block.title, text, ocrEvidence?.keywords ?? keywordsFromTextAcrossCategories(text, "ocr"));
+    const category = sectionCategory(block.title, text, keywordsFromTextAcrossCategories(text, "dom"));
     const values = sectionValues(text, category);
     const section = createContentSection(block.title, category, text);
 
@@ -2533,20 +2549,16 @@ async function extractOcrKeywords(
   $: ReturnType<typeof load>,
   source: string,
   productName: string,
-  pageTextBlocks: PageTextBlock[],
   imageUrls: string[],
   options: ProductExtractorOptions,
-  warnings: AgentWarning[]
+  warnings: AgentWarning[],
+  runtimeSteps: RuntimePipelineStep[]
 ): Promise<OcrExtraction> {
   const visionTargets = collectImageOcrTargets($, source, imageUrls);
-  const visionOcrTexts = await extractVisionOcrCandidates(visionTargets, source, productName, options, warnings);
+  const visionOcrTexts = await extractVisionOcrCandidates(visionTargets, source, productName, options, warnings, runtimeSteps);
   const imageTexts = mergeOcrCandidates([
     ...visionOcrTexts,
-    ...collectImageTextCandidates($, source),
-    ...pageTextBlocks.map((block): OcrTextCandidate => ({
-      imageUrl: `${source}#${block.id}`,
-      text: cleanText(`[${block.title}] ${block.text}`)
-    }))
+    ...collectImageTextCandidates($, source)
   ])
     .filter((item) => isProductEvidenceCandidate("", item.text))
     .slice(0, OCR_EVIDENCE_LIMIT);
@@ -2557,7 +2569,8 @@ async function extractOcrKeywords(
 
   try {
     const classifier = createKeywordClassifier(resolveProviderConfig(options));
-    const classified = await classifier.classifyKeywords(createKeywordClassificationRequest(source, productName, imageTexts, options));
+    const classified = await classifier.classifyKeywords(await createKeywordClassificationRequest(source, productName, imageTexts, options, runtimeSteps));
+    runtimeSteps.push(createModelRuntimeStep("final", "Final OCR classification/reasoning", options, "reasoning", classified.usage, `${imageTexts.length} OCR text candidates classified.`));
     return {
       imagesScanned: imageTexts.length,
       extractedTexts: imageTexts.map((item) => {
@@ -2600,7 +2613,8 @@ async function extractVisionOcrCandidates(
   source: string,
   productName: string,
   options: ProductExtractorOptions,
-  warnings: AgentWarning[]
+  warnings: AgentWarning[],
+  runtimeSteps: RuntimePipelineStep[]
 ): Promise<OcrTextCandidate[]> {
   const providerConfig = resolveProviderConfig(options);
 
@@ -2640,6 +2654,7 @@ async function extractVisionOcrCandidates(
         productName,
         imageUrls: batch
       });
+      runtimeSteps.push(createModelRuntimeStep("ocr", "OCR/structure extraction", options, "ocr", extracted.usage, `${batch.length} product-detail images sent for visible text extraction.`));
 
       extractedTexts.push(...extracted.images.map((image) => ({
         imageUrl: image.imageUrl,
@@ -2693,7 +2708,8 @@ async function classifyOcrCandidates(
   productName: string,
   imageTexts: OcrTextCandidate[],
   options: ProductExtractorOptions,
-  warnings: AgentWarning[]
+  warnings: AgentWarning[],
+  runtimeSteps: RuntimePipelineStep[]
 ): Promise<{ keywords: ClassifiedKeyword[]; sentenceInsights: ClassifiedSentenceInsight[]; confidence: number }> {
   if (imageTexts.length === 0) {
     return { keywords: [], sentenceInsights: [], confidence: 0 };
@@ -2701,7 +2717,8 @@ async function classifyOcrCandidates(
 
   try {
     const classifier = createKeywordClassifier(resolveProviderConfig(options));
-    const classified = await classifier.classifyKeywords(createKeywordClassificationRequest(source, productName, imageTexts, options));
+    const classified = await classifier.classifyKeywords(await createKeywordClassificationRequest(source, productName, imageTexts, options, runtimeSteps));
+    runtimeSteps.push(createModelRuntimeStep("final", "Final OCR classification/reasoning", options, "reasoning", classified.usage, `${imageTexts.length} OCR text candidates classified.`));
     const fallbackSentenceInsights = imageTexts.flatMap((item) =>
       sentenceInsightsForCandidate(
         item,
@@ -2969,8 +2986,9 @@ function inferSentenceInsightCategory(sentence: string, keywords: ClassifiedKeyw
 
 function isSentenceInsightValue(value: string, category: KeywordCategory): boolean {
   const text = cleanText(value);
+  const maxLength = category === "ingredient" && isFullIngredientList(text) ? 3000 : 900;
 
-  if (text.length < 12 || text.length > 900 || isNonProductCommerceText(text)) {
+  if (text.length < 12 || text.length > maxLength || isNonProductCommerceText(text)) {
     return false;
   }
   if (category === "product" || category === "price" || category === "trend") {
@@ -2987,10 +3005,27 @@ function isSentenceInsightValue(value: string, category: KeywordCategory): boole
 }
 
 function trimSentenceInsight(value: string, category: KeywordCategory): string {
-  const limit = category === "ingredient" ? 520 : 360;
   const text = cleanText(value);
+  const limit = category === "ingredient"
+    ? isFullIngredientList(text) ? 2400 : 520
+    : 360;
 
   return text.length > limit ? `${text.slice(0, limit).trim()}...` : text;
+}
+
+function isFullIngredientList(value: string): boolean {
+  const text = cleanText(stripSourceSectionLabel(value));
+  if (isFullIngredientLabel(text)) {
+    return true;
+  }
+
+  const commaCount = (text.match(/,/g) ?? []).length;
+  if (commaCount < 8) {
+    return false;
+  }
+
+  const matches = text.match(/\b(?:water|aqua|eau|glycerin|glycol|sodium|potassium|cocoyl|cocoate|betaine|acrylates?|peg-\d+|chloride|edta|extract|fragrance|parfum|limonene|benzoate|hydroxide|caprylyl|capryl|citrus|niacinamide|retinol|panthenol|ceramide|hyaluronic|butylene)\b/gi) ?? [];
+  return new Set(matches.map((match) => match.toLowerCase())).size >= 5;
 }
 
 function sentenceBelongsToCandidate(sentence: string, candidateText: string): boolean {
@@ -3101,18 +3136,33 @@ function uniqueGeoSentenceInsights(insights: GeoSentenceInsight[]): GeoSentenceI
   });
 }
 
-function createKeywordClassificationRequest(
+async function createKeywordClassificationRequest(
   source: string,
   productName: string,
   imageTexts: OcrTextCandidate[],
-  options: ProductExtractorOptions
+  options: ProductExtractorOptions,
+  runtimeSteps?: RuntimePipelineStep[]
 ) {
+  const query = createProductExtractorRagQuery({
+    source,
+    productName,
+    imageTexts
+  });
+  const ragDocuments = retrieveProductExtractorRagDocuments({
+    query,
+    documents: options.ragDocuments ?? [],
+    settings: options.rag,
+    embedding: options.embedding,
+    reranker: options.reranker,
+    onRuntimeStep: runtimeSteps ? (step) => runtimeSteps.push(step) : undefined
+  });
+
   return {
     source,
     productName,
     imageTexts,
     analysisPrompt: options.analysisPrompt,
-    ragDocuments: options.ragDocuments
+    ragDocuments: await ragDocuments
   };
 }
 
@@ -3124,11 +3174,9 @@ function collectImageTextCandidates($: ReturnType<typeof load>, source: string):
       const imageUrl = imageUrlFromNode($, node, source) ?? `${source}#visual-${index + 1}`;
       const text = normalizeOcrText([
         element.attr("data-ocr-text"),
-        element.attr("data-text"),
-        element.attr("alt"),
-        element.attr("title"),
-        element.attr("aria-label"),
-        textAroundImage($, node)
+        element.attr("data-recognized-text"),
+        element.attr("data-extracted-text"),
+        element.attr("data-full-text")
       ].filter(Boolean).join("\n"));
       return { imageUrl, text };
     })
@@ -3284,8 +3332,10 @@ function isReviewImageUrl(imageUrl: string): boolean {
 function textAroundImage($: ReturnType<typeof load>, node: CheerioInput): string {
   const element = $(node);
   const figureText = cleanText(element.closest("figure").find("figcaption").first().text());
-  const parentText = cleanText(element.parent().text());
-  return [figureText, parentText].filter((text) => text.length > 0).join(" ").slice(0, 520);
+  const parent = element.parent();
+  const parentTag = parent.get(0)?.tagName?.toLowerCase();
+  const parentText = parentTag === "figure" ? cleanText(parent.text()) : "";
+  return unique([figureText, parentText].filter((text) => text.length > 0)).join(" ").slice(0, 520);
 }
 
 function imageTechnicalContext($: ReturnType<typeof load>, node: CheerioInput): string {
@@ -3338,13 +3388,14 @@ function createApiTextCandidates(
     .filter((item) => item.text.length >= 24);
 }
 
-function createRagChunks(
+async function createRagChunks(
   source: string,
   product: ProductProfile,
   reviews: ReviewSummary,
   ocr: OcrExtraction,
-  options: ProductExtractorOptions
-): RagChunk[] {
+  options: ProductExtractorOptions,
+  runtimeSteps: RuntimePipelineStep[]
+): Promise<RagChunk[]> {
   const chunks: RagChunk[] = [
     {
       id: "product-1",
@@ -3395,12 +3446,42 @@ function createRagChunks(
     });
   }
 
-  for (const [index, document] of (options.ragDocuments ?? []).entries()) {
+  const retrievedPolicyChunks = retrieveProductExtractorRagDocuments({
+    query: createProductExtractorRagQuery({
+      source,
+      productName: product.name,
+      imageTexts: [
+        ...ocr.extractedTexts.map((item) => ({
+          imageUrl: item.imageUrl,
+          text: item.text
+        })),
+        {
+          imageUrl: `${source}#product-evidence`,
+          text: [
+            product.name,
+            product.description,
+            product.benefits.join("\n"),
+            product.effects.join("\n"),
+            product.ingredients.join("\n"),
+            product.usage.join("\n"),
+            reviews.keywords.map((keyword) => keyword.keyword).join("\n")
+          ].filter(Boolean).join("\n")
+        }
+      ]
+    }),
+    documents: options.ragDocuments ?? [],
+    settings: options.rag,
+    embedding: options.embedding,
+    reranker: options.reranker,
+    onRuntimeStep: (step) => runtimeSteps.push(step)
+  });
+
+  for (const [index, document] of (await retrievedPolicyChunks).entries()) {
     chunks.push({
       id: `rag-profile-file-${index + 1}`,
       kind: "source",
-      text: document.content.slice(0, 12000),
-      metadata: { source, documentName: document.name }
+      text: document.content,
+      metadata: { source, documentName: document.sourceDocument, chunkId: document.chunkId, score: document.score }
     });
   }
 
@@ -3697,8 +3778,148 @@ function resolveProviderConfig(options: ProductExtractorOptions) {
     model: options.model,
     endpoint: options.endpoint,
     deployment: options.deployment,
-    apiVersion: options.apiVersion
+    deployments: options.deployments,
+    apiVersion: options.apiVersion,
+    embedding: options.embedding,
+    reranker: options.reranker
   };
+}
+
+function createModelRuntimeStep(
+  stage: "ocr" | "final",
+  label: string,
+  options: ProductExtractorOptions,
+  deploymentRole: "ocr" | "reasoning",
+  tokenUsage: AiTokenUsage | undefined,
+  details: string
+): RuntimePipelineStep {
+  const config = resolveProviderConfig(options);
+  return {
+    stage,
+    label,
+    provider: runtimeProviderLabel(config.provider),
+    service: config.provider === "azure-openai" ? "Azure API model deployment" : config.provider,
+    model: config.provider === "azure-openai" ? undefined : config.model,
+    deployment: config.provider === "azure-openai" ? config.deployments?.[deploymentRole] ?? config.deployment : undefined,
+    called: true,
+    tokenUsage,
+    details
+  };
+}
+
+function createExtractorRuntimeUsage(options: ProductExtractorOptions, observedSteps: RuntimePipelineStep[]): RuntimePipelineUsage {
+  const config = resolveProviderConfig(options);
+  const embedding = config.embedding;
+  const reranker = config.reranker;
+  const baseline: RuntimePipelineStep[] = [
+    {
+      stage: "ocr",
+      label: "OCR/structure extraction",
+      provider: runtimeProviderLabel(config.provider),
+      service: config.provider === "azure-openai" ? "Azure API model deployment" : config.provider,
+      model: config.provider === "azure-openai" ? undefined : config.model,
+      deployment: config.provider === "azure-openai" ? config.deployments?.ocr ?? config.deployment : undefined,
+      called: observedSteps.some((step) => step.stage === "ocr"),
+      details: "Reads visible text from PDP images when image OCR targets are available."
+    },
+    {
+      stage: "final",
+      label: "Final OCR classification/reasoning",
+      provider: runtimeProviderLabel(config.provider),
+      service: config.provider === "azure-openai" ? "Azure API model deployment" : config.provider,
+      model: config.provider === "azure-openai" ? undefined : config.model,
+      deployment: config.provider === "azure-openai" ? config.deployments?.reasoning ?? config.deployment : undefined,
+      called: observedSteps.some((step) => step.stage === "final"),
+      details: "Classifies OCR/detail-page text into product, benefit, effect, ingredient, usage, FAQ, review, price, and metric signals."
+    },
+    {
+      stage: "embedding",
+      label: "Embedding",
+      provider: embedding?.provider === "azure-openai" ? "azure-api" : "local",
+      service: embedding?.provider === "azure-openai" ? "Azure API embedding deployment" : "local hash embedding",
+      model: embedding?.model,
+      deployment: embedding?.deployment,
+      called: observedSteps.some((step) => step.stage === "embedding") || embedding?.provider !== "azure-openai",
+      details: embedding?.provider === "azure-openai"
+        ? "Embeds extractor RAG policy query and candidate chunks when Azure embedding credentials are configured."
+        : "Uses deterministic local embedding for extractor RAG policy retrieval."
+    },
+    {
+      stage: "retrieval",
+      label: "Retrieval",
+      provider: "local",
+      service: "section-aware local hybrid retrieval",
+      mode: "BM25-like lexical + deterministic vector scoring",
+      called: true,
+      details: "Retrieves extractor RAG policy chunks before OCR classification and RAG chunk generation."
+    },
+    {
+      stage: "reranking",
+      label: "Reranking",
+      provider: reranker?.provider ?? "local-hybrid",
+      service: reranker?.provider === "azure-ai-search-semantic" ? "Azure AI Search semantic ranker" : reranker?.provider === "cohere" ? "Cohere Rerank" : "local score ordering",
+      model: reranker?.provider === "cohere" ? reranker.model : undefined,
+      called: observedSteps.some((step) => step.stage === "reranking") || !reranker || reranker.provider === "local-hybrid",
+      details: reranker?.provider === "azure-ai-search-semantic"
+        ? `Uses Azure AI Search index ${reranker.indexName || "(not set)"} with semantic configuration ${reranker.semanticConfiguration || "default"}.`
+        : reranker?.provider === "cohere"
+          ? "Uses Cohere Rerank when endpoint/key are configured; otherwise falls back to local score ordering."
+          : "Uses deterministic local score ordering."
+    }
+  ];
+  const steps = mergeRuntimeSteps([...baseline, ...observedSteps]);
+  const tokenTotals = mergeTokenUsages(steps.map((step) => step.tokenUsage).filter((usage): usage is AiTokenUsage => Boolean(usage)));
+
+  return {
+    steps,
+    tokenTotals: tokenTotals ?? {},
+    tokenNote: tokenTotals
+      ? "Token counts are summed from provider usage metadata returned by model APIs."
+      : "Token counts were not returned or do not apply to deterministic/search-only stages."
+  };
+}
+
+function mergeRuntimeSteps(steps: RuntimePipelineStep[]): RuntimePipelineStep[] {
+  const merged = new Map<string, RuntimePipelineStep>();
+  for (const step of steps) {
+    const key = step.label;
+    const current = merged.get(key);
+    if (!current) {
+      merged.set(key, step);
+      continue;
+    }
+    merged.set(key, {
+      ...current,
+      ...step,
+      called: current.called || step.called,
+      tokenUsage: mergeTokenUsages([current.tokenUsage, step.tokenUsage].filter((usage): usage is AiTokenUsage => Boolean(usage))),
+      details: [current.details, step.details].filter(Boolean).join(" ")
+    });
+  }
+  return Array.from(merged.values());
+}
+
+function mergeTokenUsages(usages: AiTokenUsage[]): AiTokenUsage | undefined {
+  const merged = usages.reduce<AiTokenUsage>((total, usage) => ({
+    inputTokens: sumOptional(total.inputTokens, usage.inputTokens),
+    outputTokens: sumOptional(total.outputTokens, usage.outputTokens),
+    totalTokens: sumOptional(total.totalTokens, usage.totalTokens)
+  }), {});
+  return merged.inputTokens !== undefined || merged.outputTokens !== undefined || merged.totalTokens !== undefined ? merged : undefined;
+}
+
+function sumOptional(left: number | undefined, right: number | undefined): number | undefined {
+  if (left === undefined && right === undefined) {
+    return undefined;
+  }
+  return (left ?? 0) + (right ?? 0);
+}
+
+function runtimeProviderLabel(provider: ProductExtractorOptions["provider"]): string {
+  if (provider === "azure-openai") {
+    return "azure-api";
+  }
+  return provider ?? "mock";
 }
 
 function extractOptions($: ReturnType<typeof load>, productNode?: Record<string, unknown>): string[] {

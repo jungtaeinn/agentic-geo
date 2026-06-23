@@ -7,6 +7,7 @@ import type {
   PdpGeoKeywordNormalizationSettings,
   PdpGeoKeywordNormalizer,
   PdpGeoLocale,
+  PdpGeoTokenUsage,
   PdpProductSignal
 } from "./types";
 
@@ -14,6 +15,7 @@ interface KeywordNormalizationApplication {
   product: PdpProductSignal;
   evidence: PdpGeoEvidence[];
   warnings: string[];
+  usage?: PdpGeoTokenUsage;
 }
 
 interface ModelBackedKeywordNormalizerConfig {
@@ -37,6 +39,7 @@ export async function normalizeProductReviewKeywords(
   const evidence: PdpGeoEvidence[] = [];
   const warnings: string[] = [];
   let normalizedProduct = product;
+  let usage: PdpGeoTokenUsage | undefined;
 
   const settings = options.keywordNormalization;
   const resolved = resolveKeywordNormalizer(options);
@@ -63,6 +66,7 @@ export async function normalizeProductReviewKeywords(
 
   try {
     const result = await resolved.normalizer.normalizeKeywords(request);
+    usage = result.usage;
     const accepted = selectSafeCorrections(
       request.reviewKeywords,
       result.corrections,
@@ -96,7 +100,8 @@ export async function normalizeProductReviewKeywords(
   return {
     product: normalizedProduct,
     evidence,
-    warnings
+    warnings,
+    usage
   };
 }
 
@@ -110,7 +115,7 @@ export class ModelBackedKeywordNormalizer implements PdpGeoKeywordNormalizer {
       case "gemini":
         return this.normalizeWithGemini(request);
       case "azure-openai":
-        return this.normalizeWithAzureOpenAI(request);
+        return this.normalizeWithAzureApi(request);
       case "custom":
       case "mock":
       default:
@@ -141,7 +146,12 @@ export class ModelBackedKeywordNormalizer implements PdpGeoKeywordNormalizer {
       throw new Error(`OpenAI keyword normalization failed: ${response.status}`);
     }
 
-    return parseKeywordNormalizationJson(await response.text());
+    const payloadText = await response.text();
+    const payload = JSON.parse(payloadText) as Record<string, unknown>;
+    return {
+      ...parseKeywordNormalizationJson(payloadText),
+      usage: tokenUsageFromOpenAi(payload.usage)
+    };
   }
 
   private async normalizeWithGemini(request: PdpGeoKeywordNormalizationRequest): Promise<PdpGeoKeywordNormalizationResult> {
@@ -168,12 +178,16 @@ export class ModelBackedKeywordNormalizer implements PdpGeoKeywordNormalizer {
 
     const payload = await response.json() as {
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      usageMetadata?: unknown;
     };
     const rawText = payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("\n") ?? "";
-    return parseKeywordNormalizationJson(rawText);
+    return {
+      ...parseKeywordNormalizationJson(rawText),
+      usage: tokenUsageFromGemini(payload.usageMetadata)
+    };
   }
 
-  private async normalizeWithAzureOpenAI(request: PdpGeoKeywordNormalizationRequest): Promise<PdpGeoKeywordNormalizationResult> {
+  private async normalizeWithAzureApi(request: PdpGeoKeywordNormalizationRequest): Promise<PdpGeoKeywordNormalizationResult> {
     if (!this.config.apiKey || !this.config.endpoint || !this.config.deployment) {
       throw new Error("AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, and AZURE_OPENAI_DEPLOYMENT are required for keyword normalization.");
     }
@@ -198,12 +212,59 @@ export class ModelBackedKeywordNormalizer implements PdpGeoKeywordNormalizer {
     });
 
     if (!response.ok) {
-      throw new Error(`Azure OpenAI keyword normalization failed: ${response.status}`);
+      throw new Error(`Azure keyword normalization failed: ${response.status}`);
     }
 
-    const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-    return parseKeywordNormalizationJson(payload.choices?.[0]?.message?.content ?? "");
+    const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }>; usage?: unknown };
+    return {
+      ...parseKeywordNormalizationJson(payload.choices?.[0]?.message?.content ?? ""),
+      usage: tokenUsageFromChatCompletions(payload.usage)
+    };
   }
+}
+
+function tokenUsageFromOpenAi(value: unknown): PdpGeoTokenUsage | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const usage = value as Record<string, unknown>;
+  return compactTokenUsage({
+    inputTokens: numberField(usage.input_tokens) ?? numberField(usage.prompt_tokens),
+    outputTokens: numberField(usage.output_tokens) ?? numberField(usage.completion_tokens),
+    totalTokens: numberField(usage.total_tokens)
+  });
+}
+
+function tokenUsageFromGemini(value: unknown): PdpGeoTokenUsage | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const usage = value as Record<string, unknown>;
+  return compactTokenUsage({
+    inputTokens: numberField(usage.promptTokenCount),
+    outputTokens: numberField(usage.candidatesTokenCount),
+    totalTokens: numberField(usage.totalTokenCount)
+  });
+}
+
+function tokenUsageFromChatCompletions(value: unknown): PdpGeoTokenUsage | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const usage = value as Record<string, unknown>;
+  return compactTokenUsage({
+    inputTokens: numberField(usage.prompt_tokens),
+    outputTokens: numberField(usage.completion_tokens),
+    totalTokens: numberField(usage.total_tokens)
+  });
+}
+
+function compactTokenUsage(usage: PdpGeoTokenUsage): PdpGeoTokenUsage | undefined {
+  return usage.inputTokens !== undefined || usage.outputTokens !== undefined || usage.totalTokens !== undefined ? usage : undefined;
+}
+
+function numberField(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function resolveKeywordNormalizer(options: PdpGeoGeneratorOptions): { normalizer?: PdpGeoKeywordNormalizer; warning?: string } {

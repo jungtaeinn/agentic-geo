@@ -1,4 +1,5 @@
 import { extractProduct, type ProductExtractorOptions } from "./agent";
+import type { AzureRoleDeployments, EmbeddingRuntimeConfig, RerankerRuntimeConfig } from "./llm/types";
 import { productExtractorRagManifest } from "./rag/manifest";
 import type {
   ProductExtractionDiagnostics,
@@ -12,13 +13,18 @@ export interface ProductExtractorRestRequest {
   sources?: string[];
   sourceType?: ProductExtractionInput["sourceType"];
   headers?: Record<string, string>;
-  llm?: Partial<Pick<ProductExtractorRestConfig, "provider" | "apiKey" | "model" | "endpoint" | "deployment" | "apiVersion">>;
+  llm?: Partial<Pick<ProductExtractorRestConfig, "provider" | "apiKey" | "model" | "endpoint" | "deployment" | "apiVersion">> & {
+    deployments?: AzureRoleDeployments;
+    embedding?: EmbeddingRuntimeConfig;
+    reranker?: RerankerRuntimeConfig;
+  };
   rag?: {
     analysisPrompt?: string;
     documents?: Array<{
       name: string;
       content: string;
     }>;
+    retrieval?: ProductExtractorOptions["rag"];
   };
 }
 
@@ -48,8 +54,9 @@ export function createProductExtractorRestHandler(config: ProductExtractorRestCo
       const runtimeConfig = {
         ...config,
         ...body.llm,
-        analysisPrompt: body.rag?.analysisPrompt,
-        ragDocuments: body.rag?.documents
+        analysisPrompt: body.rag?.analysisPrompt ?? config.analysisPrompt,
+        ragDocuments: body.rag?.documents ?? config.ragDocuments,
+        rag: body.rag?.retrieval ?? config.rag
       };
 
       if (sources.length === 0) {

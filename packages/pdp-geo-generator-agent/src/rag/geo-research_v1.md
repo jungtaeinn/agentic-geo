@@ -1,4 +1,4 @@
-# GEO Paper Guidance v1
+# GEO Research Guidance v1
 
 Generative Engine Optimization focuses on improving visibility and citation in generative search answers.
 

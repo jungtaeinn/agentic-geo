@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { generatePdpGeo } from "../src";
+import { describe, expect, it, vi } from "vitest";
+import { generatePdpGeo, ModelBackedCopyRefiner } from "../src";
 import { validateAndRepairPdpGeoArtifacts } from "../src/validate";
 
 describe("generatePdpGeo", () => {
@@ -196,18 +196,30 @@ describe("generatePdpGeo", () => {
           images: [
             "https://us.sulwhasoo.com/cdn/shop/files/SWS_Thumbnail_GCF_1080x1080_200ml.jpg"
           ],
-          benefits: ["hydration", "oil control"],
+          benefits: ["hydration", "oil control", "Benefits"],
+          effects: [
+            "AFTER 3 DAYS OF USE 96% AGREED FOAM FEELS GENTLE WITHOUT IRRITATION 86% AGREED PRODUCT THOROUGHLY CLEANSES MAKEUP RESIDUE 83% AGREED SKIN FEELS HYDRATED AFTER CLEANSING 1Based on a 3-day independent consumer study on 30 women 30-49."
+          ],
           ingredients: [
+            "Sulwhasoo’s proprietary hydro-cleansing formula leaves your skin hydrated and removes grime from pores after cleansing.",
             "WATER / AQUA / EAU, POTASSIUM COCOYL GLYCINATE, DISODIUM COCOAMPHODIACETATE"
           ],
           usage: [
             "Lather two pumps of cleansing foam and massage into damp skin morning and night, then rinse with lukewarm water."
           ],
+          reviews: {
+            rating: 4.8,
+            reviewCount: 848,
+            items: [
+              { body: "Rating 4.8 · 848 reviews" }
+            ]
+          },
           sourceExtraction: {
             ocr: {
               textBlocks: [
                 "Concentrated Ginseng Rejuvenating Serum Mini, Korean travel sized serum, product shot.",
-                "Concentrated Ginseng Rejuvenating Cream Rich, korean cream, pack shot."
+                "Concentrated Ginseng Rejuvenating Cream Rich, korean cream, pack shot.",
+                "Person applying a skincare product to their hand with text 'Gentle, Non-Stripping Formula' in the corner."
               ],
               imageTexts: [
                 {
@@ -235,10 +247,31 @@ describe("generatePdpGeo", () => {
 
     expect(result.content.sections.productName).toBe("Gentle Cleansing Foam");
     expect(product.name).toBe("Gentle Cleansing Foam");
+    expect(product.description).toContain("Gentle Cleansing Foam is a cleanser");
+    expect(product.description).toContain("hydro-cleansing formula");
+    expect(product.description).toContain("hydrated");
+    expect(product.description).toContain("Reported results come from an assessment of 30 women");
+    expect(product.description).not.toContain("is a product");
+    expect(product.description).not.toMatch(/hydratedMulberry|:Helps|Formula details state that/i);
+    expect(product.description).not.toMatch(/\bBenefits\b/);
+    expect(product.description).not.toMatch(/Rating 4\.?\s*8|848 reviews|Representative customer reviews/i);
+    expect(product.review).toBeUndefined();
     expect(product.category).toBeUndefined();
     expect(webPage.name).toBe("Gentle Cleansing Foam");
     expect(webPage.description).not.toContain("evaluate the serum");
+    expect(webPage.description).toContain("summarizes specific product facts");
+    expect(webPage.description).toContain("about the cleanser for customers");
+    expect(webPage.description).toContain("hydro-cleansing formula");
+    expect(webPage.description).toContain("96% of participants agreed that foam felt gentle without irritation");
+    expect(webPage.description).not.toMatch(/customers concerned with dryness evaluating|hydratedMulberry|:Helps/i);
+    expect(webPage.description).not.toMatch(/\bBenefits\b/);
+    const serialized = JSON.stringify(result);
     expect(JSON.stringify(result.schemaMarkup.jsonLd)).not.toContain("Gentle Cleansing Foam hydration Serum");
+    expect(serialized).not.toMatch(/product shot|pack shot|travel sized serum|model applying product|person applying|with text|in the corner|Concentrated Ginseng Rejuvenating Serum Mini|Concentrated Ginseng Rejuvenating Cream Rich/i);
+    expect(result.diagnostics.normalizedProduct.sourceTexts.join("\n")).not.toMatch(/product shot|pack shot|model applying product|person applying|with text|in the corner/i);
+    expect(result.diagnostics.normalizedProduct.ingredients.join("\n")).not.toMatch(/product shot|pack shot|Concentrated Ginseng/i);
+    expect(result.diagnostics.normalizedProduct.benefits).not.toContain("Benefits");
+    expect(result.diagnostics.ocrSentences).toHaveLength(0);
   });
 
   it("uses an optional keyword normalizer before filtering misspelled review keyword candidates", async () => {
@@ -287,6 +320,195 @@ describe("generatePdpGeo", () => {
     expect(result.diagnostics.normalizedProduct.reviews.keywords).not.toContain("피부걸");
     expect(result.diagnostics.evidence.some((item) => item.source === "llm" && item.value.includes("피부걸 -> 피부결"))).toBe(true);
     expect(result.content.sections.description).toContain("피부결");
+  });
+
+  it("uses an optional Gen AI copy refiner after deterministic schema generation", async () => {
+    const refinedProductDescription = "Hydra Balance Essence is an essence for dry skin, highlighting hydration, barrier support, hyaluronic acid, and a morning-and-night routine without adding unsupported claims.";
+    const refinedWebPageDescription = "This Hydra Balance Essence product page summarizes hydration, barrier support, hyaluronic acid, and morning-and-night usage so customers can compare the essence using product-backed details.";
+
+    const { result } = await generatePdpGeo(
+      {
+        product: {
+          geoProduct: {
+            name: "Hydra Balance Essence",
+            description: "A hydrating essence for dry skin.",
+            category: "Essence",
+            benefits: ["hydration", "barrier support"],
+            ingredients: ["Hyaluronic Acid"],
+            usage: ["Apply morning and night after cleansing."]
+          }
+        },
+        hints: {
+          locale: "en-US",
+          market: "US"
+        }
+      },
+      {
+        customCopyRefiner: {
+          async refineCopy(request) {
+            expect(request.schemaMarkup.jsonLd["@graph"]).toBeTruthy();
+            expect(request.content.sections.description).toContain("Hydra Balance Essence");
+            return {
+              schemaDescriptions: {
+                product: refinedProductDescription,
+                webPage: refinedWebPageDescription
+              },
+              contentSections: {
+                description: refinedProductDescription
+              },
+              usage: {
+                inputTokens: 120,
+                outputTokens: 80,
+                totalTokens: 200
+              }
+            };
+          }
+        }
+      }
+    );
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    const webPage = graph.find((node) => node["@type"] === "WebPage") as Record<string, any>;
+    const finalStep = result.diagnostics.runtimeUsage?.steps.find((step) => step.stage === "final");
+
+    expect(product.description).toBe(refinedProductDescription);
+    expect(webPage.description).toBe(refinedWebPageDescription);
+    expect(result.content.sections.description).toBe(refinedProductDescription);
+    expect(result.content.html).toContain(refinedProductDescription);
+    expect(result.diagnostics.evidence.some((item) => item.field === "copy.refinement" && item.source === "llm")).toBe(true);
+    expect(finalStep?.called).toBe(true);
+    expect(finalStep?.tokenUsage?.totalTokens).toBe(200);
+    expect(result.diagnostics.runtimeUsage?.tokenTotals.totalTokens).toBe(200);
+  });
+
+  it("sends GEO, CEP, and E-E-A-T strategic guidance to model-backed copy refinement", async () => {
+    let capturedBody: Record<string, any> | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      capturedBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, any>;
+      return new Response(JSON.stringify({
+        output_text: JSON.stringify({
+          schemaDescriptions: {
+            product: "Hydra Balance Essence is an essence for dry skin that highlights hydration, barrier support, hyaluronic acid, and morning-and-night use.",
+            webPage: "This Hydra Balance Essence page summarizes hydration, barrier support, hyaluronic acid, and morning-and-night use for comparison-ready product understanding."
+          },
+          contentSections: {
+            description: "Hydra Balance Essence is an essence for dry skin that highlights hydration, barrier support, hyaluronic acid, and morning-and-night use."
+          },
+          warnings: []
+        }),
+        usage: {
+          input_tokens: 10,
+          output_tokens: 5,
+          total_tokens: 15
+        }
+      }), { status: 200 });
+    }));
+
+    try {
+      const refiner = new ModelBackedCopyRefiner({
+        provider: "openai",
+        apiKey: "test-key",
+        model: "test-model"
+      });
+      await refiner.refineCopy({
+        locale: "en-US",
+        product: {
+          name: "Hydra Balance Essence",
+          description: "A hydrating essence for dry skin.",
+          images: [],
+          options: [],
+          benefits: ["hydration", "barrier support"],
+          effects: [],
+          ingredients: ["Hyaluronic Acid"],
+          usage: ["Apply morning and night after cleansing."],
+          metrics: [],
+          faq: [],
+          reviews: {
+            keywords: ["lightweight"],
+            items: []
+          },
+          breadcrumbs: [],
+          sourceTexts: ["Hydra Balance Essence helps skin feel hydrated after cleansing."]
+        },
+        schemaMarkup: {
+          jsonLd: {
+            "@context": "https://schema.org",
+            "@graph": [
+              {
+                "@type": "WebPage",
+                description: "Current webpage description."
+              },
+              {
+                "@type": "Product",
+                description: "Current product description."
+              }
+            ]
+          },
+          scriptTag: ""
+        },
+        content: {
+          sections: {
+            productName: "Hydra Balance Essence",
+            description: "Current product description.",
+            quickFacts: "",
+            benefits: "",
+            ingredients: "",
+            howToUse: "",
+            faq: ""
+          },
+          html: ""
+        },
+        ragChunks: [
+          {
+            id: "geo-1",
+            source: "geo-research_v1.md",
+            title: "Answer-ready product fact selection",
+            text: "Generative engines surface concise, source-backed product facts that answer comparison and usage questions.",
+            kind: "geo-research",
+            intents: ["claims"],
+            fieldTargets: ["Product.description"],
+            metadata: {},
+            score: 0.92
+          },
+          {
+            id: "cep-1",
+            source: "cep_v1.md",
+            title: "Customer entry points",
+            text: "Map the product to customer entry points such as dry skin, routine timing, and comparison context.",
+            kind: "cep",
+            intents: ["customer"],
+            fieldTargets: ["WebPage.description"],
+            metadata: {},
+            score: 0.91
+          },
+          {
+            id: "eeat-1",
+            source: "eeat_v1.md",
+            title: "Evidence quality",
+            text: "Keep benefit statements verifiable and grounded in page evidence.",
+            kind: "eeat",
+            intents: ["evidence"],
+            fieldTargets: ["Product.description"],
+            metadata: {},
+            score: 0.9
+          }
+        ],
+        reasoning: undefined
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    expect(capturedBody?.instructions).toContain("GEO research/geo-paper, CEP, and E-E-A-T");
+    const payload = JSON.parse(String(capturedBody?.input ?? "{}")) as Record<string, any>;
+    expect(payload.task).toContain("AI-exposure-worthy");
+    expect(payload.extractionPriorities).toEqual(expect.arrayContaining([
+      expect.stringContaining("customer-entry-point"),
+      expect.stringContaining("E-E-A-T")
+    ]));
+    expect(payload.strategicExposureGuidance).toHaveLength(3);
+    expect(payload.strategicExposureGuidance.map((item: Record<string, unknown>) => item.kind)).toEqual(["geo-research", "cep", "eeat"]);
   });
 
   it("uses OCR sentence insights to enrich effect, ingredient, full ingredient, and schema notes", async () => {
@@ -341,6 +563,7 @@ describe("generatePdpGeo", () => {
     const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
     const additionalProperties = product.additionalProperty as Array<Record<string, any>>;
     const positiveNotes = product.positiveNotes.itemListElement as Array<Record<string, any>>;
+    const ocrDiagnostics = result.diagnostics.ocrSentences;
 
     expect(result.content.sections.description).toMatch(/supports|formula|texture|routine|visible benefits|key actives|comfort/);
     expect(result.content.sections.description).not.toContain("This advanced formula, working synergistically");
@@ -350,6 +573,7 @@ describe("generatePdpGeo", () => {
     expect(additionalProperties.some((item) => item.name === "Ingredient/effect detail" && /formula|texture|routine|benefit|comfort/.test(String(item.value)))).toBe(true);
     expect(additionalProperties.some((item) => item.name === "Full ingredients" && String(item.value).includes("PANAX GINSENG ROOT EXTRACT"))).toBe(true);
     expect(positiveNotes.map((item) => item.name)).toEqual(expect.arrayContaining(["skin resilience", "elasticity", "firmness"]));
+    expect(ocrDiagnostics.find((item) => item.text.includes("6-peptide blend"))?.imageUrls).toEqual(["https://example.com/ginseng-peptide.jpg"]);
     expect(JSON.stringify(result.schemaMarkup.jsonLd)).not.toMatch(/ingredient\/effect claim|Citation highlight|citation highlight|benefit terms|ingredient context|use-feel comparison|product discovery context|Product detail context|comparison intent|comparison-led|texture language|use-feel language|benefit language|ingredient terms|ingredient and technology term|product benefit term/i);
   });
 
@@ -437,6 +661,7 @@ describe("generatePdpGeo", () => {
     expect(ocrDiagnostics.some((item) => item.text.includes("압축 히알루론산") && item.intents.includes("ingredient") && item.intents.includes("effect"))).toBe(true);
     expect(ocrDiagnostics.some((item) => item.text.includes("징크") && item.schemaFields.includes("content.sections.benefits"))).toBe(true);
     expect(ocrDiagnostics.some((item) => item.text.includes("고밀도 세라마이드 캡슐") && item.geoUse === "ingredient_effect_evidence")).toBe(true);
+    expect(ocrDiagnostics.find((item) => item.text.includes("압축 히알루론산"))?.imageUrls).toEqual(["https://example.com/aestura-ingredients.jpg"]);
     expect(ocrDiagnostics.every((item) => item.text.length > 0 && item.schemaFields.length > 0 && item.geoUse.length > 0)).toBe(true);
     expect(serialized).not.toMatch(/효능어|성분어|사용감어|성분 구성, 기대 효능, 사용감 차이|함께 보여줍니다|제품 탐색 문맥|탐색 문맥에서/);
   });
@@ -483,6 +708,7 @@ describe("generatePdpGeo", () => {
     expect(ocrDiagnostics.some((item) => item.text === "Zinc. Helps control excess oil and sebum")).toBe(true);
     expect(ocrDiagnostics.some((item) => item.text === "High-density Ceramide Capsule. Long-chain ceramide and linker ceramide help reinforce skin barrier moisture for sensitive skin")).toBe(true);
     expect(ocrDiagnostics.some((item) => item.text.includes("Compressed Hyaluronic Acid") && item.intents.includes("ingredient") && item.intents.includes("benefit"))).toBe(true);
+    expect(ocrDiagnostics.find((item) => item.text.includes("Compressed Hyaluronic Acid"))?.imageUrls).toEqual(["https://example.com/english-ingredient-panel.jpg"]);
     expect(ocrDiagnostics.every((item) => !item.text.includes(": Patented technology") && !item.text.includes(": Helps control"))).toBe(true);
     expect(result.content.sections.benefits).toMatch(/Compressed Hyaluronic Acid|Zinc|High-density Ceramide Capsule/);
     expect(result.content.sections.benefits).toMatch(/1\/100|excess oil|Long-chain|barrier moisture/);
@@ -616,6 +842,9 @@ describe("generatePdpGeo", () => {
     expect(faq.mainEntity.some((item: any) => item.name === "What do customer reviews highlight about Ginseng Barrier Serum?")).toBe(true);
     expect(result.diagnostics.evidence.some((item) => item.field === "rag.geoOptimizationGuidance")).toBe(true);
     expect(result.diagnostics.recommendations.some((item) => item.field === "faq")).toBe(true);
+    expect(result.diagnostics.ragUsage.length).toBeGreaterThan(0);
+    expect(result.diagnostics.ragUsage.some((item) => item.principle === "answer-ready FAQ" && item.references.some((reference) => reference.fieldTargets.includes("FAQPage.mainEntity")))).toBe(true);
+    expect(result.diagnostics.ragUsage.some((item) => item.principle === "stepwise HowTo" && item.references.some((reference) => reference.fieldTargets.includes("HowTo.step")))).toBe(true);
   });
 
   it("keeps positiveNotes and benefit context free of marketing fragments and clinical sample fragments", async () => {
@@ -661,9 +890,11 @@ describe("generatePdpGeo", () => {
     const serialized = JSON.stringify(result.schemaMarkup.jsonLd);
 
     expect(notes).toEqual(expect.arrayContaining(["fine lines and wrinkles", "elasticity", "firmness", "plumpness"]));
-    expect(webPage.description).toContain("skin-care benefits, key actives, usage routine");
+    expect(webPage.description).toContain("summarizes specific product facts");
     expect(webPage.description).toContain("fine lines and wrinkles");
     expect(webPage.description).toContain("Korean Ginseng Actives");
+    expect(webPage.description).toContain("The page states that");
+    expect(webPage.description).toContain("Usage guidance covers");
     expect(webPage.description).toContain("smooth");
     expect(product.description).toContain("fine lines and wrinkles");
     expect(product.description).toContain("Korean Ginseng Actives");
@@ -997,5 +1228,8 @@ describe("generatePdpGeo", () => {
     expect(repaired.content.html).not.toContain("<script>");
     expect(repaired.content.html).not.toMatch(/images-kr\.amoremall|fileupload\/reviews|…|\.{3,}|수분감를|피부결를/);
     expect(repaired.validationWarnings.some((warning) => warning.includes("Final sentence QA repaired"))).toBe(true);
+    expect(repaired.validationRepairs.some((repair) => repair.field === "content.sections.description" && String(repair.before).includes("수분감를") && String(repair.after).includes("수분감을"))).toBe(true);
+    expect(repaired.validationRepairs.some((repair) => repair.field === "content.html" && String(repair.before).includes("<script>") && String(repair.after).includes("geo-content-accordion"))).toBe(true);
+    expect(repaired.validationRepairs.some((repair) => repair.field === "Product.additionalProperty" && JSON.stringify(repair.before).includes("Reported details") && repair.after === null)).toBe(true);
   });
 });
