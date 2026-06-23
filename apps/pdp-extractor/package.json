@@ -23,8 +23,8 @@
     "build:pages": "NEXT_PUBLIC_DEPLOY_TARGET=github-pages next build",
     "dev": "next dev",
     "lint": "eslint .",
-    "test": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "test": "next typegen && tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit"
   },
   "dependencies": {
     "@agentic-geo/pdp-extractor-agent": "workspace:*",

@@ -849,7 +849,8 @@ function selectProductName(
   productNode: Record<string, unknown> | undefined,
   clientStateData: ClientStateProductData
 ): ProductTextCandidate | undefined {
-  const candidates: ProductTextCandidate[] = [
+  const handle = productHandleFromSource(source);
+  const pageCandidates: ProductTextCandidate[] = [
     { value: stringValue(productNode?.name), source: "jsonLd", priority: 78 },
     { value: clientStateData.name, source: "dom", priority: 82 },
     { value: meta($, "og:title"), source: "meta", priority: 92 },
@@ -857,7 +858,8 @@ function selectProductName(
     { value: cleanText($("h1").first().text()), source: "dom", priority: 88 },
     { value: cleanText($("title").first().text()), source: "dom", priority: 84 }
   ];
-  const handle = productHandleFromSource(source);
+  const handleCandidate = productNameCandidateFromHandle(handle, pageCandidates);
+  const candidates = handleCandidate ? [...pageCandidates, handleCandidate] : pageCandidates;
   let best: ProductTextCandidate | undefined;
   let bestScore = Number.NEGATIVE_INFINITY;
 
@@ -875,6 +877,26 @@ function selectProductName(
   }
 
   return best;
+}
+
+function productNameCandidateFromHandle(
+  handle: string | undefined,
+  candidates: ProductTextCandidate[]
+): ProductTextCandidate | undefined {
+  const handleTerms = productHandleTerms(handle);
+  if (handleTerms.length < 2) {
+    return undefined;
+  }
+
+  const handleName = titleCaseHandleTerms(handleTerms);
+  const normalizedHandle = normalizeFingerprint(handleTerms.join(" "));
+  const hasExpandedHandleCandidate = candidates.some((candidate) => {
+    const value = cleanProductNameCandidate(candidate.value);
+    const normalizedValue = value ? normalizeFingerprint(value) : "";
+    return normalizedValue.startsWith(`${normalizedHandle} `);
+  });
+
+  return hasExpandedHandleCandidate ? { value: handleName, source: "url", priority: 80 } : undefined;
 }
 
 function selectProductDescription(
@@ -967,6 +989,12 @@ function productHandleTerms(handle: string | undefined): string[] {
   return unique(normalizeFingerprint(decoded)
     .split(" ")
     .filter((term) => term.length >= 3 && !/^\d+$/.test(term)));
+}
+
+function titleCaseHandleTerms(terms: string[]): string {
+  return terms
+    .map((term) => term.charAt(0).toUpperCase() + term.slice(1))
+    .join(" ");
 }
 
 function safeDecodeURIComponent(value: string): string {

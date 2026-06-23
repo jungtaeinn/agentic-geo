@@ -245,7 +245,7 @@ export interface ProductExtractionStep {
 /** Evidence item that tells downstream validators where a field came from. */
 export interface ExtractionEvidence {
   field: string;
-  source: "meta" | "jsonLd" | "dom" | "review" | "ocr" | "api" | "mock";
+  source: "meta" | "jsonLd" | "dom" | "url" | "review" | "ocr" | "api" | "mock";
   value: string;
 }
 

@@ -187,6 +187,60 @@ describe("generatePdpGeo", () => {
     expect(result.content.sections.description).not.toContain("PDP name");
   });
 
+  it("does not append benefit or conflicting category terms to a product name that already has a product type", async () => {
+    const { result } = await generatePdpGeo({
+      product: {
+        geoProduct: {
+          name: "Gentle Cleansing Foam",
+          description: "A soft lather that removes impurities while supporting hydration and comfort.",
+          images: [
+            "https://us.sulwhasoo.com/cdn/shop/files/SWS_Thumbnail_GCF_1080x1080_200ml.jpg"
+          ],
+          benefits: ["hydration", "oil control"],
+          ingredients: [
+            "WATER / AQUA / EAU, POTASSIUM COCOYL GLYCINATE, DISODIUM COCOAMPHODIACETATE"
+          ],
+          usage: [
+            "Lather two pumps of cleansing foam and massage into damp skin morning and night, then rinse with lukewarm water."
+          ],
+          sourceExtraction: {
+            ocr: {
+              textBlocks: [
+                "Concentrated Ginseng Rejuvenating Serum Mini, Korean travel sized serum, product shot.",
+                "Concentrated Ginseng Rejuvenating Cream Rich, korean cream, pack shot."
+              ],
+              imageTexts: [
+                {
+                  imageUrl: "https://us.sulwhasoo.com/cdn/shop/files/BRAND.COM_1080x1080_NewCGRSerum_01.Packshot_50ml.jpg",
+                  text: "Concentrated Ginseng Rejuvenating Serum Mini, Korean travel sized serum, product shot."
+                }
+              ]
+            }
+          }
+        }
+      },
+      source: {
+        type: "pdp-extractor",
+        url: "https://us.sulwhasoo.com/products/gentle-cleansing-foam?variant=41663478792237"
+      },
+      hints: {
+        locale: "en-US",
+        market: "US"
+      }
+    });
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    const webPage = graph.find((node) => node["@type"] === "WebPage") as Record<string, any>;
+
+    expect(result.content.sections.productName).toBe("Gentle Cleansing Foam");
+    expect(product.name).toBe("Gentle Cleansing Foam");
+    expect(product.category).toBeUndefined();
+    expect(webPage.name).toBe("Gentle Cleansing Foam");
+    expect(webPage.description).not.toContain("evaluate the serum");
+    expect(JSON.stringify(result.schemaMarkup.jsonLd)).not.toContain("Gentle Cleansing Foam hydration Serum");
+  });
+
   it("uses an optional keyword normalizer before filtering misspelled review keyword candidates", async () => {
     const { result } = await generatePdpGeo(
       {

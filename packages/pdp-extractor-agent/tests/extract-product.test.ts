@@ -244,6 +244,44 @@ describe("extractProductFromHtml", () => {
     expect(JSON.stringify(result.geoProduct)).not.toContain("First Care Activating Serum VI");
   });
 
+  it("prefers the URL handle name when a page candidate expands that exact handle with extra tail words", async () => {
+    const mixedNameHtml = `
+      <html>
+        <head>
+          <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": "Product",
+              "name": "Gentle Cleansing Foam hydration Serum",
+              "description": "A gentle cleansing foam that lathers into a rich foam to remove impurities without leaving skin feeling dry.",
+              "image": ["/gentle-cleansing-foam.jpg"]
+            }
+          </script>
+        </head>
+        <body>
+          <main>
+            <section>
+              <h2>How to use</h2>
+              <p>Lather two pumps of cleansing foam and massage into damp skin, then rinse with lukewarm water.</p>
+            </section>
+          </main>
+        </body>
+      </html>
+    `;
+
+    const { result, diagnostics } = await extractProductFromHtml(
+      mixedNameHtml,
+      "https://us.sulwhasoo.com/products/gentle-cleansing-foam?variant=41663478792237"
+    );
+
+    expect(result.geoProduct.name).toBe("Gentle Cleansing Foam");
+    expect(diagnostics.evidence.find((item) => item.field === "product.name")).toMatchObject({
+      source: "url",
+      value: "Gentle Cleansing Foam"
+    });
+    expect(JSON.stringify(result.geoProduct)).not.toContain("Gentle Cleansing Foam hydration Serum");
+  });
+
   it("maps semantic object section keys from JSON payloads into product fields", async () => {
     const { result } = await extractProductFromHtml(
       JSON.stringify({

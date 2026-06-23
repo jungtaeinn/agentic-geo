@@ -152,23 +152,8 @@ export function generatePdpGeoArtifacts(input: GenerateArtifactsInput): Generate
   };
 }
 
-function createGeoProductName(product: PdpProductSignal, locale: PdpGeoLocale, localizedTerms: string[], hints?: PdpGeoGenerationHints): string {
-  const base = product.name.trim();
-  const rawCategory = sanitizeCategory(hints?.category ?? product.category) ?? inferProductType(product);
-  const category = rawCategory ? localizeProductTypeForLocale(rawCategory, locale) : undefined;
-  const primaryTerm = selectPublicPrimaryBenefit(product, locale, localizedTerms);
-
-  if (!category || productNameContainsEquivalentProductType(base, rawCategory ?? category)) {
-    return base;
-  }
-
-  if (primaryTerm && !base.toLowerCase().includes(primaryTerm.toLowerCase())) {
-    return locale === "ja-JP"
-      ? `${base} ${primaryTerm}${category}`
-      : `${base} ${primaryTerm} ${category}`;
-  }
-
-  return `${base} ${category}`;
+function createGeoProductName(product: PdpProductSignal, _locale: PdpGeoLocale, _localizedTerms: string[], _hints?: PdpGeoGenerationHints): string {
+  return product.name.trim();
 }
 
 function createGeoDescription(
@@ -507,28 +492,6 @@ function localizeProductTypeForLocale(productType: string, locale: PdpGeoLocale)
   }
 
   return normalized;
-}
-
-function productNameContainsEquivalentProductType(productName: string, category?: string): boolean {
-  const name = productName.toLowerCase();
-  const categoryText = cleanSignal(category ?? "");
-  if (!categoryText) {
-    return false;
-  }
-  const aliasGroups = [
-    ["cream", "크림", "クリーム"],
-    ["serum", "세럼", "앰플", "에센스", "美容液", "セラム"],
-    ["toner", "토너", "스킨", "化粧水"],
-    ["cleanser", "클렌저", "폼", "洗顔", "クレンザー"],
-    ["mask", "마스크", "マスク"]
-  ];
-  const matchedGroup = aliasGroups.find((aliases) => aliases.some((alias) => categoryText.toLowerCase().includes(alias.toLowerCase())));
-
-  if (!matchedGroup) {
-    return name.includes(categoryText.toLowerCase());
-  }
-
-  return matchedGroup.some((alias) => name.includes(alias.toLowerCase()));
 }
 
 function inferTargetCustomer(product: PdpProductSignal, locale: PdpGeoLocale): string {
@@ -1813,22 +1776,6 @@ function sanitizeCategory(value?: string): string | undefined {
 }
 
 function inferProductType(product: PdpProductSignal): string | undefined {
-  const text = `${product.name} ${product.description ?? ""} ${product.sourceTexts.slice(0, 8).join(" ")}`;
-  if (/serum|세럼|美容液/i.test(text)) {
-    return "Serum";
-  }
-  if (/cream|크림|クリーム/i.test(text)) {
-    return "Cream";
-  }
-  if (/toner|토너|化粧水/i.test(text)) {
-    return "Toner";
-  }
-  if (/cleanser|클렌저|洗顔/i.test(text)) {
-    return "Cleanser";
-  }
-  if (/mask|마스크|マスク/i.test(text)) {
-    return "Mask";
-  }
   return sanitizeCategory(product.category);
 }
 
