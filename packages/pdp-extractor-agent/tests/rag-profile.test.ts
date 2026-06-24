@@ -15,6 +15,7 @@ import {
   createProductExtractorRagQuery,
   retrieveProductExtractorRagDocuments
 } from "../src/rag/retrieval";
+import { productExtractorRagIndex } from "../src/rag/rag-index";
 
 describe("RAG profile synchronization", () => {
   it("injects runtime analysis prompt and RAG files into the LLM classification prompt", () => {
@@ -55,6 +56,7 @@ describe("RAG profile synchronization", () => {
     const resetProfile = await resetProductExtractorRagProfile(directory);
 
     expect(resetProfile.analysisPrompt).toContain("상품 상세 페이지");
+    expect(productExtractorRagIndex.some((entry) => entry.document === "product-normalization_v1.md")).toBe(true);
     expect(resetProfile.documents.some((document) => document.name === "product-normalization_v1.md")).toBe(true);
 
     const writtenProfile = await writeProductExtractorRagProfile({
@@ -121,6 +123,9 @@ describe("RAG profile synchronization", () => {
     expect(retrieved).toHaveLength(1);
     expect(retrieved[0]?.sourceDocument).toBe("ocr-policy.md");
     expect(retrieved[0]?.content).toContain("Retrieved RAG policy chunk");
+    expect(retrieved[0]?.kind).toBe("ocr-classification");
+    expect(retrieved[0]?.intents).toEqual(expect.arrayContaining(["classification", "exclusion"]));
+    expect(retrieved[0]?.fieldTargets).toEqual(expect.arrayContaining(["ocr.sentenceInsights", "diagnostics"]));
     expect(retrieved[0]?.content).toContain("Exclude cart, coupon, delivery");
   });
 });

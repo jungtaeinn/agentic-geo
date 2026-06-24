@@ -26,7 +26,7 @@ const queryIntents = [
   "locale terminology and public wording"
 ];
 
-const crossCuttingRagKinds = ["eeat", "cep", "geo-research"] as const satisfies readonly PdpGeoRetrievedChunk["kind"][];
+const crossCuttingRagKinds = ["orchestration", "eeat", "cep", "geo-research"] as const satisfies readonly PdpGeoRetrievedChunk["kind"][];
 
 type RagRoutingKey = "faq" | "howTo" | "claims" | "customer" | "review";
 type RagRoutingRule = {
@@ -192,7 +192,27 @@ function sourcesForPrinciple(
     .sort((a, b) => b.score - a.score || b.chunk.score - a.chunk.score)
     .map((item) => formatRagSource(item.chunk));
 
-  return unique(scored).slice(0, 6);
+  return ensureCrossCuttingSourceCoverage(unique(scored), chunks).slice(0, 6);
+}
+
+function ensureCrossCuttingSourceCoverage(sources: string[], chunks: PdpGeoRetrievedChunk[]): string[] {
+  const strategicSources = ["geo-research", "eeat", "cep"]
+    .flatMap((kind) => {
+      const chunk = chunks.find((candidate) => candidate.kind === kind);
+      return chunk ? [formatRagSource(chunk)] : [];
+    });
+  const merged = unique([...sources, ...strategicSources]);
+  if (merged.length <= 6) {
+    return merged;
+  }
+
+  const required = strategicSources.filter((source) => !sources.slice(0, 6).includes(source));
+  if (required.length === 0) {
+    return merged;
+  }
+
+  const head = sources.slice(0, Math.max(0, 6 - required.length));
+  return unique([...head, ...required, ...merged]).slice(0, 6);
 }
 
 function principleChunkScore(

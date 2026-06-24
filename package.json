@@ -3,8 +3,8 @@
   "author": "jungtaeinn",
   "license": "MIT",
   "private": true,
-  "version": "0.1.0",
-  "description": "Agentic GEO workspace that orchestrates PDP extraction, GEO schema/content generation, and validation sub agents for service-specific product optimization.",
+  "version": "0.2.0",
+  "description": "Agentic GEO with multi-sub-agents workspace for orchestrating PDP extraction, RAG-grounded GEO schema/content generation, agentic query planning, and validation diagnostics.",
   "keywords": [
     "agentic-geo",
     "generative-engine-optimization",

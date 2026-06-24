@@ -25,6 +25,18 @@ export type PdpGeoProviderId = "mock" | "openai" | "gemini" | "azure-openai" | "
 /** Schema graph targets supported by the generator. */
 export type PdpGeoSchemaTarget = "WebPage" | "Product" | "FAQPage" | "HowTo" | "BreadcrumbList";
 
+export type PdpGeoRagUpdateTarget =
+  | "productDescription"
+  | "webPageDescription"
+  | "quickFacts"
+  | "benefits"
+  | "ingredients"
+  | "howToUse"
+  | "faq"
+  | "schema"
+  | "breadcrumbs"
+  | "reviews";
+
 /** Source metadata for diagnostics and schema ID generation. */
 export interface PdpGeoSourceInfo {
   type?: "pdp-extractor" | "rest-api" | "manual-json" | "unknown";
@@ -41,6 +53,7 @@ export interface PdpGeoGenerationHints {
   targetAudience?: string;
   tone?: string;
   schemaTargets?: PdpGeoSchemaTarget[];
+  updateTargets?: PdpGeoRagUpdateTarget[];
 }
 
 /** Optional mapping from internal signal names to arbitrary REST JSON paths. */
@@ -86,6 +99,21 @@ export interface PdpGeoRagSettings {
     version?: string;
   }>;
   analysisPrompt?: string;
+  queryPlanning?: PdpGeoRagQueryPlanningSettings;
+  fullDocumentHydration?: PdpGeoRagFullDocumentHydrationSettings;
+}
+
+export interface PdpGeoRagQueryPlanningSettings {
+  enabled?: boolean;
+  updateTargets?: PdpGeoRagUpdateTarget[];
+  includeBaseQuery?: boolean;
+  maxSubqueries?: number;
+}
+
+export interface PdpGeoRagFullDocumentHydrationSettings {
+  enabled?: boolean;
+  strategicOnly?: boolean;
+  maxDocuments?: number;
 }
 
 /** User-facing request shape accepted by the GEO generation pipeline. */
@@ -138,6 +166,8 @@ export interface PdpGeoGeneratorOptions {
   customRetriever?: PdpGeoRetriever;
   customReasoner?: PdpGeoReasoner;
   customUrlResolver?: PdpGeoRagUrlResolver;
+  productNormalization?: PdpGeoProductNormalizationSettings;
+  customProductNormalizer?: PdpGeoProductNormalizer;
   keywordNormalization?: PdpGeoKeywordNormalizationSettings;
   customKeywordNormalizer?: PdpGeoKeywordNormalizer;
   copyRefinement?: PdpGeoCopyRefinementSettings;
@@ -191,7 +221,7 @@ export interface PdpProductSignal {
   sourceTexts: string[];
 }
 
-export type PdpGeoRagKind = "schema" | "eeat" | "cep" | "best-practice" | "geo-research" | "official-docs" | "locale" | "terminology" | "product" | "custom";
+export type PdpGeoRagKind = "orchestration" | "schema" | "eeat" | "cep" | "best-practice" | "geo-research" | "official-docs" | "locale" | "terminology" | "product" | "custom";
 export type PdpGeoRagIntent = "faq" | "howTo" | "claims" | "customer" | "review" | "schema" | "locale" | "evidence" | "retrieval" | "general";
 export type PdpGeoRagFieldTarget =
   | "WebPage.description"
@@ -219,6 +249,30 @@ export interface PdpGeoRagChunk {
 
 export interface PdpGeoRetrievedChunk extends PdpGeoRagChunk {
   score: number;
+}
+
+export interface PdpGeoHydratedRagDocument {
+  source: string;
+  version?: string;
+  kind: PdpGeoRagKind;
+  hydrationMode: "controlled-full-document";
+  selectedChunkTitles: string[];
+  content: string;
+}
+
+export interface PdpGeoRagSubquery {
+  id: string;
+  target: PdpGeoRagUpdateTarget | "general";
+  query: string;
+  intents: PdpGeoRagIntent[];
+  fieldTargets: PdpGeoRagFieldTarget[];
+  reason: string;
+}
+
+export interface PdpGeoRagQueryPlan {
+  mode: "single-query" | "agentic-subquery-planning";
+  updateTargets: Array<PdpGeoRagUpdateTarget | "general">;
+  queries: PdpGeoRagSubquery[];
 }
 
 export interface PdpGeoRetrieverRequest {
@@ -293,6 +347,7 @@ export interface PdpGeoReasonerRequest {
   locale: PdpGeoLocale;
   market?: string;
   ragChunks: PdpGeoRetrievedChunk[];
+  hydratedRagDocuments?: PdpGeoHydratedRagDocument[];
 }
 
 export interface PdpGeoReasoner {
@@ -338,6 +393,47 @@ export interface PdpGeoKeywordCorrection {
   reason?: string;
 }
 
+export interface PdpGeoProductNormalizationRequest {
+  rawProduct: unknown;
+  bootstrapProduct: PdpProductSignal;
+  locale: PdpGeoLocale;
+  market?: string;
+  source?: PdpGeoSourceInfo;
+  hints?: PdpGeoGenerationHints;
+  fieldMapping?: PdpGeoFieldMapping;
+  analysisPrompt?: string;
+  ragDocuments: Array<{
+    name: string;
+    content: string;
+    version?: string;
+  }>;
+}
+
+export interface PdpGeoProductNormalizationResult {
+  product?: Partial<PdpProductSignal>;
+  locale?: PdpGeoLocale;
+  market?: string;
+  warnings?: string[];
+  rawText?: string;
+  usage?: PdpGeoTokenUsage;
+}
+
+export interface PdpGeoProductNormalizer {
+  normalizeProduct(request: PdpGeoProductNormalizationRequest): Promise<PdpGeoProductNormalizationResult> | PdpGeoProductNormalizationResult;
+}
+
+export interface PdpGeoProductNormalizationSettings {
+  enabled?: boolean;
+  provider?: PdpGeoProviderId;
+  apiKey?: string;
+  model?: string;
+  endpoint?: string;
+  deployment?: string;
+  apiVersion?: string;
+  maxRagDocuments?: number;
+  maxSourceCharacters?: number;
+}
+
 export interface PdpGeoKeywordNormalizationResult {
   corrections: PdpGeoKeywordCorrection[];
   warnings?: string[];
@@ -368,6 +464,7 @@ export interface PdpGeoCopyRefinementRequest {
   schemaMarkup: PdpGeoSchemaMarkup;
   content: PdpGeoContentArtifact;
   ragChunks: PdpGeoRetrievedChunk[];
+  hydratedRagDocuments?: PdpGeoHydratedRagDocument[];
   reasoning?: PdpGeoReasoningResult;
 }
 
@@ -430,7 +527,7 @@ export interface PdpGeoEvidence {
 
 export interface PdpGeoValidationRepair {
   field: string;
-  source: "schema-validator" | "html-validator" | "sentence-qa";
+  source: "schema-validator" | "html-validator" | "sentence-qa" | "field-contract-validator";
   issue: string;
   action: string;
   before?: JsonValue;
@@ -495,8 +592,10 @@ export interface PdpGeoDiagnostics {
   recommendations: PdpGeoRecommendation[];
   evidence: PdpGeoEvidence[];
   selectedRagChunks: PdpGeoRetrievedChunk[];
+  hydratedRagDocuments?: PdpGeoHydratedRagDocument[];
   reasoning?: PdpGeoReasoningResult;
   ragUsage: PdpGeoRagUsageDiagnostic[];
+  ragQueryPlan?: PdpGeoRagQueryPlan;
   runtimeUsage?: PdpGeoRuntimeUsage;
   terminology: PdpGeoTerminologyDiagnostics;
   validationWarnings: string[];
@@ -559,7 +658,8 @@ export const PdpGeoGenerationInputSchema = z.object({
     category: z.string().optional(),
     targetAudience: z.string().optional(),
     tone: z.string().optional(),
-    schemaTargets: z.array(z.enum(["WebPage", "Product", "FAQPage", "HowTo", "BreadcrumbList"])).optional()
+    schemaTargets: z.array(z.enum(["WebPage", "Product", "FAQPage", "HowTo", "BreadcrumbList"])).optional(),
+    updateTargets: z.array(z.enum(["productDescription", "webPageDescription", "quickFacts", "benefits", "ingredients", "howToUse", "faq", "schema", "breadcrumbs", "reviews"])).optional()
   }).optional(),
   fieldMapping: z.record(z.string(), z.union([z.string(), z.array(z.string())])).optional(),
   rag: z.object({
@@ -582,6 +682,17 @@ export const PdpGeoGenerationInputSchema = z.object({
       content: z.string(),
       version: z.string().optional()
     })).optional(),
-    analysisPrompt: z.string().optional()
+    analysisPrompt: z.string().optional(),
+    queryPlanning: z.object({
+      enabled: z.boolean().optional(),
+      updateTargets: z.array(z.enum(["productDescription", "webPageDescription", "quickFacts", "benefits", "ingredients", "howToUse", "faq", "schema", "breadcrumbs", "reviews"])).optional(),
+      includeBaseQuery: z.boolean().optional(),
+      maxSubqueries: z.number().int().positive().optional()
+    }).optional(),
+    fullDocumentHydration: z.object({
+      enabled: z.boolean().optional(),
+      strategicOnly: z.boolean().optional(),
+      maxDocuments: z.number().int().positive().optional()
+    }).optional()
   }).optional()
 });

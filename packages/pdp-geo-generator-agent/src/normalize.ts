@@ -10,6 +10,7 @@ import type {
   PdpGeoReviewItem,
   PdpProductSignal
 } from "./types";
+import { filterCurrentProductUsageInstructions } from "./product-scope";
 
 interface NormalizationContext {
   hints?: PdpGeoGenerationHints;
@@ -105,7 +106,7 @@ export function normalizePdpProduct(
   const market = context.hints?.market ?? defaultMarketForLocale(locale);
   const ocrSentences = createOcrSentenceDiagnostics(ocrSentenceInsights, locale);
 
-  const product: PdpProductSignal = {
+  const product = filterCurrentProductUsageInstructions({
     name,
     originalName: name,
     description,
@@ -127,7 +128,7 @@ export function normalizePdpProduct(
     reviews,
     breadcrumbs,
     sourceTexts
-  };
+  });
 
   evidence.push({ field: "product.name", source: "input", value: name });
   if (description) {
@@ -1225,7 +1226,28 @@ function isUsageInstruction(value: string): boolean {
     return false;
   }
 
-  return /apply|warm|massage|cup|pat|layer|morning|night|routine|step|after|before|아침|저녁|단계|얼굴|도포|바르|펴\s*바르|흡수|루틴|朝|夜|なじませ|塗布/i.test(normalized);
+  if (isEvidenceOnlyUsageCandidate(normalized)) {
+    return false;
+  }
+
+  return hasExplicitUsageAction(normalized);
+}
+
+function isEvidenceOnlyUsageCandidate(value: string): boolean {
+  const normalized = cleanSourceSignalText(value);
+  if (/^(?:after|before|during)\s+\d+(?:\.\d+)?\s*(?:weeks?|days?|hours?)\b/i.test(normalized)) {
+    return true;
+  }
+  const looksLikeEvidence = /%|\b\d+(?:\.\d+)?\s*(?:weeks?|days?|hours?|users?|participants?|women|men|subjects?)\b|임상|인체\s*적용|자가\s*평가|평점|리뷰\s*\d|사용자|참여자|대상|clinical|study|self-assess|instrumental|agreed|showed|test(?:ed)?|delivers?|helps?|supports?|improves?|boosts?|strengthens?|leaves?|leaving|visible|visibly/i.test(normalized);
+
+  return looksLikeEvidence && !hasExplicitUsageAction(normalized);
+}
+
+function hasExplicitUsageAction(value: string): boolean {
+  return /\b(?:apply|dispense|massage|lather|rinse|pat|press|spread|smooth|warm|take|pump)\b|사용|도포|바르|바릅|펴\s*바르|펴\s*바릅|흡수|마사지|なじませ|塗布|使(?:う|い)/i.test(value)
+    || /^\s*use\b/i.test(value)
+    || /(?:^|[.;,]\s*)then\s+use\b/i.test(value)
+    || /\buse\s+(?:morning|night|daily|twice|once|after|before|as|with|on|to)\b/i.test(value);
 }
 
 function isReviewKeyword(value: string): boolean {

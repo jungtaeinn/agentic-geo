@@ -28,6 +28,44 @@ export interface ProductProfile {
   contentSections: ProductContentSection[];
 }
 
+/** Optional model/custom-agent request for source-backed product profile normalization. */
+export interface ProductExtractorProductNormalizationRequest {
+  source: string;
+  sourceType: ProductExtractionInput["sourceType"] | "mock";
+  rawSource: unknown;
+  bootstrapProduct: ProductProfile;
+  analysisPrompt?: string;
+  ragDocuments?: Array<{
+    name: string;
+    content: string;
+    version?: string;
+  }>;
+}
+
+/** Model/custom-agent response for product profile normalization. */
+export interface ProductExtractorProductNormalizationResult {
+  product?: Partial<ProductProfile>;
+  warnings?: string[];
+  rawText?: string;
+  usage?: AiTokenUsage;
+}
+
+export interface ProductExtractorProductNormalizer {
+  normalizeProductProfile(request: ProductExtractorProductNormalizationRequest): Promise<ProductExtractorProductNormalizationResult> | ProductExtractorProductNormalizationResult;
+}
+
+export interface ProductExtractorProductNormalizationSettings {
+  enabled?: boolean;
+  provider?: ProductExtractionInput["aiProvider"];
+  apiKey?: string;
+  model?: string;
+  endpoint?: string;
+  deployment?: string;
+  apiVersion?: string;
+  maxRagDocuments?: number;
+  maxSourceCharacters?: number;
+}
+
 /** Product content category inferred from HTML sections, tabs, accordions, and review cards. */
 export type ProductContentCategory =
   | "benefit"
@@ -181,6 +219,22 @@ export interface RuntimePipelineUsage {
   tokenNote?: string;
 }
 
+export interface ProductExtractorRagUsageReference {
+  sourceDocument: string;
+  chunkId?: string;
+  kind?: string;
+  intents: string[];
+  fieldTargets: string[];
+  score?: number;
+  usage: string;
+  excerpt: string;
+}
+
+export interface ProductExtractorRagUsageDiagnostic {
+  principle: string;
+  references: ProductExtractorRagUsageReference[];
+}
+
 /** Product-centered raw data prepared for downstream GEO schema/content agents. */
 export interface GeoProductRawData {
   name: string;
@@ -272,7 +326,7 @@ export interface ProductExtractionStep {
 /** Evidence item that tells downstream validators where a field came from. */
 export interface ExtractionEvidence {
   field: string;
-  source: "meta" | "jsonLd" | "dom" | "url" | "review" | "ocr" | "api" | "mock";
+  source: "meta" | "jsonLd" | "dom" | "url" | "review" | "ocr" | "api" | "mock" | "llm";
   value: string;
 }
 
@@ -299,6 +353,7 @@ export interface ProductExtractionDiagnostics {
   evidence: ExtractionEvidence[];
   warnings: AgentWarning[];
   runtimeUsage?: RuntimePipelineUsage;
+  ragUsage?: ProductExtractorRagUsageDiagnostic[];
   generatedAt: string;
   ragProfile: string;
 }

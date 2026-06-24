@@ -4,12 +4,28 @@ This document is project-local guidance for generating GEO-ready PDP schema mark
 
 If the source example is written in Korean but the requested output locale is English, Japanese, or another locale, preserve the information architecture and evidence hierarchy while rewriting the actual text in the target locale. The generator should adapt brand terms, customer expressions, category names, ingredient names, and benefit wording to the locale-specific terminology guide.
 
+## RAG Corpus Orchestration
+
+Use the typed RAG index as the first-pass map for deciding which content unit should be retrieved. This document should be selected when the generator needs overlap resolution, public wording rules, benchmark depth, OCR/source blending, FAQ intent breadth, HowTo reconstruction, or product/entity description separation.
+
+Content-unit priority:
+
+1. Use Schema.org Product Markup for strict JSON-LD type and property compatibility.
+2. Use E-E-A-T Guidance for trust, source hierarchy, and overclaim filtering.
+3. Use CEP Guidance for customer discovery phrasing only when source facts support the customer context.
+4. Use GEO Research Guidance for answer-ready structure, citation readiness, and domain-specific evaluation.
+5. Use Official AI and Search Platform Docs for retrieval, grounding, and Google AI Search constraints.
+6. Use Locale Expression Guidelines and the terminology map before final public wording.
+7. Use this Best Practice file to reconcile conflicts and translate the combined guidance into product-page output.
+
+When policies overlap, choose the stricter source-backed rule and keep the decision visible in diagnostics. Never let a benchmark artifact override current product data.
+
 ## Core Principle
 
 GEO output should help generative engines cite and verify the product from structured, evidence-rich facts. Citation readiness means varied, natural product expressions and complete facts, not public citation labels, quote phrases, or repeated stock claim sentences.
 
 - Prefer product-specific facts over generic SEO claims.
-- Compose descriptions from: target customer + core benefit + ingredient or technology + routine fit + source-supported or review-backed detail.
+- Compose descriptions from: target customer + core benefit + ingredient or technology + usage context + source-supported or review-backed detail.
 - Never expose internal wording such as "GEO-ready", "PDP name", "schema optimization", or "for generative engines" inside public schema/content.
 - Do not use analysis labels such as "usage", "review", "benefit", or "keyword" as product category values.
 - Do not create FAQ, review, or HowTo content from isolated tokens. Use complete questions, answers, review summaries, and actionable usage steps.
@@ -67,7 +83,7 @@ Role: describe the product as the commercial entity being sold or evaluated.
 
 Recommended composition:
 
-`[Product name] is a [product type] for [target customer/concern]. It supports [specific benefits/effects] with [key ingredients/technologies]. It can be used [usage/routine context]. Representative customer reviews mention [texture, comfort, or satisfaction phrasing]. Product details should connect supported results or evidence with key actives, visible benefits, texture, comfort, and routine fit.`
+`[Product name] is a [product type] for [target customer/concern]. It supports [specific benefits/effects] with [key ingredients/technologies]. It can be used [usage/routine context]. Representative customer reviews mention [texture, comfort, or satisfaction phrasing]. Product details should connect supported results or evidence with key actives, visible benefits, texture, comfort, and usage context.`
 
 Use `Product.description` to expose:
 
@@ -90,7 +106,7 @@ Avoid:
 ## Product Entity Best Practice
 
 The `Product` node should be dense but verifiable.
-Do not reuse the same description for `WebPage.description` and `Product.description`. The WebPage description should explain what the page covers at a higher level while still naming the key benefit areas, ingredients or technologies, review language, reported results, and target-customer decision context. Product.description should be a product-specific, answer-ready entity description that explains who the product is for, what benefits and major ingredients it has, what representative customer reviews say, how the product can be used, and which supported result details are available.
+Do not reuse the same description for `WebPage.description` and `Product.description`. The WebPage description should explain what the page covers at a higher level while still naming the key benefit areas, ingredients or technologies, customer review language, reported results, and target-customer decision context. Product.description should be a product-specific, answer-ready entity description that explains who the product is for, what benefits and major ingredients it has, what representative customer reviews say, how the product can be used, and which supported result details are available.
 
 Recommended fields:
 
@@ -131,11 +147,11 @@ Classify each OCR sentence by intent before generation:
 - Ingredient or technology: ingredient names, active complexes, formula systems, full ingredient lists, patented technology, or brand science.
 - Benefit or effect: hydration, barrier support, sebum control, firming, elasticity, soothing, texture, resilience, visible results, or other source-backed efficacy language.
 - Usage or routine: application timing, order, amount, routine pairing, or step-by-step directions.
-- Customer or review language: repeated customer phrases, texture reactions, satisfaction, comfort, absorption, or skin-feel comments.
+- Customer or customer review language: repeated customer phrases, texture reactions, satisfaction, comfort, absorption, or skin-feel comments.
 
 Store this analysis in diagnostics as sentence-level metadata such as `ocrSentences[].text`, `ocrSentences[].intents`, `ocrSentences[].schemaFields`, and `ocrSentences[].geoUse`. These diagnostics guide generation and review, but the labels themselves must not appear in public JSON-LD or HTML.
 
-Use classified OCR sentences as supporting source evidence that blends with other RAG chunks, product facts, review language, and mapped fields. Do not create separate OCR-only benefit, ingredient, or FAQ content when broader product/RAG evidence is available.
+Use classified OCR sentences as supporting source evidence that blends with other RAG chunks, product facts, customer review language, and mapped fields. Do not create separate OCR-only benefit, ingredient, or FAQ content when broader product/RAG evidence is available.
 
 When OCR data is absent, keep the same blended generation strategy using mapped product facts, selected RAG chunks, source text, full ingredient data, usage instructions, and customer review language.
 
@@ -151,11 +167,11 @@ For English output, rewrite Korean or multilingual OCR meaning into natural Engl
 ## Description Pattern
 
 Descriptions should be rewritten into diverse, answer-ready product content, not copied mechanically.
-Avoid shallow descriptions that only say the page "organises information" or that the product is simply a "hydration serum". A strong Product description should expose the target customer, major benefit keywords, key ingredients or technologies, routine fit when it improves the product story, representative customer review language, and any supported clinical, satisfaction, or reported-result detail.
+Avoid shallow descriptions that only say the page "organises information" or that the product is simply a "hydration serum". A strong Product description should expose the target customer, major benefit keywords, key ingredients or technologies, usage context when it improves the product story, representative customer review language, and any supported clinical, satisfaction, or reported-result detail.
 
 Good structure:
 
-`[Product name] is a [product type] for [target customer or concern] that helps [core benefits] with [ingredient/technology]. [Source-supported or review-backed detail] explains [specific outcome or routine fit].`
+`[Product name] is a [product type] for [target customer or concern] that helps [core benefits] with [ingredient/technology]. [Source-supported or review-backed detail] explains [specific outcome or usage context].`
 
 Korean example structure:
 
@@ -220,41 +236,53 @@ When selecting facts, prefer this order:
 
 If evidence is weak, make the claim softer and attach diagnostics recommendations rather than forcing it into schema.
 
-## Reference Pattern From Amoremall/Sulwhasoo Example
+## Reference Pattern Template
 
-The reference example models a premium anti-aging cream PDP with the following structure:
+Use reference patterns as architecture guidance, not as reusable product copy. A best-practice PDP artifact should be evaluated by how clearly it routes current-source evidence into schema fields.
 
-- Site identity: `아모레몰` / `AMOREMALL`, publisher `아모레퍼시픽` / `Amorepacific`.
-- Locale pages: Korean and English `WebPage` nodes point to the same product entity and use locale-specific names and descriptions.
-- Product identity: local name `설화수 자음생크림`, alternate name `Sulwhasoo Concentrated Ginseng Rejuvenating Cream`, brand `설화수` / `Sulwhasoo`.
-- Category path: skincare cream category, specifically anti-aging cream.
-- Audience: anti-aging care audience around 30-60+ when supported by evidence.
-- Offers: separate 50ml and 30ml offers with SKU, price, KRW currency, availability, condition, and price validity.
-- Award: 10-year No.1 anti-aging cream claim with date range and source context.
-- Additional properties: functional certification, efficacy list, skin type, texture, scent, key ingredients, ginseng science, clinical result summary, satisfaction results, dermatology-care synergy, cross-product synergy, variant comparison, renewal notice, and gift recommendation.
-- FAQ: includes efficacy, ingredients, variant differences, sensitive skin, effect duration, product pairings, discontinued versions, product comparisons, professional-care use, award verification, gift suitability, and customer-intent questions.
-- HowTo: three clear massage steps with complete instructions.
+### Source-Agnostic Graph Pattern
 
-Use this as a model for depth and structure. Do not copy Sulwhasoo-specific claims into unrelated products.
+- `WebSite`: site identity, publisher identity, and canonical site URL.
+- `WebPage`: current PDP URL, page-level description, locale, and link to the current product entity.
+- `Product`: current product name, brand, category, description, offer data, audience only when supported, and source-backed properties.
+- `Product.additionalProperty`: facts that belong to the product evidence layer, such as ingredient roles, certification, texture, scent, metrics, awards, variants, and source context.
+- `FAQPage`: answer-ready customer questions derived from product facts, reviews, CEPs, and search intent.
+- `HowTo`: usage actions only, such as amount, order, application area, frequency, wait time, rinsing, layering, or caution steps.
+
+### Field Evidence Routing Pattern
+
+- Product identity evidence goes to `Product.name`, `alternateName`, `brand`, `category`, and `WebPage.name`.
+- Benefit and effect evidence goes to `Product.description`, `positiveNotes`, `additionalProperty`, FAQ answers, and visible benefit sections.
+- Ingredient, formula, technology, full-INCI, allergen, or certification evidence goes to `additionalProperty`, ingredient sections, and ingredient-focused FAQ answers.
+- Customer review language goes to review summaries, FAQ intent, sensory copy, and CEP phrasing, but must not replace official claims.
+- Clinical, award, test, survey, or metric evidence goes to `additionalProperty` and FAQ answers with context, sample, duration, or source limits when available.
+- Usage evidence goes to `HowTo.step` and visible how-to sections only when it contains an actionable direction.
+
+### Non-Reusable Example Rule
+
+Do not keep verbatim reference outputs in the retrieval corpus. Verbatim examples from one product can bias generation toward that product, create copied claims, and make the agent overfit to a single category. When a strong reference artifact is useful, convert it into an abstract pattern with field contracts, accepted evidence types, and rejection rules.
+
+### Content Quality Pattern
+
+For every generated sentence:
+
+1. Anchor the sentence in the current product, current source facts, or current customer review evidence.
+2. Use only the field where that evidence belongs.
+3. Rewrite for answerability and citation clarity instead of copying source fragments.
+4. Vary phrasing across description, FAQ, quick facts, benefits, ingredients, and HowTo so schema markup exposes multiple useful answer surfaces.
+5. Keep unsupported claims soft or omit them.
 
 ## Korean Reference Artifact Usage
 
-The artifact below is kept as a verbatim quality benchmark for a Korean premium skincare PDP. Use it to understand graph depth, sentence specificity, evidence density, FAQ intent breadth, and HowTo completeness.
+Korean or bilingual reference artifacts can help with structure, locale terminology, and quality level, but they must be normalized before retrieval.
 
-When generating English output from this Korean best-practice reference:
-
-- Preserve the information architecture: `WebSite`, locale-aware `WebPage`, canonical `Product`, rich `additionalProperty`, high-intent `FAQPage`, and complete `HowTo`.
-- Preserve the sentence quality pattern: product identity first, research or ingredient basis second, benefit or use case third, and source-supported detail last.
-- Rewrite Korean expressions into natural English commerce language. Do not translate word-for-word when it makes the sentence stiff.
-- Keep the current project rule that `WebPage.description` and `Product.description` should be distinct. If a reference artifact uses product-heavy WebPage copy, adapt it into broader page-level coverage in new outputs.
-- Treat Korean clinical, award, renewal, and comparison claims as structure examples only. Do not reuse those claims unless the target product source contains the same evidence.
-- Use customer-intent FAQ style from the reference: efficacy, ingredients, variant comparison, suitability, duration, pairing, discontinued product guidance, comparison with adjacent products, professional-care context, award verification, gift suitability, and natural-language customer concern questions.
-
-## Reference Output From Amoremall/Sulwhasoo Example (Verbatim)
-
-```json
-{"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://www.amoremall.com/#website","url":"https://www.amoremall.com","name":"아모레몰","alternateName":"AMOREMALL","publisher":{"@type":"Organization","name":"아모레퍼시픽","alternateName":"Amorepacific"}},{"@type":"WebPage","@id":"https://www.amoremall.com/kr/ko/product/detail?onlineProdSn=62167#webpage-ko","url":"https://www.amoremall.com/kr/ko/product/detail?onlineProdSn=62167","name":"설화수 자음생크림","description":"60년 인삼 연구로 완성된 설화수 자음생크림은 피부 자생력을 채워 탄력, 밀도, 리프팅을 한 번에 케어하는 럭셔리 안티에이징 크림입니다.","inLanguage":"ko-KR","isPartOf":{"@id":"https://www.amoremall.com/#website"},"mainEntity":{"@id":"#Sulwhasoo-Concentrated-Ginseng-Rejuvenating-Cream"}},{"@type":"WebPage","@id":"https://www.amoremall.com/kr/en/product/detail?onlineProdSn=62167#webpage-en","url":"https://www.amoremall.com/kr/en/product/detail?onlineProdSn=62167","name":"Sulwhasoo Concentrated Ginseng Rejuvenating Cream","description":"Completed through 60 years of ginseng research, Sulwhasoo Concentrated Ginseng Rejuvenating Cream is a luxury anti-aging cream that replenishes skin's self-regenerating power for firmness, density, and lifting in one step.","inLanguage":"en-US","isPartOf":{"@id":"https://www.amoremall.com/#website"},"mainEntity":{"@id":"#Sulwhasoo-Concentrated-Ginseng-Rejuvenating-Cream"}},{"@type":"Product","@id":"#Sulwhasoo-Concentrated-Ginseng-Rejuvenating-Cream","name":"설화수 자음생크림","alternateName":"Sulwhasoo Concentrated Ginseng Rejuvenating Cream","description":"60년 인삼 연구로 완성된 설화수 자음생크림은 피부 자생력을 채워 탄력, 밀도, 리프팅을 한 번에 케어하는 럭셔리 안티에이징 크림입니다. 희귀 인삼 사포닌을 6,000배 농축한 진세노믹스™는 피부 콜라겐을 회복-재건-유지하여 자생력을 채워주고 진생펩타이드™는 피부의 탄력 인자를 강화하여 고밀도 피부를 선사합니다.","brand":{"@type":"Brand","name":"설화수","alternateName":"Sulwhasoo"},"manufacturer":{"@type":"Organization","name":"아모레퍼시픽","alternateName":"Amorepacific"},"category":"스킨케어 > 크림 > 안티에이징 크림","audience":{"@type":"PeopleAudience","suggestedMinAge":30,"audienceType":"안티에이징 케어가 필요한 30-60대 이상 연령대","suggestedGender":"female"},"offers":[{"@type":"Offer","name":"자음생크림 50ml","sku":"111174672","price":"270000","priceCurrency":"KRW","availability":"https://schema.org/InStock","itemCondition":"https://schema.org/NewCondition","priceValidUntil":"2026-12-31"},{"@type":"Offer","name":"자음생크림 30ml","sku":"111174671","price":"168000","priceCurrency":"KRW","availability":"https://schema.org/InStock","itemCondition":"https://schema.org/NewCondition","priceValidUntil":"2026-12-31"}],"award":"10년 연속 No.1 안티에이징 크림 (2015-2024년 Beauté Research SAS 한국 프레스티지 마켓 매출 기준)","additionalProperty":[{"@type":"PropertyValue","name":"기능성 인증","value":"식품의약품안전처 인증 주름개선 기능성 화장품"},{"@type":"PropertyValue","name":"효능","value":"피부 탄력 강화, 주름 개선, 보습, 피부 자생력 강화, 피부 밀도, 리프팅, 장벽 리페어, 안티에이징, 영양, 윤기 케어, 항산화"},{"@type":"PropertyValue","name":"추천 피부 타입","value":"모든 피부 타입 (민감 피부 사용 적합 테스트 완료)"},{"@type":"PropertyValue","name":"텍스처","value":"부드럽고 산뜻한 고밀도 텍스처, 맑고 소프트하게 마무리되어 데일리 사용 적합"},{"@type":"PropertyValue","name":"향","value":"인삼 한 그루의 에너지가 담긴 인삼 꽃향. 인삼 밭의 신선함과 인삼 꽃의 맑고 싱그러운 활력에서 영감을 받은 향"},{"@type":"PropertyValue","name":"주요 성분","value":"진세노믹스™ (6,000배 농축 희귀 인삼 사포닌: 피부 콜라겐 회복-재건-유지), 진생펩타이드™ (인삼 추출 펩타이드 + 5가지 펩타이드: 탄력 인자 33% 강화), 비타민C 유도체 (피부 항산화력 집중 강화, 자음생크림 타입 전용)"},{"@type":"PropertyValue","name":"설화수 인삼 과학","value":"60년 인삼 연구로 완성한 젊음의 솔루션. 1,000g 중 1g만 존재하는 희귀 인삼 사포닌에 첨단 과학 기술을 접목하여 피부의 장수(Skin Longevity)를 추구합니다."},{"@type":"PropertyValue","name":"임상 결과 요약","value":"피부 노화지수 -25% 개선 (25~55세 여성 31명, 4주), 이마 주름 -36.6% 개선 (25~55세 여성 33명, 8주), 탄력 +59.2% / 리프팅 +103.5% (4주 자가 평가), 콜라겐 발현율 38% 복구 (48시간, In vitro), 사용 중단 1주 후에도 탄력 및 팔자주름 개선 지속 (35~55세 여성 33명)"},{"@type":"PropertyValue","name":"4주 사용 만족도","value":"피부 장벽 강화 100%, 탄력·생기 개선 100%, 깊은 주름 완화 100% (소비자 만족도 결과)"},{"@type":"PropertyValue","name":"피부과 관리 시너지","value":"관리 전 외부 자극 방어력 197.6% 개선 (4주 자가 평가), 관리 후 장벽 리페어 1.3배·탄력 시너지 2.1배 (크림 2주 + 피부과 관리 + 크림 2주, 30~60세 여성 30명, 대조군 대비)"},{"@type":"PropertyValue","name":"시너지 효과","value":"윤조에센스 병행: 피부 방어력·컨디션 개선 100% 만족. 자음생캡슐세럼 병행: 영양 96.0%, 힘 93.5%, 탄력 90.5% 만족. 자음생크림 & 리치 집중 케어 8주: 노화 지수 -80.0%, 수분 볼륨 +52.1%, 주름 -53.4% (29~55세 여성 31명)"},{"@type":"PropertyValue","name":"자음생크림 vs 자음생크림 리치","value":"공통: 진세노믹스™ & 진생펩타이드™, 탄력/밀도/리프팅 개선. 자음생크림: 산뜻한 고밀도 텍스처, 비타민C 유도체 함유, 항산화 특화. 자음생크림 리치: 영양감 풍부한 리치 텍스처, 진생레티놀™ 함유, 방어력 특화."},{"@type":"PropertyValue","name":"리뉴얼 안내 (2024년 9월)","value":"클래식→자음생크림 리치, 소프트→자음생크림으로 리뉴얼. 기존 클래식/소프트 단종."},{"@type":"PropertyValue","name":"선물 추천","value":"생일, 어버이날, 명절, 기념일 등 특별한 날 선물용. 설화수 시그니처 포장 서비스 '지함보' 이용 가능 (매장별 상이)"}]},{"@type":"FAQPage","@id":"https://www.amoremall.com/kr/ko/product/detail?onlineProdSn=62167#faq","mainEntity":[{"@type":"Question","name":"자음생크림은 어떤 피부 고민에 효과가 있나요?","acceptedAnswer":{"@type":"Answer","text":"탄력 저하, 주름, 피부 밀도 감소 등 노화 징후에 효과적입니다. 피부 노화지수 -25%, 이마 주름 -36.6%, 리프팅 +103.5%의 임상 결과를 기록했으며, 눈가·팔자·이마·미간·목 부위 주름 완화에 도움을 줍니다."}},{"@type":"Question","name":"자음생크림의 핵심 성분은 무엇인가요?","acceptedAnswer":{"@type":"Answer","text":"세 가지 핵심 성분으로 구성됩니다. 진세노믹스™는 희귀 인삼 사포닌을 6,000배 농축하여 콜라겐을 회복-재건-유지합니다. 진생펩타이드™는 인삼 추출 펩타이드와 5가지 펩타이드로 탄력 인자를 33% 강화합니다. 비타민C 유도체는 자음생크림 타입 전용으로 항산화력을 강화합니다."}},{"@type":"Question","name":"자음생크림과 자음생크림 리치의 차이점은 무엇인가요?","acceptedAnswer":{"@type":"Answer","text":"두 제품 모두 진세노믹스™와 진생펩타이드™를 함유하지만 텍스처와 특화 성분이 다릅니다. 자음생크림은 산뜻한 고밀도 텍스처에 비타민C 유도체를 함유해 항산화·데일리 사용에 적합합니다. 자음생크림 리치는 영양감 풍부한 리치 텍스처에 진생레티놀™을 함유해 방어력 강화에 특화되어 있습니다."}},{"@type":"Question","name":"자음생크림은 민감한 피부도 사용할 수 있나요?","acceptedAnswer":{"@type":"Answer","text":"네, 민감 피부 사용 적합 테스트를 완료하여 민감성 피부도 안심하고 사용 가능합니다. 밀도·탄력·리프팅 고효능을 유지하면서 피부 자극을 최소화했습니다."}},{"@type":"Question","name":"자음생크림의 효과는 얼마나 지속되나요?","acceptedAnswer":{"@type":"Answer","text":"사용 중단 1주 후에도 탄력 및 팔자주름 개선 효과가 지속됩니다 (35~55세 여성 33명 인체 적용 시험). 48시간 만에 콜라겐 발현율 38% 복구(In vitro)와 함께 장기적인 피부 자생력 강화를 제공합니다."}},{"@type":"Question","name":"자음생크림을 다른 제품과 함께 사용하면 효과가 더 좋아지나요?","acceptedAnswer":{"@type":"Answer","text":"네, 시너지 효과가 있습니다. 윤조에센스 병행 시 방어력·컨디션 개선 100% 만족, 자음생캡슐세럼 병행 시 영양 96.0%·탄력 90.5% 만족, 자음생크림 & 리치 집중 케어 8주 시 노화 지수 -80.0%·주름 -53.4% 개선 효과를 보였습니다."}},{"@type":"Question","name":"자음생크림 클래식과 소프트는 어디서 구매할 수 있나요?","acceptedAnswer":{"@type":"Answer","text":"2024년 9월 리뉴얼로 단종되었습니다. 기존 클래식 사용자는 '자음생크림 리치'를, 소프트 사용자는 '자음생크림'을 구매하시면 됩니다."}},{"@type":"Question","name":"자음생크림과 탄력크림 EX 중 어떤 것을 선택해야 하나요?","acceptedAnswer":{"@type":"Answer","text":"자음생크림은 60년 인삼 과학 기반의 프리미엄 안티에이징으로 탄력·밀도·리프팅·깊은 주름을 집중 케어합니다. 탄력크림 EX는 28년 스테디셀러 웰에이징 제품으로 건조함과 푸석함으로 인한 탄력 저하에 보습·진정·장벽 리페어를 케어합니다. 노화 징후가 신경 쓰이기 시작한 분은 자음생크림, 탄력 기본기를 채우고 싶은 분은 탄력크림 EX를 추천합니다."}},{"@type":"Question","name":"피부과 관리 전후에 자음생크림을 사용해도 되나요?","acceptedAnswer":{"@type":"Answer","text":"네, 관리 전 사용 시 외부 자극 방어력 197.6% 개선, 관리 후 장벽 리페어 1.3배·탄력 시너지 2.1배 효과를 보였습니다 (30~60세 여성 30명, 대조군 대비). 단, 피부 상태에 따라 전문의와 상담 후 사용을 권장합니다."}},{"@type":"Question","name":"자음생크림이 10년 연속 1위라는 것은 사실인가요?","acceptedAnswer":{"@type":"Answer","text":"네, 2015년부터 2024년까지 10년 연속 No.1 안티에이징 크림으로 선정되었습니다 (Beauté Research SAS 한국 프레스티지 마켓 매출 기준, 자음생크림 컬렉션 전체 대상)."}},{"@type":"Question","name":"자음생크림은 선물용으로 적합한가요?","acceptedAnswer":{"@type":"Answer","text":"네, 생일·어버이날·명절·기념일 등 특별한 날 럭셔리 안티에이징 선물로 적합합니다. 설화수 시그니처 포장 서비스 '지함보'를 이용하면 선물의 품격을 높일 수 있습니다 (매장별 상이)."}},{"@type":"Question","name":"나이 들면서 피부 탄력과 주름이 신경 쓰이기 시작했어요","acceptedAnswer":{"@type":"Answer","text":"자음생크림은 60년 인삼 과학의 진세노믹스™와 진생펩타이드™가 피부의 근본적인 자생력을 채워주고, 무너진 피부 구조를 케어해 탄력과 밀도를 개선합니다. 콜라겐 회복·유지를 도와 주름을 완화하며, 탄력·밀도·리프팅을 한 번에 관리합니다."}},{"@type":"Question","name":"산뜻한 텍스처의 안티에이징 크림을 찾고 있어요","acceptedAnswer":{"@type":"Answer","text":"자음생크림은 부드럽고 산뜻한 고밀도 텍스처로 맑고 소프트하게 마무리되어 데일리 사용에 적합합니다. 비타민C 유도체가 항산화력을 강화하며, 더 리치한 텍스처를 원하시면 자음생크림 리치를 추천합니다."}},{"@type":"Question","name":"한방·인삼 기반의 럭셔리 스킨케어 크림을 찾고 있어요","acceptedAnswer":{"@type":"Answer","text":"자음생크림은 60년 인삼 연구 기반의 인삼 과학으로 피부의 표면적 노화를 넘어 근본적인 힘과 자생력을 케어합니다. 희귀 인삼 사포닌 6,000배 농축 진세노믹스™로 피부 콜라겐을 회복·재건·유지합니다."}}]},{"@type":"HowTo","@id":"https://www.amoremall.com/kr/ko/product/detail?onlineProdSn=62167#howto","name":"설화수 자음생크림 올바른 사용법","description":"자음생크림의 효과를 극대화하는 3단계 마사지 사용법","totalTime":"PT3M","step":[{"@type":"HowToStep","position":1,"name":"꼬집기 마사지","text":"적당량을 덜어 얼굴 전체에 펴 바른 후, 엄지와 검지를 구부려 턱부터 볼까지 가볍게 꼬집듯이 당겨줍니다."},{"@type":"HowToStep","position":2,"name":"리프팅 마사지","text":"반 주먹을 쥐고 관자 부위부터 이마 가운데까지 끌어올려 줍니다."},{"@type":"HowToStep","position":3,"name":"마무리 프레스","text":"한 손은 이마, 다른 손은 턱을 감싸주듯 지그시 누른 후 마무리합니다."}]}]}
-```
+- Keep the information architecture pattern: `WebSite`, locale-aware `WebPage`, canonical `Product`, rich `additionalProperty`, high-intent `FAQPage`, and complete `HowTo`.
+- Keep the sentence quality pattern: product identity first, evidence basis second, benefit or use case third, and source-supported detail last.
+- Rewrite Korean expressions into natural English commerce language when the output locale is English.
+- Keep `WebPage.description` and `Product.description` distinct.
+- Treat clinical, award, renewal, and comparison claims as structure examples only. Do not reuse those claims unless the target product source contains the same evidence.
+- Use customer-intent FAQ style from references, but regenerate questions and answers from the current product data.
+- Remove product names, brand names, unique ingredient names, prices, claims, and URLs from reusable RAG pattern documents unless the document is explicitly scoped as a source artifact for that same product.
 
 ## Cross-Product Benchmarking Guidance
 

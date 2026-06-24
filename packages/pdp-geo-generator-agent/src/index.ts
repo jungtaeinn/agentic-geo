@@ -1,7 +1,14 @@
 export { generatePdpGeo } from "./agent";
 export { ModelBackedCopyRefiner, refinePdpGeoCopy } from "./copy-refiner";
+export { ModelBackedProductNormalizer, normalizePdpProductWithAgent } from "./product-normalizer";
 export { createPdpGeoGeneratorRestHandler, type PdpGeoGeneratorRestConfig, type PdpGeoGeneratorRestRequest } from "./rest";
 export { pdpGeoGeneratorRagManifest } from "./rag/manifest";
+export {
+  pdpGeoRagIndex,
+  type PdpGeoRagDocumentIndexEntry,
+  type PdpGeoRagSectionIndexEntry,
+  type PdpGeoRagSourceRole
+} from "./rag/rag-index";
 export {
   readPdpGeoGeneratorRagProfile,
   resetPdpGeoGeneratorRagProfile,
@@ -41,13 +48,21 @@ export type {
   PdpGeoOcrSentenceDiagnostic,
   PdpGeoOcrSentenceIntent,
   PdpGeoProviderId,
+  PdpGeoProductNormalizationRequest,
+  PdpGeoProductNormalizationResult,
+  PdpGeoProductNormalizationSettings,
+  PdpGeoProductNormalizer,
   PdpGeoRagChunk,
   PdpGeoRagFieldTarget,
   PdpGeoRagIntent,
   PdpGeoRagKind,
   PdpGeoRagMode,
   PdpGeoRagProvider,
+  PdpGeoRagQueryPlan,
+  PdpGeoRagQueryPlanningSettings,
   PdpGeoRagSettings,
+  PdpGeoRagSubquery,
+  PdpGeoRagUpdateTarget,
   PdpGeoRagUsageDiagnostic,
   PdpGeoRagUsageReference,
   PdpGeoRagUrlResolvedDocument,

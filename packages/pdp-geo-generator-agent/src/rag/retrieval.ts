@@ -3,7 +3,10 @@ import type {
   PdpGeoRagFieldTarget,
   PdpGeoRagChunk,
   PdpGeoRagIntent,
+  PdpGeoRagQueryPlan,
   PdpGeoRagSettings,
+  PdpGeoRagSubquery,
+  PdpGeoRagUpdateTarget,
   PdpGeoRagUrlResolvedDocument,
   PdpGeoRagUrlResolver,
   PdpGeoRetrievedChunk,
@@ -11,6 +14,10 @@ import type {
   PdpGeoRetrieverRequest,
   PdpProductSignal
 } from "../types";
+import {
+  findPdpGeoRagIndexEntry,
+  findPdpGeoRagSectionEntry
+} from "./rag-index";
 
 export interface RetrievePdpGeoRagChunksOptions {
   apiKey?: string;
@@ -78,26 +85,189 @@ export function createPdpGeoRagQuery(product: PdpProductSignal, locale: PdpGeoLo
   ].filter(Boolean).join("\n");
 }
 
+export function createPdpGeoRagQueryPlan(
+  product: PdpProductSignal,
+  locale: PdpGeoLocale,
+  market: string | undefined,
+  settings: Pick<PdpGeoRagSettings, "queryPlanning"> = {},
+  hintUpdateTargets: PdpGeoRagUpdateTarget[] = []
+): PdpGeoRagQueryPlan {
+  const updateTargets = uniqueUpdateTargets([
+    ...hintUpdateTargets,
+    ...(settings.queryPlanning?.updateTargets ?? [])
+  ]);
+  const planningEnabled = settings.queryPlanning?.enabled ?? updateTargets.length > 0;
+  const baseQuery = createPdpGeoRagQuery(product, locale, market);
+
+  if (!planningEnabled) {
+    return {
+      mode: "single-query",
+      updateTargets: ["general"],
+      queries: [createGeneralSubquery(baseQuery)]
+    };
+  }
+
+  const includeBaseQuery = settings.queryPlanning?.includeBaseQuery ?? true;
+  const maxSubqueries = settings.queryPlanning?.maxSubqueries ?? 6;
+  const targetQueries = updateTargets.flatMap((target) => createTargetSubquery(target, product, locale, market));
+  const queries = [
+    includeBaseQuery ? createGeneralSubquery(baseQuery) : undefined,
+    ...targetQueries
+  ].filter((query): query is PdpGeoRagSubquery => Boolean(query)).slice(0, maxSubqueries);
+
+  return {
+    mode: "agentic-subquery-planning",
+    updateTargets: queries.map((query) => query.target),
+    queries: queries.length > 0 ? queries : [createGeneralSubquery(baseQuery)]
+  };
+}
+
+function createGeneralSubquery(query: string): PdpGeoRagSubquery {
+  return {
+    id: "general",
+    target: "general",
+    query,
+    intents: ["schema", "evidence", "retrieval", "general"],
+    fieldTargets: ["Product.description", "WebPage.description", "PDP.content", "diagnostics"],
+    reason: "Full GEO generation requires broad schema, evidence, locale, and public wording context."
+  };
+}
+
+function createTargetSubquery(
+  target: PdpGeoRagUpdateTarget,
+  product: PdpProductSignal,
+  locale: PdpGeoLocale,
+  market?: string
+): PdpGeoRagSubquery[] {
+  const baseFacts = [
+    `Product: ${product.name}.`,
+    product.brand ? `Brand: ${product.brand}.` : undefined,
+    product.category ? `Category: ${product.category}.` : undefined,
+    `Locale: ${locale}. Market: ${market ?? "unknown"}.`
+  ].filter(Boolean).join(" ");
+  const reviewText = product.reviews.keywords.length > 0 ? `Review keywords: ${product.reviews.keywords.slice(0, 8).join(", ")}.` : "";
+  const usageText = product.usage.length > 0 ? `Usage evidence: ${product.usage.slice(0, 5).join(" / ")}.` : "";
+  const ingredientText = product.ingredients.length > 0 ? `Ingredients: ${product.ingredients.slice(0, 8).join(", ")}.` : "";
+  const benefitText = product.benefits.length > 0 ? `Benefits: ${product.benefits.slice(0, 8).join(", ")}.` : "";
+
+  const map: Record<PdpGeoRagUpdateTarget, PdpGeoRagSubquery> = {
+    productDescription: {
+      id: "target-product-description",
+      target,
+      query: `${baseFacts} Update only Product.description with source-backed benefits, ingredients, usage, review language, E-E-A-T claim safety, and product/entity separation. ${benefitText} ${ingredientText} ${usageText} ${reviewText}`,
+      intents: ["claims", "evidence", "customer", "schema"],
+      fieldTargets: ["Product.description", "Product.additionalProperty", "Product.positiveNotes"],
+      reason: "Product description changed or needs regeneration without broad FAQ/HowTo updates."
+    },
+    webPageDescription: {
+      id: "target-webpage-description",
+      target,
+      query: `${baseFacts} Update only WebPage.description with page-level coverage, customer comparison context, schema role separation, and public wording guardrails. ${benefitText} ${ingredientText} ${reviewText}`,
+      intents: ["customer", "claims", "schema"],
+      fieldTargets: ["WebPage.description", "PDP.content"],
+      reason: "Page-level description changed or needs regeneration while preserving product facts."
+    },
+    quickFacts: {
+      id: "target-quick-facts",
+      target,
+      query: `${baseFacts} Update quick facts and Product.additionalProperty from source-backed product attributes only. ${benefitText} ${ingredientText} ${usageText}`,
+      intents: ["claims", "evidence", "schema"],
+      fieldTargets: ["Product.additionalProperty", "PDP.content"],
+      reason: "Only factual attribute blocks need refresh."
+    },
+    benefits: {
+      id: "target-benefits",
+      target,
+      query: `${baseFacts} Update benefit/effect PDP sections and Product.positiveNotes with source-backed claim wording and overclaim filtering. ${benefitText}`,
+      intents: ["claims", "evidence", "customer"],
+      fieldTargets: ["Product.positiveNotes", "PDP.content", "Product.description"],
+      reason: "Benefit/effect copy changed and should not force unrelated FAQ/HowTo regeneration."
+    },
+    ingredients: {
+      id: "target-ingredients",
+      target,
+      query: `${baseFacts} Update ingredient, formula, additionalProperty, and ingredient-related FAQ context only. ${ingredientText}`,
+      intents: ["claims", "evidence", "faq", "schema"],
+      fieldTargets: ["Product.additionalProperty", "FAQPage.mainEntity", "PDP.content"],
+      reason: "Ingredient information changed and downstream ingredient sections need targeted support."
+    },
+    howToUse: {
+      id: "target-howto",
+      target,
+      query: `${baseFacts} Update only HowTo.step and how-to-use PDP content. Need complete ordered usage actions, amount/timing/routine, and schema.org HowTo compatibility. ${usageText}`,
+      intents: ["howTo", "schema", "evidence"],
+      fieldTargets: ["HowTo.step", "PDP.content"],
+      reason: "Usage instructions changed, so HowTo-specific RAG should be retrieved without broad regeneration."
+    },
+    faq: {
+      id: "target-faq",
+      target,
+      query: `${baseFacts} Update only FAQPage.mainEntity and FAQ PDP content. Need review-led questions, source-backed answers, ingredient/usage/customer intent, and FAQ schema compatibility. ${benefitText} ${ingredientText} ${usageText} ${reviewText}`,
+      intents: ["faq", "review", "customer", "schema", "evidence"],
+      fieldTargets: ["FAQPage.mainEntity", "PDP.content"],
+      reason: "FAQ content changed or needs a targeted refresh."
+    },
+    schema: {
+      id: "target-schema",
+      target,
+      query: `${baseFacts} Update JSON-LD schema graph fields only: Product, WebPage, FAQPage, HowTo, BreadcrumbList, additionalProperty, positiveNotes, offer/review compatibility, and validation constraints.`,
+      intents: ["schema", "evidence"],
+      fieldTargets: ["Product.description", "WebPage.description", "FAQPage.mainEntity", "HowTo.step", "BreadcrumbList", "Product.additionalProperty"],
+      reason: "Schema markup changed independently from public copy."
+    },
+    breadcrumbs: {
+      id: "target-breadcrumbs",
+      target,
+      query: `${baseFacts} Update only BreadcrumbList and page hierarchy schema using source URL, brand, category, and product hierarchy evidence.`,
+      intents: ["schema"],
+      fieldTargets: ["BreadcrumbList"],
+      reason: "Navigation or hierarchy changed and only breadcrumb schema needs refresh."
+    },
+    reviews: {
+      id: "target-reviews",
+      target,
+      query: `${baseFacts} Update review-led product copy, FAQ intent, and review-backed positive notes. ${reviewText}`,
+      intents: ["review", "faq", "customer", "evidence"],
+      fieldTargets: ["FAQPage.mainEntity", "Product.positiveNotes", "Product.description", "PDP.content"],
+      reason: "Review signals changed and should update only review-dependent GEO content."
+    }
+  };
+
+  return [map[target]];
+}
+
+function uniqueUpdateTargets(values: PdpGeoRagUpdateTarget[]): PdpGeoRagUpdateTarget[] {
+  return Array.from(new Set(values));
+}
+
 export class LocalVersionedRagRetriever implements PdpGeoRetriever {
   async retrieve(request: PdpGeoRetrieverRequest): Promise<PdpGeoRetrievedChunk[]> {
     const chunks = request.documents.flatMap((document) => chunkDocument(document.name, document.content, document.version));
     const queryEmbedding = embedText(request.query);
     const queryTerms = tokenize(request.query);
     const scored = chunks.map((chunk) => {
-      const lexicalScore = lexicalSimilarity(queryTerms, tokenize(`${chunk.source} ${chunk.title ?? ""} ${chunk.text}`));
-      const semanticScore = cosineSimilarity(queryEmbedding, embedText(chunk.text));
+      const contextualText = createContextualRetrievalText(chunk);
+      const lexicalScore = lexicalSimilarity(queryTerms, tokenize(contextualText));
+      const semanticScore = cosineSimilarity(queryEmbedding, embedText(contextualText));
       const boost = retrievalBoost(chunk, request.locale, request.market);
       const score = clamp((lexicalScore * 0.48) + (semanticScore * 0.42) + boost, 0, 1);
 
       return {
         ...chunk,
+        metadata: {
+          ...chunk.metadata,
+          contextualRetrieval: true,
+          lexicalScore: roundScore(lexicalScore),
+          semanticScore: roundScore(semanticScore),
+          retrievalBoost: roundScore(boost)
+        },
         score
       };
     });
+    const reranked = rerankLocalChunks(scored, request);
 
-    return scored
+    return reranked
       .filter((chunk) => chunk.score >= (request.settings.scoreThreshold ?? 0.08))
-      .sort((a, b) => b.score - a.score)
       .slice(0, request.settings.maxChunks ?? 8);
   }
 }
@@ -170,8 +340,14 @@ export class OpenAiVectorStoreRetriever implements PdpGeoRetriever {
 function chunkDocument(name: string, content: string, version = "v1"): PdpGeoRagChunk[] {
   const sections = splitMarkdownSections(content);
   return sections.map((section, index) => {
-    const kind = kindFromName(name);
-    const routing = inferRagChunkRouting(kind, name, section.title, section.text);
+    const indexedDocument = findPdpGeoRagIndexEntry(name);
+    const indexedSection = findPdpGeoRagSectionEntry(name, section.title);
+    const kind = indexedDocument?.kind ?? kindFromName(name);
+    const inferredRouting = inferRagChunkRouting(kind, name, section.title, section.text);
+    const routing = {
+      intents: indexedSection?.intents ?? indexedDocument?.intents ?? inferredRouting.intents,
+      fieldTargets: indexedSection?.fieldTargets ?? indexedDocument?.fieldTargets ?? inferredRouting.fieldTargets
+    };
 
     return {
       id: `${name.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase()}-${index + 1}`,
@@ -185,6 +361,10 @@ function chunkDocument(name: string, content: string, version = "v1"): PdpGeoRag
         version,
         index,
         managed: true,
+        sourceRole: indexedDocument?.sourceRole ?? "custom",
+        checkedAt: indexedDocument?.checkedAt ?? "",
+        headingPath: section.headingPath ?? section.title ?? "",
+        routingPriority: indexedSection?.priority ?? indexedDocument?.priority ?? 0,
         sectionIntents: routing.intents.join(","),
         fieldTargets: routing.fieldTargets.join(",")
       }
@@ -620,28 +800,36 @@ function uniqueBy<T>(items: T[], getKey: (item: T) => string): T[] {
   return result;
 }
 
-function splitMarkdownSections(content: string): Array<{ title?: string; text: string }> {
+function splitMarkdownSections(content: string): Array<{ title?: string; headingPath?: string; text: string }> {
   const normalized = content.replace(/\r\n/g, "\n").trim();
   if (!normalized) {
     return [];
   }
 
   if (normalized.startsWith("{")) {
-    return [{ title: "JSON terminology map", text: normalized }];
+    return [{ title: "JSON terminology map", headingPath: "JSON terminology map", text: normalized }];
   }
 
-  const sections: Array<{ title?: string; text: string }> = [];
+  const sections: Array<{ title?: string; headingPath?: string; text: string }> = [];
   const lines = normalized.split("\n");
   let title: string | undefined;
+  let headingPath: string | undefined;
+  let headingTrail: string[] = [];
   let buffer: string[] = [];
 
   for (const line of lines) {
-    const heading = line.match(/^#{1,3}\s+(.+)$/);
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
     if (heading) {
       if (buffer.join("\n").trim()) {
-        sections.push({ title, text: buffer.join("\n").trim() });
+        sections.push({ title, headingPath, text: buffer.join("\n").trim() });
       }
-      title = heading[1]?.trim();
+      const level = heading[1]?.length ?? 1;
+      title = heading[2]?.trim();
+      headingTrail = headingTrail.slice(0, level - 1);
+      if (title) {
+        headingTrail[level - 1] = title;
+      }
+      headingPath = headingTrail.filter(Boolean).join(" > ");
       buffer = [line];
     } else {
       buffer.push(line);
@@ -649,34 +837,34 @@ function splitMarkdownSections(content: string): Array<{ title?: string; text: s
   }
 
   if (buffer.join("\n").trim()) {
-    sections.push({ title, text: buffer.join("\n").trim() });
+    sections.push({ title, headingPath, text: buffer.join("\n").trim() });
   }
 
   return sections.flatMap((section) => splitLongSection(section));
 }
 
-function splitLongSection(section: { title?: string; text: string }): Array<{ title?: string; text: string }> {
+function splitLongSection(section: { title?: string; headingPath?: string; text: string }): Array<{ title?: string; headingPath?: string; text: string }> {
   const maxLength = 1100;
   if (section.text.length <= maxLength) {
     return [section];
   }
 
   const paragraphs = section.text.split(/\n{2,}/);
-  const chunks: Array<{ title?: string; text: string }> = [];
+  const chunks: Array<{ title?: string; headingPath?: string; text: string }> = [];
   let current = "";
 
   for (const paragraph of paragraphs) {
     if (paragraph.length > maxLength) {
       if (current.trim()) {
-        chunks.push({ title: section.title, text: current.trim() });
+        chunks.push({ title: section.title, headingPath: section.headingPath, text: current.trim() });
         current = "";
       }
-      chunks.push(...splitLongParagraph(paragraph, maxLength).map((text) => ({ title: section.title, text })));
+      chunks.push(...splitLongParagraph(paragraph, maxLength).map((text) => ({ title: section.title, headingPath: section.headingPath, text })));
       continue;
     }
 
     if ((current + "\n\n" + paragraph).length > maxLength && current.trim()) {
-      chunks.push({ title: section.title, text: current.trim() });
+      chunks.push({ title: section.title, headingPath: section.headingPath, text: current.trim() });
       current = paragraph;
     } else {
       current = [current, paragraph].filter(Boolean).join("\n\n");
@@ -684,7 +872,7 @@ function splitLongSection(section: { title?: string; text: string }): Array<{ ti
   }
 
   if (current.trim()) {
-    chunks.push({ title: section.title, text: current.trim() });
+    chunks.push({ title: section.title, headingPath: section.headingPath, text: current.trim() });
   }
 
   return chunks;
@@ -716,6 +904,9 @@ function splitLongParagraph(paragraph: string, maxLength: number): string[] {
 }
 
 function kindFromName(name: string): PdpGeoRagChunk["kind"] {
+  if (/orchestrat|rag-map|manifest|analysis-prompt/i.test(name)) {
+    return "orchestration";
+  }
   if (/schema/i.test(name)) {
     return "schema";
   }
@@ -761,6 +952,12 @@ function inferRagChunkRouting(
   if (kind === "terminology" || kind === "locale" || /\blocale\b|terminology|market wording|locali[sz]e|금칙|표현|wording/.test(haystack)) {
     intents.add("locale");
     fieldTargets.add("PDP.content");
+  }
+  if (kind === "orchestration" || /orchestration|routing|rag index|rag-index|overlap|conflict|missing|coverage|content unit|문서 단위|내용 단위|누락|충돌|중복/.test(haystack)) {
+    intents.add("retrieval");
+    intents.add("general");
+    fieldTargets.add("retrieval");
+    fieldTargets.add("diagnostics");
   }
   if (kind === "official-docs" || /retrieval|embedding|vector|search api|grounding|provider|openai|gemini|perplexity/.test(haystack)) {
     intents.add("retrieval");
@@ -898,10 +1095,16 @@ function explicitUrlRouting(
 
 function retrievalBoost(chunk: PdpGeoRagChunk, locale: PdpGeoLocale, market?: string): number {
   const text = `${chunk.source} ${chunk.title ?? ""} ${chunk.text}`;
+  const indexedDocument = findPdpGeoRagIndexEntry(chunk.source);
+  const indexedSection = findPdpGeoRagSectionEntry(chunk.source, chunk.title);
   let boost = 0;
 
+  boost += (indexedSection?.priority ?? indexedDocument?.priority ?? 0) * 0.08;
   if (chunk.kind === "schema") {
     boost += 0.05;
+  }
+  if (chunk.kind === "orchestration") {
+    boost += 0.07;
   }
   if (chunk.kind === "terminology" || chunk.kind === "locale") {
     boost += 0.07;
@@ -928,8 +1131,76 @@ function retrievalBoost(chunk: PdpGeoRagChunk, locale: PdpGeoLocale, market?: st
   return boost;
 }
 
+function createContextualRetrievalText(chunk: PdpGeoRagChunk): string {
+  return [
+    `Document: ${chunk.source}`,
+    chunk.title ? `Section: ${chunk.title}` : undefined,
+    chunk.metadata.headingPath ? `Heading path: ${chunk.metadata.headingPath}` : undefined,
+    `RAG kind: ${chunk.kind}`,
+    chunk.metadata.sourceRole ? `Source role: ${chunk.metadata.sourceRole}` : undefined,
+    chunk.metadata.checkedAt ? `Checked at: ${chunk.metadata.checkedAt}` : undefined,
+    chunk.intents && chunk.intents.length > 0 ? `Generation intents: ${chunk.intents.join(", ")}` : undefined,
+    chunk.fieldTargets && chunk.fieldTargets.length > 0 ? `Schema and content fields: ${chunk.fieldTargets.join(", ")}` : undefined,
+    chunk.text
+  ].filter(Boolean).join("\n");
+}
+
+function rerankLocalChunks(chunks: PdpGeoRetrievedChunk[], request: PdpGeoRetrieverRequest): PdpGeoRetrievedChunk[] {
+  return chunks
+    .map((chunk) => {
+      const rerankBoost = lightweightRerankBoost(chunk, request);
+      return {
+        ...chunk,
+        metadata: {
+          ...chunk.metadata,
+          baseScore: roundScore(chunk.score),
+          rerankBoost: roundScore(rerankBoost),
+          reranker: "local-contextual-hybrid"
+        },
+        score: clamp(chunk.score + rerankBoost, 0, 1)
+      };
+    })
+    .sort((a, b) => b.score - a.score);
+}
+
+function lightweightRerankBoost(chunk: PdpGeoRagChunk, request: PdpGeoRetrieverRequest): number {
+  const query = request.query.toLowerCase();
+  const contextualText = createContextualRetrievalText(chunk).toLowerCase();
+  let boost = 0;
+
+  if (chunk.fieldTargets?.some((fieldTarget) => query.includes(fieldTarget.toLowerCase()))) {
+    boost += 0.05;
+  }
+  if (chunk.intents?.some((intent) => query.includes(intent.toLowerCase()))) {
+    boost += 0.03;
+  }
+  if (chunk.kind === "geo-research" && /geo|generative|answer-ready|retrieval|query planning/i.test(query)) {
+    boost += 0.04;
+  }
+  if (chunk.kind === "cep" && /cep|customer|entry point|routine|review|faq/i.test(query)) {
+    boost += 0.04;
+  }
+  if (chunk.kind === "eeat" && /e-e-a-t|eeat|trust|evidence|claim|safety/i.test(query)) {
+    boost += 0.04;
+  }
+
+  const productEvidenceTerms = tokenize([
+    request.product.name,
+    request.product.brand,
+    request.product.category,
+    ...request.product.benefits,
+    ...request.product.ingredients,
+    ...request.product.usage,
+    ...request.product.reviews.keywords
+  ].filter(Boolean).join(" "));
+  const productOverlap = lexicalSimilarity(productEvidenceTerms, tokenize(contextualText));
+  boost += Math.min(0.05, productOverlap * 0.12);
+
+  return boost;
+}
+
 function embedText(text: string): number[] {
-  const vector = Array.from({ length: 96 }, () => 0);
+  const vector = Array.from({ length: 384 }, () => 0);
   const tokens = tokenize(text);
 
   for (const token of tokens) {
@@ -971,6 +1242,10 @@ function stableHash(value: string): number {
     hash = Math.imul(hash, 16777619);
   }
   return Math.abs(hash);
+}
+
+function roundScore(value: number): number {
+  return Math.round(value * 10000) / 10000;
 }
 
 function clamp(value: number, min: number, max: number): number {

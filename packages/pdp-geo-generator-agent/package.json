@@ -2,7 +2,7 @@
   "name": "@agentic-geo/pdp-geo-generator-agent",
   "author": "jungtaeinn",
   "license": "MIT",
-  "description": "Reusable PDP GEO generation sub agent for turning arbitrary product JSON into schema.org JSON-LD, optimized PDP HTML content, and validation diagnostics.",
+  "description": "Reusable PDP GEO generation agent that turns arbitrary product JSON into RAG-grounded schema.org JSON-LD, answer-ready PDP content, and field-contract validation diagnostics.",
   "keywords": [
     "agentic-geo",
     "pdp-geo-generator-agent",
@@ -15,7 +15,7 @@
     "validation"
   ],
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

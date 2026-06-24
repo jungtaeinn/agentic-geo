@@ -2,6 +2,13 @@
 
 All notable changes will be managed with Changesets.
 
+## 0.2.0
+
+- feat: upgrade the workspace to a multi AI agent architecture with agentic query planning, contextual chunking, hybrid retrieval, reranking, and strategic full document hydration.
+- feat: replace product-specific RAG examples with source-agnostic field evidence contracts for FAQ, HowTo, ingredient, benefit, and claim routing.
+- feat: add field-contract validation repairs so generated schema/content can detect misrouted usage, ingredient, benefit, metric, review, and internal-label text.
+- docs: refresh README guidance and package metadata descriptions for the current RAG-grounded GEO generation pipeline.
+
 ## 0.1.0
 
 - feat: formalize Agentic GEO as a multi-sub-agent workspace for PDP extraction, GEO schema/content generation, and validation/diagnostics orchestration.

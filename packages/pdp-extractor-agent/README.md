@@ -10,6 +10,7 @@
 | --- | --- |
 | PDP URL에서 GEO 생성까지 자동화 | 이 agent로 `geoProduct`를 만든 뒤 `pdp-geo-generator-agent`에 전달 |
 | 상품 API 품질 검토 | REST API 응답을 추출하고 누락된 product/review/FAQ 신호 확인 |
+| 고정 key 후보로 잡히지 않는 API/PDP 정규화 | `productNormalization.enabled` 또는 `customProductNormalizer` 사용 |
 | 추출 결과 QA | `diagnostics.evidence`, `diagnostics.warnings`, `result.geoProduct.rag.chunks`를 보고 추출 근거 검토 |
 | 이미 수집한 HTML 처리 | `extractProductFromHtml`로 fetch 단계를 건너뛰고 추출만 실행 |
 
@@ -55,7 +56,7 @@ flowchart LR
 | --- | --- |
 | `input` | URL/REST API 입력 검증과 정규화 |
 | `fetch` | HTML 또는 API JSON 수집 |
-| `extract` | 상품 기본 정보 추출 |
+| `extract` | 상품 기본 정보 부트스트랩 추출, 선택적 product normalization agent 보강 |
 | `ocr` | 이미지/상세 영역의 OCR 후보 키워드 분류 |
 | `review` | 리뷰 신호와 고객 표현 정리 |
 | `rag` | 상품/리뷰/FAQ/OCR 근거를 RAG chunk로 변환 |
@@ -113,6 +114,27 @@ const run = await extractProductFromHtml(html, "https://example.com/products/ser
 });
 ```
 
+### Optional Product Profile Normalization
+
+기본 추출은 DOM/meta/JSON-LD/API key 후보를 보수적으로 사용해 `ProductProfile`을 부트스트랩합니다. 브랜드몰이나 사내 API마다 key 이름이 달라져 스크립트 후보를 계속 늘려야 하는 경우, `productNormalization.enabled` 또는 `customProductNormalizer`를 사용해 raw HTML/API payload, bootstrap product, typed RAG index, RAG 정책 문서를 함께 보고 field routing을 추론하게 할 수 있습니다.
+
+모델/커스텀 agent가 제안한 값은 원본 소스 또는 bootstrap product에 근거가 있는 경우에만 `geoProduct`로 반영됩니다. 적용/거절 근거는 `diagnostics.evidence`, 경고는 `diagnostics.warnings`, 토큰 사용량은 `diagnostics.runtimeUsage.steps`에 남습니다.
+
+```ts
+const run = await extractProductFromHtml(html, sourceUrl, {
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY,
+  model: process.env.OPENAI_MODEL,
+  productNormalization: {
+    enabled: true,
+    maxRagDocuments: 8,
+    maxSourceCharacters: 35000
+  }
+});
+```
+
+사내 catalog normalization agent가 있으면 provider adapter 대신 `customProductNormalizer`를 주입할 수 있습니다.
+
 ### `createProductExtractorRestHandler`
 
 Web API `Request`/`Response` 기반 REST 핸들러를 만듭니다.
@@ -139,7 +161,10 @@ export const POST = createProductExtractorRestHandler({
   "llm": {
     "provider": "openai",
     "apiKey": "sk-...",
-    "model": "gpt-..."
+    "model": "gpt-...",
+    "productNormalization": {
+      "enabled": true
+    }
   },
   "rag": {
     "analysisPrompt": "추가 분석 기준",
@@ -210,6 +235,7 @@ console.log(refinement.summary);
 
 ```txt
 src/rag/
+  rag-index.ts
   analysis-prompt_v1.md
   product-normalization_v1.md
   review-keyword-extraction_v1.md
@@ -233,6 +259,8 @@ export const productExtractorRagManifest = {
   }
 } as const;
 ```
+
+`rag-index.ts`가 RAG routing의 source of truth입니다. 어떤 문서와 섹션이 normalization, OCR classification, review, FAQ, exclusion, diagnostics에 쓰이는지 typed metadata로 관리하고, 검색된 chunk의 `kind/intents/fieldTargets`와 함께 diagnostics에서 선택 근거를 추적할 수 있게 합니다.
 
 앱의 설정 화면에서 추가한 커스텀 문서는 `src/rag/custom` 아래에 저장됩니다.
 
@@ -272,11 +300,13 @@ provider별 전달 방식:
 | 파일 | 설명 |
 | --- | --- |
 | `src/agent.ts` | 추출 파이프라인의 중심 로직 |
+| `src/product-normalizer.ts` | RAG-aware Gen AI 상품 프로필 정규화와 source-backed 적용 필터 |
 | `src/rest.ts` | REST 핸들러 생성기 |
 | `src/refine.ts` | GEO RAW JSON 수정 로직 |
 | `src/types.ts` | 공개 타입과 Zod 입력 스키마 |
 | `src/llm/providers.ts` | provider 선택 |
 | `src/llm/providers/*` | provider별 키워드 분류 구현 |
+| `src/rag/rag-index.ts` | RAG 문서/섹션의 typed metadata source of truth |
 | `src/rag/profile.ts` | RAG 파일 읽기/쓰기/초기화 |
 | `tests/*` | 추출, REST, provider, RAG 프로필 테스트 |
 

@@ -16,6 +16,8 @@ export interface ProductExtractorRagProfile {
 
 export const defaultProductExtractorAnalysisPrompt = [
   "상품 상세 페이지에서 상품명, 가격, 설명, 옵션, 효능, 효과, 성분, 사용법, FAQ, 리뷰 신호를 GEO 관점으로 추출합니다.",
+  "typed RAG index를 기준으로 문서 단위와 내용 단위 라우팅을 확인하고, 선택된 정책 chunk의 kind/intents/fieldTargets를 기준으로 누락과 중복 요구사항을 진단합니다.",
+  "Product normalization agent가 설정된 경우 deterministic 추출 결과는 bootstrap으로만 사용하고, raw HTML/API payload와 RAG 정책 문서를 함께 참고해 source-backed 필드 라우팅을 보강합니다.",
   "추출한 내용은 schema.org Product/FAQ/Review 및 생성형 검색 노출을 고려해 근거 중심 RAG chunk로 정규화합니다.",
   "DOM, JSON-LD, OCR, 리뷰, REST API 근거가 있는 정보만 우선 사용하고 과장 표현은 배제합니다.",
   "혜택 적용가, 쿠폰, 포인트, 장바구니, 구매 레이어, 배송/교환/반품/환불/법적 고지 문구는 상품 효능·효과·성분·사용법 필드에 넣지 않습니다.",
@@ -37,6 +39,7 @@ export const defaultProductExtractorRagProfile: ProductExtractorRagProfile = {
         "- Prefer JSON-LD Product data when available.",
         "- Use meta title and Open Graph description as fallback evidence.",
         "- Keep price as the source string unless currency and numeric value are explicit.",
+        "- Treat deterministic DOM/API key matching as bootstrap evidence. When a product normalization agent is configured, let it infer field routing from raw source data and this RAG policy, then accept only values that are source-backed by the raw source or bootstrap product.",
         "- Split benefits and effects into short customer-readable phrases.",
         "- Preserve product-detail accordion/tab body text when it is present in HTML, especially Benefits, Ingredients, How to Use, Directions, Clinical Results, and FAQ sections.",
         "- For Korean PDPs, keep `효능`, `피부 고민`, and product value copy in benefits; keep `효과`, `개선`, and result copy in effects; keep `주요 성분`, `전성분`, and formula copy in ingredients; keep `사용법` and `사용 방법` in usage.",
@@ -46,7 +49,8 @@ export const defaultProductExtractorRagProfile: ProductExtractorRagProfile = {
         "- Return the public artifact as a product-centered `geoProduct` JSON object for GEO raw data.",
         "- Keep OCR text, review phrases, ingredients, benefits, effects, usage, FAQ, price, and quantitative metrics inside `geoProduct`.",
         "- Do not expose model certainty scores, crawl source, image audit URL, or chunk metadata in the public `geoProduct` object.",
-        "- Do not invent claims that are not present in DOM, OCR, review, or API evidence."
+        "- Do not invent claims that are not present in DOM, OCR, review, or API evidence.",
+        "- Record accepted model/custom-agent normalization in diagnostics evidence so operators can see which fields were inferred rather than directly matched by fixed selectors or key candidates."
       ].join("\n")
     },
     {

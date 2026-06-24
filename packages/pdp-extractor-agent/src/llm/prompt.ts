@@ -78,6 +78,7 @@ function createRagProfileText(request: KeywordClassificationRequest): string {
 
   return [
     "Runtime RAG profile. Treat these instructions as product extraction policy and classification reference.",
+    "Each retrieved chunk may include Kind, Intents, and Field targets. Use those routing hints to resolve overlapping rules and to keep missing/unsupported fields out of public product facts.",
     promptText ? `Analysis prompt:\n${truncate(promptText, 2400)}` : undefined,
     documentText
   ].filter(Boolean).join("\n\n");

@@ -1,6 +1,7 @@
 import { load } from "cheerio";
 import { createKeywordClassifier } from "./llm/providers";
 import type { AzureRoleDeployments, EmbeddingRuntimeConfig, RerankerRuntimeConfig } from "./llm/types";
+import { normalizeExtractorProductProfileWithAgent } from "./product-normalizer";
 import { defaultProductExtractorRagProfile } from "./rag/default-profile";
 import { productExtractorRagManifest } from "./rag/manifest";
 import {
@@ -22,6 +23,9 @@ import {
   type OcrExtraction,
   type ProductContentCategory,
   type ProductContentSection,
+  type ProductExtractorRagUsageDiagnostic,
+  type ProductExtractorProductNormalizationSettings,
+  type ProductExtractorProductNormalizer,
   type ProductExtractionInput,
   type ProductExtractionRun,
   type ProductExtractionResult,
@@ -54,6 +58,8 @@ export interface ProductExtractorOptions {
     version?: string;
   }>;
   rag?: ProductExtractorRagSettings;
+  productNormalization?: ProductExtractorProductNormalizationSettings;
+  customProductNormalizer?: ProductExtractorProductNormalizer;
   onProgress?: (step: ProductExtractionStep) => void;
 }
 
@@ -239,7 +245,7 @@ export async function extractProductFromHtml(
   ].filter(Boolean));
 
   const faq = extractFaq($, faqNode);
-  const productBase: ProductProfile = {
+  let productBase: ProductProfile = {
     name,
     price,
     currency,
@@ -257,10 +263,28 @@ export async function extractProductFromHtml(
     faq,
     contentSections: []
   };
-  process.done("extract", `${name} 상품 기본정보를 정규화했습니다.`);
+  const productBaseNormalization = await normalizeExtractorProductProfileWithAgent(
+    {
+      source,
+      sourceType: "url",
+      rawSource: {
+        htmlText: bodyText,
+        pageTextBlocks,
+        jsonLdNodes,
+        clientStateData
+      },
+      bootstrapProduct: productBase,
+      analysisPrompt: runtimeOptions.analysisPrompt,
+      ragDocuments: runtimeOptions.ragDocuments
+    },
+    runtimeOptions
+  );
+  productBase = productBaseNormalization.product;
+  appendProductNormalizationDiagnostics(productBaseNormalization, evidence, warnings, runtimeSteps, runtimeOptions);
+  process.done("extract", createExtractionNormalizeMessage(productBase.name, "상품 기본정보", productBaseNormalization));
 
   process.start("ocr", "이미지 OCR과 이미지 대체 텍스트 후보를 문장/키워드 근거로 분류합니다.");
-  const ocr = await extractOcrKeywords($, source, name, images, runtimeOptions, warnings, runtimeSteps);
+  const ocr = await extractOcrKeywords($, source, productBase.name, productBase.images, runtimeOptions, warnings, runtimeSteps);
   const sectionBuckets = createProductSectionBuckets(pageTextBlocks);
   process.done("ocr", `${ocr.imagesScanned}개 이미지 OCR/대체 텍스트 후보에서 OCR 문장과 키워드를 분류했습니다.`);
 
@@ -338,6 +362,7 @@ export async function extractProductFromHtml(
       evidence,
       warnings,
       runtimeUsage: createExtractorRuntimeUsage(runtimeOptions, runtimeSteps),
+      ragUsage: createProductExtractorRagUsageDiagnostics(ragChunks),
       generatedAt,
       ragProfile: result.ragProfile
     }
@@ -361,7 +386,21 @@ async function extractProductFromApiPayload(
   const description = stringValue(productSource.description) ?? htmlToText(stringValue(productSource.body_html) ?? stringValue(productSource.bodyHtml) ?? "");
   const keyedProductSections = extractKeyedProductSections(productSource);
   const apiTextCandidates = createApiTextCandidates(source, productSource, description, keyedProductSections);
-  const product: ProductProfile = {
+  const warnings: AgentWarning[] = [];
+  const runtimeSteps: RuntimePipelineStep[] = [];
+  const evidence: ExtractionEvidence[] = [
+    {
+      field: "runtime.provider",
+      source: "api",
+      value: resolveProviderConfig(runtimeOptions).provider
+    },
+    {
+      field: sourceType === "url" ? "url.jsonPayload" : "api.payload",
+      source: "api",
+      value: sourceType === "url" ? "URL returned JSON payload and was normalized." : "REST API payload normalized."
+    }
+  ];
+  let product: ProductProfile = {
     name: stringValue(productSource.name) ?? stringValue(productSource.productName) ?? stringValue(productSource.title) ?? "Untitled product",
     price: stringValue(productSource.price) ?? stringValue(firstVariant?.price) ?? stringValue(firstObject(productSource.offers)?.price),
     currency: stringValue(productSource.currency) ?? stringValue(firstObject(productSource.offers)?.priceCurrency),
@@ -403,12 +442,28 @@ async function extractProductFromApiPayload(
     faq: readFaqArray(productSource.faq),
     contentSections: createKeyedContentSections(keyedProductSections)
   };
+  const productProfileNormalization = await normalizeExtractorProductProfileWithAgent(
+    {
+      source,
+      sourceType,
+      rawSource: {
+        payload,
+        productSource,
+        keyedProductSections,
+        apiTextCandidates
+      },
+      bootstrapProduct: product,
+      analysisPrompt: runtimeOptions.analysisPrompt,
+      ragDocuments: runtimeOptions.ragDocuments
+    },
+    runtimeOptions
+  );
+  product = productProfileNormalization.product;
+  appendProductNormalizationDiagnostics(productProfileNormalization, evidence, warnings, runtimeSteps, runtimeOptions);
   const payloadLabel = sourceType === "url" ? "JSON" : "API";
-  process.done("extract", `${product.name} ${payloadLabel} 상품정보를 정규화했습니다.`);
+  process.done("extract", createExtractionNormalizeMessage(product.name, `${payloadLabel} 상품정보`, productProfileNormalization));
 
   process.start("ocr", `${payloadLabel}이 제공한 상품 상세 텍스트를 OCR 문장/키워드 근거로 분류합니다.`);
-  const warnings: AgentWarning[] = [];
-  const runtimeSteps: RuntimePipelineStep[] = [];
   const imageTexts = mergeOcrCandidates([
     ...arrayValues(productSource.ocrTexts).map((text, index) => ({
       imageUrl: product.images[index] ?? `${source}#image-${index + 1}`,
@@ -483,18 +538,6 @@ async function extractProductFromApiPayload(
   const generatedAt = new Date().toISOString();
   process.done("json", "최종 JSON 결과를 생성했습니다.");
 
-  const evidence: ExtractionEvidence[] = [
-    {
-      field: "runtime.provider",
-      source: "api",
-      value: resolveProviderConfig(runtimeOptions).provider
-    },
-    {
-      field: sourceType === "url" ? "url.jsonPayload" : "api.payload",
-      source: "api",
-      value: sourceType === "url" ? "URL returned JSON payload and was normalized." : "REST API payload normalized."
-    }
-  ];
   const result: ProductExtractionResult = {
     source,
     sourceType,
@@ -512,6 +555,7 @@ async function extractProductFromApiPayload(
       evidence,
       warnings,
       runtimeUsage: createExtractorRuntimeUsage(runtimeOptions, runtimeSteps),
+      ragUsage: createProductExtractorRagUsageDiagnostics(ragChunks),
       generatedAt,
       ragProfile: result.ragProfile
     }
@@ -610,6 +654,53 @@ function createPipelineTracker(onProgress?: ProductExtractorOptions["onProgress"
       return steps.map((step) => ({ ...step }));
     }
   };
+}
+
+function appendProductNormalizationDiagnostics(
+  application: {
+    evidence: ExtractionEvidence[];
+    warnings: string[];
+    usage?: AiTokenUsage;
+    called: boolean;
+    applied: boolean;
+  },
+  evidence: ExtractionEvidence[],
+  warnings: AgentWarning[],
+  runtimeSteps: RuntimePipelineStep[],
+  options: ProductExtractorOptions
+) {
+  evidence.push(...application.evidence);
+  warnings.push(...application.warnings.map((message) => ({
+    code: "PRODUCT_NORMALIZATION_WARNING",
+    message
+  })));
+
+  if (application.called) {
+    runtimeSteps.push(createModelRuntimeStep(
+      "final",
+      "Product profile normalization/reasoning",
+      options,
+      "reasoning",
+      application.usage,
+      application.applied
+        ? "Raw product source was normalized into source-backed ProductProfile fields before OCR/review/RAG extraction."
+        : "Product profile normalization was called, but no source-backed field changes were accepted."
+    ));
+  }
+}
+
+function createExtractionNormalizeMessage(
+  productName: string,
+  target: string,
+  application: { called: boolean; applied: boolean }
+): string {
+  if (application.applied) {
+    return `${productName} ${target}를 정규화하고 에이전트 정규화를 반영했습니다.`;
+  }
+  if (application.called) {
+    return `${productName} ${target}를 정규화하고 에이전트 정규화를 검토했습니다.`;
+  }
+  return `${productName} ${target}를 정규화했습니다.`;
 }
 
 function removeObstructiveElements($: ReturnType<typeof load>): number {
@@ -3481,11 +3572,110 @@ async function createRagChunks(
       id: `rag-profile-file-${index + 1}`,
       kind: "source",
       text: document.content,
-      metadata: { source, documentName: document.sourceDocument, chunkId: document.chunkId, score: document.score }
+      metadata: {
+        source,
+        documentName: document.sourceDocument,
+        chunkId: document.chunkId,
+        score: document.score,
+        kind: document.kind,
+        intents: document.intents.join(","),
+        fieldTargets: document.fieldTargets.join(",")
+      }
     });
   }
 
   return chunks.filter((chunk) => chunk.text.length > 0);
+}
+
+function createProductExtractorRagUsageDiagnostics(ragChunks: RagChunk[]): ProductExtractorRagUsageDiagnostic[] {
+  const references = ragChunks
+    .filter((chunk) => typeof chunk.metadata.documentName === "string")
+    .map((chunk) => {
+      const intents = parseMetadataList(chunk.metadata.intents);
+      const fieldTargets = parseMetadataList(chunk.metadata.fieldTargets);
+
+      return {
+        sourceDocument: String(chunk.metadata.documentName),
+        chunkId: scalarString(chunk.metadata.chunkId),
+        kind: scalarString(chunk.metadata.kind),
+        intents,
+        fieldTargets,
+        score: scalarNumber(chunk.metadata.score),
+        usage: describeExtractorRagUsage(intents, fieldTargets),
+        excerpt: compactRagExcerpt(chunk.text)
+      };
+    });
+
+  if (references.length === 0) {
+    return [];
+  }
+
+  return [
+    {
+      principle: "policy orchestration and overlap control",
+      references: references.filter((reference) => reference.intents.includes("orchestration") || reference.fieldTargets.includes("diagnostics"))
+    },
+    {
+      principle: "field classification and normalization",
+      references: references.filter((reference) => reference.intents.some((intent) => ["classification", "normalization", "schema-ready"].includes(intent)))
+    },
+    {
+      principle: "evidence exclusions and missing-field safety",
+      references: references.filter((reference) => reference.intents.includes("exclusion") || reference.intents.includes("evidence"))
+    }
+  ].map((item) => ({
+    ...item,
+    references: uniqueRagUsageReferences(item.references)
+  })).filter((item) => item.references.length > 0);
+}
+
+function describeExtractorRagUsage(intents: string[], fieldTargets: string[]): string {
+  if (intents.includes("orchestration")) {
+    return "Coordinates policy coverage, conflict handling, and omitted-field review before extraction output is trusted.";
+  }
+  if (intents.includes("exclusion")) {
+    return "Prevents commerce chrome, coupon, delivery, refund, and legal text from becoming product claims.";
+  }
+  if (fieldTargets.includes("ocr.sentenceInsights")) {
+    return "Guides sentence-level OCR reconstruction and category assignment.";
+  }
+  if (fieldTargets.includes("reviews")) {
+    return "Guides review keyword and representative customer-language extraction.";
+  }
+  if (fieldTargets.includes("faq")) {
+    return "Guides FAQ extraction only when question and answer evidence are both present.";
+  }
+  return "Guides source-backed product normalization and schema-ready RAG chunk construction.";
+}
+
+function uniqueRagUsageReferences(
+  references: ProductExtractorRagUsageDiagnostic["references"]
+): ProductExtractorRagUsageDiagnostic["references"] {
+  const seen = new Set<string>();
+  return references.filter((reference) => {
+    const key = `${reference.sourceDocument}:${reference.chunkId ?? ""}:${reference.excerpt.slice(0, 80)}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function parseMetadataList(value: string | number | boolean | undefined): string[] {
+  return typeof value === "string" ? value.split(",").map((item) => item.trim()).filter(Boolean) : [];
+}
+
+function scalarString(value: string | number | boolean | undefined): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function scalarNumber(value: string | number | boolean | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function compactRagExcerpt(value: string): string {
+  return value.replace(/\s+/g, " ").trim().slice(0, 260);
 }
 
 function createGeoProductRawData(

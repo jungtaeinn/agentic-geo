@@ -1,47 +1,258 @@
 # PDP GEO Generator Agent
 
-`packages/pdp-geo-generator-agent`는 Agentic GEO의 GEO 생성 sub agent입니다. 임의 상품 JSON 또는 `pdp-extractor-agent`가 만든 GEO RAW JSON을 받아 product signal로 정규화하고, RAG guidance와 locale terminology를 적용해 schema.org JSON-LD, 복사용 script tag, GEO 최적화 PDP HTML content, validation diagnostics를 생성합니다.
+`packages/pdp-geo-generator-agent`는 상품 데이터를 GEO(Generative Engine Optimization)에 맞는 PDP 산출물로 재구성하는 sub agent입니다.
 
-이 패키지는 앱 UI에 의존하지 않습니다. 서비스 API, Next.js Route Handler, batch job, 내부 CMS/백오피스에서 독립적으로 호출할 수 있고, Agentic GEO 전체 오케스트레이션에서는 추출 이후의 생성/검증 단계를 담당합니다.
+쉽게 말하면, 상품 기본정보, 효능/효과, 성분, 사용법, 고객 리뷰, 브랜드 맥락을 받아서 다음 결과를 만듭니다.
 
-## When To Use
+- schema.org JSON-LD
+- 복사 가능한 `<script type="application/ld+json">`
+- PDP에 넣을 수 있는 HTML content
+- 어떤 근거와 RAG 문서가 쓰였는지 확인할 수 있는 diagnostics
 
-| 상황 | 사용 방식 |
+이 패키지는 UI에 의존하지 않습니다. 내부 CMS, 백오피스, batch job, REST API, Next.js Route Handler에서 독립적으로 사용할 수 있고, 전체 Agentic GEO 흐름에서는 `pdp-extractor-agent` 이후의 생성/검증 단계를 담당합니다.
+
+`0.2.0` 기준으로 이 agent는 특정 상품 문장을 막는 하드코딩 방식이 아니라, RAG의 field evidence contract를 기준으로 문장을 분류하고 재구성합니다. FAQ, HowTo, ingredient, benefit, claim evidence가 서로 섞이지 않도록 generation 후 validation/repair 단계에서도 같은 계약을 다시 확인합니다.
+
+## 핵심 개념
+
+이 agent는 단순히 상품명을 키워드로 늘리는 도구가 아닙니다. 상품 데이터를 보고, RAG 문서의 기준을 참고해, AI 검색/생성형 답변에서 이해하기 쉬운 구조로 재작성합니다.
+
+| 개념 | 비개발자용 설명 |
 | --- | --- |
-| PDP URL 추출 결과로 GEO artifact 생성 | `pdp-extractor-agent`의 `result.geoProduct`를 `product`로 전달 |
-| 내부 상품 API JSON을 바로 변환 | `product`와 `fieldMapping`을 함께 전달 |
-| locale/market별 표현 통제 | `hints.locale`, `hints.market`, RAG terminology map 사용 |
-| 리뷰 키워드 오타 보정 | `keywordNormalization.enabled` 또는 `customKeywordNormalizer` 사용 |
-| 자체 검색 인프라 연결 | `managed-vector-store-rag`와 `customRetriever` 계약 사용 |
-| 생성 결과 QA 자동화 | `diagnostics.validationWarnings`, `evidence`, `selectedRagChunks` 확인 |
+| 상품 데이터 | 상품명, 브랜드, 카테고리, 성분, 효능, 사용법, 리뷰, 이미지/OCR 문장 등 |
+| RAG 문서 | agent가 참고하는 내부 가이드 문서입니다. E-E-A-T, CEP, GEO 연구, schema.org, locale 표현 규칙이 들어 있습니다. |
+| Agentic Query Planning | 전체 문서를 한 번에 찾는 대신, FAQ 업데이트인지 HowToUse 업데이트인지처럼 목적별 질문을 나눠 검색합니다. |
+| Hybrid Retrieval | 정확한 단어 검색과 의미 기반 검색을 함께 사용합니다. 성분명처럼 정확해야 하는 정보와, 고객 의도처럼 의미가 중요한 정보를 같이 찾습니다. |
+| Contextual Chunking | 문서를 그냥 자르지 않고, 문서명, 섹션명, intent, 적용 필드를 함께 붙여 검색합니다. |
+| Reranking | 1차 검색 결과를 다시 정렬해 이번 작업에 더 맞는 문서를 위로 올립니다. |
+| Controlled Full Document Hydration | 선택된 핵심 전략 문서는 일부 요약만 쓰지 않고 원문 전체를 함께 전달합니다. 단, 원문 전체는 배경/충돌해결용이고, 실제 우선순위는 선택된 chunk가 가집니다. |
+| Field Evidence Contract | 사용법, 성분, 효능, 리뷰, 메트릭 근거가 각자 맞는 schema/content 필드에 들어가도록 RAG와 validation이 함께 확인하는 계약입니다. |
 
-## Pipeline
+## 전체 동작 흐름
 
 ```mermaid
-flowchart LR
-  A["Product JSON"] --> B["input"]
-  B --> C["normalize"]
-  C --> D["rag-load"]
-  D --> E["chunk/embed"]
-  E --> F["retrieve/rerank"]
-  F --> G["generate"]
-  G --> H["validate/repair"]
-  H --> I["schemaMarkup + content"]
+flowchart TD
+  A["상품 JSON 또는 extractor 결과"] --> B["1. 입력 검증"]
+  B --> C["2. 상품 신호 정규화"]
+  C --> D["3. RAG 문서 로드"]
+  D --> E["4. Agentic Query Planning"]
+  E --> F["5. Contextual Chunking"]
+  F --> G["6. Hybrid Retrieval"]
+  G --> H["7. Lightweight Reranking"]
+  H --> I["8. Strategic Coverage 보강"]
+  I --> J["9. Controlled Full Document Hydration"]
+  J --> K["10. RAG + 상품 근거 Reasoning"]
+  K --> L["11. Schema/HTML 생성"]
+  L --> M["12. Gen AI Copy Refinement"]
+  M --> N["13. Validation/Repair"]
+  N --> O["최종 schemaMarkup + content + diagnostics"]
 ```
 
-| Stage | 역할 |
+각 단계의 의미는 다음과 같습니다.
+
+| 단계 | 하는 일 |
 | --- | --- |
-| `input` | 임의 상품 JSON과 생성 옵션 검증 |
-| `normalize` | REST/API/PDP JSON을 내부 `PdpProductSignal`로 변환 |
-| `rag-load` | schema.org, E-E-A-T, CEP, GEO, official docs, locale RAG 프로필 로드 |
-| `chunk` | 버전 문서와 상품 컨텍스트를 검색 가능한 chunk로 준비 |
-| `embed` | 로컬 hash embedding 또는 managed vector store 전략 적용 |
-| `retrieve` | 상품, locale, schema target 기반 RAG 검색 |
-| `rerank` | schema, locale, terminology, GEO 관련성 기준 재정렬 |
-| `generate` | JSON-LD schema markup과 PDP HTML content 생성 |
-| `validate` | JSON-LD와 HTML 구조 검증 |
-| `repair` | 누락 필드와 안전하지 않은 HTML 방어 보정 |
-| `artifact` | 복사 가능한 최종 산출물 직렬화 |
+| 입력 검증 | 상품 JSON, locale, market, fieldMapping, RAG 옵션을 검증합니다. |
+| 상품 신호 정규화 | 다양한 상품 API/PDP JSON을 내부 `PdpProductSignal`로 정리합니다. 필요하면 상품 정규화 agent가 raw JSON과 RAG 문서를 함께 보고 field routing을 추론합니다. |
+| RAG 문서 로드 | `src/rag`의 schema.org, E-E-A-T, CEP, GEO 연구, official docs, locale 문서를 읽습니다. |
+| Agentic Query Planning | 전체 생성인지, FAQ만 갱신인지, HowToUse만 갱신인지에 따라 subquery를 만듭니다. |
+| Contextual Chunking | RAG 문서를 섹션 단위로 나누고 문서명, heading path, intent, field target을 붙입니다. |
+| Hybrid Retrieval | lexical score, local vector similarity, metadata boost를 함께 사용해 관련 문서를 찾습니다. |
+| Lightweight Reranking | field target, intent, 상품 근거와의 겹침, 전략 문서 여부를 반영해 검색 결과를 다시 정렬합니다. |
+| Strategic Coverage 보강 | `geo-research`, `cep`, `eeat` 전략 문서가 최종 후보에서 빠지면 해당 문서만 보충 검색합니다. |
+| Controlled Full Document Hydration | 선택된 전략 문서의 원문 전체를 모델 payload에 넣어 누락을 줄입니다. |
+| Reasoning | FAQ, HowTo, claim safety, customer context, review intent별로 어떤 근거를 쓸지 결정합니다. |
+| 생성 | schema.org JSON-LD와 PDP HTML content를 만듭니다. |
+| Copy Refinement | 선택적으로 Gen AI가 Product/WebPage description과 공개 설명 문장을 더 자연스럽고 answer-ready하게 다듬습니다. |
+| Validation/Repair | JSON-LD와 HTML 구조를 검증하고 안전하게 보정합니다. |
+
+## RAG 문서 구성
+
+기본 RAG 문서는 `src/rag`에 있습니다.
+
+```txt
+src/rag/
+  rag-index.ts
+  analysis-prompt_v1.md
+  schema-org-product_v1.md
+  eeat_v1.md
+  cep_v1.md
+  best-practice_v1.md
+  geo-research_v1.md
+  official-ai-search-platform-docs_v1.md
+  locale-expression-guidelines_v1.md
+  locale-terminology-map_v1.json
+  manifest.ts
+  profile.ts
+```
+
+각 문서의 역할은 다음과 같습니다.
+
+| 문서 | 역할 |
+| --- | --- |
+| `analysis-prompt_v1.md` | 전체 생성 원칙과 RAG orchestration 기준 |
+| `schema-org-product_v1.md` | Product, WebPage, FAQPage, HowTo, BreadcrumbList 구조화 기준 |
+| `eeat_v1.md` | 신뢰, 근거, claim safety, 리뷰 표현, 과장 방지 기준 |
+| `cep_v1.md` | 고객이 상품을 찾는 상황, 루틴, 고민, 리뷰 질문을 표현하는 기준 |
+| `geo-research_v1.md` | GEO 연구, answer readiness, citation readiness, AI 검색 최적화 원칙 |
+| `best-practice_v1.md` | 내부 GEO 생성 품질 기준과 PDP content 작성 기준 |
+| `official-ai-search-platform-docs_v1.md` | OpenAI, Google Search Central, Gemini, Perplexity 등 공식 문서 기반 retrieval/structured data 기준 |
+| `locale-expression-guidelines_v1.md` | locale별 표현 톤과 금지/권장 표현 |
+| `locale-terminology-map_v1.json` | 시장별 용어 치환/회피 map |
+
+`rag-index.ts`는 단순한 파일 목록이 아니라 RAG 문서의 source of truth입니다. 각 문서와 주요 섹션에 다음 metadata를 붙입니다.
+
+- 문서 종류: schema, eeat, cep, geo-research, best-practice, official-docs, locale 등
+- source role: policy, research, official-reference, locale-map
+- checked date
+- intent: faq, howTo, claims, customer, review, schema, evidence, retrieval 등
+- field target: `Product.description`, `WebPage.description`, `FAQPage.mainEntity`, `HowTo.step` 등
+- priority
+
+## RAG를 추론에 활용하는 방식
+
+이 agent는 RAG 문서를 “많이 넣는 것”보다 “필요한 문서를 정확하게 찾고, 중요한 전략 문서는 원문 전체로 보강하는 것”을 목표로 합니다.
+
+### 1. Agentic Query Planning
+
+상품정보가 일부만 업데이트될 수 있기 때문에, agent는 먼저 작업 목적을 나눕니다.
+
+예를 들어 FAQ와 HowToUse만 바뀐 경우:
+
+```ts
+const run = await generatePdpGeo({
+  product: updatedProduct,
+  hints: {
+    locale: "ko-KR",
+    market: "KR",
+    updateTargets: ["faq", "howToUse"]
+  },
+  rag: {
+    queryPlanning: {
+      enabled: true,
+      includeBaseQuery: true
+    }
+  }
+});
+```
+
+이렇게 하면 query plan은 보통 다음처럼 나뉩니다.
+
+```txt
+general     - 전체 schema/evidence/locale 기준 확인
+faq         - FAQPage.mainEntity, 리뷰 질문, claim safety 기준 검색
+howToUse    - HowTo.step, 사용 순서, 루틴/타이밍 기준 검색
+```
+
+결과는 `diagnostics.ragQueryPlan`에서 확인할 수 있습니다.
+
+### 2. Contextual Chunking
+
+RAG 문서는 heading 단위로 나뉩니다. 다만 본문만 embedding하지 않고, 다음 정보까지 함께 검색 텍스트에 넣습니다.
+
+```txt
+Document: eeat_v1.md
+Section: 8.2 Partial Update Query Planning
+Heading path: E-E-A-T Guidance v1 > 8. GEO Application > 8.2 Partial Update Query Planning
+RAG kind: eeat
+Source role: policy
+Generation intents: retrieval, faq, howTo, schema
+Schema and content fields: retrieval, FAQPage.mainEntity, HowTo.step, Product.description
+Content: ...
+```
+
+이렇게 하면 “FAQ 업데이트”를 검색할 때 단순히 FAQ라는 단어가 있는 문서뿐 아니라, 실제로 FAQ 필드에 연결된 E-E-A-T/CEP/GEO 섹션을 더 잘 찾을 수 있습니다.
+
+### 3. Hybrid Retrieval
+
+로컬 기본 검색은 다음 점수를 섞습니다.
+
+```txt
+최종 1차 점수 = lexical similarity + local vector similarity + metadata boost
+```
+
+- lexical similarity: 정확한 단어가 맞는지 봅니다. 예: `FAQPage`, `HowTo.step`, `Niacinamide`
+- local vector similarity: 의미적으로 가까운지 봅니다. 현재는 deterministic hash vector를 사용합니다.
+- metadata boost: 문서 priority, source role, schema/official docs/strategy 문서 여부를 반영합니다.
+
+로컬 vector 차원은 hash collision을 줄이기 위해 384차원으로 구성되어 있습니다.
+
+### 4. Lightweight Reranking
+
+1차 검색 후 다시 정렬합니다.
+
+reranking은 다음을 추가로 봅니다.
+
+- subquery가 원하는 field target과 chunk의 field target이 맞는가
+- subquery intent와 chunk intent가 맞는가
+- 상품명, 브랜드, 카테고리, 성분, 효능, 리뷰 키워드와 chunk가 실제로 겹치는가
+- GEO/CEP/E-E-A-T 전략 문서가 필요한 작업인가
+
+이 단계 덕분에 단순히 점수가 높은 문서보다, 이번 생성 작업에 더 직접적으로 필요한 문서가 위로 올라옵니다.
+
+### 5. Strategic Coverage
+
+GEO 생성에서 `geo-research`, `cep`, `eeat`는 전략 문서입니다.
+
+일반 검색 결과에서 이 문서들이 밀릴 수 있기 때문에, agent는 최종 후보에 전략 문서가 빠졌는지 확인합니다. 빠졌다면 해당 전략 문서만 별도로 작게 검색해서 보강합니다.
+
+이 보강은 모든 문서를 무조건 넣는 방식이 아닙니다. 전략 문서가 후보군에 없을 때만 작동합니다.
+
+### 6. Controlled Full Document Hydration
+
+최종 선택된 전략 문서는 chunk excerpt만 모델에 주지 않습니다. 선택된 `eeat`, `cep`, `geo-research` 문서의 원문 전체를 `strategicFullDocuments`로 함께 전달합니다.
+
+다만 원문 전체는 다음 원칙으로 사용됩니다.
+
+1. 선택된 chunk가 현재 작업의 1순위 기준입니다.
+2. full document는 누락 방지, 충돌 해석, 정책 완결성 확인용입니다.
+3. 상품 데이터에 근거가 없는 예시나 claim은 적용하지 않습니다.
+4. 충돌이 생기면 상품 원본 근거를 최우선으로 보고, 그다음 E-E-A-T trust/safety, schema validity, GEO answer-readiness, CEP customer phrasing 순서로 적용합니다.
+5. public schema/content에는 `RAG`, `GEO`, `CEP`, `E-E-A-T`, `citation-ready` 같은 내부 전략 용어를 노출하지 않습니다.
+
+이 구조는 전체 문서를 넣을 때 생길 수 있는 본질 흐림을 줄이고, 동시에 문서 일부만 넣을 때 생기는 누락을 줄입니다.
+
+## Copy Refinement에서 RAG가 쓰이는 방식
+
+기본 schema/content는 deterministic 로직으로 먼저 생성됩니다. 그 다음 provider API 또는 custom refiner가 설정되어 있으면 copy refinement가 실행됩니다.
+
+이 단계에서 모델은 다음 정보를 받습니다.
+
+- 상품 근거: 상품명, 브랜드, 카테고리, 효능, 성분, 사용법, 리뷰 키워드, 원문 source text
+- `strategicExposureGuidance`: 최종 선택된 GEO/CEP/E-E-A-T chunk excerpt
+- `strategicFullDocuments`: 선택된 전략 RAG 문서 전체 원문
+- `hydrationPolicy`: chunk 우선순위와 충돌 해결 규칙
+- reasoning decisions: FAQ, HowTo, claim safety, customer context, review intent 판단
+
+모델은 새 효능/성분/수치/리뷰를 만들 수 없습니다. 상품 근거와 RAG 정책 안에서만 `Product.description`, `WebPage.description`, `content.sections.description`을 더 자연스럽고 AI answer-ready하게 다듬습니다.
+
+## Diagnostics로 확인할 수 있는 것
+
+실행 후 `diagnostics`에서 RAG 흐름을 확인할 수 있습니다.
+
+| 필드 | 설명 |
+| --- | --- |
+| `diagnostics.ragQueryPlan` | 어떤 subquery가 생성됐는지 |
+| `diagnostics.selectedRagChunks` | 최종 컨텍스트로 선택된 chunk |
+| `diagnostics.hydratedRagDocuments` | 원문 전체가 hydration된 전략 문서 |
+| `diagnostics.reasoning` | 어떤 RAG 원칙과 상품 근거가 연결됐는지 |
+| `diagnostics.ragUsage` | FAQ, HowTo, claim safety 등 원칙별 참조 문서 |
+| `diagnostics.evidence` | 생성/보정/LLM refinement의 적용 또는 거절 근거 |
+| `diagnostics.validationWarnings` | JSON-LD/HTML 검증 경고 |
+| `diagnostics.validationRepairs` | 자동 보정 내역 |
+
+## Field Evidence Contract
+
+생성 품질은 문장을 많이 만드는 것보다, 상품 근거가 올바른 필드에 들어가는지에 크게 좌우됩니다. 이 agent는 RAG 문서와 validation 단계에서 같은 field contract를 사용합니다.
+
+| 필드 | 허용되는 근거 | 제거/보정되는 오염 예시 |
+| --- | --- | --- |
+| `HowTo.step`, `content.sections.howToUse` | 사용 행동, 순서, 양, 부위, 시점, 빈도, 레이어링, 주의사항 | 임상 수치, 효능 문장, 성분 설명, 리뷰 요약 |
+| `content.sections.ingredients` | 성분명, formula technology, INCI/full ingredient, 성분 역할 설명 | 리뷰 표현, routine 문장, 검색 의도 문장, 효능 요약 |
+| `content.sections.benefits`, `positiveNotes` | 효능/효과, 고객이 이해할 수 있는 outcome, 짧은 evidence topic | 긴 임상 원문, 내부 diagnostic label, 원시 메트릭 문장 |
+| `Product.additionalProperty` | key ingredient, key benefit, reported detail, usage timing, texture, review context 같은 atomic fact | multiline quick facts, public copy용 문장 덩어리 |
+
+검증 단계에서 이 계약을 어긴 문장은 `field-contract-validator` repair로 기록됩니다. 따라서 특정 상품명이나 특정 문장을 차단하지 않고도, 새 상품이 들어왔을 때 같은 RAG 원칙으로 필드 오염을 줄일 수 있습니다.
 
 ## Basic Usage
 
@@ -74,48 +285,52 @@ const run = await generatePdpGeo({
 
 console.log(run.result.schemaMarkup.scriptTag);
 console.log(run.result.content.html);
-console.log(run.diagnostics.validationWarnings);
+console.log(run.diagnostics.selectedRagChunks);
+console.log(run.diagnostics.hydratedRagDocuments);
 ```
 
-### Optional Review Keyword Normalization
+## Optional Product Signal Normalization
 
-기본 실행은 deterministic 규칙만 사용합니다. 리뷰 키워드 오타 후보를 모델로 검수하려면 생성 옵션에서 명시적으로 켭니다. 모델은 원본 리뷰 키워드 후보만 보정할 수 있고, 번역/확장/새 효능 생성은 안전 필터에서 제외됩니다.
+기본 실행은 `fieldMapping`과 deterministic 부트스트랩으로 `PdpProductSignal`을 만듭니다.
+
+내부 API key가 자주 바뀌거나 section label이 브랜드/몰마다 달라져 스크립트에 key 후보를 계속 하드코딩해야 하는 경우, `productNormalization.enabled` 또는 `customProductNormalizer`를 사용합니다.
+
+상품 정규화 agent는 raw JSON, bootstrap product, fieldMapping, hints, analysis prompt, RAG 문서를 함께 보고 field routing을 추론합니다. 모델/커스텀 agent가 제안한 값은 원본 상품 JSON 또는 bootstrap product에 근거가 있는 경우에만 반영됩니다.
 
 ```ts
-const run = await generatePdpGeo(
-  {
-    product: {
-      geoProduct: {
-        name: "Hydra Texture Cream",
-        reviews: {
-          keywords: ["피부걸", "흡수감"]
-        }
-      }
-    },
-    hints: {
-      locale: "ko-KR",
-      market: "KR"
-    }
-  },
-  {
-    provider: "openai",
-    apiKey: process.env.OPENAI_API_KEY,
-    model: process.env.OPENAI_MODEL,
-    keywordNormalization: {
-      enabled: true,
-      confidenceThreshold: 0.82
-    }
+const run = await generatePdpGeo(input, {
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY,
+  model: process.env.OPENAI_MODEL,
+  productNormalization: {
+    enabled: true,
+    maxRagDocuments: 8,
+    maxSourceCharacters: 35000
   }
-);
+});
 ```
 
-테스트나 사내 사전/검수 agent가 있으면 네트워크 provider 대신 `customKeywordNormalizer`를 주입할 수 있습니다.
+## Optional Review Keyword Normalization
 
-### Optional Gen AI Copy Refinement
+리뷰 키워드 오타 후보를 모델로 검수하려면 명시적으로 켭니다. 모델은 원본 리뷰 키워드 후보만 보정할 수 있고, 번역/확장/새 효능 생성은 안전 필터에서 제외됩니다.
 
-상품 근거 조립과 schema/content 구조 생성은 deterministic 로직으로 먼저 수행합니다. 다만 `Product.description`, `WebPage.description`, `content.sections.description`처럼 AI answer에 노출될 공개 문장은 규칙 기반 정규화만으로 “어떤 상품 fact를 골라 조합해야 하는지”까지 판단하기 어렵기 때문에, provider API가 설정되어 있으면 생성 직후 Gen AI copy refinement를 선택적으로 실행할 수 있습니다.
+```ts
+const run = await generatePdpGeo(input, {
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY,
+  model: process.env.OPENAI_MODEL,
+  keywordNormalization: {
+    enabled: true,
+    confidenceThreshold: 0.82
+  }
+});
+```
 
-이 단계는 `geo-research`(기존 `geo-paper`), `cep`, `eeat` RAG를 전략 근거로 삼아, 가져온 상품 정보 데이터 안에서 AI가 인용하거나 답변에 활용하기 좋은 키워드와 문장을 선별한 뒤 자연스럽게 조합합니다. 새 효능/성분/수치/리뷰를 만들지 않고, 이미 추출된 상품 신호와 선택된 RAG chunk 안에서만 재구성합니다. 모델 결과가 너무 짧거나 길거나 `RAG`, `GEO`, `CEP`, `E-E-A-T`, 이미지 캡션성 표현 같은 내부/시각 아티팩트를 포함하면 폐기하고 deterministic 문장을 유지합니다.
+## Optional Gen AI Copy Refinement
+
+`Product.description`, `WebPage.description`, `content.sections.description`처럼 AI answer에 노출될 공개 문장은 선택적으로 Gen AI copy refinement를 거칠 수 있습니다.
+
+이때 모델은 선택된 chunk와 hydration된 전체 전략 문서를 함께 봅니다. 하지만 상품 근거가 없는 효능, 성분, 수치, 리뷰, 인증, 가격은 만들 수 없습니다.
 
 ```ts
 const run = await generatePdpGeo(input, {
@@ -132,11 +347,54 @@ const run = await generatePdpGeo(input, {
 });
 ```
 
-테스트나 내부 LLM gateway를 쓰는 경우 `customCopyRefiner`를 주입할 수 있습니다. copy refinement 호출 여부와 token usage는 `diagnostics.runtimeUsage.steps`의 `final` 단계에 기록되고, 적용/거절 근거와 전략 RAG 출처는 `diagnostics.evidence`에 남습니다.
+## RAG 설정 예시
+
+```ts
+const run = await generatePdpGeo({
+  product,
+  hints: {
+    locale: "ko-KR",
+    market: "KR",
+    updateTargets: ["faq", "howToUse"]
+  },
+  rag: {
+    mode: "local-versioned-rag",
+    maxChunks: 12,
+    scoreThreshold: 0,
+    queryPlanning: {
+      enabled: true,
+      includeBaseQuery: true,
+      updateTargets: ["faq", "howToUse"]
+    },
+    fullDocumentHydration: {
+      enabled: true,
+      strategicOnly: true,
+      maxDocuments: 3
+    }
+  }
+});
+```
+
+`fullDocumentHydration`은 기본적으로 전략 문서에 대해 켜져 있습니다. 운영에서 context 비용을 줄이고 싶으면 끌 수 있습니다.
+
+```ts
+rag: {
+  fullDocumentHydration: {
+    enabled: false
+  }
+}
+```
+
+## RAG Modes
+
+| mode | 설명 |
+| --- | --- |
+| `local-versioned-rag` | 기본값입니다. `src/rag`의 버전 관리 문서를 로컬에서 contextual chunking하고 hybrid scoring과 lightweight reranking으로 검색합니다. |
+| `managed-vector-store-rag` | OpenAI Vector Store Search adapter 또는 `customRetriever` 기반 managed 검색을 사용합니다. |
 
 ## REST Handler
 
-Web API `Request`/`Response` 기반 REST 핸들러를 만들 수 있습니다.
+Web API `Request`/`Response` 기반 REST handler를 만들 수 있습니다.
 
 ```ts
 import { createPdpGeoGeneratorRestHandler } from "@agentic-geo/pdp-geo-generator-agent/rest";
@@ -151,38 +409,6 @@ export const POST = createPdpGeoGeneratorRestHandler({
 });
 ```
 
-요청 예시:
-
-```json
-{
-  "product": {
-    "item": {
-      "title": "Hydra Barrier Cream",
-      "body": "Daily cream for dry skin and skin barrier support."
-    }
-  },
-  "hints": {
-    "locale": "ko-KR",
-    "market": "KR"
-  },
-  "fieldMapping": {
-    "name": "item.title",
-    "description": "item.body"
-  },
-  "rag": {
-    "mode": "local-versioned-rag"
-  },
-  "keywordNormalization": {
-    "enabled": true,
-    "provider": "openai",
-    "model": "your-keyword-normalization-model"
-  },
-  "copyRefinement": {
-    "enabled": true
-  }
-}
-```
-
 `products` 배열을 넘기면 여러 상품을 한 번에 처리합니다. 일부 상품만 실패하면 REST handler는 HTTP `207`과 함께 `results`, `logs`, `failures`를 반환합니다.
 
 ## Output Contract
@@ -193,100 +419,32 @@ export const POST = createPdpGeoGeneratorRestHandler({
 | --- | --- |
 | `result.schemaMarkup.jsonLd` | schema.org JSON-LD graph |
 | `result.schemaMarkup.scriptTag` | 복사 가능한 `<script type="application/ld+json">` |
-| `result.content.html` | GEO 최적화 accordion HTML |
+| `result.content.html` | GEO 최적화 PDP HTML |
 | `result.content.sections` | `productName`, `description`, `quickFacts`, `benefits`, `ingredients`, `howToUse`, `faq` |
 | `diagnostics.normalizedProduct` | 정규화된 내부 product signal |
-| `diagnostics.recommendations` | GEO/schema/content 개선 제안 |
-| `diagnostics.evidence` | 입력, RAG, terminology, validator, repair 근거 |
 | `diagnostics.selectedRagChunks` | 최종 생성에 사용한 RAG chunk |
+| `diagnostics.hydratedRagDocuments` | controlled full document hydration으로 전달된 전략 문서 |
+| `diagnostics.reasoning` | RAG와 상품 근거를 연결한 reasoning 결과 |
+| `diagnostics.ragUsage` | 원칙별 RAG 참조 내역 |
+| `diagnostics.recommendations` | GEO/schema/content 개선 제안 |
+| `diagnostics.evidence` | 입력, RAG, terminology, validator, repair, LLM refinement 근거 |
 | `diagnostics.terminology` | locale별 적용/회피 용어 결정 |
 | `diagnostics.validationWarnings` | 검증과 보정 과정에서 남긴 경고 |
 | `process` | UI/REST 로그에 표시할 stage별 진행 상태 |
-
-## RAG Modes
-
-- `local-versioned-rag`: 기본값입니다. `src/rag`의 버전 관리 문서를 로컬에서 chunking하고 deterministic hash vector와 local hybrid scoring으로 검색합니다.
-- `managed-vector-store-rag`: OpenAI Vector Store Search adapter 또는 `customRetriever` 기반 managed 검색을 사용합니다.
-
-기본 RAG 프로필:
-
-```txt
-src/rag/
-  analysis-prompt_v1.md
-  schema-org-product_v1.md
-  eeat_v1.md
-  cep_v1.md
-  best-practice_v1.md
-  geo-research_v1.md
-  official-ai-search-platform-docs_v1.md
-  locale-expression-guidelines_v1.md
-  locale-terminology-map_v1.json
-  manifest.ts
-  profile.ts
-```
-
-문서명은 기능 중심으로 유지합니다. `eeat_v1.md`는 trust/evidence quality, `cep_v1.md`는 customer entry point intent, `geo-research_v1.md`는 generative search/GEO research guidance를 담당합니다. 이 세 문서는 모든 reasoning principle의 공통 RAG 근거로 들어가고, schema/best-practice/official-docs/locale 문서는 원칙별로 추가됩니다.
-
-RAG routing은 문서 전체가 아니라 chunk intent 기준으로 동작합니다. 로컬 기본 문서와 사용자가 추가한 custom RAG 문서는 heading/text를 분석해 `faq`, `howTo`, `claims`, `customer`, `review`, `schema`, `locale`, `evidence`, `retrieval`, `general` intent와 schema/content field target을 부여합니다. Reasoning은 FAQ/HowTo/claims/customer/review principle별로 해당 intent와 field target을 우선 선택해 `best-practice_v1.md#FAQ Best Practice`처럼 섹션 단위 출처를 유지합니다.
-
-`rag.resolveUrls: true`를 사용하면 RAG 문서에 포함된 URL을 최대 `maxResolvedUrlDocuments`개까지 가져와 같은 chunk/intent 분석 흐름에 넣습니다. 기본 URL resolver는 HTML/text/markdown/JSON 계열만 처리하고 localhost/private IP를 차단합니다. 운영 환경에서 사내 프록시, 캐시, 논문 파서, allowlist가 필요하면 `customUrlResolver`로 교체할 수 있습니다.
-
-Resolved URL content는 전체 원문이 아니라 GEO-relevant excerpt로 축약됩니다. URL 유형은 `official-paper`, `schema-reference`, `provider-doc`, `official-doc`, `other`로 분류되며, official paper는 citation readiness/visibility/source attribution, schema reference는 type/property compatibility, provider docs는 retrieval/embedding/grounding/source-evidence mechanics, official docs는 structured data eligibility와 product evidence guidance 중심으로 발췌합니다.
-
-`manifest.ts`는 현재 사용하는 파일 조합을 고정합니다.
-
-```ts
-export const pdpGeoGeneratorRagManifest = {
-  profile: "pdp-geo-generator-default",
-  analysisPrompt: "analysis-prompt_v1.md",
-  documents: {
-    schemaOrgProduct: "schema-org-product_v1.md",
-    eeat: "eeat_v1.md",
-    cep: "cep_v1.md",
-    bestPractice: "best-practice_v1.md",
-    geoResearch: "geo-research_v1.md",
-    officialAiSearchPlatformDocs: "official-ai-search-platform-docs_v1.md",
-    localeExpressionGuidelines: "locale-expression-guidelines_v1.md",
-    localeTerminologyMap: "locale-terminology-map_v1.json"
-  }
-} as const;
-```
-
-## Validation And Repair
-
-생성 후 바로 반환하지 않고 다음 항목을 검증합니다.
-
-- JSON-LD `@context`가 `https://schema.org`인지 확인
-- `@graph`가 없거나 `Product` node가 없으면 최소 Product node 추가
-- `Product.name`, `Product.description` 누락 시 fallback 값 보정
-- `FAQPage` Question/Answer와 `HowTo` step 구조 정리
-- accordion HTML에서 `<script>`, inline event, style attribute, 허용되지 않은 tag 제거
-
-보정 내역은 `diagnostics.validationWarnings`와 `diagnostics.evidence`에 남습니다.
-
-## 주요 타입
-
-| 타입 | 설명 |
-| --- | --- |
-| `PdpGeoGenerationInput` | 사용자/서비스가 넘기는 생성 요청 |
-| `PdpGeoGeneratorOptions` | provider, RAG, progress callback, custom retriever 옵션 |
-| `PdpGeoGenerationRun` | 결과, diagnostics, process를 포함한 전체 실행 결과 |
-| `PdpGeoGenerationResult` | 최종 schema/content artifact |
-| `PdpGeoDiagnostics` | normalized product, recommendations, evidence, RAG, terminology, validation warning |
-| `PdpGeoFieldMapping` | 임의 REST JSON path를 내부 signal로 연결하는 mapping |
-| `PdpGeoRagSettings` | local/managed RAG 검색 설정 |
 
 ## 주요 파일
 
 | 파일 | 설명 |
 | --- | --- |
-| `src/agent.ts` | 생성 pipeline의 중심 로직 |
-| `src/normalize.ts` | 임의 product JSON을 `PdpProductSignal`로 정규화 |
+| `src/agent.ts` | 생성 pipeline의 중심 로직, query planning, strategic coverage, hydration |
+| `src/normalize.ts` | 임의 product JSON을 `PdpProductSignal`로 부트스트랩 정규화 |
+| `src/product-normalizer.ts` | RAG-aware Gen AI 상품 신호 정규화와 source-backed 적용 필터 |
 | `src/generate.ts` | schema.org JSON-LD와 HTML content 생성 |
 | `src/copy-refiner.ts` | Gen AI 기반 public copy refinement와 provider adapter |
 | `src/validate.ts` | JSON-LD/HTML 검증과 repair |
-| `src/rag/retrieval.ts` | local/managed RAG 검색과 reranking |
-| `src/rest.ts` | REST 핸들러 생성기 |
+| `src/rag/rag-index.ts` | RAG 문서/섹션의 typed metadata source of truth |
+| `src/rag/retrieval.ts` | contextual chunking, local hybrid retrieval, lightweight reranking, managed retrieval adapter |
+| `src/rest.ts` | REST handler 생성기 |
 | `src/types.ts` | 공개 타입과 Zod 입력 스키마 |
 
 ## 명령어

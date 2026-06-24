@@ -2,7 +2,7 @@
   "name": "@agentic-geo/pdp-extractor",
   "author": "jungtaeinn",
   "license": "MIT",
-  "description": "Next.js console for running the PDP extraction sub agent and producing GEO-ready product intelligence.",
+  "description": "Next.js console for running the PDP extraction agent and reviewing GEO-ready product intelligence, evidence, OCR, review, and FAQ signals.",
   "keywords": [
     "agentic-geo",
     "nextjs",
@@ -16,7 +16,7 @@
     "geo-raw-json"
   ],
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "build": "next build",

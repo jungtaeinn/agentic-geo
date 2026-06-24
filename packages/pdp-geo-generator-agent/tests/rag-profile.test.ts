@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { pdpGeoGeneratorRagManifest } from "../src";
 import { defaultPdpGeoGeneratorRagProfile } from "../src/rag/default-profile";
+import { pdpGeoRagIndex } from "../src/rag/rag-index";
 import { readPdpGeoGeneratorRagProfile } from "../src/rag/profile";
 import { createPdpGeoReasoning } from "../src/rag/reasoning";
-import { createPdpGeoRagQuery, LocalVersionedRagRetriever, resolvePdpGeoRagSettings, retrievePdpGeoRagChunks } from "../src/rag/retrieval";
+import { createPdpGeoRagQuery, createPdpGeoRagQueryPlan, LocalVersionedRagRetriever, resolvePdpGeoRagSettings, retrievePdpGeoRagChunks } from "../src/rag/retrieval";
 
 describe("readPdpGeoGeneratorRagProfile", () => {
   it("reads managed GEO generator RAG files including locale terminology", async () => {
@@ -15,6 +16,7 @@ describe("readPdpGeoGeneratorRagProfile", () => {
     expect(profile.analysisPrompt).toContain("OCR text is present");
     expect(profile.analysisPrompt).toContain("classified OCR sentences");
     expect(profile.analysisPrompt).toContain("Do not expose internal labels");
+    expect(profile.analysisPrompt).toContain("Do not solve routing errors with product-specific sentence blocklists");
     expect(profile.documents.map((document) => document.name)).toEqual(expect.arrayContaining([
       pdpGeoGeneratorRagManifest.documents.schemaOrgProduct,
       pdpGeoGeneratorRagManifest.documents.eeat,
@@ -25,12 +27,19 @@ describe("readPdpGeoGeneratorRagProfile", () => {
       pdpGeoGeneratorRagManifest.documents.localeExpressionGuidelines,
       pdpGeoGeneratorRagManifest.documents.localeTerminologyMap
     ]));
+    expect(pdpGeoRagIndex.some((entry) => entry.document === pdpGeoGeneratorRagManifest.documents.schemaOrgProduct)).toBe(true);
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.bestPractice)?.content)
+      .toContain("RAG Corpus Orchestration");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.bestPractice)?.content)
       .toContain("Public Wording Guardrails");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.bestPractice)?.content)
       .toContain("Schema.org + GEO Description Direction");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.bestPractice)?.content)
-      .toContain("Reference Output From Amoremall/Sulwhasoo Example (Verbatim)");
+      .toContain("Reference Pattern Template");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.bestPractice)?.content)
+      .toContain("Field Evidence Routing Pattern");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.bestPractice)?.content)
+      .not.toContain("Reference Output From Amoremall/Sulwhasoo Example (Verbatim)");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.bestPractice)?.content)
       .toContain("Cross-Product Benchmarking Guidance");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.bestPractice)?.content)
@@ -39,6 +48,14 @@ describe("readPdpGeoGeneratorRagProfile", () => {
       .toContain("Do not expose internal diagnostic labels");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.schemaOrgProduct)?.content)
       .toContain("When OCR sentences provide ingredient, benefit, usage, review, or full-ingredient evidence");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.eeat)?.content)
+      .toContain("Trust-First Claim Safety");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.cep)?.content)
+      .toContain("CEP Identification and Prioritization");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.geoResearch)?.content)
+      .toContain("Research-Backed GEO Principles");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.geoResearch)?.content)
+      .toContain("evidence-role classification and source-grounded regeneration");
   });
 
   it("builds retrieval queries for review-led FAQ intent and public wording constraints", () => {
@@ -75,6 +92,7 @@ describe("readPdpGeoGeneratorRagProfile", () => {
     );
 
     expect(defaultPdpGeoGeneratorRagProfile.analysisPrompt).toContain("diverse product keywords");
+    expect(defaultPdpGeoGeneratorRagProfile.analysisPrompt).toContain("typed RAG index");
     expect(defaultPdpGeoGeneratorRagProfile.analysisPrompt).toContain("classified OCR sentences");
     expect(bestPractice?.content).toContain("Public Wording Guardrails");
     expect(bestPractice?.content).toContain("Schema.org + GEO Description Direction");
@@ -84,6 +102,50 @@ describe("readPdpGeoGeneratorRagProfile", () => {
     expect(bestPractice?.content).toContain("Do not reuse the same text for WebPage.description and Product.description");
     expect(bestPractice?.content).toContain("Korean Reference Artifact Usage");
     expect(bestPractice?.content).toContain("Cross-Product Benchmarking Guidance");
+
+    expect(defaultPdpGeoGeneratorRagProfile.documents.find(
+      (document) => document.name === pdpGeoGeneratorRagManifest.documents.eeat
+    )?.content).toContain("Trust-First Claim Safety");
+    expect(defaultPdpGeoGeneratorRagProfile.documents.find(
+      (document) => document.name === pdpGeoGeneratorRagManifest.documents.cep
+    )?.content).toContain("CEP Identification and Prioritization");
+    expect(defaultPdpGeoGeneratorRagProfile.documents.find(
+      (document) => document.name === pdpGeoGeneratorRagManifest.documents.geoResearch
+    )?.content).toContain("Research-Backed GEO Principles");
+    expect(pdpGeoRagIndex.find((entry) => entry.document === pdpGeoGeneratorRagManifest.documents.geoResearch)?.sections)
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ heading: "Retrieval and Query Planning" })
+      ]));
+  });
+
+  it("creates targeted subqueries for partial FAQ and HowTo updates", () => {
+    const product = {
+      name: "Reference Serum",
+      benefits: ["hydration"],
+      effects: [],
+      ingredients: ["Niacinamide"],
+      usage: ["Apply after toner."],
+      metrics: [],
+      faq: [],
+      reviews: {
+        keywords: ["lightweight texture"],
+        items: []
+      },
+      images: [],
+      options: [],
+      breadcrumbs: [],
+      sourceTexts: []
+    };
+    const plan = createPdpGeoRagQueryPlan(product, "en-US", "US", {
+      queryPlanning: {
+        enabled: true,
+        updateTargets: ["faq", "howToUse"]
+      }
+    });
+
+    expect(plan.mode).toBe("agentic-subquery-planning");
+    expect(plan.queries.some((query) => query.target === "faq" && query.fieldTargets.includes("FAQPage.mainEntity"))).toBe(true);
+    expect(plan.queries.some((query) => query.target === "howToUse" && query.fieldTargets.includes("HowTo.step"))).toBe(true);
   });
 
   it("splits long reference artifacts into bounded local RAG chunks", async () => {
@@ -171,6 +233,10 @@ describe("readPdpGeoGeneratorRagProfile", () => {
 
     expect(chunks.find((chunk) => chunk.title === "FAQ Generation Rules")?.intents).toContain("faq");
     expect(chunks.find((chunk) => chunk.title === "FAQ Generation Rules")?.fieldTargets).toContain("FAQPage.mainEntity");
+    expect(chunks.find((chunk) => chunk.title === "FAQ Generation Rules")?.metadata.headingPath)
+      .toBe("Custom GEO Playbook > FAQ Generation Rules");
+    expect(chunks.find((chunk) => chunk.title === "FAQ Generation Rules")?.metadata.contextualRetrieval).toBe(true);
+    expect(chunks.find((chunk) => chunk.title === "FAQ Generation Rules")?.metadata.reranker).toBe("local-contextual-hybrid");
     expect(chunks.find((chunk) => chunk.title === "Usage Routine Rules")?.intents).toContain("howTo");
     expect(chunks.find((chunk) => chunk.title === "Usage Routine Rules")?.fieldTargets).toContain("HowTo.step");
     expect(chunks.find((chunk) => chunk.title === "Claim Evidence Rules")?.intents).toContain("claims");

@@ -102,6 +102,69 @@ describe("generatePdpGeo", () => {
     expect(process.every((step) => step.status === "done")).toBe(true);
   });
 
+  it("uses an optional product normalization agent before keyword normalization", async () => {
+    const { result } = await generatePdpGeo(
+      {
+        product: {
+          upstreamPayload: {
+            displayLabel: "Agentic Repair Serum",
+            storyLine: "Agentic Repair Serum supports barrier support with Beta Glucan.",
+            activeBlob: "Beta Glucan",
+            benefitCopy: "barrier support",
+            ritualCopy: "Apply after toner."
+          }
+        },
+        source: {
+          type: "rest-api",
+          url: "https://example.com/products/agentic-repair-serum"
+        },
+        hints: {
+          locale: "en-US",
+          market: "US"
+        }
+      },
+      {
+        customProductNormalizer: {
+          async normalizeProduct(request) {
+            expect(request.bootstrapProduct.name).toBe("Untitled product");
+            expect(request.analysisPrompt).toContain("typed RAG index");
+            expect(request.ragDocuments.some((document) => document.name === "schema-org-product_v1.md")).toBe(true);
+            return {
+              product: {
+                name: "Agentic Repair Serum",
+                description: "Agentic Repair Serum supports barrier support with Beta Glucan.",
+                ingredients: ["Beta Glucan"],
+                benefits: ["barrier support"],
+                usage: ["Apply after toner."],
+                sourceTexts: [
+                  "Agentic Repair Serum supports barrier support with Beta Glucan.",
+                  "Apply after toner."
+                ]
+              },
+              usage: {
+                inputTokens: 30,
+                outputTokens: 20,
+                totalTokens: 50
+              }
+            };
+          }
+        }
+      }
+    );
+
+    const finalStep = result.diagnostics.runtimeUsage?.steps.find((step) => step.stage === "final");
+
+    expect(result.content.sections.productName).toBe("Agentic Repair Serum");
+    expect(result.diagnostics.normalizedProduct.name).toBe("Agentic Repair Serum");
+    expect(result.diagnostics.normalizedProduct.ingredients).toContain("Beta Glucan");
+    expect(result.diagnostics.normalizedProduct.benefits).toContain("barrier support");
+    expect(result.diagnostics.evidence.some((item) => item.field === "product.normalization" && item.source === "llm")).toBe(true);
+    expect(finalStep?.called).toBe(true);
+    expect(finalStep?.tokenUsage?.totalTokens).toBe(50);
+    expect(finalStep?.details).toContain("product signal normalization");
+    expect(result.diagnostics.runtimeUsage?.tokenTotals.totalTokens).toBe(50);
+  });
+
   it("applies Japanese locale terminology and avoids unsupported wording", async () => {
     const { result } = await generatePdpGeo({
       product: {
@@ -187,6 +250,141 @@ describe("generatePdpGeo", () => {
     expect(result.content.sections.description).not.toContain("PDP name");
   });
 
+  it("keeps HowTo usage scoped to the current product when extractor text includes related ritual products", async () => {
+    const { result } = await generatePdpGeo({
+      product: {
+        geoProduct: {
+          name: "Gentle Cleansing Foam",
+          description: "A soft lathering cleanser for clean, hydrated-feeling skin.",
+          brand: "Sulwhasoo",
+          category: "Cleansing Foam",
+          benefits: ["hydration", "removes impurities"],
+          ingredients: ["Hydro-cleansing formula"],
+          usage: [
+            "Step 1 Dispense 2-3 pumps of GENTLE CLEASING OIL onto dry hands and gently massage onto dry face.",
+            "Gently massage with a rolling motion and melt makeup away.",
+            "Step 2 Dispense a dime-sized amount of GENTLE CLEANSING FOAM onto wet palms and lather with water.",
+            "Massage foam onto face and rinse with lukewarm water."
+          ],
+          reviews: {
+            keywords: ["gentle", "clean"],
+            items: []
+          }
+        }
+      },
+      source: {
+        type: "pdp-extractor",
+        url: "https://example.com/products/gentle-cleansing-foam"
+      },
+      hints: {
+        locale: "en-US",
+        market: "US"
+      }
+    });
+
+    const serialized = JSON.stringify(result.schemaMarkup.jsonLd);
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
+    const howToText = JSON.stringify(howTo.step);
+
+    expect(serialized).not.toMatch(/gentle cleas?ing oil/i);
+    expect(howToText).toMatch(/gentle cleansing foam|massage foam/i);
+    expect(result.content.sections.howToUse).not.toMatch(/gentle cleas?ing oil/i);
+    expect(result.content.sections.howToUse).not.toMatch(/melt makeup/i);
+    expect(result.diagnostics.normalizedProduct.usage.join("\n")).not.toMatch(/gentle cleas?ing oil/i);
+    expect(result.diagnostics.normalizedProduct.usage.join("\n")).not.toMatch(/melt makeup/i);
+  });
+
+  it("scopes usage generically instead of relying on a cleansing-oil-specific blocklist", async () => {
+    const { result } = await generatePdpGeo({
+      product: {
+        geoProduct: {
+          name: "Hydra Barrier Cream",
+          description: "A daily cream for dry skin and moisture barrier support.",
+          brand: "Agentic Beauty",
+          category: "Cream",
+          benefits: ["hydration", "barrier support"],
+          ingredients: ["Ceramide", "Niacinamide"],
+          usage: [
+            "Apply Brightening Serum to clean skin.",
+            "Massage until absorbed.",
+            "Apply Hydra Barrier Cream as the final moisturizing step.",
+            "Pat gently until absorbed."
+          ],
+          reviews: {
+            keywords: ["hydrating", "comfortable"],
+            items: []
+          }
+        }
+      },
+      source: {
+        type: "manual-json",
+        url: "https://example.com/products/hydra-barrier-cream"
+      },
+      hints: {
+        locale: "en-US",
+        market: "US"
+      }
+    });
+
+    const serialized = JSON.stringify(result.schemaMarkup.jsonLd);
+    const usage = result.diagnostics.normalizedProduct.usage.join("\n");
+
+    expect(serialized).not.toMatch(/brightening serum/i);
+    expect(usage).not.toMatch(/brightening serum|massage until absorbed/i);
+    expect(result.content.sections.howToUse).toMatch(/hydra barrier cream|final moisturizing step|pat gently/i);
+  });
+
+  it("routes field evidence by RAG contract without product-specific cleanup rules", async () => {
+    const { result } = await generatePdpGeo({
+      product: {
+        geoProduct: {
+          name: "Revive Balance Lotion EX",
+          description: "A lightweight lotion for hydration, comfort, and smooth-feeling skin.",
+          brand: "Example Beauty",
+          category: "Lotion",
+          benefits: ["hydration", "comfort", "smooth texture"],
+          effects: [
+            "After toning, Revive Balance Lotion EX delivers 24-hour hydration, helping skin feel soft and balanced. Instrumental test on 33 participants.",
+            "96% agreed skin felt moisturized for longer after daily use."
+          ],
+          ingredients: [
+            "Botanical Complex: A formula technology described as supporting comfort and moisture.",
+            "Ingredients: WATER / AQUA / EAU, GLYCERIN, BUTYLENE GLYCOL, PANTHENOL, CAMELLIA SINENSIS LEAF EXTRACT"
+          ],
+          usage: [
+            "After toner, apply 2 pumps of Revive Balance Lotion EX to face and neck morning and night.",
+            "After toning, Revive Balance Lotion EX delivers 24-hour hydration, helping skin feel soft and balanced. Instrumental test on 33 participants."
+          ],
+          reviews: {
+            keywords: ["smooth", "comfortable", "hydrating"],
+            items: []
+          }
+        }
+      },
+      source: {
+        type: "manual-json",
+        url: "https://example.com/products/revive-balance-lotion-ex"
+      },
+      hints: {
+        locale: "en-US",
+        market: "US"
+      }
+    });
+
+    const serialized = JSON.stringify(result.schemaMarkup.jsonLd);
+    const normalizedUsage = result.diagnostics.normalizedProduct.usage.join("\n");
+
+    expect(normalizedUsage).toContain("apply 2 pumps");
+    expect(normalizedUsage).not.toMatch(/delivers 24-hour hydration|Instrumental test|agreed skin felt/i);
+    expect(result.content.sections.howToUse).toContain("apply 2 pumps");
+    expect(result.content.sections.howToUse).not.toMatch(/delivers 24-hour hydration|Instrumental test|agreed skin felt/i);
+    expect(result.content.sections.ingredients).toMatch(/Botanical Complex|Full ingredients/i);
+    expect(result.content.sections.ingredients).not.toMatch(/customer-described|review language|routine fit|usage guidance|delivers 24-hour hydration|Instrumental test/i);
+    expect(result.content.sections.benefits).not.toMatch(/Instrumental test|routine fit|review language around/i);
+    expect(serialized).not.toMatch(/routine fit|review language around|Product details add/i);
+  });
+
   it("does not append benefit or conflicting category terms to a product name that already has a product type", async () => {
     const { result } = await generatePdpGeo({
       product: {
@@ -244,13 +442,14 @@ describe("generatePdpGeo", () => {
     const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
     const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
     const webPage = graph.find((node) => node["@type"] === "WebPage") as Record<string, any>;
+    const serialized = JSON.stringify(result);
 
     expect(result.content.sections.productName).toBe("Gentle Cleansing Foam");
     expect(product.name).toBe("Gentle Cleansing Foam");
     expect(product.description).toContain("Gentle Cleansing Foam is a cleanser");
     expect(product.description).toContain("hydro-cleansing formula");
     expect(product.description).toContain("hydrated");
-    expect(product.description).toContain("Reported results come from an assessment of 30 women");
+    expect(product.description).toContain("Reported assessment of 30 women evidence covers");
     expect(product.description).not.toContain("is a product");
     expect(product.description).not.toMatch(/hydratedMulberry|:Helps|Formula details state that/i);
     expect(product.description).not.toMatch(/\bBenefits\b/);
@@ -262,10 +461,15 @@ describe("generatePdpGeo", () => {
     expect(webPage.description).toContain("summarizes specific product facts");
     expect(webPage.description).toContain("about the cleanser for customers");
     expect(webPage.description).toContain("hydro-cleansing formula");
-    expect(webPage.description).toContain("96% of participants agreed that foam felt gentle without irritation");
+    expect(webPage.description).toContain("product-detail evidence about foam gentleness");
     expect(webPage.description).not.toMatch(/customers concerned with dryness evaluating|hydratedMulberry|:Helps/i);
     expect(webPage.description).not.toMatch(/\bBenefits\b/);
-    const serialized = JSON.stringify(result);
+    expect(result.content.sections.quickFacts).toContain("Consumer assessment");
+    expect(result.content.sections.benefits).not.toMatch(/96%|86%|83%|1based|Product details add In/i);
+    expect(JSON.stringify({ schemaMarkup: result.schemaMarkup, content: result.content })).not.toMatch(/1based|Product details pair In|Product details include In|Product details add In/i);
+    expect((product.additionalProperty as Array<Record<string, any>>).some((item) =>
+      item.name === "Reported details" && String(item.value).includes("96%")
+    )).toBe(true);
     expect(JSON.stringify(result.schemaMarkup.jsonLd)).not.toContain("Gentle Cleansing Foam hydration Serum");
     expect(serialized).not.toMatch(/product shot|pack shot|travel sized serum|model applying product|person applying|with text|in the corner|Concentrated Ginseng Rejuvenating Serum Mini|Concentrated Ginseng Rejuvenating Cream Rich/i);
     expect(result.diagnostics.normalizedProduct.sourceTexts.join("\n")).not.toMatch(/product shot|pack shot|model applying product|person applying|with text|in the corner/i);
@@ -511,6 +715,139 @@ describe("generatePdpGeo", () => {
     expect(payload.strategicExposureGuidance.map((item: Record<string, unknown>) => item.kind)).toEqual(["geo-research", "cep", "eeat"]);
   });
 
+  it("selects package GEO, CEP, and E-E-A-T RAG chunks during generation", async () => {
+    let capturedBody: Record<string, any> | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      capturedBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, any>;
+      return new Response(JSON.stringify({
+        output_text: JSON.stringify({
+          schemaDescriptions: {
+            product: "Hydra Barrier Serum is a serum for dry-feeling skin that highlights barrier support, niacinamide, ceramide, and morning-and-night use.",
+            webPage: "This Hydra Barrier Serum page summarizes barrier support, niacinamide, ceramide, usage, and review language for comparison-ready product evaluation."
+          },
+          contentSections: {
+            description: "Hydra Barrier Serum is a serum for dry-feeling skin with niacinamide, ceramide, and lightweight review language."
+          },
+          warnings: []
+        }),
+        usage: {
+          input_tokens: 10,
+          output_tokens: 5,
+          total_tokens: 15
+        }
+      }), { status: 200 });
+    }));
+
+    try {
+      const { result } = await generatePdpGeo({
+        source: {
+          type: "manual-json",
+          url: "https://example.com/hydra-barrier-serum"
+        },
+        hints: {
+          locale: "en-US",
+          market: "US",
+          updateTargets: ["faq", "howToUse"]
+        },
+        product: {
+          name: "Hydra Barrier Serum",
+          brand: "Example Beauty",
+          category: "Skincare Serum",
+          description: "A lightweight serum for dry-feeling skin and barrier support.",
+          benefits: ["hydration", "skin barrier support"],
+          ingredients: ["Niacinamide", "Ceramide"],
+          usage: ["Apply morning and night after toner."],
+          reviews: {
+            keywords: ["lightweight", "absorbs quickly", "comfortable for dry-feeling skin"],
+            items: [{ body: "It absorbs quickly and feels lightweight after toner.", rating: 5 }]
+          }
+        },
+        rag: {
+          maxChunks: 12,
+          scoreThreshold: 0,
+          queryPlanning: {
+            enabled: true,
+            updateTargets: ["faq", "howToUse"]
+          }
+        }
+      }, {
+        provider: "openai",
+        apiKey: "test-key",
+        model: "test-model"
+      });
+
+      const selectedKinds = result.diagnostics.selectedRagChunks.map((chunk) => chunk.kind);
+      const payload = JSON.parse(String(capturedBody?.input ?? "{}")) as Record<string, any>;
+      const strategicKinds = payload.strategicExposureGuidance.map((item: Record<string, unknown>) => item.kind);
+      const hydratedKinds = result.diagnostics.hydratedRagDocuments?.map((document) => document.kind);
+      const fullDocumentKinds = payload.strategicFullDocuments.map((item: Record<string, unknown>) => item.kind);
+
+      expect(result.diagnostics.ragQueryPlan?.mode).toBe("agentic-subquery-planning");
+      expect(result.diagnostics.ragQueryPlan?.queries.map((query) => query.target)).toEqual(expect.arrayContaining(["faq", "howToUse"]));
+      expect(selectedKinds).toEqual(expect.arrayContaining(["geo-research", "cep", "eeat"]));
+      expect(strategicKinds).toEqual(expect.arrayContaining(["geo-research", "cep", "eeat"]));
+      expect(hydratedKinds).toEqual(expect.arrayContaining(["geo-research", "cep", "eeat"]));
+      expect(fullDocumentKinds).toEqual(expect.arrayContaining(["geo-research", "cep", "eeat"]));
+      expect(payload.strategicFullDocuments.find((item: Record<string, unknown>) => item.kind === "eeat")?.content)
+        .toContain("Trust-First Claim Safety");
+      expect(payload.strategicFullDocuments.find((item: Record<string, unknown>) => item.kind === "cep")?.content)
+        .toContain("CEP Identification and Prioritization");
+      expect(payload.strategicFullDocuments.find((item: Record<string, unknown>) => item.kind === "geo-research")?.content)
+        .toContain("Research-Backed GEO Principles");
+      expect(payload.hydrationPolicy).toEqual(expect.arrayContaining([
+        expect.stringContaining("Selected chunks are the highest-priority")
+      ]));
+      expect(result.diagnostics.evidence.some((item) => item.field === "copy.refinement" && item.value.includes("GEO research, CEP, and E-E-A-T"))).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps GEO, CEP, and E-E-A-T coverage under single-query retrieval with eight final chunks", async () => {
+    const { result } = await generatePdpGeo({
+      source: {
+        type: "manual-json",
+        url: "https://example.com/products/gentle-cleansing-foam"
+      },
+      hints: {
+        locale: "en-US",
+        market: "US"
+      },
+      product: {
+        name: "Gentle Cleansing Foam",
+        brand: "Sulwhasoo",
+        category: "Cleansing Foam",
+        description: "A soft lathering cleanser for clean, hydrated-feeling skin.",
+        benefits: ["hydration", "removes impurities"],
+        ingredients: ["Hydro-cleansing formula"],
+        usage: ["Lather with water, massage onto damp skin, and rinse with lukewarm water."],
+        reviews: {
+          keywords: [],
+          items: []
+        }
+      },
+      rag: {
+        maxChunks: 8,
+        scoreThreshold: 0
+      }
+    });
+
+    const selectedKinds = result.diagnostics.selectedRagChunks.map((chunk) => chunk.kind);
+    const hydratedKinds = result.diagnostics.hydratedRagDocuments?.map((document) => document.kind);
+    const reasoningSources = result.diagnostics.reasoning?.decisions.flatMap((decision) => decision.ragSources) ?? [];
+
+    expect(result.diagnostics.ragQueryPlan?.mode).toBe("single-query");
+    expect(selectedKinds).toEqual(expect.arrayContaining(["geo-research", "cep", "eeat"]));
+    expect(hydratedKinds).toEqual(expect.arrayContaining(["geo-research", "cep", "eeat"]));
+    expect(reasoningSources).toEqual(expect.arrayContaining([
+      expect.stringContaining("geo-research"),
+      expect.stringContaining("cep"),
+      expect.stringContaining("eeat")
+    ]));
+    expect(result.diagnostics.runtimeUsage?.steps.find((step) => step.stage === "reranking")?.details)
+      .toContain("contextual hybrid reranking");
+  });
+
   it("uses OCR sentence insights to enrich effect, ingredient, full ingredient, and schema notes", async () => {
     const { result } = await generatePdpGeo({
       product: {
@@ -751,7 +1088,7 @@ describe("generatePdpGeo", () => {
             content: [
               "# GEO Answer Composition",
               "",
-              "- Compose benefit statements from target customer, benefit, ingredient or technology, routine fit, review signal, and evidence.",
+              "- Compose benefit statements from target customer, benefit, ingredient or technology, usage context, review signal, and evidence.",
               "- If OCR evidence is not present, use existing mapped product facts, selected RAG chunks, and customer review language to keep descriptions, benefits, HowTo, and FAQ varied."
             ].join("\n")
           }
@@ -808,7 +1145,7 @@ describe("generatePdpGeo", () => {
               "# GEO Answer Composition",
               "",
               "- Reconstruct PDP content into answer-ready FAQ and stepwise HowTo sections.",
-              "- Compose benefit statements from target customer, core benefit, ingredient or technology, routine fit, review signal, and evidence.",
+              "- Compose benefit statements from target customer, core benefit, ingredient or technology, usage context, review signal, and evidence.",
               "- Keep claims grounded in source facts and make generated answers easy to synthesize."
             ].join("\n")
           }
@@ -822,8 +1159,8 @@ describe("generatePdpGeo", () => {
     const serialized = JSON.stringify(result.schemaMarkup.jsonLd);
 
     expect(result.content.sections.howToUse).toContain("Apply morning and night after serum");
-    expect(result.content.sections.howToUse).toContain("hydration");
-    expect(result.content.sections.howToUse.trim()).not.toBe("1. Apply morning and night after serum.");
+    expect(result.content.sections.howToUse).not.toContain("hydration");
+    expect(result.content.sections.howToUse.trim()).toBe("1. Apply morning and night after serum");
     expect(result.content.sections.faq).toContain("How should Ginseng Barrier Serum be used?");
     expect(result.content.sections.faq).toContain("What do customer reviews highlight about Ginseng Barrier Serum?");
     expect(result.content.sections.faq).toContain("Niacinamide");
@@ -835,7 +1172,7 @@ describe("generatePdpGeo", () => {
     expect(serialized).not.toMatch(/Evidence signal|Review signals|technology signals|main benefit signal|benefit terms|ingredient context|use-feel comparison|product discovery context|Product detail context|comparison intent|comparison-led|texture language|use-feel language|benefit language|ingredient terms|ingredient and technology term|product benefit term/i);
     expect(result.content.sections.faq).not.toContain("Can I use it daily?");
     expect(result.content.sections.faq).not.toContain("A. Apply morning and night after serum.");
-    expect(howTo.step[0].text).toContain("hydration");
+    expect(howTo.step[0].text).toBe("Apply morning and night after serum");
     expect(howTo.step[0].name).toBe("Step 1");
     expect(faq.mainEntity.some((item: any) => item.name === "How should Ginseng Barrier Serum be used?")).toBe(true);
     expect(faq.mainEntity.some((item: any) => item.name === "Can I use it daily?")).toBe(false);
@@ -957,14 +1294,12 @@ describe("generatePdpGeo", () => {
     const additionalProperties = new Map(product.additionalProperty.map((item: any) => [item.name, item.value]));
     const positiveNotes = product.positiveNotes.itemListElement.map((item: any) => item.name);
 
-    expect(webPage.description).toContain("In a self-assessment of 32 women after 6 weeks of use");
-    expect(webPage.description).toContain("100% of participants agreed that skin felt firmer and more elastic");
-    expect(webPage.description).toContain("93% of participants agreed that fine lines and wrinkles felt diminished");
+    expect(webPage.description).toContain("product-detail evidence about firmness and visible-aging care");
     expect(product.description).toContain("Korean Ginseng Actives (Ginsenomics), a patented ingredient described as amplifying rare ginseng compounds");
     expect(product.description).toContain("Ginseng Peptide, described as supporting the look of skin firmness and elasticity");
     expect(product.description).toContain("Use it morning and night after toner");
     expect(product.description).toContain("Customer reviews mention smooth and firmness, which supports the product's texture");
-    expect(product.description).toContain("Reported results come from a self-assessment of 32 women after 6 weeks of use");
+    expect(product.description).toContain("Reported self-assessment of 32 women after 6 weeks of use evidence covers firmness and visible-aging care");
     expect(product.description).not.toContain("Reported product details include In a");
     expect(product.description).not.toContain("product page");
     expect(product.description).not.toContain("…");
@@ -1231,5 +1566,119 @@ describe("generatePdpGeo", () => {
     expect(repaired.validationRepairs.some((repair) => repair.field === "content.sections.description" && String(repair.before).includes("수분감를") && String(repair.after).includes("수분감을"))).toBe(true);
     expect(repaired.validationRepairs.some((repair) => repair.field === "content.html" && String(repair.before).includes("<script>") && String(repair.after).includes("geo-content-accordion"))).toBe(true);
     expect(repaired.validationRepairs.some((repair) => repair.field === "Product.additionalProperty" && JSON.stringify(repair.before).includes("Reported details") && repair.after === null)).toBe(true);
+  });
+
+  it("validates field evidence contracts after generation without product-specific blocks", () => {
+    const repaired = validateAndRepairPdpGeoArtifacts({
+      locale: "en-US",
+      fallbackProductName: "Adaptive Barrier Cream",
+      fallbackDescription: "Adaptive Barrier Cream supports barrier care and hydration.",
+      schemaMarkup: {
+        jsonLd: {
+          "@context": "https://schema.org",
+          "@graph": [
+            {
+              "@type": "Product",
+              name: "Adaptive Barrier Cream",
+              description: "Adaptive Barrier Cream supports barrier care and hydration."
+            },
+            {
+              "@type": "HowTo",
+              name: "How to use Adaptive Barrier Cream",
+              step: [
+                {
+                  "@type": "HowToStep",
+                  position: 1,
+                  text: "Adaptive Barrier Cream improves hydration by 96% in a 33 participant instrumental test."
+                },
+                {
+                  "@type": "HowToStep",
+                  position: 2,
+                  text: "Apply a thin layer to clean skin morning and night."
+                }
+              ]
+            }
+          ]
+        },
+        scriptTag: ""
+      },
+      content: {
+        sections: {
+          productName: "Adaptive Barrier Cream",
+          description: "Adaptive Barrier Cream supports barrier care and hydration.",
+          quickFacts: "Key benefit: barrier care",
+          benefits: [
+            "- Barrier support",
+            "- 96% of 33 participants agreed skin looked more hydrated after an instrumental test."
+          ].join("\n"),
+          ingredients: [
+            "- Ceramide complex supports the formula story.",
+            "- review language around smooth, moisturized skin",
+            "- routine fit: Apply after toner."
+          ].join("\n"),
+          howToUse: [
+            "1. Adaptive Barrier Cream improves hydration by 96% in a 33 participant instrumental test.",
+            "2. Apply a thin layer to clean skin morning and night."
+          ].join("\n"),
+          faq: "Q. What does Adaptive Barrier Cream support?\nA. It supports barrier care and hydration."
+        },
+        html: "<div class=\"geo-content-accordion\"></div>"
+      }
+    });
+
+    const graph = repaired.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
+    const howToStepText = JSON.stringify(howTo.step);
+
+    expect(howToStepText).toContain("Apply a thin layer to clean skin morning and night.");
+    expect(howToStepText).not.toMatch(/instrumental test|96%|33 participant/i);
+    expect(repaired.content.sections.howToUse).toContain("Apply a thin layer to clean skin morning and night.");
+    expect(repaired.content.sections.howToUse).not.toMatch(/instrumental test|96%|33 participant/i);
+    expect(repaired.content.sections.ingredients).toContain("Ceramide complex supports the formula story.");
+    expect(repaired.content.sections.ingredients).not.toMatch(/review language around|routine fit|Apply after toner/i);
+    expect(repaired.content.sections.benefits).toContain("Barrier support");
+    expect(repaired.content.sections.benefits).not.toMatch(/instrumental test|96%|33 participant/i);
+    expect(repaired.validationRepairs.some((repair) => repair.source === "field-contract-validator" && repair.field === "HowTo.step.text")).toBe(true);
+    expect(repaired.validationRepairs.some((repair) => repair.source === "field-contract-validator" && repair.field === "content.sections.howToUse")).toBe(true);
+    expect(repaired.validationRepairs.some((repair) => repair.source === "field-contract-validator" && repair.field === "content.sections.ingredients")).toBe(true);
+    expect(repaired.validationRepairs.some((repair) => repair.source === "field-contract-validator" && repair.field === "content.sections.benefits")).toBe(true);
+  });
+
+  it("repairs merged FAQ section markers before rebuilding public HTML", () => {
+    const repaired = validateAndRepairPdpGeoArtifacts({
+      locale: "en-US",
+      fallbackProductName: "Gentle Cleansing Foam",
+      fallbackDescription: "Gentle Cleansing Foam is a cleanser for clean, hydrated-feeling skin.",
+      schemaMarkup: {
+        jsonLd: {
+          "@context": "https://schema.org",
+          "@graph": [
+            {
+              "@type": "Product",
+              name: "Gentle Cleansing Foam",
+              description: "Gentle Cleansing Foam is a cleanser for clean, hydrated-feeling skin."
+            }
+          ]
+        },
+        scriptTag: ""
+      },
+      content: {
+        sections: {
+          productName: "Gentle Cleansing Foam",
+          description: "Gentle Cleansing Foam is a cleanser for clean, hydrated-feeling skin.",
+          quickFacts: "Key benefit: hydration",
+          benefits: "- Hydration",
+          ingredients: "- Hydro-cleansing formula",
+          howToUse: "1. Lather with water and massage onto damp skin.",
+          faq: "Q. What does Gentle Cleansing Foam do?\nA. It supports clean, hydrated-feeling skin. Q. How should Gentle Cleansing Foam be used?\nA. 1based on the product detail, lather with water and rinse."
+        },
+        html: "<div class=\"geo-content-accordion\"></div>"
+      }
+    });
+
+    expect(repaired.content.sections.faq).toContain("\n\nQ. How should Gentle Cleansing Foam be used?");
+    expect(repaired.content.sections.faq).toContain("\nA. 1 based on the product detail");
+    expect(repaired.content.html).toContain("How should Gentle Cleansing Foam be used?");
+    expect(repaired.validationRepairs.some((repair) => repair.field === "content.sections.faq")).toBe(true);
   });
 });

@@ -2,7 +2,7 @@
   "name": "@agentic-geo/geo-generator",
   "author": "jungtaeinn",
   "license": "MIT",
-  "description": "Next.js orchestration console for PDP extraction, GEO schema/content generation, and validation diagnostics.",
+  "description": "Next.js multi-agent orchestration console for PDP extraction, RAG-grounded GEO schema/content generation, and validation diagnostics.",
   "keywords": [
     "agentic-geo",
     "nextjs",
@@ -16,7 +16,7 @@
     "validation"
   ],
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "build": "next build",

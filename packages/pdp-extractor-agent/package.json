@@ -2,7 +2,7 @@
   "name": "@agentic-geo/pdp-extractor-agent",
   "author": "jungtaeinn",
   "license": "MIT",
-  "description": "Reusable PDP extraction sub agent for normalizing product pages, REST API data, OCR signals, reviews, FAQ evidence, and GEO RAG chunks.",
+  "description": "Reusable PDP extraction agent for turning product pages, REST API payloads, OCR signals, reviews, and FAQ evidence into GEO-ready product intelligence.",
   "keywords": [
     "agentic-geo",
     "pdp-extractor-agent",
@@ -15,7 +15,7 @@
     "geo-raw-json"
   ],
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

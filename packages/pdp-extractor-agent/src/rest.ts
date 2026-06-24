@@ -13,11 +13,12 @@ export interface ProductExtractorRestRequest {
   sources?: string[];
   sourceType?: ProductExtractionInput["sourceType"];
   headers?: Record<string, string>;
-  llm?: Partial<Pick<ProductExtractorRestConfig, "provider" | "apiKey" | "model" | "endpoint" | "deployment" | "apiVersion">> & {
+  llm?: Partial<Pick<ProductExtractorRestConfig, "provider" | "apiKey" | "model" | "endpoint" | "deployment" | "apiVersion" | "productNormalization">> & {
     deployments?: AzureRoleDeployments;
     embedding?: EmbeddingRuntimeConfig;
     reranker?: RerankerRuntimeConfig;
   };
+  productNormalization?: ProductExtractorRestConfig["productNormalization"];
   rag?: {
     analysisPrompt?: string;
     documents?: Array<{
@@ -54,6 +55,13 @@ export function createProductExtractorRestHandler(config: ProductExtractorRestCo
       const runtimeConfig = {
         ...config,
         ...body.llm,
+        productNormalization: config.productNormalization || body.productNormalization || body.llm?.productNormalization
+          ? {
+              ...config.productNormalization,
+              ...body.llm?.productNormalization,
+              ...body.productNormalization
+            }
+          : undefined,
         analysisPrompt: body.rag?.analysisPrompt ?? config.analysisPrompt,
         ragDocuments: body.rag?.documents ?? config.ragDocuments,
         rag: body.rag?.retrieval ?? config.rag

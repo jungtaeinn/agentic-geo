@@ -219,11 +219,24 @@ function repairGraphNode(
         }, "Invalid HowTo step without text was removed.");
         return [];
       }
+      const repairedText = repairGeneratedText(text, locale, "HowTo.step.text", warnings, repairs);
+      if (!isActionableUsageText(repairedText)) {
+        addRepair(warnings, repairs, {
+          field: "HowTo.step.text",
+          source: "field-contract-validator",
+          issue: "HowTo.step text did not satisfy the RAG field evidence contract for actionable usage directions.",
+          action: "Removed the invalid HowTo step so benefit, evidence, ingredient, or review copy does not appear as a usage action.",
+          before: toJsonValue(item),
+          after: null,
+          evidence: ["RAG Field Evidence Contract", "HowTo.step requires actionable usage evidence"]
+        }, "HowTo step was removed because it was not actionable usage content.");
+        return [];
+      }
       return [{
         "@type": "HowToStep",
         position: numberValue(item.position) ?? index + 1,
         name: stringValue(item.name) ? repairGeneratedText(stringValue(item.name) ?? "", locale, "HowTo.step.name", warnings, repairs) : undefined,
-        text: repairGeneratedText(text, locale, "HowTo.step.text", warnings, repairs)
+        text: repairedText
       }];
     });
   }
@@ -272,15 +285,193 @@ function repairContentSections(
   warnings: string[],
   repairs: PdpGeoValidationRepair[]
 ): PdpGeoContentSections {
-  return {
+  const repairedFaq = repairGeneratedText(sections.faq, locale, "content.sections.faq", warnings, repairs);
+  const repaired = {
     productName: repairGeneratedText(sections.productName, locale, "content.sections.productName", warnings, repairs),
     description: repairGeneratedText(sections.description, locale, "content.sections.description", warnings, repairs),
     quickFacts: repairGeneratedText(sections.quickFacts, locale, "content.sections.quickFacts", warnings, repairs),
     benefits: repairGeneratedText(sections.benefits, locale, "content.sections.benefits", warnings, repairs),
     ingredients: repairGeneratedText(sections.ingredients, locale, "content.sections.ingredients", warnings, repairs),
     howToUse: repairGeneratedText(sections.howToUse, locale, "content.sections.howToUse", warnings, repairs),
-    faq: repairGeneratedText(sections.faq, locale, "content.sections.faq", warnings, repairs)
+    faq: repairFaqSectionText(repairedFaq, locale, warnings, repairs)
   };
+
+  return repairContentFieldContracts(repaired, locale, warnings, repairs);
+}
+
+function repairContentFieldContracts(
+  sections: PdpGeoContentSections,
+  locale: PdpGeoLocale,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[]
+): PdpGeoContentSections {
+  return {
+    ...sections,
+    benefits: repairSectionByFieldContract(sections.benefits, "content.sections.benefits", locale, warnings, repairs),
+    ingredients: repairSectionByFieldContract(sections.ingredients, "content.sections.ingredients", locale, warnings, repairs),
+    howToUse: repairSectionByFieldContract(sections.howToUse, "content.sections.howToUse", locale, warnings, repairs)
+  };
+}
+
+function repairSectionByFieldContract(
+  value: string,
+  field: "content.sections.benefits" | "content.sections.ingredients" | "content.sections.howToUse",
+  locale: PdpGeoLocale,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[]
+): string {
+  const lines = sectionLines(value);
+  if (lines.length === 0) {
+    return value;
+  }
+
+  const kept = lines.filter((line) => isValidSectionLineForField(line, field));
+  if (kept.length === lines.length) {
+    return value;
+  }
+
+  const next = kept.length > 0 ? kept.join("\n") : fieldContractFallback(field, locale);
+  addRepair(warnings, repairs, {
+    field,
+    source: "field-contract-validator",
+    issue: "Public content section contained lines that did not match the RAG field evidence contract.",
+    action: "Removed misrouted lines so usage, ingredient, and benefit content stay separated after generation.",
+    before: value,
+    after: next,
+    evidence: ["RAG Field Evidence Contract", field]
+  }, `Content section ${field} was repaired by field evidence contract validation.`);
+
+  return next;
+}
+
+function sectionLines(value: string): string[] {
+  return value
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function fieldContractFallback(field: string, locale: PdpGeoLocale): string {
+  if (field === "content.sections.howToUse") {
+    return locale === "ko-KR" ? "상품 JSON에서 확인된 사용법 정보가 충분하지 않습니다." : locale === "ja-JP" ? "商品JSONから確認できる使用方法が十分ではありません。" : "The product JSON does not include enough usage instructions.";
+  }
+  if (field === "content.sections.ingredients") {
+    return locale === "ko-KR" ? "상품 JSON에서 확인된 성분 정보가 충분하지 않습니다." : locale === "ja-JP" ? "商品JSONから確認できる成分情報が十分ではありません。" : "The product JSON does not include enough ingredient details.";
+  }
+  return locale === "ko-KR" ? "상품 JSON에서 확인된 효능/혜택 정보가 충분하지 않습니다." : locale === "ja-JP" ? "商品JSONから確認できるベネフィット情報が十分ではありません。" : "The product JSON does not include enough benefit details.";
+}
+
+function isValidSectionLineForField(line: string, field: string): boolean {
+  const text = stripListMarker(line);
+  if (!text || isFallbackSectionLine(text)) {
+    return true;
+  }
+  if (hasInternalFieldLabel(text)) {
+    return false;
+  }
+  if (field === "content.sections.howToUse") {
+    return isActionableUsageText(text);
+  }
+  if (field === "content.sections.ingredients") {
+    return isIngredientEvidenceText(text) && !isMisroutedIngredientContext(text);
+  }
+  if (field === "content.sections.benefits") {
+    return !isRawMetricEvidenceText(text);
+  }
+  return true;
+}
+
+function stripListMarker(value: string): string {
+  return value
+    .replace(/^\s*[-*]\s*/, "")
+    .replace(/^\s*\d+[.)]\s*/, "")
+    .replace(/^\s*(?:Q|A)[.:]\s*/i, "")
+    .trim();
+}
+
+function isFallbackSectionLine(value: string): boolean {
+  return /does not include enough|정보가 충분하지 않습니다|情報.*十分ではありません/i.test(value);
+}
+
+function hasInternalFieldLabel(value: string): boolean {
+  return /\b(?:routine fit|review language around|product details add|product detail context|evidence signal|review signals|technology signals|search intent context|comparison cues include|ingredient context|benefit terms|use-feel language|product discovery context)\b/i.test(value);
+}
+
+function isActionableUsageText(value: string): boolean {
+  const text = stripListMarker(value);
+  if (isEvidenceOnlyUsageText(text)) {
+    return false;
+  }
+  return hasUsageActionVerb(text);
+}
+
+function isEvidenceOnlyUsageText(value: string): boolean {
+  const text = value.trim();
+  const looksLikeEvidence = isRawMetricEvidenceText(text)
+    || /\b(?:delivers?|helps?|supports?|improves?|boosts?|strengthens?|leaves?|leaving|visible|visibly|clinical|instrumental|self[-\s]?assessment|test(?:ed)?|agreed|showed)\b/i.test(text);
+
+  return looksLikeEvidence && !hasUsageActionVerb(text);
+}
+
+function hasUsageActionVerb(value: string): boolean {
+  return /\b(?:apply|dispense|massage|lather|rinse|pat|press|spread|smooth|warm|take|pump)\b|사용|도포|바르|바릅|펴\s*바르|펴\s*바릅|흡수|마사지|なじませ|塗布|使(?:う|い)/i.test(value)
+    || /^\s*use\b/i.test(value)
+    || /(?:^|[.;,]\s*)then\s+use\b/i.test(value)
+    || /\buse\s+(?:morning|night|daily|twice|once|after|before|as|with|on|to)\b/i.test(value);
+}
+
+function isIngredientEvidenceText(value: string): boolean {
+  const text = value.trim();
+  if (/^(?:full\s+)?ingredients?\s*:/i.test(text) || /^(?:전성분|全成分)\s*:/i.test(text)) {
+    return true;
+  }
+  if (/\b(?:ingredient|formula|technology|complex|extract|acid|oil|peptide|blend|capsule|ferment|filtrate|root|leaf|seed|flower|fruit|water\s*\/\s*aqua|aqua|glycerin|glycol|panthenol|retinol|niacinamide|ceramide|hyaluronic|zinc)\b/i.test(text)) {
+    return true;
+  }
+  if (/(?:성분|전성분|추출물|오일|펩타이드|레티놀|나이아신아마이드|세라마이드|히알루론산|징크|판테놀|成分|エキス|レチノール|セラミド)/i.test(text)) {
+    return true;
+  }
+  return /^[A-Z][\p{L}\p{N}™®-]+(?:\s+[A-Z][\p{L}\p{N}™®-]+){0,4}$/u.test(text);
+}
+
+function isMisroutedIngredientContext(value: string): boolean {
+  const text = value.trim();
+  return /\b(?:customer reviews?|review-backed|review language|routine|usage guidance|how to use|apply|morning|night|search intent|comparison cues|reported details)\b/i.test(text)
+    || (isRawMetricEvidenceText(text) && !/ingredients?|formula|technology|성분|成分/i.test(text));
+}
+
+function isRawMetricEvidenceText(value: string): boolean {
+  const text = value.trim();
+  const hasMetric = /%|\b\d+(?:\.\d+)?\s*(?:weeks?|days?|hours?|users?|participants?|women|men|subjects?|reviews?)\b|임상|인체\s*적용|자가\s*평가|사용자|참여자|대상|clinical|study|self-assess|instrumental|agreed|showed|rating/i.test(text);
+  return hasMetric && text.split(/\s+/).length >= 8;
+}
+
+function repairFaqSectionText(
+  value: string,
+  locale: PdpGeoLocale,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[]
+): string {
+  const next = value
+    .replace(/\b(\d)based\b/gi, "$1 based")
+    .replace(/[ \t]+(Q[.:]\s)/g, "\n\n$1")
+    .replace(/[ \t]+(A[.:]\s)/g, "\n$1")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  if (next !== value.trim()) {
+    addRepair(warnings, repairs, {
+      field: "content.sections.faq",
+      source: "sentence-qa",
+      issue: "FAQ Q/A markers were merged into adjacent answer text or contained spacing artifacts.",
+      action: "Restored Q/A line breaks and normalized answer spacing so FAQ content remains parseable in section HTML.",
+      before: value.trim(),
+      after: next,
+      evidence: ["content.sections.faq", "FAQ Q/A markers", locale]
+    }, "FAQ section structure was repaired during final sentence QA.");
+  }
+
+  return next;
 }
 
 function repairFaqQuestionAnswerAlignment(
@@ -552,11 +743,16 @@ function repairGeneratedText(
 
 function repairEnglishSentenceQuality(value: string): string {
   return value
+    .replace(/\b(\d)\s*based\b/gi, "$1 based")
+    .replace(/,\s*\./g, ".")
+    .replace(/\bProduct details pair In an? ([^.]+?) with key ingredients, visible benefits, texture, comfort, and usage context/gi, "Source-backed product evidence reports an $1")
+    .replace(/\bProduct details include In an? ([^.]+)$/gi, "Source-backed product evidence includes an $1")
+    .replace(/\bProduct details add In an? ([^.]+?) to the formula and care story/gi, "Source-backed product evidence supports the formula and care story through an $1")
     .replace(/The ingredient context of ([^.]+?) anchors the ([^.]+?) around benefit terms such as ([^.]+?), texture language, and use-feel comparison/gi, "$1 appears with $3 in the $2 for formula, texture, and routine comparison")
-    .replace(/(.+?) gives (.+?) ingredient context for (.+?) care, routine fit, and comparison-led product discovery/gi, "$1 helps $2 understand the formula behind $3 care and everyday routine fit")
+    .replace(/(.+?) gives (.+?) ingredient context for (.+?) care, usage context, and comparison-led product discovery/gi, "$1 helps $2 understand the formula behind $3 care and everyday use context")
     .replace(/(.+?) builds a product discovery context around (.+?), blending benefit terms, ingredient terms, texture, and use-feel language/gi, "$1 brings together $2, texture, and comfort details that shoppers look for in a skin-care routine")
-    .replace(/Product detail context adds/gi, "Product details add")
-    .replace(/Product detail context organises/gi, "Product details pair")
+    .replace(/Product detail context adds/gi, "Source-backed product evidence includes")
+    .replace(/Product detail context organises/gi, "Source-backed product evidence organizes")
     .replace(/\bProduct detail context\b/g, "Product details")
     .replace(/\bproduct detail context\b/g, "product details")
     .replace(/\bbenefit terms\b/gi, "visible benefits")

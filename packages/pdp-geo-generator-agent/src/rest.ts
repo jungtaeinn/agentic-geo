@@ -12,7 +12,8 @@ import type {
 export interface PdpGeoGeneratorRestRequest extends Omit<PdpGeoGenerationInput, "product"> {
   product?: unknown;
   products?: unknown[];
-  llm?: Partial<Pick<PdpGeoGeneratorRestConfig, "provider" | "apiKey" | "model" | "endpoint" | "deployment" | "deployments" | "apiVersion" | "embedding" | "reranker" | "copyRefinement">>;
+  llm?: Partial<Pick<PdpGeoGeneratorRestConfig, "provider" | "apiKey" | "model" | "endpoint" | "deployment" | "deployments" | "apiVersion" | "embedding" | "reranker" | "productNormalization" | "copyRefinement">>;
+  productNormalization?: PdpGeoGeneratorRestConfig["productNormalization"];
   keywordNormalization?: PdpGeoGeneratorRestConfig["keywordNormalization"];
   copyRefinement?: PdpGeoGeneratorRestConfig["copyRefinement"];
 }
@@ -42,6 +43,13 @@ export function createPdpGeoGeneratorRestHandler(config: PdpGeoGeneratorRestConf
           ...config.rag,
           ...body.rag
         },
+        productNormalization: config.productNormalization || body.productNormalization || body.llm?.productNormalization
+          ? {
+              ...config.productNormalization,
+              ...body.llm?.productNormalization,
+              ...body.productNormalization
+            }
+          : undefined,
         keywordNormalization: config.keywordNormalization || body.keywordNormalization
           ? {
               ...config.keywordNormalization,

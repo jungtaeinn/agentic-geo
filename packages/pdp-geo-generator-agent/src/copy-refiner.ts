@@ -268,10 +268,14 @@ function createCopyRefinementPrompt(request: PdpGeoCopyRefinementRequest): { sys
       "You are a conservative GEO product-copy reasoning agent for structured PDP schema descriptions.",
       "Return strict JSON only: {\"schemaDescriptions\":{\"webPage\":\"\",\"product\":\"\"},\"contentSections\":{\"description\":\"\"},\"warnings\":[]}.",
       "Your job is to use GEO research/geo-paper, CEP, and E-E-A-T guidance to identify product facts, keywords, and source-backed phrases that are likely to be useful in AI answer exposure.",
+      "Use selected strategic chunks as the primary task-specific guidance. Use hydrated full RAG documents only as controlled background for missing context, conflict resolution, and policy completeness.",
+      "When guidance conflicts, apply this priority: source product evidence first, E-E-A-T trust and claim safety, schema validity, GEO answer-readiness, then CEP/customer phrasing.",
       "Extract those useful facts from the supplied product evidence only, then combine them into natural public product sentences.",
       "Prioritize concrete facts: product type, target concern or customer entry point, differentiating formula/ingredient, measured effect, usage context, and review-intent language.",
       "Use only the supplied product evidence and strategic RAG guidance. Do not invent claims, ingredients, metrics, study details, prices, awards, or certifications.",
       "Preserve numeric claims, study populations, usage instructions, ingredient names, and product names exactly when they appear in evidence.",
+      "Respect field evidence contracts: HowTo and usage answers may contain only actionable usage directions; ingredient sections may contain only ingredient/formula/full-INCI evidence; benefit sections may contain only outcomes, effects, review-backed positives, or concise evidence topics.",
+      "If a sentence is useful evidence but belongs to a different field, rewrite it only in the correct field and do not move the raw phrase across public fields.",
       "Do not mention the strategy labels in the public copy: no RAG, GEO, geo-paper, CEP, E-E-A-T, schema optimization, citation-ready, OCR, image caption, product shot, pack shot, with text, or in the corner.",
       "Keep the output in the requested locale and make Product.description suitable for schema.org Product.description.",
       "If evidence is insufficient, return the current copy unchanged and explain the limitation in warnings."
@@ -282,9 +286,7 @@ function createCopyRefinementPrompt(request: PdpGeoCopyRefinementRequest): { sys
 
 function createCopyRefinementPayload(request: PdpGeoCopyRefinementRequest): Record<string, unknown> {
   const descriptions = readSchemaDescriptions(request.schemaMarkup.jsonLd);
-  const strategicChunks = request.ragChunks
-    .filter(isStrategicExposureChunk)
-    .slice(0, maxRagChunks);
+  const strategicChunks = selectStrategicRagGuidanceChunks(request.ragChunks, maxRagChunks);
   return {
     task: "Select AI-exposure-worthy product keywords and sentences from productEvidence, guided by GEO research/geo-paper, CEP, and E-E-A-T. Combine only grounded facts into public PDP description copy.",
     locale: request.locale,
@@ -321,6 +323,13 @@ function createCopyRefinementPayload(request: PdpGeoCopyRefinementRequest): Reco
       "Use GEO research guidance to make descriptions answer-ready without exposing internal optimization language."
     ],
     strategicExposureGuidance: strategicChunks.map(formatRagGuidanceChunk),
+    strategicFullDocuments: (request.hydratedRagDocuments ?? []).map(formatHydratedRagDocument),
+    hydrationPolicy: [
+      "Selected chunks are the highest-priority task guidance.",
+      "Hydrated full documents are included to prevent missing policy context and to resolve overlaps.",
+      "Do not apply any hydrated document example or claim unless the productEvidence supports it.",
+      "Do not mention internal strategy labels in public copy."
+    ],
     ragGuidance: request.ragChunks.slice(0, maxRagChunks).map((chunk) => ({
       ...formatRagGuidanceChunk(chunk),
       priority: isStrategicExposureChunk(chunk) ? "strategic" : "supporting"
@@ -502,6 +511,42 @@ function isStrategicExposureChunk(chunk: PdpGeoCopyRefinementRequest["ragChunks"
     || /geo[-_\s]?(research|paper)|generative|cep|customer entry point|e-e-a-t|eeat/i.test(`${chunk.source} ${chunk.title ?? ""}`);
 }
 
+function selectStrategicRagGuidanceChunks(
+  chunks: PdpGeoCopyRefinementRequest["ragChunks"],
+  limit: number
+): PdpGeoCopyRefinementRequest["ragChunks"] {
+  const strategicChunks = chunks.filter(isStrategicExposureChunk);
+  const selected: PdpGeoCopyRefinementRequest["ragChunks"] = [];
+  const selectedKeys = new Set<string>();
+
+  for (const kind of strategicRagKinds) {
+    const candidate = strategicChunks.find((chunk) => chunk.kind === kind);
+    if (!candidate) {
+      continue;
+    }
+    selected.push(candidate);
+    selectedKeys.add(ragGuidanceChunkKey(candidate));
+  }
+
+  for (const chunk of strategicChunks) {
+    if (selected.length >= limit) {
+      break;
+    }
+    const key = ragGuidanceChunkKey(chunk);
+    if (selectedKeys.has(key)) {
+      continue;
+    }
+    selected.push(chunk);
+    selectedKeys.add(key);
+  }
+
+  return selected;
+}
+
+function ragGuidanceChunkKey(chunk: PdpGeoCopyRefinementRequest["ragChunks"][number]): string {
+  return `${chunk.source}:${chunk.title ?? ""}:${chunk.id}`;
+}
+
 function formatRagGuidanceChunk(chunk: PdpGeoCopyRefinementRequest["ragChunks"][number]): Record<string, unknown> {
   return {
     source: chunk.source,
@@ -511,6 +556,17 @@ function formatRagGuidanceChunk(chunk: PdpGeoCopyRefinementRequest["ragChunks"][
     fieldTargets: chunk.fieldTargets ?? [],
     score: chunk.score,
     excerpt: truncate(cleanText(chunk.text), 700)
+  };
+}
+
+function formatHydratedRagDocument(document: NonNullable<PdpGeoCopyRefinementRequest["hydratedRagDocuments"]>[number]): Record<string, unknown> {
+  return {
+    source: document.source,
+    version: document.version,
+    kind: document.kind,
+    hydrationMode: document.hydrationMode,
+    selectedChunkTitles: document.selectedChunkTitles,
+    content: document.content
   };
 }
 

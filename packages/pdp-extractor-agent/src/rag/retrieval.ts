@@ -1,5 +1,9 @@
 import type { EmbeddingRuntimeConfig, RerankerRuntimeConfig } from "../llm/types";
 import type { AiTokenUsage, RuntimePipelineStep } from "../types";
+import {
+  findProductExtractorRagIndexEntry,
+  findProductExtractorRagSectionEntry
+} from "./rag-index";
 
 export interface ProductExtractorRagDocumentInput {
   name: string;
@@ -28,7 +32,45 @@ export interface ProductExtractorRagRetrievedDocument {
   score: number;
   sourceDocument: string;
   chunkId: string;
+  kind: ProductExtractorRagKind;
+  intents: ProductExtractorRagIntent[];
+  fieldTargets: ProductExtractorRagFieldTarget[];
 }
+
+export type ProductExtractorRagKind =
+  | "orchestration"
+  | "analysis-prompt"
+  | "product-normalization"
+  | "ocr-classification"
+  | "review-extraction"
+  | "faq-extraction"
+  | "custom";
+
+export type ProductExtractorRagIntent =
+  | "orchestration"
+  | "normalization"
+  | "classification"
+  | "exclusion"
+  | "evidence"
+  | "review"
+  | "faq"
+  | "schema-ready"
+  | "diagnostics"
+  | "general";
+
+export type ProductExtractorRagFieldTarget =
+  | "geoProduct"
+  | "benefits"
+  | "effects"
+  | "ingredients"
+  | "usage"
+  | "faq"
+  | "reviews"
+  | "metrics"
+  | "ocr.sentenceInsights"
+  | "contentAnalysis.sections"
+  | "rag.chunks"
+  | "diagnostics";
 
 /** Builds an extraction-policy query from product evidence before OCR classification. */
 export function createProductExtractorRagQuery(input: ProductExtractorRagEvidenceInput): string {
@@ -71,12 +113,18 @@ export async function retrieveProductExtractorRagDocuments(input: {
         content: [
           `Retrieved RAG policy chunk from ${chunk.sourceDocument}.`,
           chunk.title ? `Section: ${chunk.title}` : undefined,
+          `Kind: ${chunk.kind}.`,
+          `Intents: ${chunk.intents.join(", ")}.`,
+          `Field targets: ${chunk.fieldTargets.join(", ")}.`,
           chunk.content
         ].filter(Boolean).join("\n"),
         version: chunk.version,
         score: chunk.score,
         sourceDocument: chunk.sourceDocument,
-        chunkId: chunk.id
+        chunkId: chunk.id,
+        kind: chunk.kind,
+        intents: chunk.intents,
+        fieldTargets: chunk.fieldTargets
       };
     })
     .filter((chunk) => chunk.score >= scoreThreshold)
@@ -95,6 +143,9 @@ async function scoreRetrievedChunks(
     content: string;
     version?: string;
     chunkIndex: number;
+    kind: ProductExtractorRagKind;
+    intents: ProductExtractorRagIntent[];
+    fieldTargets: ProductExtractorRagFieldTarget[];
   }>,
   embedding?: EmbeddingRuntimeConfig,
   onRuntimeStep?: (step: RuntimePipelineStep) => void
@@ -105,6 +156,9 @@ async function scoreRetrievedChunks(
   content: string;
   version?: string;
   chunkIndex: number;
+  kind: ProductExtractorRagKind;
+  intents: ProductExtractorRagIntent[];
+  fieldTargets: ProductExtractorRagFieldTarget[];
   score: number;
 }>> {
   const queryTerms = tokenize(query);
@@ -340,12 +394,15 @@ async function retrieveWithAzureAiSearchSemantic(
 
       const sourceDocument = stringField(item, ["sourceDocument", "source", "filename", "title", "id"]) ?? "azure-ai-search";
       const score = numberField(item, ["@search.rerankerScore", "@search.score"]) ?? 0;
+      const kind = kindFromName(sourceDocument);
       return [{
         name: `${sourceDocument}#${index + 1}`,
         content,
         score,
         sourceDocument,
-        chunkId: stringField(item, ["chunkId", "id", "key"]) ?? `azure-ai-search-${index + 1}`
+        chunkId: stringField(item, ["chunkId", "id", "key"]) ?? `azure-ai-search-${index + 1}`,
+        kind,
+        ...inferChunkRouting(kind, sourceDocument, undefined, content)
       }];
     })
     .slice(0, maxChunks);
@@ -385,15 +442,32 @@ function chunkDocument(document: ProductExtractorRagDocumentInput): Array<{
   content: string;
   version?: string;
   chunkIndex: number;
+  kind: ProductExtractorRagKind;
+  intents: ProductExtractorRagIntent[];
+  fieldTargets: ProductExtractorRagFieldTarget[];
 }> {
-  return splitMarkdownSections(document.content).map((section, index) => ({
-    id: `${slug(document.name)}-${index + 1}`,
-    sourceDocument: document.name,
-    title: section.title,
-    content: section.text,
-    version: document.version,
-    chunkIndex: index
-  }));
+  return splitMarkdownSections(document.content).map((section, index) => {
+    const indexedDocument = findProductExtractorRagIndexEntry(document.name);
+    const indexedSection = findProductExtractorRagSectionEntry(document.name, section.title);
+    const kind = indexedDocument?.kind ?? kindFromName(document.name);
+    const inferredRouting = inferChunkRouting(kind, document.name, section.title, section.text);
+    const routing = {
+      intents: indexedSection?.intents ?? indexedDocument?.intents ?? inferredRouting.intents,
+      fieldTargets: indexedSection?.fieldTargets ?? indexedDocument?.fieldTargets ?? inferredRouting.fieldTargets
+    };
+
+    return {
+      id: `${slug(document.name)}-${index + 1}`,
+      sourceDocument: document.name,
+      title: section.title,
+      content: section.text,
+      version: document.version,
+      chunkIndex: index,
+      kind,
+      intents: routing.intents,
+      fieldTargets: routing.fieldTargets
+    };
+  });
 }
 
 function splitMarkdownSections(content: string): Array<{ title?: string; text: string }> {
@@ -449,9 +523,122 @@ function splitLongSection(section: { title?: string; text: string }): Array<{ ti
   return chunks;
 }
 
-function retrievalBoost(chunk: { sourceDocument: string; title?: string; content: string }): number {
+function kindFromName(name: string): ProductExtractorRagKind {
+  if (/orchestrat|manifest|rag-index|rag-map/i.test(name)) {
+    return "orchestration";
+  }
+  if (/analysis-prompt/i.test(name)) {
+    return "analysis-prompt";
+  }
+  if (/product-normalization|normalization/i.test(name)) {
+    return "product-normalization";
+  }
+  if (/ocr|classification|keyword/i.test(name)) {
+    return "ocr-classification";
+  }
+  if (/review/i.test(name)) {
+    return "review-extraction";
+  }
+  if (/faq/i.test(name)) {
+    return "faq-extraction";
+  }
+  return "custom";
+}
+
+function inferChunkRouting(
+  kind: ProductExtractorRagKind,
+  sourceDocument: string,
+  title: string | undefined,
+  content: string
+): { intents: ProductExtractorRagIntent[]; fieldTargets: ProductExtractorRagFieldTarget[] } {
+  const haystack = `${sourceDocument} ${title ?? ""} ${content}`.toLowerCase();
+  const intents = new Set<ProductExtractorRagIntent>();
+  const fieldTargets = new Set<ProductExtractorRagFieldTarget>();
+
+  if (kind === "orchestration" || /orchestration|routing|rag index|rag-index|coverage|conflict|overlap|missing|누락|충돌|중복/.test(haystack)) {
+    intents.add("orchestration");
+    intents.add("diagnostics");
+    fieldTargets.add("diagnostics");
+    fieldTargets.add("rag.chunks");
+  }
+  if (kind === "analysis-prompt" || /analysis prompt|base instruction|evidence-only|근거|정책/.test(haystack)) {
+    intents.add("evidence");
+    intents.add("diagnostics");
+    fieldTargets.add("geoProduct");
+    fieldTargets.add("diagnostics");
+  }
+  if (kind === "product-normalization" || /normalize|normalization|geoProduct|contentAnalysis|section|field|schema-ready|정규화|분류/.test(haystack)) {
+    intents.add("normalization");
+    intents.add("schema-ready");
+    fieldTargets.add("geoProduct");
+    fieldTargets.add("contentAnalysis.sections");
+    fieldTargets.add("rag.chunks");
+  }
+  if (kind === "ocr-classification" || /ocr|sentence|keyword|classification|benefit|effect|ingredient|usage|효능|효과|성분|사용법/.test(haystack)) {
+    intents.add("classification");
+    intents.add("evidence");
+    fieldTargets.add("ocr.sentenceInsights");
+    fieldTargets.add("benefits");
+    fieldTargets.add("effects");
+    fieldTargets.add("ingredients");
+    fieldTargets.add("usage");
+  }
+  if (/exclude|cart|coupon|delivery|refund|legal|chrome|purchase|혜택|배송|교환|반품|환불|법적|장바구니/.test(haystack)) {
+    intents.add("exclusion");
+    fieldTargets.add("diagnostics");
+  }
+  if (kind === "review-extraction" || /review|rating|customer|texture|absorption|satisfaction|리뷰|평점|사용감|흡수감/.test(haystack)) {
+    intents.add("review");
+    intents.add("evidence");
+    fieldTargets.add("reviews");
+  }
+  if (kind === "faq-extraction" || /faq|question|answer|mainentity|q&a|질문|답변/.test(haystack)) {
+    intents.add("faq");
+    intents.add("evidence");
+    fieldTargets.add("faq");
+  }
+  if (/metric|clinical|survey|rating|count|\b\d+(?:\.\d+)?\s?%|임상|수치|만족도/.test(haystack)) {
+    intents.add("evidence");
+    fieldTargets.add("metrics");
+  }
+  if (intents.size === 0) {
+    intents.add("general");
+  }
+  if (fieldTargets.size === 0) {
+    fieldTargets.add("geoProduct");
+  }
+
+  return {
+    intents: Array.from(intents),
+    fieldTargets: Array.from(fieldTargets)
+  };
+}
+
+function retrievalBoost(chunk: {
+  sourceDocument: string;
+  title?: string;
+  content: string;
+  kind: ProductExtractorRagKind;
+  intents: ProductExtractorRagIntent[];
+  fieldTargets: ProductExtractorRagFieldTarget[];
+}): number {
   const text = `${chunk.sourceDocument} ${chunk.title ?? ""} ${chunk.content}`;
+  const indexedDocument = findProductExtractorRagIndexEntry(chunk.sourceDocument);
+  const indexedSection = findProductExtractorRagSectionEntry(chunk.sourceDocument, chunk.title);
   let boost = 0;
+  boost += (indexedSection?.priority ?? indexedDocument?.priority ?? 0) * 0.08;
+  if (chunk.kind === "orchestration" || chunk.intents.includes("orchestration")) {
+    boost += 0.07;
+  }
+  if (chunk.intents.includes("classification") || chunk.fieldTargets.includes("ocr.sentenceInsights")) {
+    boost += 0.06;
+  }
+  if (chunk.intents.includes("normalization") || chunk.fieldTargets.includes("geoProduct")) {
+    boost += 0.04;
+  }
+  if (chunk.intents.includes("exclusion")) {
+    boost += 0.06;
+  }
   if (/ocr|sentence|classification|keyword/i.test(text)) {
     boost += 0.08;
   }

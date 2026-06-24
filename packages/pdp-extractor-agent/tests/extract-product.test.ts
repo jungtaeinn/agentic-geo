@@ -127,6 +127,58 @@ describe("extractProductFromHtml", () => {
     expect(diagnostics.process.find((step) => step.id === "json")?.status).toBe("done");
   });
 
+  it("uses an optional product profile normalization agent before OCR and RAG extraction", async () => {
+    const rawPayload = {
+      upstreamPayload: {
+        displayLabel: "Agentic Repair Serum",
+        storyLine: "Agentic Repair Serum supports moisture barrier hydration with Ceramide.",
+        activeBlob: "Ceramide",
+        benefitCopy: "moisture barrier hydration support",
+        ritualCopy: "Apply after toner."
+      }
+    };
+
+    const { result, diagnostics } = await extractProductFromHtml(
+      JSON.stringify(rawPayload),
+      "https://example.com/products/agentic-repair-serum",
+      {
+        customProductNormalizer: {
+          async normalizeProductProfile(request) {
+            expect(request.bootstrapProduct.name).toBe("Untitled product");
+            expect(request.analysisPrompt).toContain("typed RAG index");
+            expect(request.ragDocuments?.some((document) => document.name === "product-normalization_v1.md")).toBe(true);
+            return {
+              product: {
+                name: "Agentic Repair Serum",
+                description: "Agentic Repair Serum supports moisture barrier hydration with Ceramide.",
+                benefits: ["moisture barrier hydration support"],
+                ingredients: ["Ceramide"],
+                usage: ["Apply after toner."]
+              },
+              usage: {
+                inputTokens: 25,
+                outputTokens: 15,
+                totalTokens: 40
+              }
+            };
+          }
+        }
+      }
+    );
+
+    const normalizationStep = diagnostics.runtimeUsage?.steps.find((step) => step.label === "Product profile normalization/reasoning");
+
+    expect(result.geoProduct.name).toBe("Agentic Repair Serum");
+    expect(result.geoProduct.description).toContain("Ceramide");
+    expect(result.geoProduct.benefits).toContain("moisture barrier hydration support");
+    expect(result.geoProduct.ingredients).toContain("Ceramide");
+    expect(result.geoProduct.usage).toContain("Apply after toner.");
+    expect(diagnostics.evidence.some((item) => item.field === "product.normalization" && item.source === "llm")).toBe(true);
+    expect(normalizationStep?.called).toBe(true);
+    expect(normalizationStep?.tokenUsage?.totalTokens).toBe(40);
+    expect(diagnostics.runtimeUsage?.tokenTotals.totalTokens).toBe(40);
+  });
+
   it("keeps HTML ingredient lists out of OCR sentence diagnostics", async () => {
     const ingredientList = [
       "WATER / AQUA / EAU",

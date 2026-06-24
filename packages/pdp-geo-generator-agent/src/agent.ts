@@ -2,9 +2,10 @@ import { generatePdpGeoArtifacts } from "./generate";
 import { refinePdpGeoCopy } from "./copy-refiner";
 import { normalizeProductReviewKeywords } from "./keyword-normalizer";
 import { normalizePdpProduct } from "./normalize";
+import { normalizePdpProductWithAgent } from "./product-normalizer";
 import { readPdpGeoGeneratorRagProfile } from "./rag/profile";
 import { createPdpGeoReasoning } from "./rag/reasoning";
-import { createPdpGeoRagQuery, resolvePdpGeoRagSettings, retrievePdpGeoRagChunks } from "./rag/retrieval";
+import { createPdpGeoRagQueryPlan, resolvePdpGeoRagSettings, retrievePdpGeoRagChunks } from "./rag/retrieval";
 import { pdpGeoGeneratorRagManifest } from "./rag/manifest";
 import { validateAndRepairPdpGeoArtifacts } from "./validate";
 import {
@@ -15,6 +16,8 @@ import {
   type PdpGeoGenerationStageId,
   type PdpGeoGenerationStep,
   type PdpGeoGeneratorOptions,
+  type PdpGeoHydratedRagDocument,
+  type PdpGeoLocale,
   type PdpGeoRagFieldTarget,
   type PdpGeoRagIntent,
   type PdpGeoRagUsageDiagnostic,
@@ -23,7 +26,8 @@ import {
   type PdpGeoTokenUsage,
   type PdpGeoReasoningPrinciple,
   type PdpGeoReasoningResult,
-  type PdpGeoRetrievedChunk
+  type PdpGeoRetrievedChunk,
+  type PdpProductSignal
 } from "./types";
 
 const pipelineSteps: Array<Pick<PdpGeoGenerationStep, "id" | "title" | "description">> = [
@@ -96,11 +100,45 @@ export async function generatePdpGeo(
   process.done("input", "입력 JSON을 표준 요청으로 검증했습니다.");
 
   process.start("normalize", "상품 JSON 구조를 자동 추론하고 fieldMapping을 적용합니다.");
+  const profile = await readPdpGeoGeneratorRagProfile();
   let normalized = normalizePdpProduct(parsed.product, {
     hints: parsed.hints,
     fieldMapping: parsed.fieldMapping,
     sourceUrl: parsed.source?.url
   });
+  const productNormalizationRagDocuments = mergeRagDocuments([
+    ...profile.documents.map((document) => ({
+      name: document.name,
+      content: document.content,
+      version: document.version
+    })),
+    ...(options.ragDocuments ?? []),
+    ...(parsed.rag?.documents ?? [])
+  ]);
+  const productNormalization = await normalizePdpProductWithAgent(
+    {
+      rawProduct: parsed.product,
+      bootstrapProduct: normalized.product,
+      locale: normalized.locale,
+      market: normalized.market,
+      source: parsed.source,
+      hints: parsed.hints,
+      fieldMapping: parsed.fieldMapping,
+      analysisPrompt: parsed.rag?.analysisPrompt ?? options.analysisPrompt ?? profile.analysisPrompt,
+      ragDocuments: productNormalizationRagDocuments
+    },
+    options
+  );
+  normalized = {
+    ...normalized,
+    product: productNormalization.product,
+    locale: productNormalization.locale,
+    market: productNormalization.market,
+    evidence: [
+      ...normalized.evidence,
+      ...productNormalization.evidence
+    ]
+  };
   const keywordNormalization = await normalizeProductReviewKeywords(
     normalized.product,
     normalized.locale,
@@ -117,13 +155,10 @@ export async function generatePdpGeo(
   };
   process.done(
     "normalize",
-    keywordNormalization.evidence.length > 0
-      ? `${normalized.product.name} 상품 신호를 정규화하고 리뷰 키워드 오타 후보를 보정했습니다.`
-      : `${normalized.product.name} 상품 신호를 정규화했습니다.`
+    createNormalizeStepMessage(normalized.product.name, productNormalization, keywordNormalization.evidence.length > 0)
   );
 
   process.start("rag-load", "패키지 RAG 프로필과 런타임 RAG 문서를 로드합니다.");
-  const profile = await readPdpGeoGeneratorRagProfile();
   const ragSettings = resolvePdpGeoRagSettings({
     ...options.rag,
     ...parsed.rag,
@@ -154,32 +189,71 @@ export async function generatePdpGeo(
   process.start("embed", ragSettings.mode === "managed-vector-store-rag" ? "Managed vector store 임베딩을 사용합니다." : "로컬 hash embedding을 구성합니다.");
   process.done("embed", ragSettings.mode === "managed-vector-store-rag" ? `${ragSettings.provider} 임베딩 검색 모드를 선택했습니다.` : "로컬 provider-neutral embedding을 구성했습니다.");
 
-  process.start("retrieve", "상품, locale, schema target 기반 RAG 검색 쿼리를 생성합니다.");
-  const query = createPdpGeoRagQuery(normalized.product, normalized.locale, normalized.market);
-  const retrieved = await retrievePdpGeoRagChunks(
-    {
-      query,
-      product: normalized.product,
-      locale: normalized.locale,
-      market: normalized.market,
-      documents: ragDocuments,
-      settings: ragSettings
-    },
-    {
-      apiKey: options.apiKey,
-      customRetriever: options.customRetriever,
-      urlResolver: options.customUrlResolver
-    }
+  process.start("retrieve", "상품, locale, schema target 기반 RAG query plan을 생성합니다.");
+  const queryPlan = createPdpGeoRagQueryPlan(
+    normalized.product,
+    normalized.locale,
+    normalized.market,
+    ragSettings,
+    parsed.hints?.updateTargets
   );
-  process.done("retrieve", `${retrieved.length}개 RAG chunk를 검색했습니다.`);
+  const primaryRetrieved = mergeRetrievedRagChunks((await Promise.all(queryPlan.queries.map((subquery) =>
+    retrievePdpGeoRagChunks(
+      {
+        query: subquery.query,
+        product: normalized.product,
+        locale: normalized.locale,
+        market: normalized.market,
+        documents: ragDocuments,
+        settings: createRetrievalCandidateSettings(ragSettings)
+      },
+      {
+        apiKey: options.apiKey,
+        customRetriever: options.customRetriever,
+        urlResolver: options.customUrlResolver
+      }
+    ).then((chunks) => chunks.map((chunk) => ({
+      ...chunk,
+      metadata: {
+        ...chunk.metadata,
+        queryPlanTarget: subquery.target,
+        queryPlanReason: subquery.reason
+      },
+      score: boostChunkForSubquery(chunk, subquery.fieldTargets, subquery.intents)
+    })))
+  ))).flat());
+  const preliminarySelectedRagChunks = selectFinalRagChunks(primaryRetrieved, ragSettings.maxChunks ?? 8);
+  const strategicCoverageChunks = await retrieveStrategicCoverageRagChunks({
+    existingChunks: preliminarySelectedRagChunks,
+    product: normalized.product,
+    locale: normalized.locale,
+    market: normalized.market,
+    documents: ragDocuments,
+    settings: ragSettings,
+    apiKey: options.apiKey,
+    customRetriever: options.customRetriever,
+    urlResolver: options.customUrlResolver
+  });
+  const retrieved = mergeRetrievedRagChunks([
+    ...primaryRetrieved,
+    ...strategicCoverageChunks
+  ]);
+  process.done(
+    "retrieve",
+    queryPlan.mode === "agentic-subquery-planning"
+      ? `${queryPlan.queries.length}개 subquery로 ${retrieved.length}개 RAG chunk를 검색했습니다.`
+      : `${retrieved.length}개 RAG chunk를 검색했습니다.`
+  );
 
   process.start("rerank", "검색된 chunk를 schema/locale/GEO 관련성 기준으로 정렬합니다.");
-  const selectedRagChunks = retrieved.slice(0, ragSettings.maxChunks ?? 8);
+  const selectedRagChunks = selectFinalRagChunks(retrieved, ragSettings.maxChunks ?? 8);
+  const hydratedRagDocuments = hydrateSelectedRagDocuments(selectedRagChunks, ragDocuments, ragSettings);
   const reasoningRequest = {
     product: normalized.product,
     locale: normalized.locale,
     market: normalized.market,
-    ragChunks: selectedRagChunks
+    ragChunks: selectedRagChunks,
+    hydratedRagDocuments
   };
   const reasoning = await (options.customReasoner?.reason(reasoningRequest) ?? createPdpGeoReasoning(reasoningRequest));
   process.done("rerank", `${selectedRagChunks.length}개 chunk를 최종 컨텍스트로 선택하고 ${reasoning.principles.length}개 RAG+상품근거 판단을 구성했습니다.`);
@@ -203,6 +277,7 @@ export async function generatePdpGeo(
       schemaMarkup: generated.schemaMarkup,
       content: generated.content,
       ragChunks: selectedRagChunks,
+      hydratedRagDocuments,
       reasoning
     },
     options
@@ -240,6 +315,8 @@ export async function generatePdpGeo(
   const generatedAt = new Date().toISOString();
   const ragUsage = createRagUsageDiagnostics(selectedRagChunks, reasoning);
   const runtimeUsage = createGeneratorRuntimeUsage(options, ragSettings, {
+    productNormalizationUsage: productNormalization.usage,
+    productNormalizationCalled: productNormalization.called,
     keywordNormalizationUsage: keywordNormalization.usage,
     copyRefinementUsage: copyRefinement.usage,
     copyRefinementCalled: copyRefinement.called,
@@ -261,7 +338,9 @@ export async function generatePdpGeo(
       }))
     ],
     selectedRagChunks,
+    hydratedRagDocuments,
     reasoning,
+    ragQueryPlan: queryPlan,
     ragUsage,
     runtimeUsage,
     terminology: generated.terminology,
@@ -359,10 +438,261 @@ function createRepairStepMessage(repairs: Array<{ field: string; action: string 
   return `${repairs.length}개 보정을 적용했습니다. 첫 보정: ${firstRepair.field} - ${firstRepair.action}`;
 }
 
+function mergeRetrievedRagChunks(chunks: PdpGeoRetrievedChunk[]): PdpGeoRetrievedChunk[] {
+  const merged = new Map<string, PdpGeoRetrievedChunk>();
+  for (const chunk of chunks) {
+    const key = `${chunk.source}:${chunk.title ?? ""}:${chunk.id}`;
+    const current = merged.get(key);
+    if (!current || chunk.score > current.score) {
+      merged.set(key, chunk);
+    }
+  }
+  return Array.from(merged.values()).sort((a, b) => b.score - a.score);
+}
+
+const strategicRagKinds = new Set(["geo-research", "cep", "eeat"]);
+
+const strategicCoverageDocuments = [
+  {
+    kind: "geo-research",
+    document: pdpGeoGeneratorRagManifest.documents.geoResearch,
+    query: "GEO research guidance for answer-ready product facts, schema/content alignment, retrieval and query planning, FAQ and HowTo answerability.",
+    reason: "Ensure GEO research strategy is present when general retrieval ranks operational chunks higher."
+  },
+  {
+    kind: "cep",
+    document: pdpGeoGeneratorRagManifest.documents.cep,
+    query: "Category Entry Point guidance for customer needs, routine moments, review questions, FAQ updates, HowToUse updates, and PDP field mapping.",
+    reason: "Ensure CEP customer-entry strategy is present when general retrieval ranks operational chunks higher."
+  },
+  {
+    kind: "eeat",
+    document: pdpGeoGeneratorRagManifest.documents.eeat,
+    query: "E-E-A-T trust-first claim safety, evidence hierarchy, customer experience, expertise, authoritativeness, and partial update query planning.",
+    reason: "Ensure E-E-A-T claim-safety strategy is present when general retrieval ranks operational chunks higher."
+  }
+] as const;
+
+function createRetrievalCandidateSettings<T extends { maxChunks?: number }>(settings: T): T {
+  return {
+    ...settings,
+    maxChunks: Math.max(settings.maxChunks ?? 8, 24)
+  };
+}
+
+async function retrieveStrategicCoverageRagChunks(input: {
+  existingChunks: PdpGeoRetrievedChunk[];
+  product: PdpProductSignal;
+  locale: PdpGeoLocale;
+  market?: string;
+  documents: Array<{ name: string; content: string; version?: string }>;
+  settings: ReturnType<typeof resolvePdpGeoRagSettings>;
+  apiKey?: PdpGeoGeneratorOptions["apiKey"];
+  customRetriever?: PdpGeoGeneratorOptions["customRetriever"];
+  urlResolver?: PdpGeoGeneratorOptions["customUrlResolver"];
+}): Promise<PdpGeoRetrievedChunk[]> {
+  const missingDocuments = strategicCoverageDocuments.filter((entry) =>
+    !input.existingChunks.some((chunk) => chunk.kind === entry.kind)
+  );
+  if (missingDocuments.length === 0) {
+    return [];
+  }
+
+  const chunks = await Promise.all(missingDocuments.map(async (entry) => {
+    const document = input.documents.find((candidate) => candidate.name === entry.document);
+    if (!document) {
+      return [];
+    }
+    const retrieved = await retrievePdpGeoRagChunks(
+      {
+        query: [
+          entry.query,
+          `Product: ${input.product.name}.`,
+          input.product.category ? `Category: ${input.product.category}.` : undefined,
+          input.product.benefits.length > 0 ? `Benefits: ${input.product.benefits.slice(0, 4).join(", ")}.` : undefined,
+          input.product.ingredients.length > 0 ? `Ingredients: ${input.product.ingredients.slice(0, 4).join(", ")}.` : undefined,
+          input.product.usage.length > 0 ? `Usage: ${input.product.usage.slice(0, 2).join(" ")}` : undefined,
+          input.product.reviews.keywords.length > 0 ? `Review keywords: ${input.product.reviews.keywords.slice(0, 4).join(", ")}.` : undefined
+        ].filter(Boolean).join(" "),
+        product: input.product,
+        locale: input.locale,
+        market: input.market,
+        documents: [document],
+        settings: {
+          ...input.settings,
+          maxChunks: 3,
+          scoreThreshold: 0
+        }
+      },
+      {
+        apiKey: input.apiKey,
+        customRetriever: input.customRetriever,
+        urlResolver: input.urlResolver
+      }
+    );
+    return retrieved.map((chunk) => ({
+      ...chunk,
+      metadata: {
+        ...chunk.metadata,
+        queryPlanTarget: "strategicCoverage",
+        queryPlanReason: entry.reason
+      }
+    }));
+  }));
+
+  return chunks.flat();
+}
+
+function hydrateSelectedRagDocuments(
+  selectedChunks: PdpGeoRetrievedChunk[],
+  documents: Array<{ name: string; content: string; version?: string }>,
+  settings: ReturnType<typeof resolvePdpGeoRagSettings>
+): PdpGeoHydratedRagDocument[] {
+  const hydration = settings.fullDocumentHydration;
+  if (hydration?.enabled === false) {
+    return [];
+  }
+
+  const strategicOnly = hydration?.strategicOnly ?? true;
+  const maxDocuments = hydration?.maxDocuments ?? 3;
+  const candidateChunks = selectedChunks.filter((chunk) => !strategicOnly || strategicRagKinds.has(chunk.kind));
+  const sourceToChunks = new Map<string, PdpGeoRetrievedChunk[]>();
+
+  for (const chunk of candidateChunks) {
+    const group = sourceToChunks.get(chunk.source) ?? [];
+    group.push(chunk);
+    sourceToChunks.set(chunk.source, group);
+  }
+
+  const hydrated: PdpGeoHydratedRagDocument[] = [];
+  for (const [source, chunks] of sourceToChunks) {
+    const document = documents.find((candidate) => candidate.name === source);
+    const firstChunk = chunks[0];
+    if (!document || !firstChunk) {
+      continue;
+    }
+    hydrated.push({
+      source,
+      version: document.version,
+      kind: firstChunk.kind,
+      hydrationMode: "controlled-full-document",
+      selectedChunkTitles: uniqueStrings(chunks.map((chunk) => chunk.title).filter((title): title is string => Boolean(title))),
+      content: document.content
+    });
+    if (hydrated.length >= maxDocuments) {
+      break;
+    }
+  }
+
+  return hydrated;
+}
+
+function selectFinalRagChunks(chunks: PdpGeoRetrievedChunk[], maxChunks: number): PdpGeoRetrievedChunk[] {
+  const limit = Math.max(1, maxChunks);
+  const selected = chunks.slice(0, limit);
+  const selectedKeys = new Set(selected.map(ragChunkKey));
+
+  for (const kind of strategicRagKinds) {
+    if (selected.some((chunk) => chunk.kind === kind)) {
+      continue;
+    }
+    const candidate = chunks.find((chunk) => chunk.kind === kind && !selectedKeys.has(ragChunkKey(chunk)));
+    if (!candidate) {
+      continue;
+    }
+    if (selected.length < limit) {
+      selected.push(candidate);
+      selectedKeys.add(ragChunkKey(candidate));
+      continue;
+    }
+    const replacementIndex = findStrategicCoverageReplacementIndex(selected, kind);
+    const replacement = selected[replacementIndex];
+    if (replacement) {
+      selectedKeys.delete(ragChunkKey(replacement));
+      selected[replacementIndex] = candidate;
+      selectedKeys.add(ragChunkKey(candidate));
+    }
+  }
+
+  return selected.sort((a, b) => b.score - a.score);
+}
+
+function findStrategicCoverageReplacementIndex(chunks: PdpGeoRetrievedChunk[], missingKind: string): number {
+  const kindCounts = chunks.reduce((counts, chunk) => {
+    counts.set(chunk.kind, (counts.get(chunk.kind) ?? 0) + 1);
+    return counts;
+  }, new Map<string, number>());
+  let replacementIndex = -1;
+  let replacementScore = Number.POSITIVE_INFINITY;
+  for (const [index, chunk] of chunks.entries()) {
+    if (strategicRagKinds.has(chunk.kind)) {
+      continue;
+    }
+    if (chunk.score < replacementScore) {
+      replacementIndex = index;
+      replacementScore = chunk.score;
+    }
+  }
+  if (replacementIndex >= 0) {
+    return replacementIndex;
+  }
+
+  replacementScore = Number.POSITIVE_INFINITY;
+  for (const [index, chunk] of chunks.entries()) {
+    if (chunk.kind === missingKind || (kindCounts.get(chunk.kind) ?? 0) <= 1) {
+      continue;
+    }
+    if (chunk.score < replacementScore) {
+      replacementIndex = index;
+      replacementScore = chunk.score;
+    }
+  }
+  return replacementIndex;
+}
+
+function ragChunkKey(chunk: PdpGeoRetrievedChunk): string {
+  return `${chunk.source}:${chunk.title ?? ""}:${chunk.id}`;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values));
+}
+
+function boostChunkForSubquery(
+  chunk: PdpGeoRetrievedChunk,
+  fieldTargets: PdpGeoRagFieldTarget[],
+  intents: PdpGeoRagIntent[]
+): number {
+  const chunkTargets = new Set([...(chunk.fieldTargets ?? []), ...parseMetadataList(chunk.metadata.fieldTargets)].filter(isPdpGeoRagFieldTarget));
+  const chunkIntents = new Set([...(chunk.intents ?? []), ...parseMetadataList(chunk.metadata.sectionIntents)].filter(isPdpGeoRagIntent));
+  const fieldMatch = fieldTargets.some((fieldTarget) => chunkTargets.has(fieldTarget));
+  const intentMatch = intents.some((intent) => chunkIntents.has(intent));
+  return Math.min(1, chunk.score + (fieldMatch ? 0.08 : 0) + (intentMatch ? 0.04 : 0));
+}
+
+function createNormalizeStepMessage(
+  productName: string,
+  productNormalization: { called: boolean; applied: boolean },
+  keywordNormalizationApplied: boolean
+): string {
+  const actions = [
+    productNormalization.applied
+      ? "상품 신호를 에이전트 정규화로 보강"
+      : productNormalization.called
+        ? "상품 신호 에이전트 정규화를 검토"
+        : "상품 신호를 부트스트랩 정규화",
+    keywordNormalizationApplied ? "리뷰 키워드 오타 후보를 보정" : undefined
+  ].filter(Boolean);
+
+  return `${productName} ${actions.join("하고 ")}했습니다.`;
+}
+
 function createGeneratorRuntimeUsage(
   options: PdpGeoGeneratorOptions,
   ragSettings: ReturnType<typeof resolvePdpGeoRagSettings>,
   context: {
+    productNormalizationUsage?: PdpGeoTokenUsage;
+    productNormalizationCalled?: boolean;
     keywordNormalizationUsage?: PdpGeoTokenUsage;
     copyRefinementUsage?: PdpGeoTokenUsage;
     copyRefinementCalled?: boolean;
@@ -376,10 +706,12 @@ function createGeneratorRuntimeUsage(
   const embeddingProvider = options.embedding?.provider ?? ragSettings.embeddingProvider;
   const rerankerProvider = options.reranker?.provider ?? ragSettings.rerankerProvider;
   const finalTokenUsage = mergeTokenUsages([
+    context.productNormalizationUsage,
     context.keywordNormalizationUsage,
     context.copyRefinementUsage
   ].filter((usage): usage is PdpGeoTokenUsage => Boolean(usage)));
   const finalDetails = [
+    context.productNormalizationCalled ? "Model-backed product signal normalization was called before keyword normalization." : undefined,
     context.keywordNormalizationUsage ? "Model-backed keyword normalization was called during product normalization." : undefined,
     context.copyRefinementCalled ? "Model-backed copy refinement was called after deterministic schema/content generation." : undefined
   ].filter(Boolean).join(" ");
@@ -402,7 +734,7 @@ function createGeneratorRuntimeUsage(
       called: ragSettings.mode === "managed-vector-store-rag",
       details: ragSettings.mode === "managed-vector-store-rag"
         ? "Managed/vector retrieval mode is configured."
-        : "Generator local-versioned RAG currently uses deterministic local scoring unless a managed retriever is configured."
+        : "Generator local-versioned RAG uses local contextual hybrid vectors and lexical signals unless a managed retriever is configured."
     },
     {
       stage: "retrieval",
@@ -420,7 +752,9 @@ function createGeneratorRuntimeUsage(
       service: rerankerProvider === "azure-ai-search-semantic" ? "Azure AI Search semantic ranker" : rerankerProvider === "cohere" ? "Cohere Rerank" : `${rerankerProvider} ordering`,
       model: options.reranker?.provider === "cohere" ? options.reranker.model : undefined,
       called: ragSettings.mode === "managed-vector-store-rag" && ragSettings.rerankerProvider !== "local-hybrid",
-      details: "Generator RAG reranking follows the configured RAG retriever/reranker. Local-versioned mode defaults to deterministic score ordering."
+      details: ragSettings.mode === "managed-vector-store-rag"
+        ? "Generator RAG reranking follows the configured managed retriever/reranker."
+        : "Local-versioned mode applies contextual hybrid reranking metadata before strategic GEO/CEP/E-E-A-T coverage selection."
     },
     {
       stage: "ocr",
@@ -439,7 +773,7 @@ function createGeneratorRuntimeUsage(
       service: options.provider === "azure-openai" ? "Azure API model deployment" : provider,
       model: options.provider === "azure-openai" ? undefined : options.model,
       deployment: options.provider === "azure-openai" ? finalDeployment : undefined,
-      called: Boolean(context.keywordNormalizationUsage || context.copyRefinementCalled),
+      called: Boolean(context.productNormalizationCalled || context.keywordNormalizationUsage || context.copyRefinementCalled),
       tokenUsage: finalTokenUsage,
       details: finalDetails || "Schema/content reasoning is deterministic in the current generator path; no final model usage metadata was returned."
     }
