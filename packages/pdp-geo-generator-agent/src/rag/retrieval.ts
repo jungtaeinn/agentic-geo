@@ -245,21 +245,37 @@ export class LocalVersionedRagRetriever implements PdpGeoRetriever {
     const chunks = request.documents.flatMap((document) => chunkDocument(document.name, document.content, document.version));
     const queryEmbedding = embedText(request.query);
     const queryTerms = tokenize(request.query);
-    const scored = chunks.map((chunk) => {
+    const scoredCandidates = chunks.map((chunk) => {
       const contextualText = createContextualRetrievalText(chunk);
       const lexicalScore = lexicalSimilarity(queryTerms, tokenize(contextualText));
       const semanticScore = cosineSimilarity(queryEmbedding, embedText(contextualText));
       const boost = retrievalBoost(chunk, request.locale, request.market);
-      const score = clamp((lexicalScore * 0.48) + (semanticScore * 0.42) + boost, 0, 1);
 
       return {
-        ...chunk,
+        chunk,
+        lexicalScore,
+        semanticScore,
+        boost
+      };
+    });
+    const lexicalRanks = rankCandidates(scoredCandidates, (candidate) => candidate.lexicalScore);
+    const semanticRanks = rankCandidates(scoredCandidates, (candidate) => candidate.semanticScore);
+    const scored = scoredCandidates.map((candidate, index) => {
+      const rrfHybridScore = reciprocalRankFusionScore([
+        lexicalRanks.get(index) ?? scoredCandidates.length,
+        semanticRanks.get(index) ?? scoredCandidates.length
+      ]);
+      const score = clamp((candidate.lexicalScore * 0.38) + (candidate.semanticScore * 0.34) + (rrfHybridScore * 0.16) + candidate.boost, 0, 1);
+
+      return {
+        ...candidate.chunk,
         metadata: {
-          ...chunk.metadata,
+          ...candidate.chunk.metadata,
           contextualRetrieval: true,
-          lexicalScore: roundScore(lexicalScore),
-          semanticScore: roundScore(semanticScore),
-          retrievalBoost: roundScore(boost)
+          lexicalScore: roundScore(candidate.lexicalScore),
+          semanticScore: roundScore(candidate.semanticScore),
+          rrfHybridScore: roundScore(rrfHybridScore),
+          retrievalBoost: roundScore(candidate.boost)
         },
         score
       };
@@ -270,6 +286,24 @@ export class LocalVersionedRagRetriever implements PdpGeoRetriever {
       .filter((chunk) => chunk.score >= (request.settings.scoreThreshold ?? 0.08))
       .slice(0, request.settings.maxChunks ?? 8);
   }
+}
+
+function rankCandidates<T>(candidates: T[], getScore: (candidate: T) => number): Map<number, number> {
+  const ranked = candidates
+    .map((candidate, index) => ({ index, score: getScore(candidate) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index);
+  const ranks = new Map<number, number>();
+
+  ranked.forEach((candidate, index) => {
+    ranks.set(candidate.index, index + 1);
+  });
+
+  return ranks;
+}
+
+function reciprocalRankFusionScore(ranks: number[]): number {
+  const k = 60;
+  return clamp(ranks.reduce((score, rank) => score + (1 / (k + rank)), 0) * 30, 0, 1);
 }
 
 export class OpenAiVectorStoreRetriever implements PdpGeoRetriever {

@@ -11,6 +11,7 @@ Return two user-facing artifacts: schema markup as JSON-LD and grouped HTML cont
 - Use the typed RAG index first to route document-level and content-unit guidance before selecting schema, E-E-A-T, CEP, GEO research, official docs, locale, or best-practice chunks.
 - Normalize source product JSON into product facts before generation; do not require a fixed extractor schema.
 - When a product normalization agent is configured, use the deterministic normalized product only as a bootstrap and let the agent infer source-backed field routing from raw JSON, fieldMapping, hints, and policy documents before review keyword normalization.
+- Prioritize RAG chunks with hybrid retrieval and coverage-aware reranking: combine exact lexical field matches, semantic similarity, reciprocal-rank fusion, field-target metadata, and document-kind diversity so one strategy document cannot crowd out schema, official docs, locale, or field-contract guidance.
 - Prioritize RAG chunks that improve OCR sentence diagnostics, customer-review FAQ intent, WebPage.description versus Product.description separation, structured claim support, HowTo reconstruction, benefit/effect phrasing, and public wording.
 - Use official AI/search platform docs RAG to choose retrieval, embedding, grounding, structured data, and answer eligibility constraints.
 

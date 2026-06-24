@@ -14,6 +14,7 @@ Use this document as a versioned connector map to official provider docs for ret
 - Use OpenAI managed vector stores when the deployment wants provider-managed file ingestion, chunk indexing, retrieval, and query rewriting.
 - Use local-versioned RAG when the deployment needs provider-neutral operation, editable local policy files, or the option to swap OpenAI for another embedding/search stack.
 - Embeddings represent semantic relatedness and are appropriate for retrieval over official docs, product facts, reviews, locale terminology, and best-practice files.
+- When ranking controls are available, tune hybrid search rather than relying on a single signal: use embedding weight for semantic paraphrase recall, text weight for exact schema/product field matches, a ranker or reranker for final quality, and a score threshold only after checking recall loss.
 - When OpenAI vector store mode is selected, make sure these managed RAG documents are also uploaded or synchronized to the vector store used by the app.
 - Preserve source filenames, chunk titles, section intents, field targets, and selected excerpts in diagnostics so managed retrieval remains auditable.
 
@@ -49,6 +50,6 @@ Use this document as a versioned connector map to official provider docs for ret
 
 - Official links: https://learn.microsoft.com/en-us/azure/search/hybrid-search-overview, https://learn.microsoft.com/en-us/azure/search/semantic-search-overview, https://learn.microsoft.com/en-us/azure/search/agentic-retrieval-overview.
 - Keep `rag-index.ts` as the source of truth for document metadata, section routing, source role, checked date, intent, field targets, and priority.
-- Use hybrid retrieval and reranking when available: lexical matching catches exact schema/field terms, vector search catches semantic paraphrases, and semantic/reranker layers improve final ordering.
+- Use hybrid retrieval and reranking when available: lexical matching catches exact schema/field terms, vector search catches semantic paraphrases, reciprocal-rank fusion balances sparse/dense recall, and semantic/reranker or coverage-aware layers improve final ordering.
 - Use agentic subquery planning for targeted partial updates such as FAQ, HowTo, Product.description, WebPage.description, or BreadcrumbList refreshes.
 - Preserve selected source document, section title, intent, field target, score, query plan target, and excerpt in diagnostics.

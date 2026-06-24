@@ -451,8 +451,24 @@ function mergeRetrievedRagChunks(chunks: PdpGeoRetrievedChunk[]): PdpGeoRetrieve
 }
 
 const strategicRagKinds = new Set(["geo-research", "cep", "eeat"]);
+const coverageRagKindOrder: PdpGeoRetrievedChunk["kind"][] = [
+  "schema",
+  "official-docs",
+  "best-practice",
+  "locale",
+  "terminology",
+  "geo-research",
+  "eeat",
+  "cep"
+];
 
 const strategicCoverageDocuments = [
+  {
+    kind: "schema",
+    document: pdpGeoGeneratorRagManifest.documents.schemaOrgProduct,
+    query: "Schema.org Product FAQPage HowTo WebPage BreadcrumbList compatibility, field requirements, JSON-LD graph constraints, and structured data validation.",
+    reason: "Ensure schema.org field compatibility is present when strategy chunks rank higher."
+  },
   {
     kind: "geo-research",
     document: pdpGeoGeneratorRagManifest.documents.geoResearch,
@@ -470,6 +486,30 @@ const strategicCoverageDocuments = [
     document: pdpGeoGeneratorRagManifest.documents.eeat,
     query: "E-E-A-T trust-first claim safety, evidence hierarchy, customer experience, expertise, authoritativeness, and partial update query planning.",
     reason: "Ensure E-E-A-T claim-safety strategy is present when general retrieval ranks operational chunks higher."
+  },
+  {
+    kind: "official-docs",
+    document: pdpGeoGeneratorRagManifest.documents.officialAiSearchPlatformDocs,
+    query: "Official AI search platform guidance for retrieval, hybrid search, reranking, embeddings, grounding, structured data eligibility, and helpful product content.",
+    reason: "Ensure official provider/search guidance is present when local policy chunks rank higher."
+  },
+  {
+    kind: "best-practice",
+    document: pdpGeoGeneratorRagManifest.documents.bestPractice,
+    query: "PDP GEO best practice field evidence contract, public wording guardrails, product and webpage description separation, FAQ, HowTo, and schema alignment.",
+    reason: "Ensure product-page field-contract guidance is present when strategy chunks rank higher."
+  },
+  {
+    kind: "locale",
+    document: pdpGeoGeneratorRagManifest.documents.localeExpressionGuidelines,
+    query: "Locale expression guidance for natural market wording, public copy quality, terminology preservation, and unsupported wording avoidance.",
+    reason: "Ensure locale expression guidance is present when strategy chunks rank higher."
+  },
+  {
+    kind: "terminology",
+    document: pdpGeoGeneratorRagManifest.documents.localeTerminologyMap,
+    query: "Locale terminology map for benefit, ingredient, product type, and market-natural public wording.",
+    reason: "Ensure terminology mapping is present when strategy chunks rank higher."
   }
 ] as const;
 
@@ -589,65 +629,74 @@ function hydrateSelectedRagDocuments(
 
 function selectFinalRagChunks(chunks: PdpGeoRetrievedChunk[], maxChunks: number): PdpGeoRetrievedChunk[] {
   const limit = Math.max(1, maxChunks);
-  const selected = chunks.slice(0, limit);
-  const selectedKeys = new Set(selected.map(ragChunkKey));
+  const sorted = chunks.slice().sort((a, b) => b.score - a.score);
+  const selected: PdpGeoRetrievedChunk[] = [];
+  const selectedKeys = new Set<string>();
 
-  for (const kind of strategicRagKinds) {
-    if (selected.some((chunk) => chunk.kind === kind)) {
-      continue;
+  for (const kind of coverageRagKindOrder) {
+    if (selected.length >= limit) {
+      break;
     }
-    const candidate = chunks.find((chunk) => chunk.kind === kind && !selectedKeys.has(ragChunkKey(chunk)));
+    const candidate = sorted.find((chunk) => chunk.kind === kind && !selectedKeys.has(ragChunkKey(chunk)));
     if (!candidate) {
       continue;
     }
-    if (selected.length < limit) {
-      selected.push(candidate);
-      selectedKeys.add(ragChunkKey(candidate));
-      continue;
+    selected.push(candidate);
+    selectedKeys.add(ragChunkKey(candidate));
+  }
+
+  while (selected.length < limit) {
+    const candidate = selectNextDiverseRagChunk(sorted, selected, selectedKeys);
+    if (!candidate) {
+      break;
     }
-    const replacementIndex = findStrategicCoverageReplacementIndex(selected, kind);
-    const replacement = selected[replacementIndex];
-    if (replacement) {
-      selectedKeys.delete(ragChunkKey(replacement));
-      selected[replacementIndex] = candidate;
-      selectedKeys.add(ragChunkKey(candidate));
-    }
+    selected.push(candidate);
+    selectedKeys.add(ragChunkKey(candidate));
   }
 
   return selected.sort((a, b) => b.score - a.score);
 }
 
-function findStrategicCoverageReplacementIndex(chunks: PdpGeoRetrievedChunk[], missingKind: string): number {
-  const kindCounts = chunks.reduce((counts, chunk) => {
-    counts.set(chunk.kind, (counts.get(chunk.kind) ?? 0) + 1);
-    return counts;
-  }, new Map<string, number>());
-  let replacementIndex = -1;
-  let replacementScore = Number.POSITIVE_INFINITY;
-  for (const [index, chunk] of chunks.entries()) {
-    if (strategicRagKinds.has(chunk.kind)) {
+function selectNextDiverseRagChunk(
+  candidates: PdpGeoRetrievedChunk[],
+  selected: PdpGeoRetrievedChunk[],
+  selectedKeys: Set<string>
+): PdpGeoRetrievedChunk | undefined {
+  let best: PdpGeoRetrievedChunk | undefined;
+  let bestScore = Number.NEGATIVE_INFINITY;
+
+  for (const candidate of candidates) {
+    if (selectedKeys.has(ragChunkKey(candidate))) {
       continue;
     }
-    if (chunk.score < replacementScore) {
-      replacementIndex = index;
-      replacementScore = chunk.score;
+    const diversityScore = candidate.score - chunkRedundancyPenalty(candidate, selected);
+    if (!best || diversityScore > bestScore) {
+      best = candidate;
+      bestScore = diversityScore;
     }
-  }
-  if (replacementIndex >= 0) {
-    return replacementIndex;
   }
 
-  replacementScore = Number.POSITIVE_INFINITY;
-  for (const [index, chunk] of chunks.entries()) {
-    if (chunk.kind === missingKind || (kindCounts.get(chunk.kind) ?? 0) <= 1) {
-      continue;
-    }
-    if (chunk.score < replacementScore) {
-      replacementIndex = index;
-      replacementScore = chunk.score;
-    }
+  return best;
+}
+
+function chunkRedundancyPenalty(candidate: PdpGeoRetrievedChunk, selected: PdpGeoRetrievedChunk[]): number {
+  return selected.reduce((penalty, chunk) => {
+    const sameSourcePenalty = chunk.source === candidate.source ? 0.06 : 0;
+    const sameKindPenalty = chunk.kind === candidate.kind ? 0.04 : 0;
+    const sameFieldPenalty = overlapRatio(readChunkFieldTargets(candidate), readChunkFieldTargets(chunk)) * 0.06;
+    const sameIntentPenalty = overlapRatio(readChunkIntents(candidate), readChunkIntents(chunk)) * 0.04;
+
+    return penalty + sameSourcePenalty + sameKindPenalty + sameFieldPenalty + sameIntentPenalty;
+  }, 0);
+}
+
+function overlapRatio(left: string[], right: string[]): number {
+  if (left.length === 0 || right.length === 0) {
+    return 0;
   }
-  return replacementIndex;
+  const rightSet = new Set(right);
+  const overlap = left.filter((item) => rightSet.has(item)).length;
+  return overlap / Math.sqrt(left.length * right.length);
 }
 
 function ragChunkKey(chunk: PdpGeoRetrievedChunk): string {
@@ -754,7 +803,7 @@ function createGeneratorRuntimeUsage(
       called: ragSettings.mode === "managed-vector-store-rag" && ragSettings.rerankerProvider !== "local-hybrid",
       details: ragSettings.mode === "managed-vector-store-rag"
         ? "Generator RAG reranking follows the configured managed retriever/reranker."
-        : "Local-versioned mode applies contextual hybrid reranking metadata before strategic GEO/CEP/E-E-A-T coverage selection."
+        : "Local-versioned mode applies contextual hybrid reranking, RRF-style lexical/semantic fusion metadata, and coverage-aware chunk selection before strategic GEO/CEP/E-E-A-T reasoning."
     },
     {
       stage: "ocr",
