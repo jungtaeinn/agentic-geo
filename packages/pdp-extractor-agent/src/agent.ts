@@ -49,6 +49,8 @@ export interface ProductExtractorOptions {
   deployment?: string;
   deployments?: AzureRoleDeployments;
   apiVersion?: string;
+  /** Sampling temperature forwarded to model calls. Omitted from requests when undefined (model default). */
+  temperature?: number;
   embedding?: EmbeddingRuntimeConfig;
   reranker?: RerankerRuntimeConfig;
   analysisPrompt?: string;
@@ -65,6 +67,9 @@ export interface ProductExtractorOptions {
 
 const OCR_EVIDENCE_LIMIT = 80;
 const IMAGE_OCR_BATCH_SIZE = 10;
+const MAX_IMAGE_OCR_TARGETS = 24;
+const MAX_SCRIPT_ONLY_IMAGE_OCR_TARGETS = 12;
+const MIN_CONTEXTUAL_IMAGE_OCR_SCORE = 8;
 
 const modalNoiseSelector = [
   "[role='dialog']",
@@ -284,7 +289,9 @@ export async function extractProductFromHtml(
   process.done("extract", createExtractionNormalizeMessage(productBase.name, "상품 기본정보", productBaseNormalization));
 
   process.start("ocr", "이미지 OCR과 이미지 대체 텍스트 후보를 문장/키워드 근거로 분류합니다.");
-  const ocr = await extractOcrKeywords($, source, productBase.name, productBase.images, runtimeOptions, warnings, runtimeSteps);
+  const ocr = await extractOcrKeywords($, source, productBase.name, productBase.images, runtimeOptions, warnings, runtimeSteps, (message) => {
+    process.start("ocr", message);
+  });
   const sectionBuckets = createProductSectionBuckets(pageTextBlocks);
   process.done("ocr", `${ocr.imagesScanned}개 이미지 OCR/대체 텍스트 후보에서 OCR 문장과 키워드를 분류했습니다.`);
 
@@ -586,6 +593,20 @@ interface ProductSectionBuckets {
 interface OcrTextCandidate {
   imageUrl: string;
   text: string;
+}
+
+interface ImageOcrTargetCandidate {
+  imageUrl: string;
+  score: number;
+  sourceOrder: number;
+  sectionKey: string;
+}
+
+interface ImageOcrContext {
+  text: string;
+  sectionKey: string;
+  hasProductEvidenceSection: boolean;
+  hasNegativeSection: boolean;
 }
 
 interface ClientStateProductData {
@@ -2643,10 +2664,11 @@ async function extractOcrKeywords(
   imageUrls: string[],
   options: ProductExtractorOptions,
   warnings: AgentWarning[],
-  runtimeSteps: RuntimePipelineStep[]
+  runtimeSteps: RuntimePipelineStep[],
+  onProgress?: (message: string) => void
 ): Promise<OcrExtraction> {
-  const visionTargets = collectImageOcrTargets($, source, imageUrls);
-  const visionOcrTexts = await extractVisionOcrCandidates(visionTargets, source, productName, options, warnings, runtimeSteps);
+  const visionTargets = collectImageOcrTargets($, source, imageUrls, productName);
+  const visionOcrTexts = await extractVisionOcrCandidates(visionTargets, source, productName, options, warnings, runtimeSteps, onProgress);
   const imageTexts = mergeOcrCandidates([
     ...visionOcrTexts,
     ...collectImageTextCandidates($, source)
@@ -2660,6 +2682,7 @@ async function extractOcrKeywords(
 
   try {
     const classifier = createKeywordClassifier(resolveProviderConfig(options));
+    onProgress?.(`${imageTexts.length}개 OCR 텍스트 후보를 reasoning 모델로 문장/키워드 분류 중입니다.`);
     const classified = await classifier.classifyKeywords(await createKeywordClassificationRequest(source, productName, imageTexts, options, runtimeSteps));
     runtimeSteps.push(createModelRuntimeStep("final", "Final OCR classification/reasoning", options, "reasoning", classified.usage, `${imageTexts.length} OCR text candidates classified.`));
     return {
@@ -2679,6 +2702,14 @@ async function extractOcrKeywords(
       })
     };
   } catch (error) {
+    runtimeSteps.push(createModelRuntimeStep(
+      "final",
+      "Final OCR classification/reasoning",
+      options,
+      "reasoning",
+      undefined,
+      `OCR text classification was called for ${imageTexts.length} candidates but failed: ${error instanceof Error ? error.message : "OCR keyword provider failed."}`
+    ));
     warnings.push({
       code: "OCR_PROVIDER_FAILED",
       message: error instanceof Error ? error.message : "OCR keyword provider failed."
@@ -2705,7 +2736,8 @@ async function extractVisionOcrCandidates(
   productName: string,
   options: ProductExtractorOptions,
   warnings: AgentWarning[],
-  runtimeSteps: RuntimePipelineStep[]
+  runtimeSteps: RuntimePipelineStep[],
+  onProgress?: (message: string) => void
 ): Promise<OcrTextCandidate[]> {
   const providerConfig = resolveProviderConfig(options);
 
@@ -2739,12 +2771,16 @@ async function extractVisionOcrCandidates(
 
   for (let index = 0; index < targets.length; index += IMAGE_OCR_BATCH_SIZE) {
     const batch = targets.slice(index, index + IMAGE_OCR_BATCH_SIZE);
+    const batchStart = index + 1;
+    const batchEnd = Math.min(index + batch.length, targets.length);
     try {
+      onProgress?.(`${targets.length}개 OCR 이미지 중 ${batchStart}-${batchEnd}번 이미지를 OCR 모델로 추출 중입니다.`);
       const extracted = await classifier.extractImageTexts({
         source,
         productName,
         imageUrls: batch
       });
+      onProgress?.(`${batchStart}-${batchEnd}번 OCR 이미지에서 ${extracted.images.length}개 텍스트 후보를 수신했습니다.`);
       runtimeSteps.push(createModelRuntimeStep("ocr", "OCR/structure extraction", options, "ocr", extracted.usage, `${batch.length} product-detail images sent for visible text extraction.`));
 
       extractedTexts.push(...extracted.images.map((image) => ({
@@ -2753,6 +2789,15 @@ async function extractVisionOcrCandidates(
       })).filter((item) => item.text.length >= 8));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Image OCR provider failed.";
+      onProgress?.(`${batchStart}-${batchEnd}번 OCR 이미지 추출이 실패했습니다: ${message}`);
+      runtimeSteps.push(createModelRuntimeStep(
+        "ocr",
+        "OCR/structure extraction",
+        options,
+        "ocr",
+        undefined,
+        `${batch.length} product-detail images were sent for visible text extraction, but the provider failed: ${message}`
+      ));
       failures.push(message);
       if (isQuotaOrBillingError(message)) {
         quotaOrBillingFailure = true;
@@ -2828,6 +2873,14 @@ async function classifyOcrCandidates(
       confidence: 0.72
     };
   } catch (error) {
+    runtimeSteps.push(createModelRuntimeStep(
+      "final",
+      "Final OCR classification/reasoning",
+      options,
+      "reasoning",
+      undefined,
+      `OCR text classification was called for ${imageTexts.length} candidates but failed: ${error instanceof Error ? error.message : "OCR keyword provider failed."}`
+    ));
     warnings.push({
       code: "OCR_PROVIDER_FAILED",
       message: error instanceof Error ? error.message : "OCR keyword provider failed."
@@ -3274,60 +3327,128 @@ function collectImageTextCandidates($: ReturnType<typeof load>, source: string):
     .filter((item) => item.text.length >= 12 && scoreProductText(item.text, "") > 0 && isProductEvidenceCandidate("", item.text));
 }
 
-function collectImageOcrTargets($: ReturnType<typeof load>, source: string, imageUrls: string[] = []): string[] {
+function collectImageOcrTargets($: ReturnType<typeof load>, source: string, imageUrls: string[] = [], productName = ""): string[] {
   const domCandidates = $("img, picture source")
     .toArray()
-    .flatMap((node) => {
+    .flatMap((node, sourceOrder): ImageOcrTargetCandidate[] => {
       const element = $(node);
-      const context = imageTechnicalContext($, node);
+      const context = imageOcrEvidenceContext($, node);
       const label = cleanText([
         ...imageUrlsFromNode($, node, source),
         element.attr("alt"),
         element.attr("title"),
         element.attr("aria-label"),
-        context,
+        context.text,
         textAroundImage($, node)
       ].filter(Boolean).join(" "));
+      const score = scoreImageOcrTarget(label, context, productName);
 
-      return imageUrlsFromNode($, node, source).map((imageUrl) => ({
+      if (!shouldUseContextualImageOcrTarget(label, context, score, productName)) {
+        return [];
+      }
+
+      return imageUrlsFromNode($, node, source).map((imageUrl): ImageOcrTargetCandidate => ({
         imageUrl,
-        score: scoreImageOcrTarget(label)
+        score,
+        sourceOrder,
+        sectionKey: context.sectionKey
       }));
     });
-  const explicitCandidates = imageUrls.map((imageUrl) => ({
-    imageUrl,
-    score: scoreImageOcrTarget(imageUrl)
-  }));
-  const candidates = [...domCandidates, ...explicitCandidates]
-    .filter((item): item is { imageUrl: string; score: number } =>
-      typeof item.imageUrl === "string"
-      && /^https?:\/\//i.test(item.imageUrl)
-      && isSupportedOcrImageUrl(item.imageUrl)
-    )
-    .sort((a, b) => b.score - a.score);
 
-  return unique(candidates.map((item) => item.imageUrl));
+  const contextualCandidates = domCandidates
+    .filter((item) => isHttpSupportedOcrImageUrl(item.imageUrl));
+  const explicitCandidates = imageUrls.map((imageUrl, index): ImageOcrTargetCandidate => ({
+    imageUrl,
+    score: scoreImageOcrTarget(imageUrl, undefined, productName),
+    sourceOrder: 100_000 + index,
+    sectionKey: "explicit"
+  })).filter((item) => isHttpSupportedOcrImageUrl(item.imageUrl));
+  const candidates = contextualCandidates.length > 0
+    ? contextualCandidates
+    : explicitCandidates.slice(0, MAX_SCRIPT_ONLY_IMAGE_OCR_TARGETS);
+
+  return selectImageOcrTargets(candidates);
 }
 
-function scoreImageOcrTarget(value: string): number {
+function shouldUseContextualImageOcrTarget(label: string, context: ImageOcrContext, score: number, productName: string): boolean {
+  if (isCommerceImageOcrContext(context.text)) {
+    return false;
+  }
+  if (context.hasNegativeSection && !context.hasProductEvidenceSection) {
+    return false;
+  }
+  if (hasConflictingProductType(label, productName)) {
+    return false;
+  }
+  if (isGalleryLikeOcrContext(context.text) && !isHighValueOcrEvidenceContext(context.text) && !hasProductNameSignal(label, productName)) {
+    return false;
+  }
+  if (context.hasProductEvidenceSection && score > 0) {
+    return true;
+  }
+  return score >= MIN_CONTEXTUAL_IMAGE_OCR_SCORE && !isNegativeOcrSectionText(label);
+}
+
+function selectImageOcrTargets(candidates: ImageOcrTargetCandidate[]): string[] {
+  const bestByImage = new Map<string, ImageOcrTargetCandidate>();
+
+  for (const candidate of candidates) {
+    const key = canonicalOcrImageKey(candidate.imageUrl);
+    const current = bestByImage.get(key);
+    const candidateWidth = imageVariantWidth(candidate.imageUrl);
+    const currentWidth = current ? imageVariantWidth(current.imageUrl) : 0;
+    if (
+      !current
+      || candidateWidth > currentWidth
+      || (candidateWidth === currentWidth && candidate.score > current.score)
+      || (candidateWidth === currentWidth && candidate.score === current.score && candidate.sourceOrder < current.sourceOrder)
+    ) {
+      bestByImage.set(key, candidate);
+    }
+  }
+
+  return Array.from(bestByImage.values())
+    .sort((a, b) => b.score - a.score || a.sourceOrder - b.sourceOrder)
+    .slice(0, MAX_IMAGE_OCR_TARGETS)
+    .sort((a, b) => a.sourceOrder - b.sourceOrder)
+    .map((item) => item.imageUrl);
+}
+
+function isHttpSupportedOcrImageUrl(imageUrl: string): boolean {
+  return typeof imageUrl === "string"
+    && /^https?:\/\//i.test(imageUrl)
+    && isSupportedOcrImageUrl(imageUrl)
+    && !isLikelyTinyOcrImage(imageUrl);
+}
+
+function isLikelyTinyOcrImage(imageUrl: string): boolean {
+  const width = imageVariantWidth(imageUrl);
+  return width > 0 && width < 160;
+}
+
+function scoreImageOcrTarget(value: string, context?: ImageOcrContext, productName = ""): number {
   const text = value.toLowerCase();
   if (isReviewImageUrl(text)) {
     return -100;
   }
+  const negativePenalty = context?.hasNegativeSection && !context.hasProductEvidenceSection ? -40 : 0;
+  const productEvidenceSection = context?.hasProductEvidenceSection ? 18 : 0;
+  const productNameBoost = hasProductNameSignal(value, productName) ? 10 : 0;
+  const productConflictPenalty = hasConflictingProductType(value, productName) ? -60 : 0;
   const strongSignals = [
     /clinical|result|before|after|infographic|ingredient|benefit|efficacy|survey|study/,
     /wrinkle|firm|elastic|texture|radiance|ginseng|retinol|peptide|niacinamide/,
-    /use|how-to-use|routine|apply|direction/,
+    /use|how-to-use|how\s*to\s*use|routine|ritual|apply|direction/,
     /효능|효과|성분|전성분|원료|보습|수분|장벽|피지|유분|사용법|임상|결과/
   ].filter((pattern) => pattern.test(text)).length * 8;
   const productImageSignals = [
     /\/upload\/product\//,
-    /dspimg|detail|pdp|prd|product|goods|contents|visual|main|description|technology|tech|ingredient|spec/,
+    /dspimg|detail|pdp|prd|product|goods|contents|visual|main|description|technology|tech|ingredient|formula|spec/,
     /상세|기술|기술서|성분|효능|효과|제품\s*정보|상품\s*정보/,
     /serum|cream|크림|세럼|앰플|토너/
   ].filter((pattern) => pattern.test(text)).length * 12;
   const weakSignals = /(product|detail|pdp|brand\.com|serum|cream|description|technology|ingredient|spec|상품|상세|기술|성분|효능|효과)/i.test(value) ? 3 : 0;
-  return strongSignals + productImageSignals + weakSignals;
+  return productEvidenceSection + productNameBoost + strongSignals + productImageSignals + weakSignals + negativePenalty + productConflictPenalty;
 }
 
 function mergeOcrCandidates(candidates: OcrTextCandidate[]): OcrTextCandidate[] {
@@ -3429,18 +3550,154 @@ function textAroundImage($: ReturnType<typeof load>, node: CheerioInput): string
   return unique([figureText, parentText].filter((text) => text.length > 0)).join(" ").slice(0, 520);
 }
 
-function imageTechnicalContext($: ReturnType<typeof load>, node: CheerioInput): string {
+function imageOcrEvidenceContext($: ReturnType<typeof load>, node: CheerioInput): ImageOcrContext {
   const element = $(node);
-  const tokens: string[] = [];
-  element.parents().slice(0, 6).each((_, parent) => {
+  const tokens: string[] = [
+    nodeAttributeText($, node),
+    element.attr("alt") ?? "",
+    element.attr("title") ?? "",
+    element.attr("aria-label") ?? ""
+  ];
+  let hasProductEvidenceSection = false;
+  let hasNegativeSection = false;
+  let sectionKey = "";
+
+  element.parents().slice(0, 8).each((depth, parent) => {
     const parentElement = $(parent);
-    tokens.push(nodeAttributeText($, parent));
-    const heading = cleanText(parentElement.children("h1,h2,h3,h4,h5,h6,summary").first().text());
-    if (heading) {
-      tokens.push(heading);
+    const parentToken = cleanText([
+      nodeAttributeText($, parent),
+      parentElement.children("h1,h2,h3,h4,h5,h6,summary").first().text(),
+      parentElement.prevAll("h1,h2,h3,h4,h5,h6").first().text()
+    ].join(" "));
+
+    if (!parentToken) {
+      return;
+    }
+
+    tokens.push(parentToken);
+    hasProductEvidenceSection = hasProductEvidenceSection || isPositiveOcrSectionText(parentToken);
+    hasNegativeSection = hasNegativeSection || isNegativeOcrSectionText(parentToken);
+
+    if (!sectionKey && (depth >= 1 || isPositiveOcrSectionText(parentToken) || isNegativeOcrSectionText(parentToken))) {
+      sectionKey = normalizeFingerprint(parentToken).slice(0, 100);
     }
   });
-  return cleanText(tokens.join(" ")).slice(0, 360);
+
+  const text = cleanText(tokens.join(" ")).slice(0, 900);
+
+  return {
+    text,
+    sectionKey: sectionKey || normalizeFingerprint(text).slice(0, 100) || "image",
+    hasProductEvidenceSection: hasProductEvidenceSection || isPositiveOcrSectionText(text),
+    hasNegativeSection: hasNegativeSection || isNegativeOcrSectionText(text)
+  };
+}
+
+function isPositiveOcrSectionText(value: string): boolean {
+  return /product[-_\s]*(detail|media|gallery|image|info)|pdp|detail|description|overview|summary|technical|technology|ingredient|formula|clinical|result|efficacy|benefit|before|after|how[-_\s]*to[-_\s]*use|how\s*to\s*use|routine|ritual|direction|usage|apply|상품\s*상세|상품\s*정보|제품\s*정보|기술|기술서|성분|효능|효과|임상|결과|사용법/i.test(value);
+}
+
+function isNegativeOcrSectionText(value: string): boolean {
+  return /recommend|related|you may also like|recently viewed|product[-_\s]*(tile|card|recommendation)|routine[-_\s]*builder|quick\s*add|review|ugc|rating|reward|offer|promo|promotion|gift|sample|bundle|set-item|cart|checkout|shipping|return|refund|footer|header|navigation|nav|menu|logo|icon|account|search|wishlist|collection|blog|article|press|social|instagram|tiktok|youtube|추천|관련\s*상품|리뷰|후기|혜택|오퍼|프로모션|장바구니|배송|반품|푸터|헤더|메뉴|검색|위시/i.test(value);
+}
+
+function isCommerceImageOcrContext(value: string): boolean {
+  return /product[-_\s]*(tile|card|recommendation)|routine[-_\s]*builder|quick\s*add|customers?\s+were\s+interested|you may also like|related[-_\s]*products?|product[-_\s]*recommendations?|cross[-_\s]*sell|upsell|recently viewed|추천|관련\s*상품/i.test(value);
+}
+
+function isGalleryLikeOcrContext(value: string): boolean {
+  return /gallery|media|carousel|slider|swiper|slick|thumbnail|thumb|product[-_\s]*image|product[-_\s]*media|이미지|갤러리|썸네일/i.test(value);
+}
+
+function isHighValueOcrEvidenceContext(value: string): boolean {
+  return /clinical|result|before|after|ingredient|formula|technology|efficacy|benefit|how[-_\s]*to[-_\s]*use|how\s*to\s*use|routine|ritual|direction|usage|임상|결과|성분|기술|효능|효과|사용법/i.test(value);
+}
+
+function hasProductNameSignal(value: string, productName: string): boolean {
+  const text = value.toLowerCase();
+  const terms = productName
+    .toLowerCase()
+    .split(/[^a-z0-9가-힣]+/)
+    .filter((term) => term.length >= 4 && !productNameStopWords.has(term));
+
+  if (terms.length === 0) {
+    return false;
+  }
+
+  return terms.some((term) => text.includes(term));
+}
+
+function hasConflictingProductType(value: string, productName: string): boolean {
+  const currentTypes = productTypeTokens(productName);
+  if (currentTypes.size === 0) {
+    return false;
+  }
+
+  const candidateTypes = productTypeTokens(value);
+  if (candidateTypes.size === 0) {
+    return false;
+  }
+
+  return !Array.from(candidateTypes).some((type) => currentTypes.has(type));
+}
+
+function productTypeTokens(value: string): Set<string> {
+  const text = value.toLowerCase();
+  const types = new Set<string>();
+  const patterns: Array<[string, RegExp]> = [
+    ["serum", /serum|세럼|앰플|ampoule/],
+    ["cream", /cream|크림|balm|밤/],
+    ["toner", /toner|토너|skin\s*softener|softener/],
+    ["essence", /essence|에센스/],
+    ["cleanser", /cleanser|cleansing|foam|oil\s*cleanser|클렌저|클렌징/],
+    ["mask", /mask|masque|팩|마스크/],
+    ["eye", /eye\s*(cream|serum|care)|아이\s*(크림|세럼|케어)/],
+    ["sunscreen", /sunscreen|sun\s*cream|spf|선크림|자외선/],
+    ["lotion", /lotion|로션|emulsion|에멀전/]
+  ];
+
+  for (const [type, pattern] of patterns) {
+    if (pattern.test(text)) {
+      types.add(type);
+    }
+  }
+
+  return types;
+}
+
+const productNameStopWords = new Set([
+  "with",
+  "and",
+  "the",
+  "for",
+  "skin",
+  "care",
+  "brand",
+  "product"
+]);
+
+function canonicalOcrImageKey(imageUrl: string): string {
+  try {
+    const url = new URL(imageUrl);
+    const pathname = url.pathname.replace(/_(?:\d+x\d*|x\d+)(?=\.[a-z]{3,5}$)/i, "");
+    return `${url.origin}${pathname}`.toLowerCase();
+  } catch {
+    return imageUrl.split(/[?#]/)[0]?.toLowerCase() ?? imageUrl.toLowerCase();
+  }
+}
+
+function imageVariantWidth(imageUrl: string): number {
+  try {
+    const url = new URL(imageUrl);
+    const queryWidth = Number(url.searchParams.get("width") ?? url.searchParams.get("w"));
+    if (Number.isFinite(queryWidth) && queryWidth > 0) {
+      return queryWidth;
+    }
+  } catch {
+    // Fall through to path-based width parsing.
+  }
+
+  return Number(imageUrl.match(/_(\d+)x(?:\d+)?(?=\.)/i)?.[1] ?? 0);
 }
 
 function createApiTextCandidates(
@@ -3970,6 +4227,7 @@ function resolveProviderConfig(options: ProductExtractorOptions) {
     deployment: options.deployment,
     deployments: options.deployments,
     apiVersion: options.apiVersion,
+    temperature: options.temperature,
     embedding: options.embedding,
     reranker: options.reranker
   };
@@ -3988,9 +4246,9 @@ function createModelRuntimeStep(
     stage,
     label,
     provider: runtimeProviderLabel(config.provider),
-    service: config.provider === "azure-openai" ? "Azure API model deployment" : config.provider,
-    model: config.provider === "azure-openai" ? undefined : config.model,
-    deployment: config.provider === "azure-openai" ? config.deployments?.[deploymentRole] ?? config.deployment : undefined,
+    service: deploymentServiceLabel(config.provider) ?? config.provider,
+    model: usesDeployments(config.provider) ? undefined : config.model,
+    deployment: usesDeployments(config.provider) ? config.deployments?.[deploymentRole] ?? config.deployment : undefined,
     called: true,
     tokenUsage,
     details
@@ -4006,9 +4264,9 @@ function createExtractorRuntimeUsage(options: ProductExtractorOptions, observedS
       stage: "ocr",
       label: "OCR/structure extraction",
       provider: runtimeProviderLabel(config.provider),
-      service: config.provider === "azure-openai" ? "Azure API model deployment" : config.provider,
-      model: config.provider === "azure-openai" ? undefined : config.model,
-      deployment: config.provider === "azure-openai" ? config.deployments?.ocr ?? config.deployment : undefined,
+      service: deploymentServiceLabel(config.provider) ?? config.provider,
+      model: usesDeployments(config.provider) ? undefined : config.model,
+      deployment: usesDeployments(config.provider) ? config.deployments?.ocr ?? config.deployment : undefined,
       called: observedSteps.some((step) => step.stage === "ocr"),
       details: "Reads visible text from PDP images when image OCR targets are available."
     },
@@ -4016,23 +4274,27 @@ function createExtractorRuntimeUsage(options: ProductExtractorOptions, observedS
       stage: "final",
       label: "Final OCR classification/reasoning",
       provider: runtimeProviderLabel(config.provider),
-      service: config.provider === "azure-openai" ? "Azure API model deployment" : config.provider,
-      model: config.provider === "azure-openai" ? undefined : config.model,
-      deployment: config.provider === "azure-openai" ? config.deployments?.reasoning ?? config.deployment : undefined,
+      service: deploymentServiceLabel(config.provider) ?? config.provider,
+      model: usesDeployments(config.provider) ? undefined : config.model,
+      deployment: usesDeployments(config.provider) ? config.deployments?.reasoning ?? config.deployment : undefined,
       called: observedSteps.some((step) => step.stage === "final"),
       details: "Classifies OCR/detail-page text into product, benefit, effect, ingredient, usage, FAQ, review, price, and metric signals."
     },
     {
       stage: "embedding",
       label: "Embedding",
-      provider: embedding?.provider === "azure-openai" ? "azure-api" : "local",
-      service: embedding?.provider === "azure-openai" ? "Azure API embedding deployment" : "local hash embedding",
+      provider: embedding?.provider === "aistudio" ? "aistudio" : embedding?.provider === "azure-openai" ? "azure-api" : "local",
+      service: embedding?.provider === "aistudio"
+        ? "AI Studio embedding deployment"
+        : embedding?.provider === "azure-openai" ? "Azure API embedding deployment" : "local hash embedding",
       model: embedding?.model,
       deployment: embedding?.deployment,
-      called: observedSteps.some((step) => step.stage === "embedding") || embedding?.provider !== "azure-openai",
-      details: embedding?.provider === "azure-openai"
-        ? "Embeds extractor RAG policy query and candidate chunks when Azure embedding credentials are configured."
-        : "Uses deterministic local embedding for extractor RAG policy retrieval."
+      called: observedSteps.some((step) => step.stage === "embedding") || (embedding?.provider !== "azure-openai" && embedding?.provider !== "aistudio"),
+      details: embedding?.provider === "aistudio"
+        ? "Embeds extractor RAG policy query and candidate chunks through the AI Studio embedding deployment when configured."
+        : embedding?.provider === "azure-openai"
+          ? "Embeds extractor RAG policy query and candidate chunks when Azure embedding credentials are configured."
+          : "Uses deterministic local embedding for extractor RAG policy retrieval."
     },
     {
       stage: "retrieval",
@@ -4047,14 +4309,20 @@ function createExtractorRuntimeUsage(options: ProductExtractorOptions, observedS
       stage: "reranking",
       label: "Reranking",
       provider: reranker?.provider ?? "local-hybrid",
-      service: reranker?.provider === "azure-ai-search-semantic" ? "Azure AI Search semantic ranker" : reranker?.provider === "cohere" ? "Cohere Rerank" : "local score ordering",
-      model: reranker?.provider === "cohere" ? reranker.model : undefined,
+      service: reranker?.provider === "azure-ai-search-semantic"
+        ? "Azure AI Search semantic ranker"
+        : reranker?.provider === "aistudio-bedrock-cohere"
+          ? "AI Studio Bedrock Cohere Rerank"
+          : reranker?.provider === "cohere" ? "Cohere Rerank" : "local score ordering",
+      model: reranker?.provider === "cohere" || reranker?.provider === "aistudio-bedrock-cohere" ? reranker.model : undefined,
       called: observedSteps.some((step) => step.stage === "reranking") || !reranker || reranker.provider === "local-hybrid",
       details: reranker?.provider === "azure-ai-search-semantic"
         ? `Uses Azure AI Search index ${reranker.indexName || "(not set)"} with semantic configuration ${reranker.semanticConfiguration || "default"}.`
-        : reranker?.provider === "cohere"
-          ? "Uses Cohere Rerank when endpoint/key are configured; otherwise falls back to local score ordering."
-          : "Uses deterministic local score ordering."
+        : reranker?.provider === "aistudio-bedrock-cohere"
+          ? "Uses AI Studio's Bedrock Cohere Rerank when endpoint/key are configured; otherwise falls back to local score ordering."
+          : reranker?.provider === "cohere"
+            ? "Uses Cohere Rerank when endpoint/key are configured; otherwise falls back to local score ordering."
+            : "Uses deterministic local score ordering."
     }
   ];
   const steps = mergeRuntimeSteps([...baseline, ...observedSteps]);
@@ -4110,6 +4378,22 @@ function runtimeProviderLabel(provider: ProductExtractorOptions["provider"]): st
     return "azure-api";
   }
   return provider ?? "mock";
+}
+
+/** Providers that address models by deployment/model id over a shared endpoint (Azure-style contract). */
+function usesDeployments(provider: ProductExtractorOptions["provider"]): boolean {
+  return provider === "azure-openai" || provider === "aistudio";
+}
+
+/** Service label for deployment-based providers; undefined for non-deployment providers. */
+function deploymentServiceLabel(provider: ProductExtractorOptions["provider"]): string | undefined {
+  if (provider === "azure-openai") {
+    return "Azure API model deployment";
+  }
+  if (provider === "aistudio") {
+    return "AI Studio model deployment";
+  }
+  return undefined;
 }
 
 function extractOptions($: ReturnType<typeof load>, productNode?: Record<string, unknown>): string[] {

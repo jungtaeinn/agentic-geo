@@ -13,7 +13,7 @@ export interface ProductExtractorRestRequest {
   sources?: string[];
   sourceType?: ProductExtractionInput["sourceType"];
   headers?: Record<string, string>;
-  llm?: Partial<Pick<ProductExtractorRestConfig, "provider" | "apiKey" | "model" | "endpoint" | "deployment" | "apiVersion" | "productNormalization">> & {
+  llm?: Partial<Pick<ProductExtractorRestConfig, "provider" | "apiKey" | "model" | "endpoint" | "deployment" | "apiVersion" | "temperature" | "productNormalization">> & {
     deployments?: AzureRoleDeployments;
     embedding?: EmbeddingRuntimeConfig;
     reranker?: RerankerRuntimeConfig;

@@ -557,7 +557,7 @@ elasticity and resilience helping to diminish visible signs of aging"
     expect(insights).not.toContain("ginseng-extracted peptide with 5 other peptides This advanced formula");
   });
 
-  it("sends many English product-detail images, including lazy client images, to vision OCR before review images", async () => {
+  it("sends English product-detail section images to vision OCR before review images", async () => {
     const sentImageUrls: string[] = [];
     const detailImages = Array.from({ length: 16 }, (_, index) =>
       `https://cdn.example.com/pdp/technical-description/detail-section-${index + 1}.png?ver=2026061802`
@@ -627,7 +627,8 @@ elasticity and resilience helping to diminish visible signs of aging"
 
     expect(diagnostics.evidence).toContainEqual({ field: "runtime.provider", source: "api", value: "openai" });
     expect(sentImageUrls.length).toBeGreaterThan(10);
-    expect(sentImageUrls).toEqual(expect.arrayContaining([detailImages[0], detailImages[12], detailImages[15]]));
+    expect(sentImageUrls).toEqual(expect.arrayContaining([detailImages[0], detailImages[12]]));
+    expect(sentImageUrls).not.toContain(detailImages[15]);
     expect(sentImageUrls.some((url) => /fileupload\/reviews/i.test(url))).toBe(false);
     expect(result.geoProduct.ocr.textBlocks.join(" ")).toContain("Compressed Hyaluronic Acid");
     expect(result.geoProduct.ocr.sentenceInsights.some((item) => item.text.includes("Compressed Hyaluronic Acid") && item.category === "ingredient")).toBe(true);
@@ -637,7 +638,7 @@ elasticity and resilience helping to diminish visible signs of aging"
     expect(diagnostics.warnings.some((warning) => warning.code === "IMAGE_OCR_PROVIDER_NOT_CONFIGURED")).toBe(false);
   });
 
-  it("keeps OCR text from product-detail images beyond the first 24 candidates", async () => {
+  it("caps product-detail image OCR targets while preserving page-order evidence", async () => {
     const detailImages = Array.from({ length: 30 }, (_, index) =>
       `https://cdn.example.com/pdp/technical-description/detail-section-${index + 1}.png`
     );
@@ -689,10 +690,143 @@ elasticity and resilience helping to diminish visible signs of aging"
     );
 
     expect(imageBatches).toHaveLength(3);
-    expect(imageBatches.every((batch) => batch.length <= 12)).toBe(true);
-    expect(imageBatches.flat()).toEqual(expect.arrayContaining([detailImages[0], detailImages[24], detailImages[29]]));
-    expect(result.geoProduct.sourceExtraction.ocr.imageTexts.length).toBeGreaterThan(24);
-    expect(result.geoProduct.ocr.textBlocks.join(" ")).toContain("Compressed Hyaluronic Acid section 30");
+    expect(imageBatches.every((batch) => batch.length <= 10)).toBe(true);
+    expect(imageBatches.flat()).toHaveLength(24);
+    expect(imageBatches.flat()).toEqual(expect.arrayContaining([detailImages[0], detailImages[12], detailImages[23]]));
+    expect(imageBatches.flat()).not.toContain(detailImages[24]);
+    expect(result.geoProduct.sourceExtraction.ocr.imageTexts).toHaveLength(24);
+    expect(result.geoProduct.ocr.textBlocks.join(" ")).toContain("Compressed Hyaluronic Acid section 24");
+  });
+
+  it("keeps image OCR scoped to product-evidence sections instead of related commerce imagery", async () => {
+    const evidenceImage = "https://cdn.example.com/pdp/results/clinical-result.png";
+    const ingredientImage = "https://cdn.example.com/pdp/ingredients/peptide-tech.png";
+    const relatedImage = "https://cdn.example.com/product-card/unrelated-cream.png";
+    const routineTileImage = "https://cdn.example.com/product-card/first-care-activating-serum.png";
+    const reviewImage = "https://cdn.example.com/fileupload/reviews/review-before-after.png";
+    const promoImage = "https://cdn.example.com/promo/gift-set.png";
+    const sentImageUrls: string[] = [];
+    const htmlWithMixedImages = `
+      <main>
+        <h1>Barrier Hydro Soothing Cream</h1>
+        <section class="product-detail clinical-results">
+          <h2>Proven Results</h2>
+          <img src="${evidenceImage}" alt="clinical result fine lines firmness" />
+        </section>
+        <section class="ingredient-technology">
+          <h2>Core Ingredients</h2>
+          <img src="${ingredientImage}" alt="Compressed Hyaluronic Acid ingredient technology" />
+        </section>
+        <section class="related-products">
+          <h2>You may also like</h2>
+          <img src="${relatedImage}" alt="Unrelated cream product card" />
+        </section>
+        <section class="routine-builder">
+          <h2>Your Routine</h2>
+          <div class="product-tile product-tile--slider" role="group" aria-label="product">
+            <img src="${routineTileImage}" alt="First Care Activating Serum routine step" />
+          </div>
+        </section>
+        <section class="reviews">
+          <h2>Reviews</h2>
+          <img src="${reviewImage}" alt="Customer review image" />
+        </section>
+        <section class="promotion-offer">
+          <h2>Special Offer</h2>
+          <img src="${promoImage}" alt="Gift with purchase" />
+        </section>
+      </main>
+    `;
+    const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      const content = body.input?.[0]?.content;
+      const imageParts = Array.isArray(content) ? content.filter((part: { type?: string }) => part.type === "input_image") : [];
+
+      if (imageParts.length > 0) {
+        const urls = imageParts.map((part: { image_url: string }) => part.image_url);
+        sentImageUrls.push(...urls);
+        return new Response(JSON.stringify({
+          output_text: JSON.stringify({
+            images: urls.map((imageUrl) => ({
+              imageUrl,
+              text: imageUrl.includes("ingredients")
+                ? "Compressed Hyaluronic Acid. Ingredient technology supports lasting hydration."
+                : "100% showed improved firmness after 6 weeks."
+            }))
+          })
+        }), { status: 200 });
+      }
+
+      return new Response(JSON.stringify({
+        output_text: JSON.stringify({
+          keywords: [],
+          sentenceInsights: [],
+          summary: "classified"
+        })
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = await extractProductFromHtml(
+      htmlWithMixedImages,
+      "https://brand.example.com/products/barrier-hydro-soothing-cream",
+      { provider: "openai", apiKey: "test-key", model: "gpt-5.4-mini" }
+    );
+
+    expect(sentImageUrls).toEqual([evidenceImage, ingredientImage]);
+    expect(result.geoProduct.ocr.textBlocks.join(" ")).toContain("Compressed Hyaluronic Acid");
+    expect(result.geoProduct.ocr.textBlocks.join(" ")).toContain("improved firmness");
+  });
+
+  it("deduplicates responsive image variants before sending image OCR", async () => {
+    const sentImageUrls: string[] = [];
+    const htmlWithResponsiveVariants = `
+      <main>
+        <h1>Barrier Hydro Soothing Cream</h1>
+        <section class="product-detail clinical-results">
+          <h2>Proven Results</h2>
+          <picture>
+            <source srcset="https://cdn.example.com/pdp/results/proven.png?width=320 320w, https://cdn.example.com/pdp/results/proven.png?width=640 640w, https://cdn.example.com/pdp/results/proven.png?width=1280 1280w" />
+            <img src="https://cdn.example.com/pdp/results/proven.png?width=320" alt="clinical result fine lines firmness" />
+          </picture>
+        </section>
+      </main>
+    `;
+    const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      const content = body.input?.[0]?.content;
+      const imageParts = Array.isArray(content) ? content.filter((part: { type?: string }) => part.type === "input_image") : [];
+
+      if (imageParts.length > 0) {
+        const urls = imageParts.map((part: { image_url: string }) => part.image_url);
+        sentImageUrls.push(...urls);
+        return new Response(JSON.stringify({
+          output_text: JSON.stringify({
+            images: urls.map((imageUrl) => ({
+              imageUrl,
+              text: "100% showed improved firmness after 6 weeks."
+            }))
+          })
+        }), { status: 200 });
+      }
+
+      return new Response(JSON.stringify({
+        output_text: JSON.stringify({
+          keywords: [],
+          sentenceInsights: [],
+          summary: "classified"
+        })
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await extractProductFromHtml(
+      htmlWithResponsiveVariants,
+      "https://brand.example.com/products/barrier-hydro-soothing-cream",
+      { provider: "openai", apiKey: "test-key", model: "gpt-5.4-mini" }
+    );
+
+    expect(sentImageUrls).toEqual(["https://cdn.example.com/pdp/results/proven.png?width=1280"]);
   });
 
   it("warns when product-detail image OCR candidates exist but the active provider is mock", async () => {

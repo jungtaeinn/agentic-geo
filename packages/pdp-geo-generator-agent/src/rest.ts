@@ -12,7 +12,7 @@ import type {
 export interface PdpGeoGeneratorRestRequest extends Omit<PdpGeoGenerationInput, "product"> {
   product?: unknown;
   products?: unknown[];
-  llm?: Partial<Pick<PdpGeoGeneratorRestConfig, "provider" | "apiKey" | "model" | "endpoint" | "deployment" | "deployments" | "apiVersion" | "embedding" | "reranker" | "productNormalization" | "copyRefinement">>;
+  llm?: Partial<Pick<PdpGeoGeneratorRestConfig, "provider" | "apiKey" | "model" | "endpoint" | "deployment" | "deployments" | "apiVersion" | "temperature" | "embedding" | "reranker" | "productNormalization" | "copyRefinement">>;
   productNormalization?: PdpGeoGeneratorRestConfig["productNormalization"];
   keywordNormalization?: PdpGeoGeneratorRestConfig["keywordNormalization"];
   copyRefinement?: PdpGeoGeneratorRestConfig["copyRefinement"];

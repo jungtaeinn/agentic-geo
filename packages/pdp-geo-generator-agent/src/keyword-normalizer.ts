@@ -10,6 +10,7 @@ import type {
   PdpGeoTokenUsage,
   PdpProductSignal
 } from "./types";
+import { temperatureBody } from "./copy-refiner";
 
 interface KeywordNormalizationApplication {
   product: PdpProductSignal;
@@ -25,8 +26,10 @@ interface ModelBackedKeywordNormalizerConfig {
   endpoint?: string;
   deployment?: string;
   apiVersion?: string;
+  temperature?: number;
 }
 
+const CHAT_COMPLETIONS_TIMEOUT_MS = 60_000;
 const defaultConfidenceThreshold = 0.78;
 const defaultMaxKeywords = 16;
 
@@ -196,7 +199,7 @@ export class ModelBackedKeywordNormalizer implements PdpGeoKeywordNormalizer {
     const endpoint = this.config.endpoint.replace(/\/$/, "");
     const url = `${endpoint}/openai/deployments/${this.config.deployment}/chat/completions?api-version=${apiVersion}`;
     const prompt = createKeywordNormalizationPrompt(request);
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -207,9 +210,9 @@ export class ModelBackedKeywordNormalizer implements PdpGeoKeywordNormalizer {
           { role: "system", content: prompt.system },
           { role: "user", content: prompt.user }
         ],
-        temperature: 0.1
+        ...temperatureBody(this.config.temperature)
       })
-    });
+    }, CHAT_COMPLETIONS_TIMEOUT_MS, "Azure keyword normalization");
 
     if (!response.ok) {
       throw new Error(`Azure keyword normalization failed: ${response.status}`);
@@ -252,10 +255,12 @@ function tokenUsageFromChatCompletions(value: unknown): PdpGeoTokenUsage | undef
     return undefined;
   }
   const usage = value as Record<string, unknown>;
+  const inputTokens = numberField(usage.prompt_tokens) ?? numberField(usage.input_tokens);
+  const outputTokens = numberField(usage.completion_tokens) ?? numberField(usage.output_tokens);
   return compactTokenUsage({
-    inputTokens: numberField(usage.prompt_tokens),
-    outputTokens: numberField(usage.completion_tokens),
-    totalTokens: numberField(usage.total_tokens)
+    inputTokens,
+    outputTokens,
+    totalTokens: numberField(usage.total_tokens) ?? sumOptional(inputTokens, outputTokens)
   });
 }
 
@@ -263,8 +268,56 @@ function compactTokenUsage(usage: PdpGeoTokenUsage): PdpGeoTokenUsage | undefine
   return usage.inputTokens !== undefined || usage.outputTokens !== undefined || usage.totalTokens !== undefined ? usage : undefined;
 }
 
+function sumOptional(left: number | undefined, right: number | undefined): number | undefined {
+  if (left === undefined && right === undefined) {
+    return undefined;
+  }
+  return (left ?? 0) + (right ?? 0);
+}
+
 function numberField(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, label: string): Promise<Response> {
+  const { signal, cancel } = createTimeoutSignal(timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...init,
+      signal
+    });
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s.`);
+    }
+    throw error;
+  } finally {
+    cancel();
+  }
+}
+
+function createTimeoutSignal(timeoutMs: number): { signal: AbortSignal; cancel: () => void } {
+  if (typeof AbortSignal.timeout === "function") {
+    return {
+      signal: AbortSignal.timeout(timeoutMs),
+      cancel: () => {}
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    cancel: () => clearTimeout(timeout)
+  };
+}
+
+function isAbortError(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "name" in error
+    && (error as { name?: unknown }).name === "AbortError";
 }
 
 function resolveKeywordNormalizer(options: PdpGeoGeneratorOptions): { normalizer?: PdpGeoKeywordNormalizer; warning?: string } {
@@ -289,7 +342,8 @@ function resolveKeywordNormalizer(options: PdpGeoGeneratorOptions): { normalizer
       model: settings.model ?? options.model,
       endpoint: settings.endpoint ?? options.endpoint,
       deployment: settings.deployment ?? options.deployment,
-      apiVersion: settings.apiVersion ?? options.apiVersion
+      apiVersion: settings.apiVersion ?? options.apiVersion,
+      temperature: options.temperature
     })
   };
 }

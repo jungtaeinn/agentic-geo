@@ -305,12 +305,31 @@ function normalizeBreadcrumbs(values: unknown[], fallback: { brand?: string; cat
     return readBreadcrumbItem(value);
   });
   const fallbackItems = [
-    fallback.brand ? { name: fallback.brand } : undefined,
+    fallback.url ? breadcrumbHomeItem(fallback.url) : undefined,
     fallback.category ? { name: fallback.category } : undefined,
+    !fallback.category && fallback.brand ? { name: fallback.brand } : undefined,
     { name: fallback.name, url: fallback.url }
   ].filter((item): item is PdpGeoBreadcrumbItem => Boolean(item));
 
-  return uniqueBreadcrumbs(items.length > 0 ? items : fallbackItems).slice(0, 6);
+  const hierarchy = items.length >= 2
+    ? items
+    : uniqueBreadcrumbs([
+      fallback.url ? breadcrumbHomeItem(fallback.url) : undefined,
+      fallback.category ? { name: fallback.category } : undefined,
+      ...items,
+      ...fallbackItems
+    ].filter((item): item is PdpGeoBreadcrumbItem => Boolean(item)));
+
+  return uniqueBreadcrumbs(hierarchy).slice(0, 6);
+}
+
+function breadcrumbHomeItem(url: string): PdpGeoBreadcrumbItem | undefined {
+  try {
+    const origin = new URL(url).origin;
+    return { name: "Home", url: origin };
+  } catch {
+    return undefined;
+  }
 }
 
 function readBreadcrumbItem(value: unknown): PdpGeoBreadcrumbItem[] {
@@ -369,6 +388,9 @@ function isUsefulSourceText(value: string): boolean {
   if (text.length < 2 || text.length > maxLength || isUrlLikeText(text) || isOcrFootnote(text) || isLikelyVisualImageDescription(text)) {
     return false;
   }
+  if (isCrossSellRoutineText(text)) {
+    return false;
+  }
   return /[A-Za-z가-힣]/.test(text);
 }
 
@@ -424,7 +446,7 @@ function isIngredientSignal(value: string): boolean {
   if (/^(성분|원료|ingredient|ingredients)$/i.test(text)) {
     return false;
   }
-  return /ingredients?|active|actives?|formula|technology|tech|전성분|성분표|히알루론산|하이알루론산|세라마이드|징크|zinc|dermaon|ha\b|캡슐|ceramide|hyaluronic|retinol|niacinamide|peptide|ginseng|panthenol|aqua|glycerin/i.test(text);
+  return /ingredients?|active|actives?|formula|technology|tech|extract|herb|전성분|성분표|히알루론산|하이알루론산|세라마이드|징크|zinc|dermaon|ha\b|캡슐|ceramide|hyaluronic|retinol|niacinamide|peptide|ginseng|panthenol|aqua|glycerin/i.test(text);
 }
 
 function isBrokenSourceFragment(value: string): boolean {
@@ -904,7 +926,23 @@ function isUrlLikeText(value: string): boolean {
 function inferOcrSentenceCategories(text: string, keywords: string[] = [], explicitCategory?: string): OcrSentenceCategory[] {
   const haystack = `${text} ${keywords.join(" ")}`;
   const explicit = normalizeOcrCategory(explicitCategory);
-  const categories: OcrSentenceCategory[] = explicit ? [explicit] : [];
+  const categories: OcrSentenceCategory[] = explicit && isOcrExplicitCategoryAllowedForText(text, explicit) ? [explicit] : [];
+  const route = classifyOcrRoutingContext(text);
+
+  if (route === "cross-sell-routine") {
+    return categories.includes("usage") && isUsageInstruction(text) ? ["usage"] : [];
+  }
+  if (route === "metric-evidence") {
+    const metricCategories: OcrSentenceCategory[] = [];
+    if (/ingredients?|ingredient|active|actives?|formula|technology|tech|성분|원료|전성분|기술|히알루론산|하이알루론산|세라마이드|징크|zinc|dermaon|ha\b|캡슐|ceramide|hyaluronic|retinol|niacinamide|peptide|ginseng|panthenol/i.test(haystack)) {
+      metricCategories.push("ingredient");
+    }
+    metricCategories.push("effect", "benefit");
+    return uniqueCategories(metricCategories);
+  }
+  if (route === "ingredient-list") {
+    return uniqueCategories([...categories, "ingredient"]);
+  }
 
   if (/ingredients?|ingredient|active|actives?|formula|technology|tech|성분|원료|전성분|기술|히알루론산|하이알루론산|세라마이드|징크|zinc|dermaon|ha\b|캡슐|ceramide|hyaluronic|retinol|niacinamide|peptide|ginseng|panthenol/i.test(haystack)) {
     categories.push("ingredient");
@@ -924,6 +962,58 @@ function inferOcrSentenceCategories(text: string, keywords: string[] = [], expli
   }
 
   return uniqueCategories(categories);
+}
+
+function classifyOcrRoutingContext(text: string): "cross-sell-routine" | "metric-evidence" | "ingredient-list" | "general" {
+  const normalized = cleanSourceSignalText(text);
+  if (isFullIngredientList(normalized)) {
+    return "ingredient-list";
+  }
+  if (isCrossSellRoutineText(normalized)) {
+    return "cross-sell-routine";
+  }
+  if (isMetricEvidenceText(normalized)) {
+    return "metric-evidence";
+  }
+  return "general";
+}
+
+function isCrossSellRoutineText(value: string): boolean {
+  const text = cleanSourceSignalText(value);
+  const stepCount = (text.match(/\bstep\s*\d+\b|단계\s*\d+|\d+\s*단계/gi) ?? []).length;
+  const productTypeCount = new Set((text.match(/\b(?:serum|cream|toner|water|cleanser|foam|oil|essence|ampoule|mask|lotion|eye\s*cream|스킨|토너|세럼|크림|클렌저|폼|오일|에센스|앰플|마스크|ローション|クリーム|セラム|美容液|化粧水)\b/gi) ?? [])
+    .map((token) => token.toLowerCase().replace(/\s+/g, " "))).size;
+  const routineHeading = /\b(?:complete\s+your\s+ritual|routine|regimen|ritual|step\s*\d|단계|루틴|リチュアル|ルーティン)\b/i.test(text);
+
+  return routineHeading && stepCount >= 2 && productTypeCount >= 2;
+}
+
+function isMetricEvidenceText(value: string): boolean {
+  const text = cleanSourceSignalText(value);
+  const hasMetric = /%|\b\d+(?:\.\d+)?\s*(?:weeks?|days?|hours?|users?|participants?|women|men|subjects?|reviews?)\b|임상|인체\s*적용|자가\s*평가|사용자|참여자|대상|clinical|study|self-assess|instrumental|agreed|showed|改善|評価/i.test(text);
+  const hasUsageAction = hasExplicitUsageAction(text);
+  const startsWithTimingMetric = /^(?:after|before|during)\s+\d+(?:\.\d+)?\s*(?:weeks?|days?|hours?)\b/i.test(text);
+
+  return hasMetric && (startsWithTimingMetric || !hasUsageAction);
+}
+
+function isOcrExplicitCategoryAllowedForText(text: string, category: OcrSentenceCategory): boolean {
+  if (category === "usage") {
+    return isUsageInstruction(text);
+  }
+  if (category === "ingredient") {
+    return isIngredientSignal(text);
+  }
+  if (category === "benefit") {
+    return isConciseBenefitSignal(text);
+  }
+  if (category === "effect") {
+    return isEffectSignal(text);
+  }
+  if (category === "review") {
+    return /review|customer|rating|리뷰|후기|평점|만족/i.test(text);
+  }
+  return true;
 }
 
 function normalizeOcrCategory(value?: string): OcrSentenceCategory | undefined {
@@ -1225,12 +1315,23 @@ function isUsageInstruction(value: string): boolean {
   if (isQuestionLikeSourceText(normalized) || /사용\s*적합|테스트를\s*완료|임산부|영유아|어린이|논코메도제닉/i.test(normalized)) {
     return false;
   }
+  if (isCrossSellRoutineText(normalized)) {
+    return false;
+  }
+  if (isSensoryOnlyUsageInstruction(normalized)) {
+    return false;
+  }
 
   if (isEvidenceOnlyUsageCandidate(normalized)) {
     return false;
   }
 
   return hasExplicitUsageAction(normalized);
+}
+
+function isSensoryOnlyUsageInstruction(value: string): boolean {
+  return /\b(?:take\s+a\s+deep\s+breath|inhale|scent|fragrance|aroma)\b/i.test(value)
+    && !/\b(?:apply|dispense|massage|lather|rinse|pat|press|spread|smooth|warm|pump|skin|face|neck)\b/i.test(value);
 }
 
 function isEvidenceOnlyUsageCandidate(value: string): boolean {

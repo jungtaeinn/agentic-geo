@@ -1,10 +1,11 @@
 import { createProductExtractorRestHandler } from "@agentic-geo/pdp-extractor-agent/rest";
 import { readProductExtractorRagProfile } from "@agentic-geo/pdp-extractor-agent/rag-profile";
 
-type Provider = "mock" | "openai" | "gemini" | "azure-openai";
+type Provider = "mock" | "openai" | "gemini" | "azure-openai" | "aistudio";
 
 const provider = (process.env.AGENTIC_GEO_PROVIDER ?? "mock") as Provider;
 const rerankerProvider = (process.env.AGENTIC_GEO_RERANKER_PROVIDER as "cohere" | "azure-ai-search-semantic" | "local-hybrid" | undefined) ?? "cohere";
+const envAzureOpenAiTemperature = optionalNumber(process.env.AZURE_OPENAI_TEMPERATURE);
 
 /** Local/server deployment endpoint powered by the package's reusable REST adapter. */
 export async function POST(request: Request): Promise<Response> {
@@ -21,6 +22,7 @@ export async function POST(request: Request): Promise<Response> {
       embedding: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT
     },
     apiVersion: process.env.AZURE_OPENAI_API_VERSION,
+    temperature: envAzureOpenAiTemperature,
     embedding: {
       provider: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT ? "azure-openai" : "local",
       apiKey: process.env.AZURE_OPENAI_API_KEY,
@@ -45,4 +47,13 @@ export async function POST(request: Request): Promise<Response> {
   });
 
   return handler(request);
+}
+
+function optionalNumber(value: string | undefined): number | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }

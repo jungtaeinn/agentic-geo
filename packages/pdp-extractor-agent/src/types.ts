@@ -5,7 +5,7 @@ export const ProductExtractionInputSchema = z.object({
   sourceType: z.enum(["url", "restApi"]),
   source: z.string().min(1),
   headers: z.record(z.string(), z.string()).optional(),
-  aiProvider: z.enum(["mock", "openai", "gemini", "azure-openai"]).default("mock").optional()
+  aiProvider: z.enum(["mock", "openai", "gemini", "azure-openai", "aistudio"]).default("mock").optional()
 });
 
 /** User-facing request shape accepted by the extraction pipeline. */

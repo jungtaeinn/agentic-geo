@@ -9,6 +9,7 @@ import type {
   PdpGeoTokenUsage,
   PdpProductSignal
 } from "./types";
+import { temperatureBody } from "./copy-refiner";
 import { filterCurrentProductUsageInstructions } from "./product-scope";
 
 interface ProductNormalizationApplication {
@@ -29,6 +30,7 @@ interface ModelBackedProductNormalizerConfig {
   endpoint?: string;
   deployment?: string;
   apiVersion?: string;
+  temperature?: number;
   maxSourceCharacters?: number;
 }
 
@@ -210,7 +212,7 @@ export class ModelBackedProductNormalizer implements PdpGeoProductNormalizer {
           { role: "system", content: prompt.system },
           { role: "user", content: prompt.user }
         ],
-        temperature: 0.1
+        ...temperatureBody(this.config.temperature)
       })
     });
 
@@ -249,6 +251,7 @@ function resolveProductNormalizer(options: PdpGeoGeneratorOptions): { normalizer
       endpoint: settings.endpoint ?? options.endpoint,
       deployment: settings.deployment ?? options.deployments?.reasoning ?? options.deployment,
       apiVersion: settings.apiVersion ?? options.apiVersion,
+      temperature: options.temperature,
       maxSourceCharacters: settings.maxSourceCharacters
     })
   };
@@ -601,15 +604,24 @@ function tokenUsageFromChatCompletions(value: unknown): PdpGeoTokenUsage | undef
     return undefined;
   }
   const usage = value as Record<string, unknown>;
+  const inputTokens = numberField(usage.prompt_tokens) ?? numberField(usage.input_tokens);
+  const outputTokens = numberField(usage.completion_tokens) ?? numberField(usage.output_tokens);
   return compactTokenUsage({
-    inputTokens: numberField(usage.prompt_tokens),
-    outputTokens: numberField(usage.completion_tokens),
-    totalTokens: numberField(usage.total_tokens)
+    inputTokens,
+    outputTokens,
+    totalTokens: numberField(usage.total_tokens) ?? sumOptional(inputTokens, outputTokens)
   });
 }
 
 function compactTokenUsage(usage: PdpGeoTokenUsage): PdpGeoTokenUsage | undefined {
   return usage.inputTokens !== undefined || usage.outputTokens !== undefined || usage.totalTokens !== undefined ? usage : undefined;
+}
+
+function sumOptional(left: number | undefined, right: number | undefined): number | undefined {
+  if (left === undefined && right === undefined) {
+    return undefined;
+  }
+  return (left ?? 0) + (right ?? 0);
 }
 
 function trimJsonForPrompt(value: unknown, maxCharacters: number): JsonValue {

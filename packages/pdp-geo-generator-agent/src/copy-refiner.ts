@@ -30,8 +30,15 @@ interface ModelBackedCopyRefinerConfig {
   endpoint?: string;
   deployment?: string;
   apiVersion?: string;
+  temperature?: number;
 }
 
+type ChatCompletionsPayload = {
+  choices?: Array<{ message?: { content?: string } }>;
+  usage?: unknown;
+};
+
+const CHAT_COMPLETIONS_TIMEOUT_MS = 60_000;
 const maxEvidenceItems = 10;
 const maxRagChunks = 8;
 const strategicRagKinds = new Set(["geo-research", "geo-paper", "cep", "eeat"]);
@@ -124,6 +131,8 @@ export class ModelBackedCopyRefiner implements PdpGeoCopyRefiner {
         return this.refineWithGemini(request);
       case "azure-openai":
         return this.refineWithAzureApi(request);
+      case "aistudio":
+        return this.refineWithAistudio(request);
       case "custom":
       case "mock":
       default:
@@ -204,31 +213,155 @@ export class ModelBackedCopyRefiner implements PdpGeoCopyRefiner {
     const endpoint = this.config.endpoint.replace(/\/$/, "");
     const url = `${endpoint}/openai/deployments/${this.config.deployment}/chat/completions?api-version=${apiVersion}`;
     const prompt = createCopyRefinementPrompt(request);
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "api-key": this.config.apiKey
-      },
-      body: JSON.stringify({
+    const payload = await requestChatCompletionsJson(
+      url,
+      { "api-key": this.config.apiKey },
+      {
         messages: [
           { role: "system", content: prompt.system },
           { role: "user", content: prompt.user }
         ],
-        temperature: 0.1
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`Azure copy refinement failed: ${response.status}`);
-    }
-
-    const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }>; usage?: unknown };
+        ...temperatureBody(this.config.temperature)
+      },
+      "Azure copy refinement"
+    );
     return {
       ...parseCopyRefinementJson(payload.choices?.[0]?.message?.content ?? ""),
       usage: tokenUsageFromChatCompletions(payload.usage)
     };
   }
+
+  private async refineWithAistudio(request: PdpGeoCopyRefinementRequest): Promise<PdpGeoCopyRefinementResult> {
+    if (!this.config.apiKey || !this.config.endpoint || !this.config.deployment) {
+      throw new Error("AI Studio endpoint, API key, and a reasoning model id are required for copy refinement.");
+    }
+
+    // AI Studio proxies Azure OpenAI chat completions: same path, Bearer auth, optional api-version.
+    const endpoint = this.config.endpoint.replace(/\/$/, "");
+    const apiVersion = this.config.apiVersion?.trim();
+    const query = apiVersion ? `?api-version=${encodeURIComponent(apiVersion)}` : "";
+    const url = `${endpoint}/openai/deployments/${this.config.deployment}/chat/completions${query}`;
+    const prompt = createCopyRefinementPrompt(request);
+    const payload = await requestChatCompletionsJson(
+      url,
+      { Authorization: `Bearer ${this.config.apiKey}` },
+      {
+        messages: [
+          { role: "system", content: prompt.system },
+          { role: "user", content: prompt.user }
+        ],
+        ...temperatureBody(this.config.temperature)
+      },
+      "AI Studio copy refinement"
+    );
+    return {
+      ...parseCopyRefinementJson(payload.choices?.[0]?.message?.content ?? ""),
+      usage: tokenUsageFromChatCompletions(payload.usage)
+    };
+  }
+}
+
+/**
+ * Builds the optional `temperature` portion of a chat-completions body.
+ * Returns an empty object when no temperature is configured so the request omits
+ * the field entirely, letting models that only accept their default value (e.g. gpt-5.5) succeed.
+ */
+export function temperatureBody(temperature: number | undefined): { temperature?: number } {
+  return typeof temperature === "number" && Number.isFinite(temperature) ? { temperature } : {};
+}
+
+async function requestChatCompletionsJson(
+  url: string,
+  authHeaders: Record<string, string>,
+  body: Record<string, unknown>,
+  failureLabel: string
+): Promise<ChatCompletionsPayload> {
+  const response = await postChatCompletions(url, authHeaders, body, failureLabel);
+
+  if (response.ok) {
+    return response.json() as Promise<ChatCompletionsPayload>;
+  }
+
+  const suffix = await responseErrorSuffix(response);
+  if (body.temperature !== undefined && isUnsupportedTemperatureError(suffix)) {
+    const { temperature: _temperature, ...retryBody } = body;
+    const retryResponse = await postChatCompletions(url, authHeaders, retryBody, failureLabel);
+
+    if (retryResponse.ok) {
+      return retryResponse.json() as Promise<ChatCompletionsPayload>;
+    }
+
+    throw new Error(`${failureLabel} failed: ${retryResponse.status}${await responseErrorSuffix(retryResponse)}`);
+  }
+
+  throw new Error(`${failureLabel} failed: ${response.status}${suffix}`);
+}
+
+function postChatCompletions(
+  url: string,
+  authHeaders: Record<string, string>,
+  body: Record<string, unknown>,
+  failureLabel: string
+): Promise<Response> {
+  return fetchWithTimeout(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders
+    },
+    body: JSON.stringify(body)
+  }, CHAT_COMPLETIONS_TIMEOUT_MS, failureLabel);
+}
+
+function isUnsupportedTemperatureError(message: string): boolean {
+  return /unsupported value[^]*temperature|temperature[^]*(?:unsupported|only the default)/i.test(message);
+}
+
+async function responseErrorSuffix(response: Response): Promise<string> {
+  const text = await response.text().catch(() => "");
+  const cleaned = text.replace(/\s+/g, " ").trim();
+  return cleaned ? ` - ${cleaned.slice(0, 500)}` : "";
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, label: string): Promise<Response> {
+  const { signal, cancel } = createTimeoutSignal(timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...init,
+      signal
+    });
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s.`);
+    }
+    throw error;
+  } finally {
+    cancel();
+  }
+}
+
+function createTimeoutSignal(timeoutMs: number): { signal: AbortSignal; cancel: () => void } {
+  if (typeof AbortSignal.timeout === "function") {
+    return {
+      signal: AbortSignal.timeout(timeoutMs),
+      cancel: () => {}
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    cancel: () => clearTimeout(timeout)
+  };
+}
+
+function isAbortError(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "name" in error
+    && (error as { name?: unknown }).name === "AbortError";
 }
 
 function resolveCopyRefiner(options: PdpGeoGeneratorOptions): { refiner?: PdpGeoCopyRefiner; warning?: string } {
@@ -257,7 +390,8 @@ function resolveCopyRefiner(options: PdpGeoGeneratorOptions): { refiner?: PdpGeo
       model: settings?.model ?? options.model,
       endpoint: settings?.endpoint ?? options.endpoint,
       deployment: settings?.deployment ?? options.deployments?.reasoning ?? options.deployment,
-      apiVersion: settings?.apiVersion ?? options.apiVersion
+      apiVersion: settings?.apiVersion ?? options.apiVersion,
+      temperature: options.temperature
     })
   };
 }
@@ -274,6 +408,7 @@ function createCopyRefinementPrompt(request: PdpGeoCopyRefinementRequest): { sys
       "Prioritize concrete facts: product type, target concern or customer entry point, differentiating formula/ingredient, measured effect, usage context, and review-intent language.",
       "Use only the supplied product evidence and strategic RAG guidance. Do not invent claims, ingredients, metrics, study details, prices, awards, or certifications.",
       "Preserve numeric claims, study populations, usage instructions, ingredient names, and product names exactly when they appear in evidence.",
+      "Rewrite OCR-like evidence into natural target-locale sentences before using it. Never copy raw all-caps image text, footnote markers, bilingual product labels, or alternate-language product-type labels into public copy.",
       "Respect field evidence contracts: HowTo and usage answers may contain only actionable usage directions; ingredient sections may contain only ingredient/formula/full-INCI evidence; benefit sections may contain only outcomes, effects, review-backed positives, or concise evidence topics.",
       "If a sentence is useful evidence but belongs to a different field, rewrite it only in the correct field and do not move the raw phrase across public fields.",
       "Do not mention the strategy labels in the public copy: no RAG, GEO, geo-paper, CEP, E-E-A-T, schema optimization, citation-ready, OCR, image caption, product shot, pack shot, with text, or in the corner.",
@@ -618,15 +753,24 @@ function tokenUsageFromChatCompletions(value: unknown): PdpGeoTokenUsage | undef
   if (!isRecord(value)) {
     return undefined;
   }
+  const inputTokens = numberField(value.prompt_tokens) ?? numberField(value.input_tokens);
+  const outputTokens = numberField(value.completion_tokens) ?? numberField(value.output_tokens);
   return compactTokenUsage({
-    inputTokens: numberField(value.prompt_tokens),
-    outputTokens: numberField(value.completion_tokens),
-    totalTokens: numberField(value.total_tokens)
+    inputTokens,
+    outputTokens,
+    totalTokens: numberField(value.total_tokens) ?? sumOptional(inputTokens, outputTokens)
   });
 }
 
 function compactTokenUsage(usage: PdpGeoTokenUsage): PdpGeoTokenUsage | undefined {
   return usage.inputTokens !== undefined || usage.outputTokens !== undefined || usage.totalTokens !== undefined ? usage : undefined;
+}
+
+function sumOptional(left: number | undefined, right: number | undefined): number | undefined {
+  if (left === undefined && right === undefined) {
+    return undefined;
+  }
+  return (left ?? 0) + (right ?? 0);
 }
 
 function numberField(value: unknown): number | undefined {

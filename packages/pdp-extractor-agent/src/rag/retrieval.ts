@@ -168,11 +168,12 @@ async function scoreRetrievedChunks(
   ).catch(() => undefined);
   const remoteEmbeddings = remoteEmbeddingResult?.embeddings;
   if (remoteEmbeddingResult) {
+    const aistudioEmbedding = embedding?.provider === "aistudio";
     onRuntimeStep?.({
       stage: "embedding",
       label: "Embedding",
-      provider: "azure-api",
-      service: "Azure model deployment",
+      provider: aistudioEmbedding ? "aistudio" : "azure-api",
+      service: aistudioEmbedding ? "AI Studio model deployment" : "Azure model deployment",
       deployment: embedding?.deployment,
       model: embedding?.model,
       called: true,
@@ -206,7 +207,7 @@ async function rerankRetrievedChunks(
     return retrieved.slice(0, maxChunks);
   }
 
-  if (reranker.provider === "cohere" && (!reranker.endpoint || !reranker.apiKey || retrieved.length <= 1)) {
+  if ((reranker.provider === "cohere" || reranker.provider === "aistudio-bedrock-cohere") && (!reranker.endpoint || !reranker.apiKey || retrieved.length <= 1)) {
     return retrieved.slice(0, maxChunks);
   }
 
@@ -216,14 +217,20 @@ async function rerankRetrievedChunks(
 
   const reranked = reranker.provider === "azure-ai-search-semantic"
     ? await retrieveWithAzureAiSearchSemantic(query, reranker, maxChunks).catch(() => undefined)
-    : await rerankWithCohere(query, retrieved, reranker, maxChunks).catch(() => undefined);
+    : reranker.provider === "aistudio-bedrock-cohere"
+      ? await rerankWithAistudioBedrock(query, retrieved, reranker, maxChunks).catch(() => undefined)
+      : await rerankWithCohere(query, retrieved, reranker, maxChunks).catch(() => undefined);
   if (reranked?.length) {
     onRuntimeStep?.({
       stage: "reranking",
       label: "Reranking",
       provider: reranker.provider,
-      service: reranker.provider === "azure-ai-search-semantic" ? "Azure AI Search semantic ranker" : "Cohere Rerank",
-      model: reranker.provider === "cohere" ? reranker.model : undefined,
+      service: reranker.provider === "azure-ai-search-semantic"
+        ? "Azure AI Search semantic ranker"
+        : reranker.provider === "aistudio-bedrock-cohere"
+          ? "AI Studio Bedrock Cohere Rerank"
+          : "Cohere Rerank",
+      model: reranker.provider === "cohere" || reranker.provider === "aistudio-bedrock-cohere" ? reranker.model : undefined,
       called: true,
       details: `${retrieved.length} candidates reranked to ${Math.min(maxChunks, reranked.length)} results.`
     });
@@ -232,8 +239,9 @@ async function rerankRetrievedChunks(
 }
 
 async function createAzureEmbeddings(texts: string[], embedding?: EmbeddingRuntimeConfig): Promise<{ embeddings: number[][]; usage?: AiTokenUsage } | undefined> {
+  const isAistudio = embedding?.provider === "aistudio";
   if (
-    embedding?.provider !== "azure-openai"
+    (embedding?.provider !== "azure-openai" && !isAistudio)
     || !embedding.apiKey
     || !embedding.endpoint
     || !embedding.deployment
@@ -243,12 +251,19 @@ async function createAzureEmbeddings(texts: string[], embedding?: EmbeddingRunti
   }
 
   const endpoint = embedding.endpoint.replace(/\/$/, "");
-  const apiVersion = embedding.apiVersion ?? "2025-04-01-preview";
-  const response = await fetch(`${endpoint}/openai/deployments/${encodeURIComponent(embedding.deployment)}/embeddings?api-version=${encodeURIComponent(apiVersion)}`, {
+  // AI Studio proxies Azure OpenAI embeddings: same path, Bearer auth, optional api-version.
+  const trimmedApiVersion = embedding.apiVersion?.trim();
+  const apiVersionQuery = isAistudio
+    ? (trimmedApiVersion ? `?api-version=${encodeURIComponent(trimmedApiVersion)}` : "")
+    : `?api-version=${encodeURIComponent(trimmedApiVersion || "2025-04-01-preview")}`;
+  const authHeader: Record<string, string> = isAistudio
+    ? { Authorization: `Bearer ${embedding.apiKey}` }
+    : { "api-key": embedding.apiKey };
+  const response = await fetch(`${endpoint}/openai/deployments/${encodeURIComponent(embedding.deployment)}/embeddings${apiVersionQuery}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "api-key": embedding.apiKey
+      ...authHeader
     },
     body: JSON.stringify({
       input: texts
@@ -351,6 +366,60 @@ function normalizeCohereRerankEndpoint(endpoint: string): string {
     return trimmed;
   }
   return `${trimmed}/v2/rerank`;
+}
+
+/**
+ * Reranks candidates through the AI Studio gateway, which fronts Cohere Rerank on
+ * AWS Bedrock. Uses the Bedrock `/model/{model}/invoke` contract with Bearer auth;
+ * the response mirrors Cohere's `results: [{ index, relevance_score }]` shape.
+ */
+async function rerankWithAistudioBedrock(
+  query: string,
+  retrieved: ProductExtractorRagRetrievedDocument[],
+  reranker: RerankerRuntimeConfig,
+  maxChunks: number
+): Promise<ProductExtractorRagRetrievedDocument[]> {
+  const endpoint = (reranker.endpoint ?? "").trim().replace(/\/$/, "");
+  const model = reranker.model?.trim() || "cohere.rerank-v3-5:0";
+  const response = await fetch(`${endpoint}/model/${encodeURIComponent(model)}/invoke`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${reranker.apiKey ?? ""}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      query,
+      documents: retrieved.map((document) => document.content),
+      top_n: maxChunks,
+      api_version: 2
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`AI Studio Bedrock rerank failed: ${response.status}`);
+  }
+
+  const payload = await response.json() as {
+    results?: Array<{
+      index?: number;
+      relevance_score?: number;
+    }>;
+  };
+
+  return (payload.results ?? [])
+    .flatMap((result) => {
+      const index = typeof result.index === "number" ? result.index : -1;
+      const document = retrieved[index];
+      if (!document) {
+        return [];
+      }
+      return [{
+        ...document,
+        score: typeof result.relevance_score === "number" ? result.relevance_score : document.score
+      }];
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, maxChunks);
 }
 
 async function retrieveWithAzureAiSearchSemantic(

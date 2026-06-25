@@ -147,10 +147,85 @@ function repairJsonLd(
     }
   }
 
+  repairSchemaEvidenceConsistency(graph, locale, warnings, repairs);
+
   return cleanJson({
     ...root,
     "@graph": graph
   }) as JsonObject;
+}
+
+function repairSchemaEvidenceConsistency(
+  graph: Array<Record<string, unknown>>,
+  locale: PdpGeoLocale,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[]
+): void {
+  const product = graph.find((node) => node["@type"] === "Product");
+  const reportedDetails = product ? readReportedDetailsProperty(product) : undefined;
+  if (!reportedDetails) {
+    return;
+  }
+
+  for (const node of graph) {
+    const type = stringValue(node["@type"]);
+    if (type !== "WebPage" && type !== "Product") {
+      continue;
+    }
+    const description = stringValue(node.description);
+    if (!description) {
+      continue;
+    }
+    const aligned = alignDescriptionEvidenceScope(description, reportedDetails);
+    if (aligned === description) {
+      continue;
+    }
+    node.description = aligned;
+    addRepair(warnings, repairs, {
+      field: `${type}.description`,
+      source: "field-contract-validator",
+      issue: "Description evidence scope did not match the retained Product Reported details.",
+      action: "Aligned public description claims to the evidence duration and metric scope retained in Reported details.",
+      before: description,
+      after: aligned,
+      evidence: ["Product.additionalProperty.Reported details", `${type}.description`, locale]
+    }, `${type}.description was aligned to retained reported evidence details.`);
+  }
+}
+
+function readReportedDetailsProperty(product: Record<string, unknown>): string | undefined {
+  const properties = Array.isArray(product.additionalProperty) ? product.additionalProperty : [];
+  return properties
+    .filter(isRecord)
+    .map((item) => ({
+      name: stringValue(item.name),
+      value: stringValue(item.value)
+    }))
+    .find((item) => item.name && /reported details/i.test(item.name) && item.value)?.value;
+}
+
+function alignDescriptionEvidenceScope(description: string, reportedDetails: string): string {
+  const reported = reportedDetails.toLowerCase();
+  let next = description
+    .replace(/([+\-−]?\d+)\.\s+(\d+%)/g, "$1.$2")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!/\b8\s+weeks?\b/i.test(reported)) {
+    next = next
+      .replace(/\b4\s+weeks?\s+and\s+8\s+weeks?(?:\s+of\s+(?:daily\s+)?use)?/gi, "4 weeks of use")
+      .replace(/\s+and\s+8\s+weeks?(?:\s+of\s+(?:daily\s+)?use)?/gi, "");
+  }
+
+  if (!/\binstrumental\b/i.test(reported)) {
+    next = next.replace(/\binstrumental results?\b/gi, "Reported details");
+  }
+
+  return normalizeRepeatedPunctuation(next)
+    .replace(/\s+([,.!?。！？])/g, "$1")
+    .replace(/([.。！？?])(?=\S)/g, addSentencePunctuationSpacing)
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function repairGraphNode(
@@ -191,6 +266,18 @@ function repairGraphNode(
       }
       const repairedQuestion = repairGeneratedText(name, locale, "FAQPage.mainEntity.name", warnings, repairs);
       const repairedAnswer = repairGeneratedText(answer, locale, "FAQPage.mainEntity.acceptedAnswer.text", warnings, repairs);
+      if (isSectionHeadingFaqQuestion(repairedQuestion)) {
+        addRepair(warnings, repairs, {
+          field: "FAQPage.mainEntity",
+          source: "field-contract-validator",
+          issue: "FAQ question was a source section heading rather than an answer-ready user question.",
+          action: "Removed the section-heading FAQ item from mainEntity.",
+          before: toJsonValue(item),
+          after: null,
+          evidence: ["FAQPage.mainEntity.name", "answer-ready FAQ contract"]
+        }, "Section-heading FAQ item was removed during final sentence QA.");
+        return [];
+      }
       const aligned = repairFaqQuestionAnswerAlignment(repairedQuestion, repairedAnswer, locale, warnings, repairs);
 
       return [{
@@ -241,8 +328,297 @@ function repairGraphNode(
     });
   }
 
+  if (node["@type"] === "Product") {
+    repairProductTrustFields(node, locale, warnings, repairs);
+  }
+
+  if (node["@type"] === "BreadcrumbList") {
+    repairBreadcrumbListNode(node, warnings, repairs);
+  }
+
   const repaired = repairSchemaTextFields(node, locale, warnings, repairs);
   return cleanJson(pruneInvalidSchemaText(repaired, locale, warnings, repairs));
+}
+
+function repairProductTrustFields(
+  node: Record<string, unknown>,
+  _locale: PdpGeoLocale,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[]
+): void {
+  const productName = stringValue(node.name);
+
+  if (node.image !== undefined) {
+    const before = node.image;
+    const images = normalizeSchemaImageValues(node.image);
+    if (images.length === 0) {
+      delete node.image;
+    } else {
+      node.image = images;
+    }
+    if (JSON.stringify(before) !== JSON.stringify(node.image)) {
+      addRepair(warnings, repairs, {
+        field: "Product.image",
+        source: "trust-field-validator",
+        issue: "Product.image included duplicate, low-quality, icon-like, or non-canonical image URLs.",
+        action: images.length > 0 ? "Canonicalized and deduplicated Product.image URLs." : "Removed Product.image because no schema-safe image URL remained.",
+        before: toJsonValue(before),
+        after: toJsonValue(node.image),
+        evidence: ["Product.image", "schema image quality gate"]
+      }, "Product.image was repaired by the schema trust-field validator.");
+    }
+  }
+
+  if (node.offers !== undefined) {
+    const before = node.offers;
+    const repairedOffer = normalizeOfferNode(node.offers);
+    if (repairedOffer) {
+      node.offers = repairedOffer;
+    } else {
+      delete node.offers;
+    }
+    if (JSON.stringify(before) !== JSON.stringify(node.offers)) {
+      addRepair(warnings, repairs, {
+        field: "Product.offers",
+        source: "trust-field-validator",
+        issue: "Product.offers lacked a trustworthy positive price and ISO currency.",
+        action: repairedOffer ? "Normalized Offer price and currency." : "Removed Offer because price/currency evidence was insufficient.",
+        before: toJsonValue(before),
+        after: toJsonValue(node.offers),
+        evidence: ["Offer.price", "Offer.priceCurrency", "E-E-A-T trust-sensitive field policy"]
+      }, "Product.offers was repaired by the schema trust-field validator.");
+    }
+  }
+
+  if (node.aggregateRating !== undefined) {
+    const before = node.aggregateRating;
+    const repairedRating = normalizeAggregateRatingNode(node.aggregateRating);
+    if (repairedRating) {
+      node.aggregateRating = repairedRating;
+    } else {
+      delete node.aggregateRating;
+    }
+    if (JSON.stringify(before) !== JSON.stringify(node.aggregateRating)) {
+      addRepair(warnings, repairs, {
+        field: "Product.aggregateRating",
+        source: "trust-field-validator",
+        issue: "AggregateRating lacked a valid rating value and positive review count.",
+        action: repairedRating ? "Normalized AggregateRating." : "Removed AggregateRating because rating evidence was insufficient.",
+        before: toJsonValue(before),
+        after: toJsonValue(node.aggregateRating),
+        evidence: ["AggregateRating.ratingValue", "AggregateRating.reviewCount", "E-E-A-T review evidence policy"]
+      }, "Product.aggregateRating was repaired by the schema trust-field validator.");
+    }
+  }
+
+  if (node.review !== undefined) {
+    const before = node.review;
+    const repairedReviews = normalizeReviewNodes(node.review, productName, _locale);
+    if (repairedReviews.length > 0) {
+      node.review = repairedReviews;
+    } else {
+      delete node.review;
+    }
+    if (JSON.stringify(before) !== JSON.stringify(node.review)) {
+      addRepair(warnings, repairs, {
+        field: "Product.review",
+        source: "trust-field-validator",
+        issue: "Review schema lacked meaningful customer review body evidence or reused product/rating summary text.",
+        action: repairedReviews.length > 0 ? "Kept only meaningful customer reviews." : "Removed Review schema because no valid review body remained.",
+        before: toJsonValue(before),
+        after: toJsonValue(node.review),
+        evidence: ["Review.reviewBody", "E-E-A-T review evidence policy"]
+      }, "Product.review was repaired by the schema trust-field validator.");
+    }
+  }
+}
+
+function normalizeSchemaImageValues(value: unknown): string[] {
+  const values = (Array.isArray(value) ? value : [value])
+    .flatMap((item) => typeof item === "string" ? [item] : isRecord(item) ? [stringValue(item.url), stringValue(item.contentUrl)].filter((url): url is string => Boolean(url)) : [])
+    .flatMap((item) => item.split(/\s*,\s*/))
+    .map(canonicalizeSchemaImageUrl)
+    .filter((item): item is string => Boolean(item))
+    .filter((item) => !isLowQualitySchemaImageUrl(item));
+  const seen = new Set<string>();
+  return values.filter((item) => {
+    const key = schemaImageDedupeKey(item);
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  }).slice(0, 8);
+}
+
+function canonicalizeSchemaImageUrl(value: string): string | undefined {
+  const raw = value.trim();
+  if (!raw || /^data:/i.test(raw) || /\.svg(?:\?|$)/i.test(raw)) {
+    return undefined;
+  }
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return undefined;
+    }
+    if (url.protocol === "http:") {
+      url.protocol = "https:";
+    }
+    for (const key of Array.from(url.searchParams.keys())) {
+      if (/^(?:width|height|w|h|fit|crop|format|fm|q|quality|v|_pos|variant|sw|sh)$/i.test(key)) {
+        url.searchParams.delete(key);
+      }
+    }
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function schemaImageDedupeKey(value: string): string {
+  try {
+    const url = new URL(value);
+    return `${url.hostname.toLowerCase()}${url.pathname.toLowerCase()
+      .replace(/(?:[_-])?(?:\d{2,5}x\d{2,5}|x\d{2,5}|\d{2,5}x)(?=\.[a-z]{3,4}$)/i, "")
+      .replace(/@(?:2x|3x)(?=\.[a-z]{3,4}$)/i, "")}`;
+  } catch {
+    return value.toLowerCase();
+  }
+}
+
+function isLowQualitySchemaImageUrl(value: string): boolean {
+  const text = decodeURIComponent(value).toLowerCase();
+  const sizeValues = Array.from(text.matchAll(/(?:width|height|[?&]w|[?&]h)=([0-9]{1,4})|[_-]([0-9]{1,4})x([0-9]{1,4})(?=[_.-]|$)/gi))
+    .flatMap((match) => [match[1], match[2], match[3]])
+    .map((item) => item ? Number(item) : undefined)
+    .filter((item): item is number => typeof item === "number" && Number.isFinite(item));
+  if (sizeValues.some((item) => item > 0 && item <= 96)) {
+    return true;
+  }
+  return /\b(?:icons?|logos?|sprite|badge|star|rating|review|avatar|profile|swatch|payment|reward|loyalty|placeholder|spinner)\b/i.test(text);
+}
+
+function normalizeOfferNode(value: unknown): Record<string, unknown> | undefined {
+  const offer = Array.isArray(value) ? value.find(isRecord) : isRecord(value) ? value : undefined;
+  if (!offer) {
+    return undefined;
+  }
+  const currency = stringValue(offer.priceCurrency)?.toUpperCase();
+  const price = numberValue(offer.price);
+  if (!currency || !/^[A-Z]{3}$/.test(currency) || typeof price !== "number" || price <= 0) {
+    return undefined;
+  }
+  return cleanJson({
+    ...offer,
+    "@type": "Offer",
+    price,
+    priceCurrency: currency
+  });
+}
+
+function normalizeAggregateRatingNode(value: unknown): Record<string, unknown> | undefined {
+  const rating = isRecord(value) ? value : undefined;
+  if (!rating) {
+    return undefined;
+  }
+  const ratingValue = numberValue(rating.ratingValue);
+  const reviewCount = numberValue(rating.reviewCount);
+  if (typeof ratingValue !== "number" || ratingValue <= 0 || ratingValue > 5 || typeof reviewCount !== "number" || reviewCount <= 0) {
+    return undefined;
+  }
+  return cleanJson({
+    ...rating,
+    "@type": "AggregateRating",
+    ratingValue,
+    reviewCount
+  });
+}
+
+function normalizeReviewNodes(value: unknown, productName: string | undefined, locale: PdpGeoLocale): Record<string, unknown>[] {
+  const reviews = (Array.isArray(value) ? value : [value]).filter(isRecord);
+  const seen = new Set<string>();
+  return reviews.flatMap((review) => {
+    const body = repairGeneratedText(stringValue(review.reviewBody) ?? stringValue(review.name) ?? "", locale, "Product.review.reviewBody", [], []);
+    if (!isMeaningfulSchemaReviewBody(body, productName)) {
+      return [];
+    }
+    const key = body.toLowerCase();
+    if (seen.has(key)) {
+      return [];
+    }
+    seen.add(key);
+    return [cleanJson({
+      ...review,
+      "@type": "Review",
+      reviewBody: body
+    })];
+  }).slice(0, 3);
+}
+
+function isMeaningfulSchemaReviewBody(value: string, productName?: string): boolean {
+  const normalized = value.trim();
+  if (normalized.length < 20 || normalized.length > 600) {
+    return false;
+  }
+  if (productName && normalized.toLowerCase() === productName.trim().toLowerCase()) {
+    return false;
+  }
+  if (/^(review|reviews|rating|ratings|star|stars|smooth|moisture|hydration|firmness|elasticity|plumpness)$/i.test(normalized)) {
+    return false;
+  }
+  if (/^(?:rating|평점|評価)?\s*\d(?:\.\s*\d+)?\s*(?:\/\s*5)?\s*(?:stars?)?\s+\d[\d,]*\s+(?:reviews?|ratings?|리뷰|후기)$/i.test(normalized)) {
+    return false;
+  }
+  return normalized.split(/\s+/).length >= 4 || /[가-힣ぁ-んァ-ン]/.test(normalized);
+}
+
+function repairBreadcrumbListNode(
+  node: Record<string, unknown>,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[]
+): void {
+  if (!Array.isArray(node.itemListElement)) {
+    return;
+  }
+  const before = node.itemListElement;
+  const items = node.itemListElement.filter(isRecord).flatMap((item, index) => {
+    const name = stringValue(item.name);
+    if (!name) {
+      return [];
+    }
+    return [cleanJson({
+      ...item,
+      "@type": "ListItem",
+      position: numberValue(item.position) ?? index + 1,
+      name
+    })];
+  });
+  node.itemListElement = items.map((item, index) => ({
+    ...item,
+    position: index + 1
+  }));
+  if (items.length < 2) {
+    addRepair(warnings, repairs, {
+      field: "BreadcrumbList.itemListElement",
+      source: "trust-field-validator",
+      issue: "BreadcrumbList has fewer than two valid hierarchy items.",
+      action: "Kept the breadcrumb node but flagged it because stronger hierarchy evidence is needed.",
+      before: toJsonValue(before),
+      after: toJsonValue(node.itemListElement),
+      evidence: ["BreadcrumbList.itemListElement", "schema hierarchy quality gate"]
+    }, "BreadcrumbList has fewer than two valid hierarchy items.");
+  } else if (JSON.stringify(before) !== JSON.stringify(node.itemListElement)) {
+    addRepair(warnings, repairs, {
+      field: "BreadcrumbList.itemListElement",
+      source: "schema-validator",
+      issue: "BreadcrumbList item positions or names were invalid.",
+      action: "Removed invalid breadcrumb items and renumbered positions.",
+      before: toJsonValue(before),
+      after: toJsonValue(node.itemListElement),
+      evidence: ["BreadcrumbList.itemListElement"]
+    }, "BreadcrumbList items were repaired.");
+  }
 }
 
 function sanitizeAccordionHtml(html: string, warnings: string[], repairs: PdpGeoValidationRepair[]): string {
@@ -402,7 +778,15 @@ function isActionableUsageText(value: string): boolean {
   if (isEvidenceOnlyUsageText(text)) {
     return false;
   }
+  if (isSensoryOnlyUsageText(text)) {
+    return false;
+  }
   return hasUsageActionVerb(text);
+}
+
+function isSensoryOnlyUsageText(value: string): boolean {
+  return /\b(?:take\s+a\s+deep\s+breath|inhale|scent|fragrance|aroma)\b/i.test(value)
+    && !/\b(?:apply|dispense|massage|lather|rinse|pat|press|spread|smooth|warm|pump|skin|face|neck)\b/i.test(value);
 }
 
 function isEvidenceOnlyUsageText(value: string): boolean {
@@ -701,8 +1085,12 @@ function repairGeneratedText(
     .replace(/\\"/g, "\"")
     .replace(/\\[rn]/g, " ")
     .replace(/\u00a0/g, " ")
+    .replace(/\bKEY INGREDIENTS\s*:\s*/g, "")
+    .replace(/\bKEY INGREDIENTS\s+details?\s+mention\b/g, "Ingredient details mention")
+    .replace(/\b(?:and|with)\s+KEY INGREDIENTS\b/g, "")
+    .replace(/([+\-−]?\d+)\.\s+(\d+%)/g, "$1.$2")
     .replace(/\s+([,.!?。！？])/g, "$1")
-    .replace(/([.。！？?])(?=\S)/g, "$1 ")
+    .replace(/([.。！？?])(?=\S)/g, addSentencePunctuationSpacing)
     .replace(/[ \t]+/g, " ")
     .replace(/\n[ \t]+/g, "\n")
     .trim();
@@ -719,6 +1107,7 @@ function repairGeneratedText(
   }
   if (locale === "en-US" || locale === "en-GB") {
     next = repairEnglishSentenceQuality(next);
+    next = repairEnglishOcrArtifacts(next);
   }
 
   next = removeUrlArtifactSentences(next);
@@ -768,6 +1157,17 @@ function repairEnglishSentenceQuality(value: string): string {
     .replace(/\buse-feel\b/gi, "comfort")
     .replace(/\btexture language\b/gi, "texture")
     .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function repairEnglishOcrArtifacts(value: string): string {
+  return value
+    .replace(/\bAFTER ONE BOTTLE OF DAILY USE\*?,?\s*/gi, "")
+    .replace(/\bS[ÉE]RUM\s+ACTIVATEUR\b[\p{L}\s™®-]*?(?=\s+(?:so|and|with|for|that)\b|[.。!?]|$)/giu, "")
+    .replace(/\bCR[ÈE]ME\b[\p{L}\s™®-]*?(?=\s+(?:so|and|with|for|that)\b|[.。!?]|$)/giu, "")
+    .replace(/\b([A-Z]{3,})\s+([A-Z]{3,})\s+([A-Z]{3,})(?=\s+(?:so|and|with|for|that)\b)/g, (_match, a: string, b: string, c: string) => `${a.toLowerCase()} ${b.toLowerCase()} ${c.toLowerCase()}`)
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.!?])/g, "$1")
     .trim();
 }
 
@@ -838,7 +1238,7 @@ function repairKoreanSentenceQuality(value: string): string {
     .replace(/근거 설명합니다/g, "근거를 설명합니다")
     .replace(/루틴 찾은 고객/g, "루틴을 찾는 고객")
     .replace(/([.。])\s*에 초점을 둡니다/g, "$1")
-    .replace(/([.。！？])(?=\S)/g, "$1 ")
+    .replace(/([.。！？])(?=\S)/g, addSentencePunctuationSpacing)
     .replace(/\s{2,}/g, " ")
     .trim();
 }
@@ -998,12 +1398,26 @@ function normalizeRepeatedPunctuation(value: string): string {
     .replace(/\n\s+/g, "\n");
 }
 
+function addSentencePunctuationSpacing(_match: string, punctuation: string, offset: number, input: string): string {
+  if (punctuation === "." && /\d/.test(input[offset - 1] ?? "") && /\d/.test(input[offset + 1] ?? "")) {
+    return punctuation;
+  }
+  return `${punctuation} `;
+}
+
 function isQuestionLike(value: string, locale: PdpGeoLocale): boolean {
   const text = value.trim();
   if (/[?？]$/.test(text)) {
     return true;
   }
   return locale === "ko-KR" && /(인가요|나요|까요|무엇인가요|어떤가요)\s*[?？]?$/.test(text);
+}
+
+function isSectionHeadingFaqQuestion(value: string): boolean {
+  const text = value
+    .trim()
+    .replace(/^[\s:[\]-]+|[\s:?\]-]+$/g, "");
+  return /^(?:key\s*ingredients?|ingredients?|ingredient\s*list|full\s*ingredients?|benefits?|summary|how\s*to\s*use|usage|directions?|reviews?|clinical\s*results?|proven\s*results?)$/i.test(text);
 }
 
 function isBrokenGeneratedFragment(value: string): boolean {

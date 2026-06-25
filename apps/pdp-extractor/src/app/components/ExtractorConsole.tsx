@@ -38,7 +38,7 @@ type QueueStatus = "idle" | "running" | "done" | "error";
 type AgentProcessStatus = "idle" | "running" | "done" | "error";
 type AgentStepStatus = "pending" | "running" | "done" | "error";
 type AgentStepId = "input" | "fetch" | "extract" | "ocr" | "review" | "rag" | "json";
-type ProviderId = "mock" | "openai" | "gemini" | "azure-openai";
+type ProviderId = "mock" | "openai" | "gemini" | "azure-openai" | "aistudio";
 type ConnectionStatus = "idle" | "checking" | "connected" | "error";
 type SettingsPane = "provider" | "rest" | "rag";
 type SourceMode = "auto" | "url" | "restApi";
@@ -116,6 +116,12 @@ interface ProviderSettings {
   azureAiSearchEndpoint: string;
   azureAiSearchIndexName: string;
   azureAiSearchSemanticConfiguration: string;
+  aistudioEndpoint: string;
+  aistudioApiKey: string;
+  aistudioModel: string;
+  aistudioEmbeddingModel: string;
+  aistudioRerankModel: string;
+  aistudioApiVersion: string;
 }
 
 interface RuntimeLlmConfig {
@@ -131,7 +137,7 @@ interface RuntimeLlmConfig {
   };
   apiVersion?: string;
   embedding?: {
-    provider?: "local" | "azure-openai";
+    provider?: "local" | "azure-openai" | "aistudio";
     apiKey?: string;
     endpoint?: string;
     deployment?: string;
@@ -139,7 +145,7 @@ interface RuntimeLlmConfig {
     model?: string;
   };
   reranker?: {
-    provider?: "local-hybrid" | "cohere" | "azure-ai-search-semantic";
+    provider?: "local-hybrid" | "cohere" | "azure-ai-search-semantic" | "aistudio-bedrock-cohere";
     apiKey?: string;
     endpoint?: string;
     model?: string;
@@ -187,7 +193,8 @@ interface RuntimeRagConfig {
   }>;
 }
 
-const SETTINGS_STORAGE_KEY = "agentic-geo.provider-settings.v1";
+const SETTINGS_STORAGE_KEY = "agentic-geo.provider-settings.v2";
+const LEGACY_SETTINGS_STORAGE_KEYS = ["agentic-geo.provider-settings.v1"];
 const REST_SETTINGS_STORAGE_KEY = "agentic-geo.rest-api-settings.v1";
 const RAG_SETTINGS_STORAGE_KEY = "agentic-geo.rag-profile-settings.v1";
 const HISTORY_STORAGE_KEY = "agentic-geo.extraction-history.v1";
@@ -213,21 +220,29 @@ const defaultProviderSettings: ProviderSettings = {
   azureAiSearchApiKey: "",
   azureAiSearchEndpoint: "",
   azureAiSearchIndexName: "",
-  azureAiSearchSemanticConfiguration: "default"
+  azureAiSearchSemanticConfiguration: "default",
+  aistudioEndpoint: "",
+  aistudioApiKey: "",
+  aistudioModel: "gpt-5.5",
+  aistudioEmbeddingModel: "text-embedding-3-large",
+  aistudioRerankModel: "cohere.rerank-v3-5:0",
+  aistudioApiVersion: ""
 };
 
 const providerLabels: Record<ProviderId, string> = {
   mock: "Mock 테스트",
   openai: "OpenAI",
   gemini: "Gemini",
-  "azure-openai": "Azure API"
+  "azure-openai": "Azure API",
+  aistudio: "AI Studio"
 };
 
 const providerDescriptions: Record<ProviderId, string> = {
   mock: "UI 흐름 검증",
   openai: "Responses API",
   gemini: "Google AI Studio",
-  "azure-openai": "Azure 배포"
+  "azure-openai": "Azure 배포",
+  aistudio: "외부에이전트 엔드포인트"
 };
 
 const defaultRestApiSettings: RestApiSettings = {
@@ -1027,6 +1042,7 @@ export function ExtractorConsole() {
 
   function resetProviderSettings() {
     window.localStorage.removeItem(SETTINGS_STORAGE_KEY);
+    LEGACY_SETTINGS_STORAGE_KEYS.forEach((key) => window.localStorage.removeItem(key));
     setProviderSettings(defaultProviderSettings);
     setConnectionStatus("idle");
     setModelOptions({});
@@ -1771,7 +1787,7 @@ export function ExtractorConsole() {
               <section className="settingsSection">
                 <h3>AI 선택</h3>
                 <div className="providerGrid">
-                  {(["mock", "openai", "gemini", "azure-openai"] satisfies ProviderId[]).map((provider) => (
+                  {(["mock", "openai", "gemini", "azure-openai", "aistudio"] satisfies ProviderId[]).map((provider) => (
                     <button
                       className={providerSettings.provider === provider ? "active" : ""}
                       key={provider}
@@ -1855,6 +1871,13 @@ export function ExtractorConsole() {
                     onRefreshDeployments={() => {
                       void loadProviderModels();
                     }}
+                    settings={providerSettings}
+                  />
+                )}
+
+                {providerSettings.provider === "aistudio" && (
+                  <AistudioProviderSettings
+                    onChange={updateProviderSetting}
                     settings={providerSettings}
                   />
                 )}
@@ -2154,6 +2177,59 @@ function StepStatusIcon({ status }: { status: AgentStepStatus }) {
 }
 
 type ProviderSettingUpdater = <Key extends keyof ProviderSettings>(key: Key, value: ProviderSettings[Key]) => void;
+
+function AistudioProviderSettings({
+  onChange,
+  settings
+}: Readonly<{
+  onChange: ProviderSettingUpdater;
+  settings: ProviderSettings;
+}>) {
+  return (
+    <div className="settingsFields">
+      <SettingField
+        label="AI Studio Endpoint URL"
+        value={settings.aistudioEndpoint}
+        placeholder="https://dev-aistudio.example.com:8082/v1/agent/..."
+        onChange={(value) => onChange("aistudioEndpoint", value)}
+      />
+      <SettingField
+        label="API Key"
+        type="password"
+        value={settings.aistudioApiKey}
+        placeholder="외부에이전트 API Key (Bearer)"
+        onChange={(value) => onChange("aistudioApiKey", value)}
+      />
+      <p className="azureCredentialNote">
+        Endpoint와 API Key는 OCR/추론, Embedding, Rerank 모델 호출에 공통으로 사용됩니다 (Authorization: Bearer).
+      </p>
+      <SettingField
+        label="OCR/추론 모델 ID"
+        value={settings.aistudioModel}
+        placeholder="gpt-5.5"
+        onChange={(value) => onChange("aistudioModel", value)}
+      />
+      <SettingField
+        label="Embedding 모델 ID"
+        value={settings.aistudioEmbeddingModel}
+        placeholder="text-embedding-3-large"
+        onChange={(value) => onChange("aistudioEmbeddingModel", value)}
+      />
+      <SettingField
+        label="Rerank 모델 ID (Bedrock, 선택)"
+        value={settings.aistudioRerankModel}
+        placeholder="cohere.rerank-v3-5:0"
+        onChange={(value) => onChange("aistudioRerankModel", value)}
+      />
+      <SettingField
+        label="API Version (선택)"
+        value={settings.aistudioApiVersion}
+        placeholder="비워두면 미사용"
+        onChange={(value) => onChange("aistudioApiVersion", value)}
+      />
+    </div>
+  );
+}
 
 function AzureProviderSettings({
   deploymentListId,
@@ -2754,6 +2830,46 @@ function createRuntimeLlmConfig(settings: ProviderSettings): RuntimeLlmConfig {
     };
   }
 
+  if (settings.provider === "aistudio") {
+    const apiKey = normalizeSecretInput(settings.aistudioApiKey);
+    const endpoint = settings.aistudioEndpoint.trim();
+    const model = settings.aistudioModel.trim();
+    const embeddingModel = settings.aistudioEmbeddingModel.trim();
+    const rerankModel = settings.aistudioRerankModel.trim();
+    const apiVersion = settings.aistudioApiVersion.trim() || undefined;
+
+    // One AI Studio endpoint + Bearer key fronts all roles: gpt-5.5 (OCR/reasoning),
+    // text-embedding-3-large (embedding), and cohere rerank on Bedrock.
+    return {
+      provider: "aistudio",
+      apiKey,
+      endpoint,
+      deployment: model,
+      deployments: {
+        ocr: model,
+        reasoning: model,
+        embedding: embeddingModel
+      },
+      apiVersion,
+      embedding: {
+        provider: "aistudio",
+        apiKey,
+        endpoint,
+        deployment: embeddingModel,
+        apiVersion,
+        model: embeddingModel
+      },
+      reranker: rerankModel
+        ? {
+            provider: "aistudio-bedrock-cohere",
+            apiKey,
+            endpoint,
+            model: rerankModel
+          }
+        : { provider: "local-hybrid" }
+    };
+  }
+
   return { provider: "mock" };
 }
 
@@ -2981,12 +3097,21 @@ function getProviderValidationMessage(settings: ProviderSettings): string | unde
     }
   }
 
+  if (settings.provider === "aistudio") {
+    if (settings.aistudioModel.trim().length === 0) {
+      return "AI Studio reasoning/OCR 모델 ID를 입력해주세요.";
+    }
+    if (settings.aistudioEmbeddingModel.trim().length === 0) {
+      return "AI Studio embedding 모델 ID를 입력해주세요.";
+    }
+  }
+
   return undefined;
 }
 
 function getProviderCredentialValidationMessage(settings: ProviderSettings): string | undefined {
   if (settings.provider === "mock") {
-    return "실제 AI 연동을 위해 OpenAI, Gemini, Azure API 중 하나를 선택해주세요.";
+    return "실제 AI 연동을 위해 OpenAI, Gemini, Azure API, AI Studio 중 하나를 선택해주세요.";
   }
 
   if (settings.provider === "openai" && normalizeSecretInput(settings.openaiApiKey).length === 0) {
@@ -3006,6 +3131,15 @@ function getProviderCredentialValidationMessage(settings: ProviderSettings): str
     }
   }
 
+  if (settings.provider === "aistudio") {
+    if (normalizeSecretInput(settings.aistudioApiKey).length === 0) {
+      return "AI Studio API Key를 입력해주세요.";
+    }
+    if (settings.aistudioEndpoint.trim().length === 0) {
+      return "AI Studio Endpoint URL을 입력해주세요.";
+    }
+  }
+
   return undefined;
 }
 
@@ -3019,6 +3153,9 @@ function getSelectedModel(settings: ProviderSettings): string {
   if (settings.provider === "azure-openai") {
     return settings.azureOcrDeployment.trim() || settings.azureDeployment.trim();
   }
+  if (settings.provider === "aistudio") {
+    return settings.aistudioModel.trim();
+  }
   return "";
 }
 
@@ -3028,7 +3165,8 @@ function readStoredProviderSettings(): ProviderSettings {
   }
 
   try {
-    const rawSettings = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+    const rawSettings = window.localStorage.getItem(SETTINGS_STORAGE_KEY)
+      ?? LEGACY_SETTINGS_STORAGE_KEYS.map((key) => window.localStorage.getItem(key)).find((value): value is string => Boolean(value));
 
     if (!rawSettings) {
       return defaultProviderSettings;

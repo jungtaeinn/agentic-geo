@@ -1,7 +1,7 @@
 import type { AiTokenUsage, ClassifiedKeyword, ClassifiedSentenceInsight } from "../types";
 
 /** Provider IDs supported by the first extractor agent. */
-export type LlmProviderId = "mock" | "openai" | "gemini" | "azure-openai";
+export type LlmProviderId = "mock" | "openai" | "gemini" | "azure-openai" | "aistudio";
 
 /** Azure deployment names mapped to pipeline roles. */
 export interface AzureRoleDeployments {
@@ -12,7 +12,7 @@ export interface AzureRoleDeployments {
 
 /** Optional embedding runtime used by RAG retrieval. */
 export interface EmbeddingRuntimeConfig {
-  provider?: "local" | "azure-openai";
+  provider?: "local" | "azure-openai" | "aistudio";
   apiKey?: string;
   endpoint?: string;
   deployment?: string;
@@ -22,7 +22,7 @@ export interface EmbeddingRuntimeConfig {
 
 /** Optional reranker runtime used after initial retrieval. */
 export interface RerankerRuntimeConfig {
-  provider?: "local-hybrid" | "cohere" | "azure-ai-search-semantic";
+  provider?: "local-hybrid" | "cohere" | "azure-ai-search-semantic" | "aistudio-bedrock-cohere";
   apiKey?: string;
   endpoint?: string;
   model?: string;
@@ -40,6 +40,8 @@ export interface LlmProviderConfig {
   deployment?: string;
   deployments?: AzureRoleDeployments;
   apiVersion?: string;
+  /** Sampling temperature. Omitted from the request when undefined so models that only accept their default value (e.g. gpt-5.5) are not rejected. */
+  temperature?: number;
   embedding?: EmbeddingRuntimeConfig;
   reranker?: RerankerRuntimeConfig;
 }

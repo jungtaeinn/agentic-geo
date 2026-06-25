@@ -20,7 +20,7 @@ export type PdpGeoEmbeddingProvider = "local" | "openai" | "custom";
 export type PdpGeoRerankerProvider = "local-hybrid" | "openai-file-search" | "custom";
 
 /** Model provider IDs accepted by optional model-backed refinement hooks. */
-export type PdpGeoProviderId = "mock" | "openai" | "gemini" | "azure-openai" | "custom";
+export type PdpGeoProviderId = "mock" | "openai" | "gemini" | "azure-openai" | "aistudio" | "custom";
 
 /** Schema graph targets supported by the generator. */
 export type PdpGeoSchemaTarget = "WebPage" | "Product" | "FAQPage" | "HowTo" | "BreadcrumbList";
@@ -138,8 +138,10 @@ export interface PdpGeoGeneratorOptions {
     embedding?: string;
   };
   apiVersion?: string;
+  /** Sampling temperature forwarded to model calls. Omitted from requests when undefined (model default). */
+  temperature?: number;
   embedding?: {
-    provider?: "local" | "azure-openai";
+    provider?: "local" | "azure-openai" | "aistudio";
     apiKey?: string;
     endpoint?: string;
     deployment?: string;
@@ -147,7 +149,7 @@ export interface PdpGeoGeneratorOptions {
     model?: string;
   };
   reranker?: {
-    provider?: "local-hybrid" | "cohere" | "azure-ai-search-semantic";
+    provider?: "local-hybrid" | "cohere" | "azure-ai-search-semantic" | "aistudio-bedrock-cohere";
     apiKey?: string;
     endpoint?: string;
     model?: string;
@@ -527,7 +529,7 @@ export interface PdpGeoEvidence {
 
 export interface PdpGeoValidationRepair {
   field: string;
-  source: "schema-validator" | "html-validator" | "sentence-qa" | "field-contract-validator";
+  source: "schema-validator" | "html-validator" | "sentence-qa" | "field-contract-validator" | "trust-field-validator";
   issue: string;
   action: string;
   before?: JsonValue;

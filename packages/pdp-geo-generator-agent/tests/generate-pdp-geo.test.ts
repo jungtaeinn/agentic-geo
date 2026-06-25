@@ -250,6 +250,88 @@ describe("generatePdpGeo", () => {
     expect(result.content.sections.description).not.toContain("PDP name");
   });
 
+  it("applies E-E-A-T trust gates to offer, review, image, and OCR-routed schema fields", async () => {
+    const { result } = await generatePdpGeo({
+      product: {
+        geoProduct: {
+          name: "First Care Activating Serum VI",
+          description: "Hydrating serum with Korean Ginseng Actives for daily skin-care routines.",
+          brand: "Sulwhasoo",
+          category: "Serum",
+          price: {
+            raw: "8900"
+          },
+          images: [
+            "https://cdn.example.com/products/first-care-activating-serum-main.jpg?width=1200&format=webp",
+            "http://cdn.example.com/products/first-care-activating-serum-main.jpg?width=600",
+            "https://cdn.example.com/icons/Hydrating.png?width=48",
+            "https://cdn.example.com/products/NewCGRCream_cream_tile.jpg",
+            "https://cdn.example.com/products/SWS_Thumbnail_GCF_cleanser.jpg"
+          ],
+          benefits: ["hydration", "firmness", "ELASTICITY", "elasticity"],
+          ingredients: ["Korean Ginseng Actives", "Ginseng Peptide"],
+          usage: [
+            "Use morning and night, after applying toner.",
+            "AFTER 6 WEEKS OF USE 100% AGREED SKIN FEELS FIRMER AND MORE ELASTIC."
+          ],
+          reviews: {
+            keywords: ["smooth", "firmness"],
+            items: [
+              { body: "First Care Activating Serum VI" }
+            ]
+          },
+          sourceExtraction: {
+            ocr: {
+              sentenceInsights: [
+                {
+                  imageUrl: "https://cdn.example.com/products/ritual.jpg",
+                  category: "ingredient",
+                  text: "COMPLETE YOUR RITUAL STEP 1 ACTIVATING SERUM STEP 2 BALANCE WATER STEP 3 TREATMENT SERUM STEP 4 CREAM",
+                  keywords: ["ginseng", "serum", "cream"]
+                },
+                {
+                  imageUrl: "https://cdn.example.com/products/use.jpg",
+                  category: "usage",
+                  text: "Gently pat 2-3 pumps onto skin morning and night after toner.",
+                  keywords: ["use", "morning", "night"]
+                }
+              ]
+            }
+          }
+        }
+      },
+      source: {
+        type: "pdp-extractor",
+        url: "https://example.com/products/first-care-activating-serum-vi"
+      },
+      hints: {
+        locale: "en-US",
+        market: "US"
+      }
+    });
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
+    const images = product.image as string[];
+    const positiveNotes = product.positiveNotes.itemListElement.map((item: any) => item.name);
+    const serialized = JSON.stringify(result.schemaMarkup.jsonLd);
+
+    expect(product.offers).toMatchObject({
+      "@type": "Offer",
+      price: 89,
+      priceCurrency: "USD",
+      url: "https://example.com/products/first-care-activating-serum-vi"
+    });
+    expect(images).toEqual(["https://cdn.example.com/products/first-care-activating-serum-main.jpg"]);
+    expect(product.review).toBeUndefined();
+    expect(serialized).not.toMatch(/COMPLETE YOUR RITUAL|BALANCE WATER|TREATMENT SERUM|NewCGRCream|SWS_Thumbnail_GCF|Hydrating\.png/i);
+    expect(JSON.stringify(howTo.step)).toContain("Gently pat 2-3 pumps");
+    expect(JSON.stringify(howTo.step)).not.toContain("AFTER 6 WEEKS");
+    expect(positiveNotes.filter((name: string) => /^elasticity$/i.test(name))).toHaveLength(1);
+    expect(result.diagnostics.ocrSentences.some((item) => item.text.includes("COMPLETE YOUR RITUAL"))).toBe(false);
+  });
+
   it("keeps HowTo usage scoped to the current product when extractor text includes related ritual products", async () => {
     const { result } = await generatePdpGeo({
       product: {
@@ -449,7 +531,7 @@ describe("generatePdpGeo", () => {
     expect(product.description).toContain("Gentle Cleansing Foam is a cleanser");
     expect(product.description).toContain("hydro-cleansing formula");
     expect(product.description).toContain("hydrated");
-    expect(product.description).toContain("Reported assessment of 30 women evidence covers");
+    expect(product.description).toContain("Reported assessment of 30 women after 3 days of use evidence covers");
     expect(product.description).not.toContain("is a product");
     expect(product.description).not.toMatch(/hydratedMulberry|:Helps|Formula details state that/i);
     expect(product.description).not.toMatch(/\bBenefits\b/);
@@ -715,6 +797,113 @@ describe("generatePdpGeo", () => {
     expect(payload.strategicExposureGuidance.map((item: Record<string, unknown>) => item.kind)).toEqual(["geo-research", "cep", "eeat"]);
   });
 
+  it("retries AI Studio copy refinement without temperature and keeps token totals", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        error: {
+          message: "Unsupported value: 'temperature' does not support 0.0 with this model. Only the default (1) value is supported.",
+          code: "unsupported_value"
+        }
+      }), { status: 400 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                schemaDescriptions: {
+                  product: "Hydra Balance Essence highlights hydration, barrier support, hyaluronic acid, and morning-and-night use.",
+                  webPage: "This Hydra Balance Essence page summarizes hydration, barrier support, hyaluronic acid, and usage context."
+                },
+                contentSections: {
+                  description: "Hydra Balance Essence highlights hydration, barrier support, hyaluronic acid, and morning-and-night use."
+                },
+                warnings: []
+              })
+            }
+          }
+        ],
+        usage: {
+          input_tokens: 13,
+          output_tokens: 8
+        }
+      }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      const refiner = new ModelBackedCopyRefiner({
+        provider: "aistudio",
+        apiKey: "studio-key",
+        endpoint: "https://dev-aistudio.example.com:8082/v1/agent/abc",
+        deployment: "gpt-5.5",
+        temperature: 0
+      });
+      const result = await refiner.refineCopy({
+        locale: "en-US",
+        product: {
+          name: "Hydra Balance Essence",
+          description: "A hydrating essence for dry skin.",
+          images: [],
+          options: [],
+          benefits: ["hydration", "barrier support"],
+          effects: [],
+          ingredients: ["Hyaluronic Acid"],
+          usage: ["Apply morning and night after cleansing."],
+          metrics: [],
+          faq: [],
+          reviews: {
+            keywords: [],
+            items: []
+          },
+          breadcrumbs: [],
+          sourceTexts: ["Hydra Balance Essence helps skin feel hydrated after cleansing."]
+        },
+        schemaMarkup: {
+          jsonLd: {
+            "@context": "https://schema.org",
+            "@graph": [
+              {
+                "@type": "WebPage",
+                description: "Current webpage description."
+              },
+              {
+                "@type": "Product",
+                description: "Current product description."
+              }
+            ]
+          },
+          scriptTag: ""
+        },
+        content: {
+          sections: {
+            productName: "Hydra Balance Essence",
+            description: "Current product description.",
+            quickFacts: "",
+            benefits: "",
+            ingredients: "",
+            howToUse: "",
+            faq: ""
+          },
+          html: ""
+        },
+        ragChunks: [],
+        reasoning: undefined
+      });
+
+      const firstBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}")) as Record<string, unknown>;
+      const retryBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body ?? "{}")) as Record<string, unknown>;
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(firstBody.temperature).toBe(0);
+      expect("temperature" in retryBody).toBe(false);
+      expect(result.usage?.inputTokens).toBe(13);
+      expect(result.usage?.outputTokens).toBe(8);
+      expect(result.usage?.totalTokens).toBe(21);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("selects package GEO, CEP, and E-E-A-T RAG chunks during generation", async () => {
     let capturedBody: Record<string, any> | undefined;
     vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
@@ -908,7 +1097,7 @@ describe("generatePdpGeo", () => {
     expect(result.content.sections.ingredients).toContain("Ginseng Peptide");
     expect(result.content.sections.ingredients).toContain("Full ingredients: WATER / AQUA / EAU");
     expect(additionalProperties.some((item) => item.name === "Ingredient/effect detail" && /formula|texture|routine|benefit|comfort/.test(String(item.value)))).toBe(true);
-    expect(additionalProperties.some((item) => item.name === "Full ingredients" && String(item.value).includes("PANAX GINSENG ROOT EXTRACT"))).toBe(true);
+    expect(additionalProperties.some((item) => item.name === "Full ingredients")).toBe(false);
     expect(positiveNotes.map((item) => item.name)).toEqual(expect.arrayContaining(["skin resilience", "elasticity", "firmness"]));
     expect(ocrDiagnostics.find((item) => item.text.includes("6-peptide blend"))?.imageUrls).toEqual(["https://example.com/ginseng-peptide.jpg"]);
     expect(JSON.stringify(result.schemaMarkup.jsonLd)).not.toMatch(/ingredient\/effect claim|Citation highlight|citation highlight|benefit terms|ingredient context|use-feel comparison|product discovery context|Product detail context|comparison intent|comparison-led|texture language|use-feel language|benefit language|ingredient terms|ingredient and technology term|product benefit term/i);
@@ -1298,7 +1487,7 @@ describe("generatePdpGeo", () => {
     expect(product.description).toContain("Korean Ginseng Actives (Ginsenomics), a patented ingredient described as amplifying rare ginseng compounds");
     expect(product.description).toContain("Ginseng Peptide, described as supporting the look of skin firmness and elasticity");
     expect(product.description).toContain("Use it morning and night after toner");
-    expect(product.description).toContain("Customer reviews mention smooth and firmness, which supports the product's texture");
+    expect(product.description).not.toContain("Customer reviews mention smooth and firmness");
     expect(product.description).toContain("Reported self-assessment of 32 women after 6 weeks of use evidence covers firmness and visible-aging care");
     expect(product.description).not.toContain("Reported product details include In a");
     expect(product.description).not.toContain("product page");
@@ -1316,6 +1505,74 @@ describe("generatePdpGeo", () => {
     expect(productSerialized).not.toContain("\\n");
     expect(serialized).not.toContain("AGREED");
     expect(serialized).not.toMatch(/Self-assessme…|Strengthen…|GINSENG ACTIVES \(AKA|2Self-assessment|elastic2|even2|diminished2|\(32 women\)/i);
+  });
+
+  it("keeps first-care style home-usage OCR evidence grounded and removes weak CEP expansion", async () => {
+    const { result } = await generatePdpGeo({
+      product: {
+        name: "First Care Activating Serum VI",
+        description: "A ginseng-powered serum for hydration, visible firmness, fine lines, dullness, and skin texture.",
+        category: "Serum",
+        benefits: ["hydration", "elasticity", "improves hydration", "smooth texture"],
+        effects: [
+          "92% AGREE SKIN LOOKS CLEAR AND BRIGHT3 86% AGREE FINE LINES LOOK REDUCED3 96% AGREE SKIN TEXTURE FEELS SMOOTHER3 3Home usage test survey, 600 women, with daily use.",
+          "AFTER ONE BOTTLE OF DAILY USE*: 100% users had visible improvement in FINE LINES SKIN ELASTICITY DULLNESS *Instrumental result, 30 subjects, after 8 weeks of daily use FIRST CARE ACTIVATING SERUM VI SÉRUM ACTIVATEUR VI PREMIERS SOINS Sulwhasoo"
+        ],
+        metrics: [
+          "+5.9% IMPROVES THE LOOK OF SKIN ELASTICITY4 +9.9% STRENGTHENS MOISTURE BARRIER4 +14.5% INCREASES HYDRATION4 4Instrumental result, 30 women, after 4 weeks of use"
+        ],
+        ingredients: [
+          "GINSENG",
+          "with the power of ginseng",
+          "KEY INGREDIENTS: 500-HOURFERMENTED GINSENG*: Supports a healthy skin barrier, helping visibly improve fine lines and wrinkles.",
+          "500-HOUR AGED GINSENG: Supports the skin barrier and helps improve visible fine lines and wrinkles.",
+          "KOREAN HERB EXTRACT: Improves hydration, visibly firms, and addresses visible signs of aging."
+        ],
+        usage: ["Warm 2-3 pumps of First Care Activating Serum to the palm of your hands, then apply morning and night."],
+        reviews: {
+          keywords: ["hydration", "firmness"]
+        }
+      },
+      source: {
+        type: "manual-json",
+        url: "https://example.com/products/first-care-activating-serum"
+      },
+      hints: {
+        locale: "en-US",
+        market: "US",
+        category: "Serum"
+      }
+    });
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const webPage = graph.find((node) => node["@type"] === "WebPage") as Record<string, any>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    const faq = graph.find((node) => node["@type"] === "FAQPage") as Record<string, any>;
+    const additionalProperties = new Map(product.additionalProperty.map((item: any) => [item.name, item.value]));
+    const positiveNotes = product.positiveNotes.itemListElement.map((item: any) => item.name);
+    const reportedDetails = String(additionalProperties.get("Reported details"));
+    const serialized = JSON.stringify({ webPage, product, faq });
+
+    expect(additionalProperties.get("Target customer")).toContain("visible-aging");
+    expect(additionalProperties.get("Key ingredients")).toContain("500-hour aged ginseng");
+    expect(additionalProperties.get("Key ingredients")).toContain("Korean herb extract");
+    expect(additionalProperties.get("Key ingredients")).not.toMatch(/with the power of ginseng|^GINSENG(?:,|$)/i);
+    expect(additionalProperties.get("Ingredient/effect detail")).toContain("The formula uses 500-hour aged ginseng and Korean herb extract to support");
+    expect(additionalProperties.get("Ingredient/effect detail")).toContain("selection cue for customers comparing visible-aging");
+    expect(additionalProperties.get("Ingredient/effect detail")).not.toMatch(/and fine lines and wrinkles and skin barrier support|SÉRUM|ACTIVATEUR|AFTER ONE BOTTLE/i);
+    expect(additionalProperties.get("Reported details")).toContain("In a home usage test survey of 600 women with daily use");
+    expect(additionalProperties.get("Reported details")).toContain("92% of participants agreed that skin looks clear and bright");
+    expect(additionalProperties.get("Reported details")).toContain("86% of participants agreed that fine lines look reduced");
+    expect(additionalProperties.get("Reported details")).toContain("96% of participants agreed that skin texture felt smoother");
+    expect(reportedDetails).toContain("+5.9% improvement in the look of skin elasticity");
+    expect(reportedDetails).toContain("+9.9% strengthened moisture barrier");
+    expect(reportedDetails).toContain("+14.5% increased hydration");
+    if (/8 weeks/i.test(String(webPage.description))) {
+      expect(reportedDetails).toMatch(/8 weeks/i);
+    }
+    expect(positiveNotes.filter((name: string) => /hydration|improves hydration/i.test(name))).toHaveLength(1);
+    expect(serialized).not.toMatch(/\bAGREE\b|3Home|SÉRUM|ACTIVATEUR|AFTER ONE BOTTLE|oil-control|sensitive-skin|\+5\. 9|\+9\. 9|\+14\. 5|\b9% agreed|\b5% agreed/i);
+    expect(serialized).not.toContain("KEY INGREDIENTS");
   });
 
   it("cleans Korean Aestura-style OCR, review typos, and property chunks before schema generation", async () => {
@@ -1385,8 +1642,8 @@ describe("generatePdpGeo", () => {
     const additionalProperties = product.additionalProperty as Array<Record<string, any>>;
     const keyIngredients = additionalProperties.find((item) => item.name === "Key ingredients")?.value;
     const reportedDetails = additionalProperties.find((item) => item.name === "Reported details")?.value;
-    const searchIntentContext = additionalProperties.find((item) => item.name === "Search intent context")?.value;
-    const reviewUseFeelContext = additionalProperties.find((item) => item.name === "Review use-feel context")?.value;
+    const usageContext = additionalProperties.find((item) => item.name === "Usage")?.value;
+    const reviewUseFeelContext = additionalProperties.find((item) => item.name === "Customer review context")?.value;
     const reviewBodies = product.review.map((review: any) => review.reviewBody).join(" ");
     const positiveNotes = product.positiveNotes.itemListElement.map((item: any) => item.name).join(" ");
     const serialized = JSON.stringify(result.schemaMarkup.jsonLd);
@@ -1414,7 +1671,8 @@ describe("generatePdpGeo", () => {
     expect(keyIngredients).toContain("고밀도 세라마이드 캡슐");
     expect(keyIngredients).toContain("히알루론산");
     expect(keyIngredients).not.toContain("쿨링을 주는 화학적 성분");
-    expect(searchIntentContext).toMatch(/기반|포인트|리뷰 표현|루틴|수분감|피부 장벽|쿨링감/);
+    expect(additionalProperties.some((item) => item.name === "Search intent context")).toBe(false);
+    expect(usageContext).toMatch(/아침과 저녁|스킨케어|펴 바릅니다/);
     expect(reviewUseFeelContext).toContain("사용감");
     expect(String(reportedDetails ?? "")).not.toContain("인가요");
     expect(reviewBodies).toContain("속단김");
@@ -1566,6 +1824,81 @@ describe("generatePdpGeo", () => {
     expect(repaired.validationRepairs.some((repair) => repair.field === "content.sections.description" && String(repair.before).includes("수분감를") && String(repair.after).includes("수분감을"))).toBe(true);
     expect(repaired.validationRepairs.some((repair) => repair.field === "content.html" && String(repair.before).includes("<script>") && String(repair.after).includes("geo-content-accordion"))).toBe(true);
     expect(repaired.validationRepairs.some((repair) => repair.field === "Product.additionalProperty" && JSON.stringify(repair.before).includes("Reported details") && repair.after === null)).toBe(true);
+  });
+
+  it("repairs public FAQ labels, metric decimals, and evidence duration consistency", () => {
+    const repaired = validateAndRepairPdpGeoArtifacts({
+      locale: "en-US",
+      fallbackProductName: "First Care Activating Serum VI",
+      fallbackDescription: "First Care Activating Serum VI supports visible-aging care.",
+      schemaMarkup: {
+        jsonLd: {
+          "@context": "https://schema.org",
+          "@graph": [
+            {
+              "@type": "WebPage",
+              name: "First Care Activating Serum VI",
+              description: "First Care Activating Serum VI cites home usage evidence after 4 weeks and 8 weeks of daily use."
+            },
+            {
+              "@type": "Product",
+              name: "First Care Activating Serum VI",
+              description: "Instrumental results after 4 weeks and 8 weeks of daily use include +5. 9% improvement in skin elasticity.",
+              additionalProperty: [
+                {
+                  "@type": "PropertyValue",
+                  name: "Reported details",
+                  value: "Consumer assessment: +5. 9% improvement in the look of skin elasticity, +9. 9% strengthened moisture barrier, and +14. 5% increased hydration after 4 weeks of use."
+                }
+              ]
+            },
+            {
+              "@type": "FAQPage",
+              mainEntity: [
+                {
+                  "@type": "Question",
+                  name: "KEY INGREDIENTS",
+                  acceptedAnswer: {
+                    "@type": "Answer",
+                    text: "KEY INGREDIENTS details mention fermented ginseng."
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        scriptTag: ""
+      },
+      content: {
+        sections: {
+          productName: "First Care Activating Serum VI",
+          description: "First Care Activating Serum VI supports visible-aging care.",
+          quickFacts: "Reported details: +5. 9% improvement in skin elasticity.",
+          benefits: "Visible-aging care",
+          ingredients: "Fermented ginseng",
+          howToUse: "Apply morning and night.",
+          faq: "Q. KEY INGREDIENTS\nA. KEY INGREDIENTS details mention fermented ginseng."
+        },
+        html: "<div class=\"geo-content-accordion\"></div>"
+      }
+    });
+
+    const graph = repaired.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const webPage = graph.find((node) => node["@type"] === "WebPage") as Record<string, any>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    const faq = graph.find((node) => node["@type"] === "FAQPage") as Record<string, any>;
+    const reportedDetails = String(product.additionalProperty[0].value);
+    const serialized = JSON.stringify(repaired.schemaMarkup.jsonLd);
+
+    expect(reportedDetails).toContain("+5.9% improvement in the look of skin elasticity");
+    expect(reportedDetails).toContain("+9.9% strengthened moisture barrier");
+    expect(reportedDetails).toContain("+14.5% increased hydration");
+    expect(String(webPage.description)).not.toMatch(/8 weeks/i);
+    expect(String(product.description)).not.toMatch(/8 weeks/i);
+    expect(faq.mainEntity ?? []).toHaveLength(0);
+    expect(serialized).not.toMatch(/KEY INGREDIENTS|\+5\. 9|\+9\. 9|\+14\. 5/);
+    expect(repaired.validationRepairs.some((repair) => repair.source === "field-contract-validator" && repair.field === "WebPage.description")).toBe(true);
+    expect(repaired.validationRepairs.some((repair) => repair.field === "FAQPage.mainEntity" && String(repair.issue).includes("section heading"))).toBe(true);
   });
 
   it("validates field evidence contracts after generation without product-specific blocks", () => {

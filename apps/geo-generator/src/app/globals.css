@@ -695,6 +695,13 @@ button:disabled {
   word-break: break-word;
 }
 
+.commandLine .runTimer {
+  flex: none;
+  color: rgba(255, 255, 255, 0.55);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
 .resultStack {
   display: flex;
   flex-direction: column;
@@ -865,6 +872,242 @@ button:disabled {
   overflow-wrap: anywhere;
   word-break: break-word;
   white-space: pre-wrap;
+}
+
+.geoQualityIntroMessage {
+  padding-top: 24px;
+}
+
+.geoQualityIntroMessage .commandLine {
+  margin-bottom: 12px;
+}
+
+.geoQualityIntroMessage .commandLine svg {
+  color: var(--green);
+}
+
+.geoQualityPanel {
+  width: min(760px, 100%);
+  min-width: 0;
+  max-height: 300px;
+  margin-top: 10px;
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: #1c1e1d;
+  padding: 12px 14px 14px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.22);
+}
+
+.geoQualitySequence {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  margin-bottom: 10px;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.geoQualitySequence svg {
+  flex: 0 0 auto;
+  color: var(--green);
+}
+
+.geoQualitySequence span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.geoQualityHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.geoQualityHeader div {
+  min-width: 0;
+}
+
+.geoQualityHeaderActions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  position: relative;
+}
+
+.geoQualityHeader span,
+.geoQualityScoreButton span,
+.geoQualityDimension span {
+  display: block;
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.geoQualityHeader strong {
+  display: block;
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+}
+
+.geoQualityHeader em,
+.geoQualityDimensionTitle em {
+  flex: 0 0 auto;
+  color: var(--green);
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.geoQualityCopyButton {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.74);
+  padding: 0;
+}
+
+.geoQualityCopyButton svg {
+  flex: 0 0 auto;
+}
+
+.geoQualityCopyButton:hover,
+.geoQualityCopyButton.copied {
+  border-color: rgba(36, 214, 137, 0.36);
+  background: rgba(36, 214, 137, 0.1);
+  color: var(--green);
+}
+
+.geoQualityCopyFeedback {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 1;
+  border: 1px solid rgba(36, 214, 137, 0.24);
+  border-radius: 999px;
+  background: rgba(20, 30, 25, 0.96);
+  color: var(--green);
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+}
+
+.geoQualityScoreGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.geoQualityScoreButton {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 8px;
+  text-align: left;
+}
+
+.geoQualityScoreButton:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.075);
+}
+
+.geoQualityScoreButton strong {
+  display: block;
+  margin-top: 3px;
+  color: #fff;
+  font-size: 20px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.geoQualityScoreButton small {
+  display: -webkit-box;
+  overflow: hidden;
+  min-height: 30px;
+  margin-top: 6px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.geoQualityDetails {
+  margin-top: 10px;
+}
+
+.geoQualityDetails summary {
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.geoQualityDimensionList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.geoQualityDimension {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 10px;
+}
+
+.geoQualityDimensionTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.geoQualityDimensionTitle strong {
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 12px;
+}
+
+.geoQualityDimension p {
+  margin: 7px 0 0;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.geoQualityEvidenceColumns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 9px;
+}
+
+.geoQualityEvidenceColumns ul {
+  margin: 5px 0 0;
+  padding-left: 16px;
+}
+
+.geoQualityEvidenceColumns li {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .statusPanel {
@@ -1337,25 +1580,39 @@ button:disabled {
 .ragReferenceList button span,
 .ragReferenceList button strong,
 .ragReferenceList button em {
-  display: block;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.ragReferenceList button > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
 }
 
 .ragReferenceList button strong {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   color: rgba(255, 255, 255, 0.84);
   font-size: 12px;
   font-weight: 750;
+  line-height: 1.28;
+  white-space: normal;
 }
 
 .ragReferenceList button em {
-  margin-top: 3px;
+  display: block;
   color: rgba(255, 255, 255, 0.46);
   font-size: 11px;
   font-style: normal;
   font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
 }
 
 .ragReferenceList button em.ragReferenceUsage {
@@ -2910,6 +3167,21 @@ button:disabled {
   .statusPanel {
     left: 12px;
     width: auto;
+  }
+
+  .geoQualityHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .geoQualityHeaderActions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .geoQualityScoreGrid,
+  .geoQualityEvidenceColumns {
+    grid-template-columns: 1fr;
   }
 
 }

@@ -1,4 +1,4 @@
-type ProviderId = "mock" | "openai" | "gemini" | "azure-openai";
+type ProviderId = "mock" | "openai" | "gemini" | "azure-openai" | "aistudio";
 
 interface ProviderValidationRequest {
   provider?: ProviderId;
@@ -13,11 +13,11 @@ interface ProviderValidationRequest {
   };
   apiVersion?: string;
   embedding?: {
-    provider?: "local" | "azure-openai";
+    provider?: "local" | "azure-openai" | "aistudio";
     deployment?: string;
   };
   reranker?: {
-    provider?: "local-hybrid" | "cohere" | "azure-ai-search-semantic";
+    provider?: "local-hybrid" | "cohere" | "azure-ai-search-semantic" | "aistudio-bedrock-cohere";
     apiKey?: string;
     endpoint?: string;
     model?: string;
@@ -72,7 +72,93 @@ async function validateProvider(config: Required<Pick<ProviderValidationRequest,
     return validateGemini(config);
   }
 
+  if (config.provider === "aistudio") {
+    return validateAistudio(config);
+  }
+
   return validateAzureApi(config);
+}
+
+async function validateAistudio(config: ProviderValidationRequest): Promise<ProviderValidationResult> {
+  const apiKey = normalizeSecretInput(config.apiKey);
+  const endpoint = config.endpoint?.trim().replace(/\/$/, "");
+
+  if (!apiKey || !endpoint) {
+    return failed("aistudio", "AI Studio Endpoint와 API Key가 필요합니다.");
+  }
+
+  const embeddingModel = config.embedding?.deployment?.trim() || config.deployments?.embedding?.trim();
+  const chatModels = uniqueValues([
+    config.deployments?.ocr,
+    config.deployments?.reasoning,
+    config.deployment
+  ].map((value) => value?.trim()).filter(isString));
+  const apiVersion = config.apiVersion?.trim();
+  const apiVersionQuery = apiVersion ? `?api-version=${encodeURIComponent(apiVersion)}` : "";
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${apiKey}`
+  };
+  const checks: Array<{ label: string; url: string; body: Record<string, unknown> }> = [];
+
+  if (embeddingModel) {
+    checks.push({
+      label: `Embedding model '${embeddingModel}'`,
+      url: `${endpoint}/openai/deployments/${encodeURIComponent(embeddingModel)}/embeddings${apiVersionQuery}`,
+      body: { input: "ping" }
+    });
+  }
+
+  chatModels.forEach((model) => {
+    checks.push({
+      label: `OCR/Reasoning model '${model}'`,
+      url: `${endpoint}/openai/deployments/${encodeURIComponent(model)}/chat/completions${apiVersionQuery}`,
+      body: { messages: [{ role: "user", content: "ping" }] }
+    });
+  });
+
+  if (checks.length === 0) {
+    return failed("aistudio", "확인할 모델 ID를 입력해주세요.", "embedding 또는 OCR/reasoning 모델 ID 중 하나가 필요합니다.");
+  }
+
+  try {
+    for (const check of checks) {
+      const response = await fetch(check.url, {
+        method: "POST",
+        headers,
+        cache: "no-store",
+        body: JSON.stringify(check.body)
+      });
+
+      if (!response.ok) {
+        return failed("aistudio", `${check.label} 확인 실패. ${aistudioStatusMessage(response.status)}`, await readProviderError(response));
+      }
+    }
+  } catch (error) {
+    return failed("aistudio", "AI Studio Endpoint에 연결하지 못했습니다.", `Endpoint URL이 정확한지, 네트워크 연결을 확인하세요.\n${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  return connected("aistudio", `AI Studio Endpoint, API Key, ${checks.length}개 모델 호출을 확인했습니다.`);
+}
+
+/** Maps AI Studio gateway HTTP status codes to actionable Korean guidance. */
+function aistudioStatusMessage(status: number): string {
+  if (status === 401) {
+    return "API Key가 없거나 올바르지 않습니다 (401). API Key 값을 확인하세요.";
+  }
+  if (status === 403) {
+    return "토큰 할당량을 초과했습니다 (403). 관리자에게 할당량 관련 문의가 필요합니다.";
+  }
+  if (status === 404) {
+    return "모델 ID 또는 Endpoint 경로 오류입니다 (404). 모델 ID가 프로젝트에 등록되어 있는지 확인하세요.";
+  }
+  if (status === 502 || status === 503) {
+    return `AI Studio 게이트웨이 또는 upstream 모델 서비스를 사용할 수 없습니다 (${status}). 잠시 후 재시도하세요.`;
+  }
+  if (status >= 500) {
+    return `AI Studio 게이트웨이 내부 오류입니다 (${status}). 요청 파라미터를 확인하고 담당자에게 문의하세요.`;
+  }
+  return `AI Studio 연결 확인 실패: ${status}`;
 }
 
 async function validateOpenAI(config: ProviderValidationRequest): Promise<ProviderValidationResult> {

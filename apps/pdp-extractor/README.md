@@ -8,7 +8,7 @@
 
 - 채팅형 입력창에서 상품 URL 또는 REST API 주소 입력
 - 여러 소스를 한 번에 실행하는 큐/히스토리 UI
-- OpenAI, Gemini, Azure API 연결 테스트와 모델 목록 확인
+- OpenAI, Gemini, Azure API, AI Studio 연결 테스트와 모델 목록 확인
 - REST API 요청 헤더와 소스 감지 방식 설정
 - RAG 분석 프롬프트와 참고 문서 관리
 - 진행 단계, 출력 요약, evidence/warning, 출처를 보여주는 우측 패널
@@ -123,6 +123,7 @@ https://example.com/api/products/serum
 - OpenAI
 - Gemini
 - Azure API
+- AI Studio (외부에이전트 엔드포인트: Endpoint URL + API Key 입력, gpt-5.5 / text-embedding-3-large / cohere.rerank-v3-5:0 기본값)
 
 연결 테스트를 통과한 설정만 실제 추출 실행에 사용됩니다. 새로고침 직후에는 저장된 설정을 먼저 확인하고, 미연동 상태가 확정된 뒤에만 안내 배너를 표시합니다.
 

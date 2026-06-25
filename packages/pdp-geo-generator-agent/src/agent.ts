@@ -115,6 +115,9 @@ export async function generatePdpGeo(
     ...(options.ragDocuments ?? []),
     ...(parsed.rag?.documents ?? [])
   ]);
+  if (shouldReportProductNormalizationCall(options)) {
+    process.start("normalize", `${runtimeProviderLabel(options.productNormalization?.provider ?? options.provider)} product signal normalization 모델을 호출합니다.`);
+  }
   const productNormalization = await normalizePdpProductWithAgent(
     {
       rawProduct: parsed.product,
@@ -139,6 +142,9 @@ export async function generatePdpGeo(
       ...productNormalization.evidence
     ]
   };
+  if (shouldReportKeywordNormalizationCall(options)) {
+    process.start("normalize", `${runtimeProviderLabel(options.keywordNormalization?.provider ?? options.provider)} review keyword normalization 모델을 호출합니다.`);
+  }
   const keywordNormalization = await normalizeProductReviewKeywords(
     normalized.product,
     normalized.locale,
@@ -269,6 +275,9 @@ export async function generatePdpGeo(
     ragDocuments,
     reasoning
   });
+  if (shouldReportCopyRefinementCall(options)) {
+    process.start("generate", `${runtimeProviderLabel(options.copyRefinement?.provider ?? options.provider)} final reasoning/copy refinement 모델을 호출합니다.`);
+  }
   const copyRefinement = await refinePdpGeoCopy(
     {
       product: normalized.product,
@@ -777,7 +786,9 @@ function createGeneratorRuntimeUsage(
       stage: "embedding",
       label: "Embedding",
       provider: embeddingProvider === "azure-openai" ? "azure-api" : embeddingProvider,
-      service: embeddingProvider === "azure-openai" ? "Azure API embedding deployment" : `${embeddingProvider} embedding`,
+      service: embeddingProvider === "azure-openai"
+        ? "Azure API embedding deployment"
+        : embeddingProvider === "aistudio" ? "AI Studio embedding deployment" : `${embeddingProvider} embedding`,
       model: options.embedding?.model ?? ragSettings.embeddingModel,
       deployment: options.embedding?.deployment ?? options.deployments?.embedding,
       called: ragSettings.mode === "managed-vector-store-rag",
@@ -798,8 +809,12 @@ function createGeneratorRuntimeUsage(
       stage: "reranking",
       label: "Reranking",
       provider: rerankerProvider,
-      service: rerankerProvider === "azure-ai-search-semantic" ? "Azure AI Search semantic ranker" : rerankerProvider === "cohere" ? "Cohere Rerank" : `${rerankerProvider} ordering`,
-      model: options.reranker?.provider === "cohere" ? options.reranker.model : undefined,
+      service: rerankerProvider === "azure-ai-search-semantic"
+        ? "Azure AI Search semantic ranker"
+        : rerankerProvider === "aistudio-bedrock-cohere"
+          ? "AI Studio Bedrock Cohere Rerank"
+          : rerankerProvider === "cohere" ? "Cohere Rerank" : `${rerankerProvider} ordering`,
+      model: options.reranker?.provider === "cohere" || options.reranker?.provider === "aistudio-bedrock-cohere" ? options.reranker.model : undefined,
       called: ragSettings.mode === "managed-vector-store-rag" && ragSettings.rerankerProvider !== "local-hybrid",
       details: ragSettings.mode === "managed-vector-store-rag"
         ? "Generator RAG reranking follows the configured managed retriever/reranker."
@@ -809,9 +824,9 @@ function createGeneratorRuntimeUsage(
       stage: "ocr",
       label: "OCR/structure extraction",
       provider,
-      service: options.provider === "azure-openai" ? "Azure API model deployment" : provider,
-      model: options.provider === "azure-openai" ? undefined : options.model,
-      deployment: options.provider === "azure-openai" ? options.deployments?.ocr ?? options.deployment : undefined,
+      service: deploymentServiceLabel(options.provider) ?? provider,
+      model: usesDeployments(options.provider) ? undefined : options.model,
+      deployment: usesDeployments(options.provider) ? options.deployments?.ocr ?? options.deployment : undefined,
       called: false,
       details: "Generator consumes OCR evidence from the extractor result; it does not run image OCR itself."
     },
@@ -819,9 +834,9 @@ function createGeneratorRuntimeUsage(
       stage: "final",
       label: "Final classification/reasoning",
       provider,
-      service: options.provider === "azure-openai" ? "Azure API model deployment" : provider,
-      model: options.provider === "azure-openai" ? undefined : options.model,
-      deployment: options.provider === "azure-openai" ? finalDeployment : undefined,
+      service: deploymentServiceLabel(options.provider) ?? provider,
+      model: usesDeployments(options.provider) ? undefined : options.model,
+      deployment: usesDeployments(options.provider) ? finalDeployment : undefined,
       called: Boolean(context.productNormalizationCalled || context.keywordNormalizationUsage || context.copyRefinementCalled),
       tokenUsage: finalTokenUsage,
       details: finalDetails || "Schema/content reasoning is deterministic in the current generator path; no final model usage metadata was returned."
@@ -862,6 +877,52 @@ function runtimeProviderLabel(provider: PdpGeoGeneratorOptions["provider"]): str
     return "azure-api";
   }
   return provider ?? "mock";
+}
+
+/** Providers that address models by deployment/model id over a shared endpoint (Azure-style contract). */
+function usesDeployments(provider: PdpGeoGeneratorOptions["provider"]): boolean {
+  return provider === "azure-openai" || provider === "aistudio";
+}
+
+/** Service label for deployment-based providers; undefined for non-deployment providers. */
+function deploymentServiceLabel(provider: PdpGeoGeneratorOptions["provider"]): string | undefined {
+  if (provider === "azure-openai") {
+    return "Azure API model deployment";
+  }
+  if (provider === "aistudio") {
+    return "AI Studio model deployment";
+  }
+  return undefined;
+}
+
+function shouldReportProductNormalizationCall(options: PdpGeoGeneratorOptions): boolean {
+  if (options.customProductNormalizer) {
+    return true;
+  }
+  const settings = options.productNormalization;
+  const provider = settings?.provider ?? options.provider ?? "mock";
+  return Boolean(settings?.enabled && provider !== "mock" && provider !== "custom");
+}
+
+function shouldReportKeywordNormalizationCall(options: PdpGeoGeneratorOptions): boolean {
+  if (options.customKeywordNormalizer) {
+    return true;
+  }
+  const settings = options.keywordNormalization;
+  const provider = settings?.provider ?? options.provider ?? "mock";
+  return Boolean(settings?.enabled && provider !== "mock" && provider !== "custom");
+}
+
+function shouldReportCopyRefinementCall(options: PdpGeoGeneratorOptions): boolean {
+  if (options.customCopyRefiner) {
+    return true;
+  }
+  const settings = options.copyRefinement;
+  const provider = settings?.provider ?? options.provider ?? "mock";
+  const explicitEnabled = settings?.enabled;
+  return Boolean((explicitEnabled ?? (provider !== "mock" && provider !== "custom" && Boolean(settings?.apiKey ?? options.apiKey)))
+    && provider !== "mock"
+    && provider !== "custom");
 }
 
 function createRagUsageDiagnostics(

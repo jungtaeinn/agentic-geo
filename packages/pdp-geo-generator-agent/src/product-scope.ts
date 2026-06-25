@@ -140,7 +140,7 @@ export function filterCurrentProductUsageInstructions(product: PdpProductSignal)
         continue;
       }
 
-      if (lastContext === "current" || keptSegments.length > 0 || usage.length === 0) {
+      if (lastContext === "current" || keptSegments.length > 0 || usage.length === 0 || currentProductActionPattern.test(segment)) {
         keptSegments.push(cleanUsageSegment(segment));
         lastContext = lastContext ?? "orphan";
       }

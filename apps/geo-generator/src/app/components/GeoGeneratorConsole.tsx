@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import type { ChangeEvent, DragEvent } from "react";
-import type { ProductExtractionDiagnostics, ProductExtractionResult } from "@agentic-geo/pdp-extractor-agent/types";
+import type { ProductExtractionDiagnostics, ProductExtractionResult, ProductExtractionStep } from "@agentic-geo/pdp-extractor-agent/types";
 import type {
   PdpGeoDiagnostics,
   PdpGeoGenerationResult,
@@ -48,7 +48,7 @@ type RunStatus = "idle" | "running" | "done" | "error";
 type OutputView = "schema" | "content" | "diagnostics";
 type SettingsTab = "run" | "ai" | "rag";
 type UiLanguage = "ko" | "en";
-type ProviderId = "mock" | "openai" | "gemini" | "azure-openai";
+type ProviderId = "mock" | "openai" | "gemini" | "azure-openai" | "aistudio";
 type ConnectionStatus = "idle" | "checking" | "connected" | "error";
 type ModelLoadStatus = "idle" | "loading" | "ready" | "error";
 type RagProfileTarget = "extractor" | "generator";
@@ -78,13 +78,35 @@ interface PanelDetail {
   metadata?: Record<string, string | number | boolean>;
 }
 
+type GeoQualityDimensionId = "geo" | "cep" | "eeat";
+
+interface GeoQualityDimension {
+  id: GeoQualityDimensionId;
+  label: string;
+  score: number;
+  criteria: string;
+  summary: string;
+  evidence: string[];
+  improvements: string[];
+}
+
+interface GeoQualityEvaluation {
+  overallScore: number;
+  dimensions: GeoQualityDimension[];
+}
+
 interface GeoGeneratorResult {
   id: string;
   source: string;
   sourceType: "url" | "restApi" | "manual-json";
   extractor?: ProductExtractionResult;
   generator: PdpGeoGenerationResult;
+  runDurationMs?: number;
 }
+
+type TimedProductExtractionResult = ProductExtractionResult & {
+  runDurationMs?: number;
+};
 
 interface GeoGeneratorLog {
   source: string;
@@ -104,8 +126,21 @@ interface GeoGeneratorResponse {
   error?: string;
 }
 
+type GeoGeneratorStreamEvent =
+  | {
+    type: "progress";
+    group: "extractor" | "generator";
+    source: string;
+    sourceType: "url" | "restApi" | "manual-json";
+    sourceIndex: number;
+    sourceCount: number;
+    step: ProductExtractionStep | PdpGeoGenerationStep;
+  }
+  | { type: "result"; payload: GeoGeneratorResponse }
+  | { type: "error"; error: string };
+
 interface ProductExtractorResponse {
-  results: ProductExtractionResult[];
+  results: TimedProductExtractionResult[];
   logs: ProductExtractionDiagnostics[];
   failures: Array<{
     source: string;
@@ -161,6 +196,12 @@ interface ProviderSettings {
   azureAiSearchEndpoint: string;
   azureAiSearchIndexName: string;
   azureAiSearchSemanticConfiguration: string;
+  aistudioEndpoint: string;
+  aistudioApiKey: string;
+  aistudioModel: string;
+  aistudioEmbeddingModel: string;
+  aistudioRerankModel: string;
+  aistudioApiVersion: string;
 }
 
 interface RuntimeLlmConfig {
@@ -176,7 +217,7 @@ interface RuntimeLlmConfig {
   };
   apiVersion?: string;
   embedding?: {
-    provider?: "local" | "azure-openai";
+    provider?: "local" | "azure-openai" | "aistudio";
     apiKey?: string;
     endpoint?: string;
     deployment?: string;
@@ -184,7 +225,7 @@ interface RuntimeLlmConfig {
     model?: string;
   };
   reranker?: {
-    provider?: "local-hybrid" | "cohere" | "azure-ai-search-semantic";
+    provider?: "local-hybrid" | "cohere" | "azure-ai-search-semantic" | "aistudio-bedrock-cohere";
     apiKey?: string;
     endpoint?: string;
     model?: string;
@@ -241,6 +282,8 @@ interface GeoPipelineProcessState {
   activeSource?: string;
   skipExtractor?: boolean;
   errorMessage?: string;
+  extractorSteps?: ProductExtractionStep[];
+  generatorSteps?: PdpGeoGenerationStep[];
 }
 
 const ragModeLabels: Record<PdpGeoRagMode, string> = {
@@ -248,7 +291,8 @@ const ragModeLabels: Record<PdpGeoRagMode, string> = {
   "managed-vector-store-rag": "Vector Store"
 };
 
-const SETTINGS_STORAGE_KEY = "agentic-geo.geo-generator.provider-settings.v1";
+const SETTINGS_STORAGE_KEY = "agentic-geo.geo-generator.provider-settings.v2";
+const LEGACY_SETTINGS_STORAGE_KEYS = ["agentic-geo.geo-generator.provider-settings.v1"];
 const RUN_SETTINGS_STORAGE_KEY = "agentic-geo.geo-generator.run-settings.v1";
 const RAG_SETTINGS_STORAGE_KEY = "agentic-geo.geo-generator.rag-profile-settings.v1";
 const HISTORY_STORAGE_KEY = "agentic-geo.geo-generator.history.v1";
@@ -275,7 +319,13 @@ const defaultProviderSettings: ProviderSettings = {
   azureAiSearchApiKey: "",
   azureAiSearchEndpoint: "",
   azureAiSearchIndexName: "",
-  azureAiSearchSemanticConfiguration: "default"
+  azureAiSearchSemanticConfiguration: "default",
+  aistudioEndpoint: "",
+  aistudioApiKey: "",
+  aistudioModel: "gpt-5.5",
+  aistudioEmbeddingModel: "text-embedding-3-large",
+  aistudioRerankModel: "cohere.rerank-v3-5:0",
+  aistudioApiVersion: ""
 };
 
 const defaultRagProfileSettings: RagProfileSettings = {
@@ -696,7 +746,7 @@ export function GeoGeneratorConsole() {
   const [logs, setLogs] = useState<GeoGeneratorLog[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [extractorMessages, setExtractorMessages] = useState<ChatMessage[]>([]);
-  const [extractorResults, setExtractorResults] = useState<ProductExtractionResult[]>([]);
+  const [extractorResults, setExtractorResults] = useState<TimedProductExtractionResult[]>([]);
   const [extractorLogs, setExtractorLogs] = useState<ProductExtractionDiagnostics[]>([]);
   const [selectedExtractorIndex, setSelectedExtractorIndex] = useState(0);
   const [isHistoryReady, setIsHistoryReady] = useState(false);
@@ -779,6 +829,7 @@ export function GeoGeneratorConsole() {
   const hasStarted = activeMode === "extractor" ? extractorHasStarted : generatorHasStarted;
   const activeMessages = activeMode === "extractor" ? extractorMessages : messages;
   const activeRunStatus = activeMode === "extractor" ? extractorRunStatus : runStatus;
+  const runElapsedLabel = useRunElapsedLabel(activeRunStatus === "running");
   const activeModeCopy = text.modes[activeMode];
   const schemaText = selectedResult ? JSON.stringify(selectedResult.generator.schemaMarkup.jsonLd, null, 2) : "";
   const diagnosticsText = selectedResult ? JSON.stringify({
@@ -798,13 +849,13 @@ export function GeoGeneratorConsole() {
     ? getExtractorPanelRagReferences(selectedExtractorResult)
     : getGeneratorPanelRagReferences(selectedDiagnostics);
   const extractorPanelSteps = activeGeneratorPipelineProcess
-    ? undefined
+    ? activeGeneratorPipelineProcess.extractorSteps
     : selectedLog?.extractor?.process ?? (selectedResult?.extractor ? markProcessStepsDone(getExtractorSteps(uiLanguage)) : undefined);
   const generatorPanelSteps = activeGeneratorPipelineProcess
-    ? undefined
+    ? activeGeneratorPipelineProcess.generatorSteps
     : selectedLog?.generatorProcess ?? (selectedResult ? markProcessStepsDone(getGeneratorSteps(uiLanguage)) : undefined);
   const extractorOnlyPanelSteps = activeExtractorPipelineProcess
-    ? undefined
+    ? activeExtractorPipelineProcess.extractorSteps
     : selectedExtractorLog?.process ?? (selectedExtractorResult ? markProcessStepsDone(getExtractorSteps(uiLanguage)) : undefined);
   const visibleGeneratorHistory = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -1025,7 +1076,7 @@ export function GeoGeneratorConsole() {
 
     const sourceCount = Math.max(input.products.length + input.sources.length, 1);
     const firstSource = input.sources[0] ?? (input.products.length > 0 ? text.composer.jsonSummary(input.products.length) : undefined);
-    let progressController: { cancelled: boolean } | undefined;
+    const runStartedAt = getRunClockMs();
 
     setRunStatus("running");
     setErrorMessage("");
@@ -1060,35 +1111,35 @@ export function GeoGeneratorConsole() {
 
     try {
       const body = createRequestBody(input);
-      progressController = { cancelled: false };
-      const progress = playGeoPipelineProgress(input, setPipelineProcess, progressController);
-      const response = await fetch("/api/generate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(body)
+      const { payload, ok } = await requestGeoGenerator(body, (event) => {
+        applyGeneratorProgressEvent(
+          event,
+          setPipelineProcess,
+          getExtractorSteps(uiLanguage) as ProductExtractionStep[],
+          getGeneratorSteps(uiLanguage)
+        );
       });
-      const payload = await response.json() as GeoGeneratorResponse;
-      await progress;
 
-      if (!response.ok && !payload.results?.length) {
-        throw new Error(payload.error ?? `GEO generation failed: ${response.status}`);
+      if (!ok && !payload.results?.length) {
+        throw new Error(payload.error ?? "GEO generation failed.");
       }
 
-      const nextResults = mergeGeoHistoryResults(payload.results ?? [], results);
+      const runDurationMs = getRunClockMs() - runStartedAt;
+      const runDurationLabel = formatElapsedDuration(runDurationMs);
+      const incomingResults = attachRunDurationToGeoResults(payload.results ?? [], runDurationMs);
+      const nextResults = mergeGeoHistoryResults(incomingResults, results);
       const nextLogs = mergeGeoHistoryLogs(payload.logs ?? [], logs);
       setResults(nextResults);
       setLogs(nextLogs);
-      setSelectedIndex(payload.results?.length ? 0 : -1);
+      setSelectedIndex(incomingResults.length ? 0 : -1);
       setRunStatus(payload.failures?.length ? "error" : "done");
       setPipelineProcess({
         status: payload.failures?.length ? "error" : "done",
         currentGroup: "generator",
         currentStepId: "artifact",
         sourceCount,
-        completedSourceCount: (payload.results?.length ?? 0) + (payload.failures?.length ?? 0),
-        activeSource: payload.results?.[0]?.source ?? payload.failures?.[0]?.source ?? firstSource,
+        completedSourceCount: incomingResults.length + (payload.failures?.length ?? 0),
+        activeSource: incomingResults[0]?.source ?? payload.failures?.[0]?.source ?? firstSource,
         skipExtractor: input.sources.length === 0,
         errorMessage: payload.failures?.[0]?.error
       });
@@ -1098,15 +1149,17 @@ export function GeoGeneratorConsole() {
         {
           id: crypto.randomUUID(),
           role: payload.failures?.length ? "agent" : "agent",
-          body: payload.failures?.length
-            ? text.messages.partial(payload.results.length, payload.failures.length)
-            : text.messages.done(payload.results.length)
+          body: appendRunDuration(
+            payload.failures?.length
+              ? text.messages.partial(incomingResults.length, payload.failures.length)
+              : text.messages.done(incomingResults.length),
+            runDurationLabel,
+            uiLanguage
+          )
         }
       ]);
     } catch (error) {
-      if (progressController) {
-        progressController.cancelled = true;
-      }
+      const runDurationLabel = formatElapsedDuration(getRunClockMs() - runStartedAt);
       const message = error instanceof Error ? error.message : "GEO generation failed.";
       setRunStatus("error");
       setPipelineProcess((current) => ({
@@ -1120,7 +1173,7 @@ export function GeoGeneratorConsole() {
         {
           id: crypto.randomUUID(),
           role: "agent",
-          body: message
+          body: appendRunDuration(message, runDurationLabel, uiLanguage)
         }
       ]);
     }
@@ -1165,6 +1218,7 @@ export function GeoGeneratorConsole() {
     const sourceCount = input.sources.length;
     const firstSource = input.sources[0];
     let progressController: { cancelled: boolean } | undefined;
+    const runStartedAt = getRunClockMs();
 
     setExtractorRunStatus("running");
     setErrorMessage("");
@@ -1215,19 +1269,22 @@ export function GeoGeneratorConsole() {
         throw new Error(payload.error ?? `Product extraction failed: ${response.status}`);
       }
 
-      const nextResults = mergeExtractorHistoryResults(payload.results ?? [], extractorResults);
+      const runDurationMs = getRunClockMs() - runStartedAt;
+      const runDurationLabel = formatElapsedDuration(runDurationMs);
+      const incomingResults = attachRunDurationToExtractorResults(payload.results ?? [], runDurationMs);
+      const nextResults = mergeExtractorHistoryResults(incomingResults, extractorResults);
       const nextLogs = mergeExtractorHistoryLogs(payload.logs ?? [], extractorLogs);
       setExtractorResults(nextResults);
       setExtractorLogs(nextLogs);
-      setSelectedExtractorIndex(payload.results?.length ? 0 : -1);
+      setSelectedExtractorIndex(incomingResults.length ? 0 : -1);
       setExtractorRunStatus(payload.failures?.length ? "error" : "done");
       setExtractorPipelineProcess({
         status: payload.failures?.length ? "error" : "done",
         currentGroup: "extractor",
         currentStepId: "json",
         sourceCount,
-        completedSourceCount: (payload.results?.length ?? 0) + (payload.failures?.length ?? 0),
-        activeSource: payload.results?.[0]?.source ?? payload.failures?.[0]?.source ?? firstSource,
+        completedSourceCount: incomingResults.length + (payload.failures?.length ?? 0),
+        activeSource: incomingResults[0]?.source ?? payload.failures?.[0]?.source ?? firstSource,
         errorMessage: payload.failures?.[0]?.error
       });
       setErrorMessage(payload.failures?.map((failure) => `${failure.source}: ${failure.error}`).join("\n") ?? "");
@@ -1236,15 +1293,20 @@ export function GeoGeneratorConsole() {
         {
           id: crypto.randomUUID(),
           role: "agent",
-          body: payload.failures?.length
-            ? text.messages.extractorPartial(payload.results.length, payload.failures.length)
-            : text.messages.extractorDone(payload.results.length)
+          body: appendRunDuration(
+            payload.failures?.length
+              ? text.messages.extractorPartial(incomingResults.length, payload.failures.length)
+              : text.messages.extractorDone(incomingResults.length),
+            runDurationLabel,
+            uiLanguage
+          )
         }
       ]);
     } catch (error) {
       if (progressController) {
         progressController.cancelled = true;
       }
+      const runDurationLabel = formatElapsedDuration(getRunClockMs() - runStartedAt);
       const message = error instanceof Error ? error.message : "Product extraction failed.";
       setExtractorRunStatus("error");
       setExtractorPipelineProcess((current) => ({
@@ -1258,7 +1320,7 @@ export function GeoGeneratorConsole() {
         {
           id: crypto.randomUUID(),
           role: "agent",
-          body: message
+          body: appendRunDuration(message, runDurationLabel, uiLanguage)
         }
       ]);
     }
@@ -1456,6 +1518,7 @@ export function GeoGeneratorConsole() {
 
   function resetProviderSettings() {
     window.localStorage.removeItem(SETTINGS_STORAGE_KEY);
+    LEGACY_SETTINGS_STORAGE_KEYS.forEach((key) => window.localStorage.removeItem(key));
     setProviderSettings(defaultProviderSettings);
     setConnectionStatus("idle");
     setModelOptions({});
@@ -1850,6 +1913,7 @@ export function GeoGeneratorConsole() {
                   <div className="commandLine">
                     <Loader2 className="spin" size={14} />
                     <span>{activeMode === "extractor" ? text.messages.extractorRunningTitle : text.messages.runningTitle}</span>
+                    <span className="runTimer" aria-label="elapsed time">{runElapsedLabel}</span>
                   </div>
                   <p>{activeMode === "extractor" ? text.messages.extractorRunningBody : text.messages.runningBody}</p>
                 </article>
@@ -1864,31 +1928,35 @@ export function GeoGeneratorConsole() {
                 </article>
               )}
               {activeMode === "generator" && selectedResult && (
-                <section className="floatingArtifact" aria-label="Selected output">
-                  <div className="artifactTop">
-                    <div>
-                      <span>{selectedResult.generator.locale} · {selectedResult.generator.diagnostics.ragMode}</span>
-                      <strong>{selectedResult.generator.content.sections.productName}</strong>
-                    </div>
-                    <div className="windowActions">
-                      {(["schema", "content", "diagnostics"] as OutputView[]).map((view) => (
-                        <button className={outputView === view ? "active" : ""} type="button" key={view} onClick={() => setOutputView(view)}>
-                          <span>{view}</span>
+                <>
+                  <section className="floatingArtifact" aria-label="Selected output">
+                    <div className="artifactTop">
+                      <div>
+                        <span>{[selectedResult.generator.locale, selectedResult.generator.diagnostics.ragMode, formatRunDurationMeta(selectedResult.runDurationMs, uiLanguage)].filter(Boolean).join(" · ")}</span>
+                        <strong>{selectedResult.generator.content.sections.productName}</strong>
+                      </div>
+                      <div className="windowActions">
+                        {(["schema", "content", "diagnostics"] as OutputView[]).map((view) => (
+                          <button className={outputView === view ? "active" : ""} type="button" key={view} onClick={() => setOutputView(view)}>
+                            <span>{view}</span>
+                          </button>
+                        ))}
+                        <button type="button" onClick={() => copyText(outputView === "schema" ? schemaText : outputView === "content" ? selectedResult.generator.content.html : diagnosticsText)} aria-label={text.artifact.copyAria}>
+                          <Copy size={14} />
                         </button>
-                      ))}
-                      <button type="button" onClick={() => copyText(outputView === "schema" ? schemaText : outputView === "content" ? selectedResult.generator.content.html : diagnosticsText)} aria-label={text.artifact.copyAria}>
-                        <Copy size={14} />
-                      </button>
+                      </div>
                     </div>
-                  </div>
-                  <pre>{outputView === "schema" ? schemaText : outputView === "content" ? selectedResult.generator.content.html : diagnosticsText}</pre>
-                </section>
+                    <pre>{outputView === "schema" ? schemaText : outputView === "content" ? selectedResult.generator.content.html : diagnosticsText}</pre>
+                  </section>
+                  <GeoQualityIntroMessage uiLanguage={uiLanguage} />
+                  <GeoQualityEvaluationPanel result={selectedResult} uiLanguage={uiLanguage} onOpenDetail={openPanelDetail} />
+                </>
               )}
               {activeMode === "extractor" && selectedExtractorResult && (
                 <section className="floatingArtifact" aria-label="Selected extraction output">
                   <div className="artifactTop">
                     <div>
-                      <span>{selectedExtractorResult.sourceType} · {selectedExtractorResult.ragProfile}</span>
+                      <span>{[selectedExtractorResult.sourceType, selectedExtractorResult.ragProfile, formatRunDurationMeta(selectedExtractorResult.runDurationMs, uiLanguage)].filter(Boolean).join(" · ")}</span>
                       <strong>{selectedExtractorResult.geoProduct.name}</strong>
                     </div>
                     <div className="windowActions">
@@ -2313,7 +2381,7 @@ export function GeoGeneratorConsole() {
                   <section className="settingsSection">
                     <h3>{text.settings.aiProviderSection}</h3>
                     <div className="providerGrid">
-                      {(["mock", "openai", "gemini", "azure-openai"] as ProviderId[]).map((provider) => (
+                      {(["mock", "openai", "gemini", "azure-openai", "aistudio"] as ProviderId[]).map((provider) => (
                         <button
                           className={providerSettings.provider === provider ? "active" : ""}
                           key={provider}
@@ -2403,6 +2471,14 @@ export function GeoGeneratorConsole() {
                           void loadProviderModels();
                         }}
                         refreshLabel={text.settings.loadModels}
+                        settings={providerSettings}
+                      />
+                    )}
+
+                    {providerSettings.provider === "aistudio" && (
+                      <AistudioProviderSettings
+                        language={uiLanguage}
+                        onChange={updateProviderSetting}
                         settings={providerSettings}
                       />
                     )}
@@ -2778,12 +2854,26 @@ function GeoOutputSummary({
   const diagnostics = result.generator.diagnostics;
   const sections = result.generator.content.sections;
   const productName = sections.productName || diagnostics.normalizedProduct.name;
+  const runDuration = formatRunDurationValue(result.runDurationMs);
 
   if (view === "content") {
     return (
       <div className="outputSummary">
         <strong>{productName}</strong>
         <div className="outputMetricGrid">
+          {runDuration && (
+            <OutputMetricButton
+              label={uiLanguage === "ko" ? "소요" : "Elapsed"}
+              value={runDuration}
+              detail={createPanelDetail("Run detail", uiLanguage === "ko" ? "최종 실행 시간" : "Final run time", productName, {
+                runDurationMs: result.runDurationMs,
+                runDuration
+              }, {
+                durationMs: result.runDurationMs ?? 0
+              })}
+              onOpenDetail={onOpenDetail}
+            />
+          )}
           <OutputMetricButton
             label={uiLanguage === "ko" ? "섹션" : "Sections"}
             value={countContentSections(sections)}
@@ -2825,6 +2915,19 @@ function GeoOutputSummary({
     <div className="outputSummary">
       <strong>{productName}</strong>
       <div className="outputMetricGrid">
+        {runDuration && (
+          <OutputMetricButton
+            label={uiLanguage === "ko" ? "소요" : "Elapsed"}
+            value={runDuration}
+            detail={createPanelDetail("Run detail", uiLanguage === "ko" ? "최종 실행 시간" : "Final run time", productName, {
+              runDurationMs: result.runDurationMs,
+              runDuration
+            }, {
+              durationMs: result.runDurationMs ?? 0
+            })}
+            onOpenDetail={onOpenDetail}
+          />
+        )}
         <OutputMetricButton
           label="Schema"
           value={countSchemaNodes(result.generator.schemaMarkup.jsonLd)}
@@ -2867,6 +2970,157 @@ function GeoOutputSummary({
   );
 }
 
+function GeoQualityEvaluationPanel({
+  onOpenDetail,
+  result,
+  uiLanguage
+}: Readonly<{
+  onOpenDetail: (detail: PanelDetail) => void;
+  result: GeoGeneratorResult;
+  uiLanguage: UiLanguage;
+}>) {
+  const [copied, setCopied] = useState(false);
+
+  if (countSchemaNodes(result.generator.schemaMarkup.jsonLd) === 0) {
+    return null;
+  }
+
+  const evaluation = evaluateGeoQuality(result, uiLanguage);
+  const copy = getGeoQualityCopy(uiLanguage);
+  const copyTextValue = formatGeoQualityEvaluationText(result, evaluation, copy);
+
+  async function copyEvaluation() {
+    await copyText(copyTextValue);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  }
+
+  return (
+    <section className="geoQualityPanel" aria-label={copy.panelLabel}>
+      <div className="geoQualityHeader">
+        <div>
+          <span>{copy.kicker}</span>
+          <strong>{copy.title}</strong>
+        </div>
+        <div className="geoQualityHeaderActions">
+          <em>{evaluation.overallScore}/100</em>
+          <button
+            className={`geoQualityCopyButton${copied ? " copied" : ""}`}
+            type="button"
+            onClick={() => void copyEvaluation()}
+            aria-label={copied ? copy.copyDoneLabel : copy.copyLabel}
+            title={copied ? copy.copyDoneLabel : copy.copyLabel}
+          >
+            {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
+          </button>
+          {copied && (
+            <span className="geoQualityCopyFeedback" role="status" aria-live="polite">
+              {copy.copyDoneLabel}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="geoQualityScoreGrid" aria-label={copy.summaryLabel}>
+        {evaluation.dimensions.map((dimension) => (
+          <button
+            className="geoQualityScoreButton"
+            type="button"
+            key={dimension.id}
+            onClick={() => onOpenDetail(createPanelDetail(copy.detailLabel, `${dimension.label} ${dimension.score}/100`, dimension.criteria, {
+              criteria: dimension.criteria,
+              summary: dimension.summary,
+              evidence: dimension.evidence,
+              improvements: dimension.improvements
+            }, {
+              score: dimension.score
+            }))}
+          >
+            <span>{dimension.label}</span>
+            <strong>{dimension.score}</strong>
+            <small>{dimension.summary}</small>
+          </button>
+        ))}
+      </div>
+      <details className="geoQualityDetails" open>
+        <summary>{copy.detailSummary}</summary>
+        <div className="geoQualityDimensionList">
+          {evaluation.dimensions.map((dimension) => (
+            <section className="geoQualityDimension" key={dimension.id}>
+              <div className="geoQualityDimensionTitle">
+                <strong>{dimension.label}</strong>
+                <em>{dimension.score}/100</em>
+              </div>
+              <p>{dimension.criteria}</p>
+              <div className="geoQualityEvidenceColumns">
+                <div>
+                  <span>{copy.evidenceLabel}</span>
+                  <ul>
+                    {dimension.evidence.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <span>{copy.improvementLabel}</span>
+                  <ul>
+                    {dimension.improvements.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </section>
+          ))}
+        </div>
+      </details>
+    </section>
+  );
+}
+
+function GeoQualityIntroMessage({
+  uiLanguage
+}: Readonly<{
+  uiLanguage: UiLanguage;
+}>) {
+  const copy = getGeoQualityCopy(uiLanguage);
+  return (
+    <article className="chatBlock agent geoQualityIntroMessage">
+      <div className="commandLine">
+        <CheckCircle2 size={14} />
+        <span>{copy.kicker}</span>
+      </div>
+      <p>{copy.sequenceNote}</p>
+    </article>
+  );
+}
+
+function formatGeoQualityEvaluationText(
+  result: GeoGeneratorResult,
+  evaluation: GeoQualityEvaluation,
+  copy: ReturnType<typeof getGeoQualityCopy>
+): string {
+  const productName = result.generator.content.sections.productName;
+  const lines = [
+    copy.title,
+    `${copy.productLabel}: ${productName}`,
+    `${copy.overallScoreLabel}: ${evaluation.overallScore}/100`,
+    ""
+  ];
+
+  for (const dimension of evaluation.dimensions) {
+    lines.push(`${dimension.label}: ${dimension.score}/100`);
+    lines.push(`${copy.criteriaLabel}: ${dimension.criteria}`);
+    lines.push(`${copy.summaryLabel}: ${dimension.summary}`);
+    lines.push(`${copy.evidenceLabel}:`);
+    lines.push(...dimension.evidence.map((item) => `- ${item}`));
+    lines.push(`${copy.improvementLabel}:`);
+    lines.push(...dimension.improvements.map((item) => `- ${item}`));
+    lines.push("");
+  }
+
+  return lines.join("\n").trim();
+}
+
 function ExtractorOutputSummary({
   onOpenDetail,
   result,
@@ -2874,16 +3128,30 @@ function ExtractorOutputSummary({
   uiLanguage
 }: Readonly<{
   onOpenDetail: (detail: PanelDetail) => void;
-  result: ProductExtractionResult;
+  result: TimedProductExtractionResult;
   text: (typeof uiCopy)[UiLanguage];
   uiLanguage: UiLanguage;
 }>) {
   const product = result.geoProduct;
+  const runDuration = formatRunDurationValue(result.runDurationMs);
 
   return (
     <div className="outputSummary">
       <strong>{product.name}</strong>
       <div className="outputMetricGrid">
+        {runDuration && (
+          <OutputMetricButton
+            label={uiLanguage === "ko" ? "소요" : "Elapsed"}
+            value={runDuration}
+            detail={createPanelDetail("Run detail", uiLanguage === "ko" ? "최종 실행 시간" : "Final run time", product.name, {
+              runDurationMs: result.runDurationMs,
+              runDuration
+            }, {
+              durationMs: result.runDurationMs ?? 0
+            })}
+            onOpenDetail={onOpenDetail}
+          />
+        )}
         <OutputMetricButton
           label={uiLanguage === "ko" ? "리뷰 키워드" : "Review keys"}
           value={product.reviews.keywords.length}
@@ -3552,6 +3820,64 @@ function GeoDiagnosticLog({
 
 type ProviderSettingUpdater = <Key extends keyof ProviderSettings>(key: Key, value: ProviderSettings[Key]) => void;
 
+function AistudioProviderSettings({
+  language,
+  onChange,
+  settings
+}: Readonly<{
+  language: UiLanguage;
+  onChange: ProviderSettingUpdater;
+  settings: ProviderSettings;
+}>) {
+  const ko = language === "ko";
+  return (
+    <div className="settingsFields">
+      <SettingField
+        label={ko ? "AI Studio Endpoint URL" : "AI Studio endpoint URL"}
+        value={settings.aistudioEndpoint}
+        placeholder="https://dev-aistudio.example.com:8082/v1/agent/..."
+        onChange={(value) => onChange("aistudioEndpoint", value)}
+      />
+      <SettingField
+        label="API Key"
+        type="password"
+        value={settings.aistudioApiKey}
+        placeholder={ko ? "외부에이전트 API Key (Bearer)" : "External agent API key (Bearer)"}
+        onChange={(value) => onChange("aistudioApiKey", value)}
+      />
+      <p className="azureCredentialNote">
+        {ko
+          ? "Endpoint와 API Key는 OCR/추론, Embedding, Rerank 모델 호출에 공통으로 사용됩니다 (Authorization: Bearer)."
+          : "The endpoint and API key are shared across OCR/reasoning, embedding, and rerank calls (Authorization: Bearer)."}
+      </p>
+      <SettingField
+        label={ko ? "OCR/추론 모델 ID" : "OCR/reasoning model id"}
+        value={settings.aistudioModel}
+        placeholder="gpt-5.5"
+        onChange={(value) => onChange("aistudioModel", value)}
+      />
+      <SettingField
+        label={ko ? "Embedding 모델 ID" : "Embedding model id"}
+        value={settings.aistudioEmbeddingModel}
+        placeholder="text-embedding-3-large"
+        onChange={(value) => onChange("aistudioEmbeddingModel", value)}
+      />
+      <SettingField
+        label={ko ? "Rerank 모델 ID (Bedrock, 선택)" : "Rerank model id (Bedrock, optional)"}
+        value={settings.aistudioRerankModel}
+        placeholder="cohere.rerank-v3-5:0"
+        onChange={(value) => onChange("aistudioRerankModel", value)}
+      />
+      <SettingField
+        label={ko ? "API Version (선택)" : "API version (optional)"}
+        value={settings.aistudioApiVersion}
+        placeholder={ko ? "비워두면 미사용" : "Leave blank to omit"}
+        onChange={(value) => onChange("aistudioApiVersion", value)}
+      />
+    </div>
+  );
+}
+
 function AzureProviderSettings({
   deploymentListId,
   deploymentOptions,
@@ -4065,6 +4391,46 @@ function createRuntimeLlmConfig(settings: ProviderSettings): RuntimeLlmConfig {
     };
   }
 
+  if (settings.provider === "aistudio") {
+    const apiKey = normalizeSecretInput(settings.aistudioApiKey);
+    const endpoint = settings.aistudioEndpoint.trim();
+    const model = settings.aistudioModel.trim();
+    const embeddingModel = settings.aistudioEmbeddingModel.trim();
+    const rerankModel = settings.aistudioRerankModel.trim();
+    const apiVersion = settings.aistudioApiVersion.trim() || undefined;
+
+    // One AI Studio endpoint + Bearer key fronts all roles: gpt-5.5 (OCR/reasoning),
+    // text-embedding-3-large (embedding), and cohere rerank on Bedrock.
+    return {
+      provider: "aistudio",
+      apiKey,
+      endpoint,
+      deployment: model,
+      deployments: {
+        ocr: model,
+        reasoning: model,
+        embedding: embeddingModel
+      },
+      apiVersion,
+      embedding: {
+        provider: "aistudio",
+        apiKey,
+        endpoint,
+        deployment: embeddingModel,
+        apiVersion,
+        model: embeddingModel
+      },
+      reranker: rerankModel
+        ? {
+            provider: "aistudio-bedrock-cohere",
+            apiKey,
+            endpoint,
+            model: rerankModel
+          }
+        : { provider: "local-hybrid" }
+    };
+  }
+
   return { provider: "mock" };
 }
 
@@ -4150,6 +4516,9 @@ function providerLabel(provider: ProviderId, language: UiLanguage): string {
   if (provider === "azure-openai") {
     return "Azure API";
   }
+  if (provider === "aistudio") {
+    return "AI Studio";
+  }
   if (provider === "gemini") {
     return "Gemini";
   }
@@ -4165,6 +4534,9 @@ function providerDescription(provider: ProviderId, language: UiLanguage): string
   }
   if (provider === "gemini") {
     return language === "ko" ? "Google AI Studio" : "Google AI Studio";
+  }
+  if (provider === "aistudio") {
+    return language === "ko" ? "외부에이전트 엔드포인트" : "External agent endpoint";
   }
   return language === "ko" ? "Azure 배포" : "Azure deployment";
 }
@@ -4380,50 +4752,111 @@ function customLabel(language: UiLanguage): string {
   return language === "ko" ? "사용자 첨부" : "Custom";
 }
 
-async function playGeoPipelineProgress(
-  input: NormalizedComposerInput,
-  setPipelineProcess: (update: (current: GeoPipelineProcessState) => GeoPipelineProcessState) => void,
-  controller: { cancelled: boolean }
-) {
-  const sourceCount = Math.max(input.products.length + input.sources.length, 1);
-  const activeSource = input.sources[0] ?? (input.products.length > 0 ? "manual-json" : undefined);
-  const skipExtractor = input.sources.length === 0;
+async function requestGeoGenerator(
+  body: object,
+  onProgress: (event: Extract<GeoGeneratorStreamEvent, { type: "progress" }>) => void
+): Promise<{ payload: GeoGeneratorResponse; ok: boolean }> {
+  const response = await fetch("/api/generate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      ...body,
+      stream: true
+    })
+  });
 
-  if (!skipExtractor) {
-    for (const stepId of extractorStepIds) {
-      if (controller.cancelled) {
-        return;
-      }
-      setPipelineProcess((current) => ({
-        ...current,
-        status: "running",
-        currentGroup: "extractor",
-        currentStepId: stepId,
-        sourceCount,
-        completedSourceCount: stepId === "json" ? Math.max(current.completedSourceCount, input.sources.length) : current.completedSourceCount,
-        activeSource,
-        skipExtractor
-      }));
-      await waitForPipelineStep();
-    }
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!response.body || !contentType.includes("application/x-ndjson")) {
+    const payload = await response.json() as GeoGeneratorResponse;
+    return { payload, ok: response.ok };
   }
 
-  for (const stepId of generatorStepIds) {
-    if (controller.cancelled) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let payload: GeoGeneratorResponse | undefined;
+  let streamError: string | undefined;
+
+  const handleLine = (line: string) => {
+    if (!line.trim()) {
       return;
     }
-    setPipelineProcess((current) => ({
+    const event = JSON.parse(line) as GeoGeneratorStreamEvent;
+    if (event.type === "progress") {
+      onProgress(event);
+      return;
+    }
+    if (event.type === "result") {
+      payload = event.payload;
+      return;
+    }
+    streamError = event.error;
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    lines.forEach(handleLine);
+  }
+
+  buffer += decoder.decode();
+  handleLine(buffer);
+
+  if (streamError) {
+    throw new Error(streamError);
+  }
+  if (!payload) {
+    throw new Error("GEO generation stream ended without a result.");
+  }
+
+  return {
+    payload,
+    ok: payload.failures.length === 0
+  };
+}
+
+function applyGeneratorProgressEvent(
+  event: Extract<GeoGeneratorStreamEvent, { type: "progress" }>,
+  setPipelineProcess: (update: (current: GeoPipelineProcessState) => GeoPipelineProcessState) => void,
+  extractorFallback: ProductExtractionStep[],
+  generatorFallback: PdpGeoGenerationStep[]
+) {
+  setPipelineProcess((current) => {
+    const isCompletedSource = event.group === "generator" && event.step.id === "artifact" && event.step.status === "done";
+    const completedSourceCount = isCompletedSource
+      ? Math.max(current.completedSourceCount, event.sourceIndex + 1)
+      : Math.max(current.completedSourceCount, event.sourceIndex);
+
+    return {
       ...current,
       status: "running",
-      currentGroup: "generator",
-      currentStepId: stepId,
-      sourceCount,
-      completedSourceCount: skipExtractor ? current.completedSourceCount : Math.max(current.completedSourceCount, input.sources.length),
-      activeSource,
-      skipExtractor
-    }));
-    await waitForPipelineStep();
-  }
+      currentGroup: event.group,
+      currentStepId: event.step.id,
+      sourceCount: event.sourceCount,
+      completedSourceCount: Math.min(event.sourceCount, completedSourceCount),
+      activeSource: event.source,
+      skipExtractor: current.skipExtractor,
+      extractorSteps: event.group === "extractor"
+        ? mergeRuntimeStep(current.extractorSteps, extractorFallback, event.step as ProductExtractionStep)
+        : current.extractorSteps,
+      generatorSteps: event.group === "generator"
+        ? mergeRuntimeStep(current.generatorSteps, generatorFallback, event.step as PdpGeoGenerationStep)
+        : current.generatorSteps
+    };
+  });
+}
+
+function mergeRuntimeStep<Step extends ProcessStep>(current: Step[] | undefined, fallback: Step[], next: Step): Step[] {
+  const steps = current ?? fallback;
+  return steps.map((step) => step.id === next.id ? { ...step, ...next } : step);
 }
 
 async function playExtractorPipelineProgress(
@@ -4691,14 +5124,23 @@ function getProviderValidationMessage(settings: ProviderSettings, language: UiLa
     }
   }
 
+  if (settings.provider === "aistudio") {
+    if (settings.aistudioModel.trim().length === 0) {
+      return language === "ko" ? "AI Studio reasoning/OCR 모델 ID를 입력해주세요." : "Enter an AI Studio reasoning/OCR model id.";
+    }
+    if (settings.aistudioEmbeddingModel.trim().length === 0) {
+      return language === "ko" ? "AI Studio embedding 모델 ID를 입력해주세요." : "Enter an AI Studio embedding model id.";
+    }
+  }
+
   return undefined;
 }
 
 function getProviderCredentialValidationMessage(settings: ProviderSettings, language: UiLanguage): string | undefined {
   if (settings.provider === "mock") {
     return language === "ko"
-      ? "실제 AI 연동을 위해 OpenAI, Gemini, Azure API 중 하나를 선택해주세요."
-      : "Choose OpenAI, Gemini, or Azure API settings for a real AI connection.";
+      ? "실제 AI 연동을 위해 OpenAI, Gemini, Azure API, AI Studio 중 하나를 선택해주세요."
+      : "Choose OpenAI, Gemini, Azure API, or AI Studio settings for a real AI connection.";
   }
 
   if (settings.provider === "openai" && normalizeSecretInput(settings.openaiApiKey).length === 0) {
@@ -4718,6 +5160,15 @@ function getProviderCredentialValidationMessage(settings: ProviderSettings, lang
     }
   }
 
+  if (settings.provider === "aistudio") {
+    if (normalizeSecretInput(settings.aistudioApiKey).length === 0) {
+      return language === "ko" ? "AI Studio API Key를 입력해주세요." : "Enter an AI Studio API key.";
+    }
+    if (settings.aistudioEndpoint.trim().length === 0) {
+      return language === "ko" ? "AI Studio Endpoint URL을 입력해주세요." : "Enter an AI Studio endpoint URL.";
+    }
+  }
+
   return undefined;
 }
 
@@ -4730,6 +5181,9 @@ function getSelectedModel(settings: ProviderSettings): string {
   }
   if (settings.provider === "azure-openai") {
     return settings.azureOcrDeployment.trim() || settings.azureDeployment.trim();
+  }
+  if (settings.provider === "aistudio") {
+    return settings.aistudioModel.trim();
   }
   return "";
 }
@@ -4775,7 +5229,8 @@ function readStoredProviderSettings(): ProviderSettings {
   }
 
   try {
-    const rawSettings = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+    const rawSettings = window.localStorage.getItem(SETTINGS_STORAGE_KEY)
+      ?? LEGACY_SETTINGS_STORAGE_KEYS.map((key) => window.localStorage.getItem(key)).find((value): value is string => Boolean(value));
 
     if (!rawSettings) {
       return defaultProviderSettings;
@@ -4885,7 +5340,7 @@ function readStoredGeoHistory(): { results: GeoGeneratorResult[]; logs: GeoGener
   }
 }
 
-function readStoredExtractorHistory(): { results: ProductExtractionResult[]; logs: ProductExtractionDiagnostics[] } {
+function readStoredExtractorHistory(): { results: TimedProductExtractionResult[]; logs: ProductExtractionDiagnostics[] } {
   if (typeof window === "undefined") {
     return { results: [], logs: [] };
   }
@@ -4937,7 +5392,8 @@ function normalizeStoredGeoResult(value: unknown): GeoGeneratorResult | undefine
     source: result.source,
     sourceType: result.sourceType,
     extractor: result.extractor,
-    generator: result.generator
+    generator: result.generator,
+    runDurationMs: normalizeRunDurationMs(result.runDurationMs)
   };
 }
 
@@ -4960,12 +5416,12 @@ function normalizeStoredGeoLog(value: unknown): GeoGeneratorLog | undefined {
   };
 }
 
-function normalizeStoredExtractorResult(value: unknown): ProductExtractionResult | undefined {
+function normalizeStoredExtractorResult(value: unknown): TimedProductExtractionResult | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
   }
 
-  const result = value as Partial<ProductExtractionResult>;
+  const result = value as Partial<TimedProductExtractionResult>;
 
   if (typeof result.source !== "string" || !isExtractorSourceType(result.sourceType) || !result.geoProduct) {
     return undefined;
@@ -4976,7 +5432,8 @@ function normalizeStoredExtractorResult(value: unknown): ProductExtractionResult
     sourceType: result.sourceType,
     geoProduct: result.geoProduct,
     generatedAt: typeof result.generatedAt === "string" ? result.generatedAt : new Date().toISOString(),
-    ragProfile: typeof result.ragProfile === "string" ? result.ragProfile : "pdp-extractor-default"
+    ragProfile: typeof result.ragProfile === "string" ? result.ragProfile : "pdp-extractor-default",
+    runDurationMs: normalizeRunDurationMs(result.runDurationMs)
   };
 }
 
@@ -4997,6 +5454,8 @@ function normalizeStoredExtractorLog(value: unknown): ProductExtractionDiagnosti
     process: Array.isArray(log.process) ? log.process : [],
     evidence: Array.isArray(log.evidence) ? log.evidence : [],
     warnings: Array.isArray(log.warnings) ? log.warnings : [],
+    runtimeUsage: log.runtimeUsage,
+    ragUsage: log.ragUsage,
     generatedAt: typeof log.generatedAt === "string" ? log.generatedAt : new Date().toISOString(),
     ragProfile: typeof log.ragProfile === "string" ? log.ragProfile : "pdp-extractor-default"
   };
@@ -5020,11 +5479,25 @@ function mergeGeoHistoryLogs(incoming: GeoGeneratorLog[], current: GeoGeneratorL
   ].slice(0, HISTORY_LIMIT);
 }
 
+function attachRunDurationToGeoResults(results: GeoGeneratorResult[], runDurationMs: number): GeoGeneratorResult[] {
+  return results.map((result) => ({
+    ...result,
+    runDurationMs
+  }));
+}
+
+function attachRunDurationToExtractorResults(results: TimedProductExtractionResult[], runDurationMs: number): TimedProductExtractionResult[] {
+  return results.map((result) => ({
+    ...result,
+    runDurationMs
+  }));
+}
+
 function geoHistoryResultKey(result: Pick<GeoGeneratorResult, "source" | "sourceType">): string {
   return `${result.sourceType}:${result.source}`;
 }
 
-function mergeExtractorHistoryResults(incoming: ProductExtractionResult[], current: ProductExtractionResult[]): ProductExtractionResult[] {
+function mergeExtractorHistoryResults(incoming: TimedProductExtractionResult[], current: TimedProductExtractionResult[]): TimedProductExtractionResult[] {
   const incomingKeys = new Set(incoming.map(extractorHistoryResultKey));
 
   return [
@@ -5044,6 +5517,26 @@ function mergeExtractorHistoryLogs(incoming: ProductExtractionDiagnostics[], cur
 
 function extractorHistoryResultKey(result: Pick<ProductExtractionResult, "source" | "sourceType">): string {
   return `${result.sourceType}:${result.source}`;
+}
+
+function normalizeRunDurationMs(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function formatRunDurationValue(value: number | undefined): string | undefined {
+  return typeof value === "number" ? formatElapsedDuration(value) : undefined;
+}
+
+function formatRunDurationMeta(value: number | undefined, language: UiLanguage): string | undefined {
+  const formatted = formatRunDurationValue(value);
+  if (!formatted) {
+    return undefined;
+  }
+  return language === "ko" ? `소요 ${formatted}` : `Elapsed ${formatted}`;
+}
+
+function appendRunDuration(message: string, durationLabel: string, language: UiLanguage): string {
+  return `${message} · ${language === "ko" ? "소요" : "Elapsed"} ${durationLabel}`;
 }
 
 function isGeoSourceType(value: unknown): value is GeoGeneratorResult["sourceType"] {
@@ -5220,6 +5713,41 @@ function getPipelineStepStatus(
   return process.status === "error" ? "error" : "running";
 }
 
+/**
+ * Tracks elapsed wall-clock time while a run is active and formats it for display.
+ * Returns an empty string when idle; otherwise a live label such as "0s", "30s", or "1m 05s".
+ */
+function useRunElapsedLabel(isRunning: boolean): string {
+  const [elapsedMs, setElapsedMs] = useState(0);
+
+  useEffect(() => {
+    if (!isRunning) {
+      setElapsedMs(0);
+      return;
+    }
+    const startedAt = Date.now();
+    setElapsedMs(0);
+    const interval = window.setInterval(() => setElapsedMs(Date.now() - startedAt), 1000);
+    return () => window.clearInterval(interval);
+  }, [isRunning]);
+
+  return isRunning ? formatElapsedDuration(elapsedMs) : "";
+}
+
+function formatElapsedDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  if (totalSeconds < 60) {
+    return `${totalSeconds}s`;
+  }
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+}
+
+function getRunClockMs(): number {
+  return Date.now();
+}
+
 function formatGeoProcessProgress(process: GeoPipelineProcessState, language: UiLanguage): string {
   if (process.sourceCount <= 0) {
     return "";
@@ -5254,6 +5782,316 @@ function formatHistoryTime(value: string, text: (typeof uiCopy)[UiLanguage]): st
   return text.time.days(Math.round(diffHours / 24));
 }
 
+function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): GeoQualityEvaluation {
+  const copy = getGeoQualityCopy(language);
+  const diagnostics = result.generator.diagnostics;
+  const sections = result.generator.content.sections;
+  const graph = getSchemaGraph(result.generator.schemaMarkup.jsonLd);
+  const schemaTypes = new Set(graph.flatMap((node) => getSchemaNodeTypes(node)));
+  const productNode = findSchemaNode(graph, "Product");
+  const webPageNode = findSchemaNode(graph, "WebPage");
+  const faqNode = findSchemaNode(graph, "FAQPage");
+  const howToNode = findSchemaNode(graph, "HowTo");
+  const breadcrumbNode = findSchemaNode(graph, "BreadcrumbList");
+  const schemaTypeList = Array.from(schemaTypes).join(", ") || copy.none;
+  const productText = [
+    sections.description,
+    sections.quickFacts,
+    sections.benefits,
+    sections.ingredients,
+    productNode ? collectTextValues(productNode).join(" ") : "",
+    webPageNode ? collectTextValues(webPageNode).join(" ") : ""
+  ].join("\n");
+  const publicText = [
+    result.generator.content.html,
+    Object.values(sections).join("\n"),
+    graph.flatMap((node) => collectTextValues(node)).join("\n")
+  ].join("\n");
+  const faqQuestions = [
+    ...collectSchemaFaqQuestions(faqNode),
+    ...collectSectionFaqQuestions(sections.faq)
+  ];
+  const faqCount = Math.max(faqQuestions.length, countTextItems(sections.faq));
+  const howToCount = Math.max(countSchemaItems(howToNode?.["step"]), countTextItems(sections.howToUse));
+  const imageCount = Math.max(countSchemaItems(productNode?.["image"]), diagnostics.normalizedProduct.images.length);
+  const offerCount = countSchemaItems(productNode?.["offers"]);
+  const breadcrumbCount = Math.max(countSchemaItems(breadcrumbNode?.["itemListElement"]), diagnostics.normalizedProduct.breadcrumbs.length);
+  const additionalPropertyCount = countSchemaItems(productNode?.["additionalProperty"]);
+  const positiveNotesCount = countSchemaItems(productNode?.["positiveNotes"]);
+  const validationWarnings = diagnostics.validationWarnings.length;
+  const validationRepairs = diagnostics.validationRepairs?.length ?? 0;
+  const artifactHits = collectPublicArtifactHits(publicText, faqQuestions, language);
+  const metricIssues = collectMetricIntegrityIssues(publicText, language);
+  const ingredientCount = diagnostics.normalizedProduct.ingredients.length + countTextItems(sections.ingredients);
+  const benefitCount = diagnostics.normalizedProduct.benefits.length + diagnostics.normalizedProduct.effects.length + countTextItems(sections.benefits) + positiveNotesCount;
+  const hasIngredientBenefitBridge = hasIngredientBenefitChoiceBridge(productText);
+  const hasCustomerCue = hasCustomerChoiceCue(productText);
+  const hasSelectionCue = hasSelectionCriteriaCue(productText);
+  const cepRagUsage = diagnostics.ragUsage.filter((usage) => (
+    usage.principle === "target customer context"
+    || usage.references.some((reference) => reference.kind === "cep" || reference.fieldTargets.includes("Product.positiveNotes"))
+  )).length;
+  const evidenceBackedUsage = diagnostics.ragUsage.some((usage) => usage.enabled && usage.principle === "evidence-backed claims");
+  const hasClaimMetrics = /(?:\+\d+(?:\.\d+)?%|\b\d{2,3}%\b)/.test(publicText);
+  const hasStudySample = /\b\d{2,4}\s+(?:women|men|participants|subjects|users|respondents|people)\b/i.test(publicText);
+  const hasTimeScope = /\b(?:after\s+)?\d+\s*(?:day|days|week|weeks|hour|hours)\b/i.test(publicText);
+  const hasReportedDetails = /\b(?:reported details|clinical|instrumental|home usage|survey|self-assessment|participants|subjects)\b/i.test(publicText);
+  const hasProductDescription = Boolean(productNode && getRecordString(productNode, "description").trim().length > 0) || sections.description.trim().length > 0;
+  const hasCoreSchema = Boolean(productNode && webPageNode && faqNode && howToNode && breadcrumbNode);
+
+  const geoScore = clampQualityScore(
+    48
+    + (productNode ? 7 : 0)
+    + (webPageNode ? 6 : 0)
+    + (faqCount > 0 ? 5 : 0)
+    + (howToCount > 0 ? 5 : 0)
+    + (breadcrumbCount > 0 ? 4 : 0)
+    + (imageCount > 0 ? 4 : 0)
+    + (offerCount > 0 ? 4 : 0)
+    + (hasProductDescription ? 4 : 0)
+    + (additionalPropertyCount > 0 ? 3 : 0)
+    + (positiveNotesCount > 0 ? 3 : 0)
+    + (validationRepairs > 0 ? 2 : 0)
+    + (hasCoreSchema ? 5 : 0)
+    - Math.min(12, artifactHits.length * 6)
+    - Math.min(8, validationWarnings * 2)
+  );
+  const cepScore = clampQualityScore(
+    38
+    + Math.min(10, ingredientCount * 3)
+    + Math.min(12, benefitCount * 2)
+    + (hasIngredientBenefitBridge ? 12 : 0)
+    + (hasCustomerCue ? 8 : 0)
+    + (hasSelectionCue ? 8 : 0)
+    + (faqCount > 0 ? 4 : 0)
+    + (howToCount > 0 ? 4 : 0)
+    + (cepRagUsage > 0 ? 4 : 0)
+    - Math.min(10, artifactHits.length * 4)
+  );
+  const eeatScore = clampQualityScore(
+    50
+    + Math.min(10, diagnostics.evidence.length)
+    + Math.min(8, diagnostics.selectedRagChunks.length)
+    + (hasClaimMetrics ? 8 : 0)
+    + (hasStudySample ? 8 : 0)
+    + (hasTimeScope ? 5 : 0)
+    + (hasReportedDetails ? 4 : 0)
+    + (evidenceBackedUsage ? 6 : 0)
+    + (validationWarnings === 0 ? 5 : 0)
+    + (validationRepairs > 0 ? 3 : 0)
+    - Math.min(12, metricIssues.length * 6)
+    - Math.min(9, artifactHits.length * 3)
+    - Math.min(8, validationWarnings * 2)
+  );
+
+  const geoEvidence = uniqueQualityItems([
+    copy.geoSchemaEvidence(graph.length, schemaTypeList),
+    copy.geoEntityEvidence(faqCount, howToCount, breadcrumbCount),
+    copy.geoCommerceEvidence(imageCount, offerCount, additionalPropertyCount),
+    validationWarnings > 0 ? copy.warningEvidence(validationWarnings) : copy.cleanValidationEvidence,
+    validationRepairs > 0 ? copy.repairEvidence(validationRepairs) : undefined
+  ]);
+  const cepEvidence = uniqueQualityItems([
+    copy.cepSignalEvidence(ingredientCount, benefitCount),
+    hasIngredientBenefitBridge ? copy.cepBridgeEvidence : copy.cepBridgeMissingEvidence,
+    hasSelectionCue || hasCustomerCue ? copy.cepChoiceEvidence : copy.cepChoiceMissingEvidence,
+    cepRagUsage > 0 ? copy.cepRagEvidence(cepRagUsage) : undefined
+  ]);
+  const eeatEvidence = uniqueQualityItems([
+    copy.eeatEvidenceCount(diagnostics.evidence.length, diagnostics.selectedRagChunks.length),
+    hasClaimMetrics ? copy.eeatMetricEvidence : copy.eeatMetricMissingEvidence,
+    hasStudySample || hasTimeScope ? copy.eeatStudyEvidence(hasStudySample, hasTimeScope) : copy.eeatStudyMissingEvidence,
+    evidenceBackedUsage ? copy.eeatRagEvidence : undefined,
+    validationWarnings > 0 ? copy.warningEvidence(validationWarnings) : copy.cleanValidationEvidence
+  ]);
+
+  const geoImprovements = ensureQualityItems([
+    ...artifactHits,
+    !productNode ? copy.missingProductSchema : undefined,
+    !webPageNode ? copy.missingWebPageSchema : undefined,
+    faqCount === 0 ? copy.missingFaq : undefined,
+    howToCount === 0 ? copy.missingHowTo : undefined,
+    validationWarnings > 0 ? copy.validationImprovement(validationWarnings) : undefined
+  ], copy.geoFallbackImprovement);
+  const cepImprovements = ensureQualityItems([
+    !hasIngredientBenefitBridge ? copy.cepBridgeImprovement : undefined,
+    !hasSelectionCue ? copy.cepChoiceImprovement : undefined,
+    ingredientCount === 0 ? copy.cepIngredientImprovement : undefined,
+    benefitCount === 0 ? copy.cepBenefitImprovement : undefined,
+    ...artifactHits
+  ], copy.cepFallbackImprovement);
+  const eeatImprovements = ensureQualityItems([
+    ...metricIssues,
+    !hasStudySample ? copy.eeatSampleImprovement : undefined,
+    !hasTimeScope ? copy.eeatTimeImprovement : undefined,
+    !evidenceBackedUsage ? copy.eeatRagImprovement : undefined,
+    validationWarnings > 0 ? copy.validationImprovement(validationWarnings) : undefined
+  ], copy.eeatFallbackImprovement);
+
+  const dimensions: GeoQualityDimension[] = [
+    {
+      id: "geo",
+      label: "GEO",
+      score: geoScore,
+      criteria: copy.geoCriteria,
+      summary: copy.scoreSummary(geoScore, artifactHits.length + validationWarnings),
+      evidence: geoEvidence,
+      improvements: geoImprovements
+    },
+    {
+      id: "cep",
+      label: "CEP",
+      score: cepScore,
+      criteria: copy.cepCriteria,
+      summary: copy.scoreSummary(cepScore, hasIngredientBenefitBridge && hasSelectionCue ? 0 : 1),
+      evidence: cepEvidence,
+      improvements: cepImprovements
+    },
+    {
+      id: "eeat",
+      label: "E-E-A-T",
+      score: eeatScore,
+      criteria: copy.eeatCriteria,
+      summary: copy.scoreSummary(eeatScore, metricIssues.length + validationWarnings),
+      evidence: eeatEvidence,
+      improvements: eeatImprovements
+    }
+  ];
+
+  return {
+    overallScore: Math.round(dimensions.reduce((sum, dimension) => sum + dimension.score, 0) / dimensions.length),
+    dimensions
+  };
+}
+
+function getGeoQualityCopy(language: UiLanguage) {
+  if (language === "ko") {
+    return {
+      panelLabel: "GEO CEP E-E-A-T 품질 평가",
+      sequenceNote: "스키마 결과물 생성 후 품질 평가 지표를 노출합니다.",
+      kicker: "후속 평가",
+      title: "품질 평가 지표",
+      summaryLabel: "평가 요약",
+      productLabel: "상품",
+      overallScoreLabel: "종합 점수",
+      criteriaLabel: "평가 기준",
+      copyLabel: "전체 지표 복사",
+      copyDoneLabel: "복사 완료",
+      detailLabel: "품질 평가 상세",
+      detailSummary: "상세 근거와 개선점",
+      evidenceLabel: "평가 근거",
+      improvementLabel: "개선점",
+      none: "없음",
+      geoCriteria: "GEO 기준: 검색/AI가 바로 이해할 수 있는 schema.org 그래프 완성도, FAQ/HowTo의 답변성, 검증 경고와 내부 산출물 노출 여부를 봅니다.",
+      cepCriteria: "CEP 기준: 성분 → 효능 → 고객 선택 기준이 한 문맥으로 자연스럽게 이어지는지, 제품 선택에 필요한 고객 맥락이 충분한지 봅니다.",
+      eeatCriteria: "E-E-A-T 기준: 수치 클레임이 근거, 표본, 기간과 함께 제시되는지와 검증 경고 없이 신뢰 가능한 표현으로 유지되는지 봅니다.",
+      scoreSummary: (score: number, issueCount: number) => issueCount > 0
+        ? `${score}점 · 보완 이슈 ${issueCount}개`
+        : `${score}점 · 주요 기준 충족`,
+      geoSchemaEvidence: (count: number, types: string) => `${count}개 schema 노드가 생성됨: ${types}`,
+      geoEntityEvidence: (faq: number, howTo: number, breadcrumb: number) => `FAQ ${faq}개, HowTo ${howTo}단계, Breadcrumb ${breadcrumb}개 신호를 확인`,
+      geoCommerceEvidence: (images: number, offers: number, properties: number) => `이미지 ${images}개, Offer ${offers}개, 추가 속성 ${properties}개로 PDP 식별성 보강`,
+      cleanValidationEvidence: "검증 경고 없이 산출물이 구성됨",
+      warningEvidence: (count: number) => `검증 경고 ${count}개가 남아 있음`,
+      repairEvidence: (count: number) => `검증/보정 단계에서 ${count}개 항목을 자동 보정`,
+      cepSignalEvidence: (ingredients: number, benefits: number) => `성분 신호 ${ingredients}개와 효능/효과 신호 ${benefits}개를 연결 대상으로 확보`,
+      cepBridgeEvidence: "성분과 효능을 같은 설명 문맥에서 연결",
+      cepBridgeMissingEvidence: "성분과 효능의 직접 연결 문장이 약함",
+      cepChoiceEvidence: "피부 고민, 피부 타입, 선택 기준에 해당하는 고객 맥락을 포함",
+      cepChoiceMissingEvidence: "고객 선택 기준이 명확하게 드러나지 않음",
+      cepRagEvidence: (count: number) => `CEP/고객 맥락 RAG 사용 ${count}건 확인`,
+      eeatEvidenceCount: (evidence: number, chunks: number) => `근거 ${evidence}개와 RAG chunk ${chunks}개를 사용`,
+      eeatMetricEvidence: "퍼센트/개선율 등 수치 클레임을 포함",
+      eeatMetricMissingEvidence: "수치 클레임이 부족하거나 명확하지 않음",
+      eeatStudyEvidence: (sample: boolean, time: boolean) => `근거 조건 확인: 표본 ${sample ? "있음" : "없음"}, 기간 ${time ? "있음" : "없음"}`,
+      eeatStudyMissingEvidence: "표본 수 또는 사용 기간 근거가 부족함",
+      eeatRagEvidence: "evidence-backed claims 원칙의 RAG 근거를 사용",
+      missingProductSchema: "Product 스키마가 없으면 상품 엔티티를 우선 보강하세요.",
+      missingWebPageSchema: "WebPage 스키마가 없으면 페이지 목적과 대표 설명을 보강하세요.",
+      missingFaq: "FAQPage에는 실제 사용자 질문 형태의 Q&A를 추가하세요.",
+      missingHowTo: "HowTo에는 사용 순서가 분리된 단계형 지침을 추가하세요.",
+      validationImprovement: (count: number) => `검증 경고 ${count}개를 우선 해소해 공개 문구 품질을 고정하세요.`,
+      cepBridgeImprovement: "성분명 다음에 기대 효능과 고객이 선택해야 하는 이유를 한 문장으로 연결하세요.",
+      cepChoiceImprovement: "피부 타입, 고민, 사용 목적 같은 고객 선택 기준을 명시하세요.",
+      cepIngredientImprovement: "성분 근거가 부족하므로 원문 성분/활성 성분 신호를 보강하세요.",
+      cepBenefitImprovement: "효능/효과 신호가 부족하므로 결과 중심 benefit을 보강하세요.",
+      eeatSampleImprovement: "수치 클레임에는 표본 수나 조사 대상을 함께 남기세요.",
+      eeatTimeImprovement: "수치 클레임에는 사용 기간이나 측정 시점을 함께 남기세요.",
+      eeatRagImprovement: "근거 기반 클레임 RAG가 선택되도록 evidence-backed claims 신호를 보강하세요.",
+      geoFallbackImprovement: "현재 스키마 구조를 유지하되 FAQ/HowTo 문구가 사용자 질문형으로 유지되는지 회귀 검증하세요.",
+      cepFallbackImprovement: "현재 성분-효능-선택 연결을 유지하되 고객 선택 문장을 반복 실행에서도 보존하세요.",
+      eeatFallbackImprovement: "현재 근거 구조를 유지하되 수치/표본/기간 표현이 원문과 계속 일치하는지 회귀 검증하세요.",
+      faqHeadingArtifact: (heading: string) => `FAQ에 원문 섹션 헤딩처럼 보이는 "${heading}" 항목이 노출되어 질문형 문장으로 정제 필요`,
+      ocrNoiseArtifact: (value: string) => `OCR 원문 잡음으로 보이는 "${value}" 문구를 공개 산출물에서 제거 필요`,
+      internalArtifact: (value: string) => `내부 처리 라벨 "${value}"가 공개 문구에 노출되지 않도록 필터링 필요`,
+      metricSplitIssue: (value: string) => `수치 표현 "${value}"가 분리되어 원문 수치와 대조 보정 필요`,
+      lowAgreementIssue: (value: string) => `근거 문구 "${value}"는 낮은 단일 자리 퍼센트 agreement로 보이며 원문 클레임 확인 필요`
+    };
+  }
+
+  return {
+    panelLabel: "GEO CEP E-E-A-T quality evaluation",
+    sequenceNote: "Quality metrics are shown after the schema output is generated.",
+    kicker: "Follow-up evaluation",
+    title: "Quality metrics",
+    summaryLabel: "Evaluation summary",
+    productLabel: "Product",
+    overallScoreLabel: "Overall score",
+    criteriaLabel: "Criteria",
+    copyLabel: "Copy all metrics",
+    copyDoneLabel: "Copied",
+    detailLabel: "Quality evaluation detail",
+    detailSummary: "Detailed rationale and improvements",
+    evidenceLabel: "Rationale",
+    improvementLabel: "Improvements",
+    none: "none",
+    geoCriteria: "GEO criteria: schema.org graph coverage, answer-ready FAQ/HowTo entities, validation hygiene, and public-output cleanliness.",
+    cepCriteria: "CEP criteria: whether ingredient, benefit, and customer selection criteria connect naturally in one product-choice context.",
+    eeatCriteria: "E-E-A-T criteria: whether measurable claims keep source evidence, sample, time period, and trustworthy validation state.",
+    scoreSummary: (score: number, issueCount: number) => issueCount > 0
+      ? `${score} · ${issueCount} issue${issueCount === 1 ? "" : "s"} to improve`
+      : `${score} · major criteria met`,
+    geoSchemaEvidence: (count: number, types: string) => `${count} schema nodes generated: ${types}`,
+    geoEntityEvidence: (faq: number, howTo: number, breadcrumb: number) => `FAQ ${faq}, HowTo ${howTo} step${howTo === 1 ? "" : "s"}, Breadcrumb ${breadcrumb} signal${breadcrumb === 1 ? "" : "s"}`,
+    geoCommerceEvidence: (images: number, offers: number, properties: number) => `Images ${images}, offers ${offers}, additional properties ${properties} strengthen PDP identity`,
+    cleanValidationEvidence: "Output is built without validation warnings",
+    warningEvidence: (count: number) => `${count} validation warning${count === 1 ? "" : "s"} remain`,
+    repairEvidence: (count: number) => `${count} item${count === 1 ? "" : "s"} repaired during validation`,
+    cepSignalEvidence: (ingredients: number, benefits: number) => `${ingredients} ingredient signal${ingredients === 1 ? "" : "s"} and ${benefits} benefit/effect signal${benefits === 1 ? "" : "s"} available`,
+    cepBridgeEvidence: "Ingredient and benefit are connected in the same explanatory context",
+    cepBridgeMissingEvidence: "Direct ingredient-to-benefit bridge is weak",
+    cepChoiceEvidence: "Customer context such as concern, skin type, or selection cue is included",
+    cepChoiceMissingEvidence: "Customer selection criteria are not explicit enough",
+    cepRagEvidence: (count: number) => `${count} CEP/customer-context RAG usage item${count === 1 ? "" : "s"} found`,
+    eeatEvidenceCount: (evidence: number, chunks: number) => `${evidence} evidence item${evidence === 1 ? "" : "s"} and ${chunks} RAG chunk${chunks === 1 ? "" : "s"} used`,
+    eeatMetricEvidence: "Includes numeric claims such as percentages or improvement rates",
+    eeatMetricMissingEvidence: "Numeric claims are missing or unclear",
+    eeatStudyEvidence: (sample: boolean, time: boolean) => `Evidence conditions: sample ${sample ? "present" : "missing"}, time period ${time ? "present" : "missing"}`,
+    eeatStudyMissingEvidence: "Sample size or usage period evidence is weak",
+    eeatRagEvidence: "Uses RAG evidence for the evidence-backed claims principle",
+    missingProductSchema: "Add Product schema first when the product entity is missing.",
+    missingWebPageSchema: "Add WebPage schema with page purpose and representative description.",
+    missingFaq: "Add FAQPage entries as real user questions and answers.",
+    missingHowTo: "Add HowTo as separated step-by-step usage instructions.",
+    validationImprovement: (count: number) => `Resolve ${count} validation warning${count === 1 ? "" : "s"} before treating the copy as public-ready.`,
+    cepBridgeImprovement: "Connect each ingredient to its expected benefit and customer choice reason in one sentence.",
+    cepChoiceImprovement: "Make customer selection criteria such as skin type, concern, or usage purpose explicit.",
+    cepIngredientImprovement: "Strengthen source ingredient or active-ingredient signals.",
+    cepBenefitImprovement: "Strengthen result-oriented benefit/effect signals.",
+    eeatSampleImprovement: "Keep sample size or study audience next to numeric claims.",
+    eeatTimeImprovement: "Keep usage period or measurement timing next to numeric claims.",
+    eeatRagImprovement: "Strengthen evidence-backed claims signals so RAG selects the right proof.",
+    geoFallbackImprovement: "Keep the current schema shape and regression-check FAQ/HowTo wording as user-question oriented.",
+    cepFallbackImprovement: "Keep the current ingredient-benefit-choice bridge and preserve customer-choice wording across reruns.",
+    eeatFallbackImprovement: "Keep the current evidence structure and regression-check metric, sample, and time expressions against source.",
+    faqHeadingArtifact: (heading: string) => `FAQ exposes source-section heading "${heading}"; rewrite it as a user question.`,
+    ocrNoiseArtifact: (value: string) => `Remove OCR noise "${value}" from public output.`,
+    internalArtifact: (value: string) => `Prevent internal processing label "${value}" from leaking into public copy.`,
+    metricSplitIssue: (value: string) => `Metric "${value}" appears split and should be checked against source evidence.`,
+    lowAgreementIssue: (value: string) => `Evidence phrase "${value}" looks like a suspicious single-digit agreement claim; verify the source metric.`
+  };
+}
+
 function countContentSections(sections: PdpGeoGenerationResult["content"]["sections"]): number {
   return Object.values(sections).filter((value) => value.trim().length > 0).length;
 }
@@ -5278,6 +6116,161 @@ function countSchemaNodes(jsonLd: unknown): number {
   }
 
   return 0;
+}
+
+function getSchemaGraph(jsonLd: unknown): Record<string, unknown>[] {
+  if (!isRecord(jsonLd)) {
+    return [];
+  }
+
+  const graph = jsonLd["@graph"];
+  if (Array.isArray(graph)) {
+    return graph.filter(isRecord);
+  }
+
+  return [jsonLd];
+}
+
+function findSchemaNode(graph: Record<string, unknown>[], type: string): Record<string, unknown> | undefined {
+  return graph.find((node) => getSchemaNodeTypes(node).includes(type));
+}
+
+function getSchemaNodeTypes(node: Record<string, unknown>): string[] {
+  const type = node["@type"];
+  if (typeof type === "string") {
+    return [type];
+  }
+  if (Array.isArray(type)) {
+    return type.filter((item): item is string => typeof item === "string");
+  }
+  return [];
+}
+
+function getRecordString(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  return typeof value === "string" ? value : "";
+}
+
+function countSchemaItems(value: unknown): number {
+  if (Array.isArray(value)) {
+    return value.filter(Boolean).length;
+  }
+
+  if (isRecord(value)) {
+    const itemListElement = value["itemListElement"];
+    const mainEntity = value["mainEntity"];
+    const step = value["step"];
+    if (Array.isArray(itemListElement)) {
+      return itemListElement.filter(Boolean).length;
+    }
+    if (Array.isArray(mainEntity)) {
+      return mainEntity.filter(Boolean).length;
+    }
+    if (Array.isArray(step)) {
+      return step.filter(Boolean).length;
+    }
+    return 1;
+  }
+
+  return typeof value === "string" && value.trim().length > 0 ? 1 : 0;
+}
+
+function collectTextValues(value: unknown, depth = 0): string[] {
+  if (depth > 5) {
+    return [];
+  }
+  if (typeof value === "string") {
+    return value.trim().length > 0 ? [value] : [];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectTextValues(item, depth + 1));
+  }
+  if (isRecord(value)) {
+    return Object.values(value).flatMap((item) => collectTextValues(item, depth + 1));
+  }
+  return [];
+}
+
+function collectSchemaFaqQuestions(faqNode: Record<string, unknown> | undefined): string[] {
+  if (!faqNode) {
+    return [];
+  }
+
+  const entities = faqNode["mainEntity"];
+  if (!Array.isArray(entities)) {
+    return [];
+  }
+
+  return entities.flatMap((entity) => {
+    if (!isRecord(entity)) {
+      return [];
+    }
+    const name = entity["name"];
+    return typeof name === "string" && name.trim().length > 0 ? [name.trim()] : [];
+  });
+}
+
+function collectSectionFaqQuestions(faqText: string): string[] {
+  return faqText
+    .split(/\n+/)
+    .map((line) => line.replace(/^\s*(?:Q\.|Question:|\d+\.|-|\*)\s*/i, "").trim())
+    .filter((line) => line.length > 0 && !/^A\.|^Answer:/i.test(line));
+}
+
+function collectPublicArtifactHits(publicText: string, faqQuestions: string[], language: UiLanguage): string[] {
+  const copy = getGeoQualityCopy(language);
+  const hits: string[] = [];
+  const sourceHeadingQuestion = faqQuestions.find((question) => /^(?:key ingredients|ingredients|benefits|how to use|summary)$/i.test(question.trim()));
+  const ocrNoise = publicText.match(/\b(?:3Home|SÉRUM|SERUM\s+ACTIVATEUR|ACTIVATEUR)\b/i)?.[0];
+  const internalLabel = publicText.match(/\b(?:fallbackDescription|sentence QA|RAG chunk|schema-validator|html-validator)\b/i)?.[0];
+
+  if (sourceHeadingQuestion) {
+    hits.push(copy.faqHeadingArtifact(sourceHeadingQuestion));
+  }
+  if (ocrNoise) {
+    hits.push(copy.ocrNoiseArtifact(ocrNoise));
+  }
+  if (internalLabel) {
+    hits.push(copy.internalArtifact(internalLabel));
+  }
+
+  return uniqueQualityItems(hits);
+}
+
+function collectMetricIntegrityIssues(publicText: string, language: UiLanguage): string[] {
+  const copy = getGeoQualityCopy(language);
+  const splitMetrics = Array.from(publicText.matchAll(/\+\d+\.\s+\d%/g)).map((match) => match[0]);
+  const lowAgreementMetrics = Array.from(publicText.matchAll(/\b[1-9]%\s+agreed\b/gi)).map((match) => match[0]);
+
+  return uniqueQualityItems([
+    ...splitMetrics.map((value) => copy.metricSplitIssue(value)),
+    ...lowAgreementMetrics.map((value) => copy.lowAgreementIssue(value))
+  ]);
+}
+
+function hasIngredientBenefitChoiceBridge(text: string): boolean {
+  return /(?:ingredient|active|extract|formula|formulated|contains|powered by|with|성분|함유).{0,160}(?:help|support|improv|target|benefit|elastic|firm|wrinkle|hydration|moistur|radiance|texture|효능|개선|도움|선택)/is.test(text);
+}
+
+function hasCustomerChoiceCue(text: string): boolean {
+  return /(?:skin type|works best for|solution for|ideal for|for customers|for users|concern|wrinkle|elasticity|dry|oily|combination|sensitive|피부|고민|선택|추천|적합)/i.test(text);
+}
+
+function hasSelectionCriteriaCue(text: string): boolean {
+  return /(?:choose|choice|selection|works best|solution for|skin type|customer|고객|선택|추천|적합)/i.test(text);
+}
+
+function uniqueQualityItems(items: Array<string | undefined>): string[] {
+  return Array.from(new Set(items.filter((item): item is string => Boolean(item && item.trim().length > 0))));
+}
+
+function ensureQualityItems(items: Array<string | undefined>, fallback: string): string[] {
+  const uniqueItems = uniqueQualityItems(items);
+  return uniqueItems.length > 0 ? uniqueItems : [fallback];
+}
+
+function clampQualityScore(score: number): number {
+  return Math.max(0, Math.min(100, Math.round(score)));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
