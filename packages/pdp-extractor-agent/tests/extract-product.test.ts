@@ -224,6 +224,59 @@ describe("extractProductFromHtml", () => {
     expect(result.geoProduct.ocr.sentenceInsights.some((item) => item.text.includes("WATER / AQUA"))).toBe(false);
   });
 
+  it("preserves Korean full ingredient accordion sections as ingredient data", async () => {
+    const koreanFullIngredients = [
+      "정제수",
+      "부틸렌글라이콜",
+      "글리세린",
+      "프로판다이올",
+      "1,2-헥산다이올",
+      "식물성스쿠알란",
+      "세테아릴알코올",
+      "하이드록시프로필스타치포스페이트",
+      "잔탄검",
+      "글리세릴스테아레이트",
+      "하이드로제네이티드레시틴",
+      "아크릴레이트/C10-30알킬아크릴레이트크로스폴리머",
+      "아세틸글루코사민",
+      "스테아릭애씨드",
+      "글리세릴스테아레이트시트레이트",
+      "판테놀",
+      "글루코노락톤",
+      "카보머",
+      "콜레스테롤",
+      "세라마이드엔피",
+      "토코페롤"
+    ].join(", ");
+    const koreanAccordionHtml = `
+      <main>
+        <h1>에스트라 아토베리어365 바디로션</h1>
+        <p>건조로 민감해진 피부장벽을 강화하여 하루종일 촉촉함을 유지시켜주는 고보습 바디로션</p>
+        <div class="product-accordion">
+          <button aria-controls="full-ingredients-panel">전성분</button>
+          <div id="full-ingredients-panel">
+            <p>${koreanFullIngredients}</p>
+          </div>
+        </div>
+      </main>
+    `;
+
+    const { result } = await extractProductFromHtml(koreanAccordionHtml, "https://example.com/products/body-lotion");
+
+    expect(result.geoProduct.ingredients.some((text) => text.includes("세라마이드엔피"))).toBe(true);
+    expect(result.geoProduct.categorizedProductInfo.ingredients.some((text) => text.includes("아크릴레이트/C10-30알킬아크릴레이트크로스폴리머"))).toBe(true);
+    expect(result.geoProduct.contentAnalysis.sections.some((section) =>
+      section.category === "ingredient"
+      && section.title === "전성분"
+      && section.text.includes("글루코노락톤")
+    )).toBe(true);
+    expect(result.geoProduct.rag.chunks.some((chunk) =>
+      chunk.kind === "source"
+      && chunk.text.includes("전성분")
+      && chunk.text.includes("세라마이드엔피")
+    )).toBe(true);
+  });
+
   it("does not treat visual alt text as OCR sentence evidence", async () => {
     const visualAltHtml = `
       <main>

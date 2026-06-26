@@ -822,14 +822,20 @@ function isSafetyOrTestClaimUsageText(value: string): boolean {
 }
 
 function hasConcreteKoreanUsageAction(value: string): boolean {
-  return /(?:적당량|손에|물과\s*함께|거품\s*내|거품내|얼굴에|마사지하듯|마사지|문지르|미온수|헹구|마무리|화장솜|덜어|흡수|펴\s*바르|발라)/.test(value);
+  return hasKoreanInstructionVerb(value);
 }
 
 function hasUsageActionVerb(value: string): boolean {
-  return /\b(?:apply|dispense|massage|lather|rinse|pat|press|spread|smooth|warm|take|pump)\b|사용|도포|바르|바릅|펴\s*바르|펴\s*바릅|흡수|마사지|거품\s*내|거품내|문지르|헹구|마무리|なじませ|塗布|使(?:う|い)/i.test(value)
+  return /\b(?:apply|dispense|massage|lather|rinse|pat|press|spread|smooth|warm|take|pump)\b|なじませ|塗布|使(?:う|い)/i.test(value)
+    || hasKoreanInstructionVerb(value)
     || /^\s*use\b/i.test(value)
     || /(?:^|[.;,]\s*)then\s+use\b/i.test(value)
     || /\buse\s+(?:morning|night|daily|twice|once|after|before|as|with|on|to)\b/i.test(value);
+}
+
+function hasKoreanInstructionVerb(value: string): boolean {
+  const text = value.trim();
+  return /(?:적당량|손에|물과\s*함께|거품\s*내|거품내|얼굴에|문지르|미온수|헹구|화장솜|덜어|펴\s*바르|펴\s*바릅|펴\s*발라|바르(?:고|며|듯|세요|십시오|기|면|는|도록)|바릅|바른\s*후|발라(?:주|주세요|줍니다|서|가며)|마사지(?:하듯|하[고여]|한\s*후|해|하세요|하며)|흡수(?:시켜|시키|될\s*때까지|되도록|해\s*주세요|시킵)|마무리(?:해|하세요|합니다|하십시오)|도포(?:해|하세요|합니다|하십시오|한\s*(?:뒤|후))|사용\s*(?:해|하세요|합니다|하십시오|한다|하시|할\s*때)|(?:샤워|세안|토너|스킨케어|아침|저녁|매일|데일리)[^.!?。！？\n]{0,40}사용(?:합니다|하세요|해\s*주세요|해|$))/.test(text);
 }
 
 function isIngredientEvidenceText(value: string): boolean {
@@ -1034,7 +1040,19 @@ function pruneInvalidSchemaText(
   if (node["@type"] === "Product" && Array.isArray(node.additionalProperty)) {
     node.additionalProperty = node.additionalProperty.filter(isRecord).flatMap((item) => {
       const name = stringValue(item.name);
-      const value = stringValue(item.value);
+      const rawValue = stringValue(item.value);
+      const value = name === "Usage" && rawValue ? repairUsagePropertyValue(rawValue, locale) : rawValue;
+      if (name === "Usage" && rawValue && value && value !== rawValue) {
+        addRepair(warnings, repairs, {
+          field: "Product.additionalProperty.Usage",
+          source: "sentence-qa",
+          issue: "Usage PropertyValue contained duplicated step text or leading OCR step markers.",
+          action: "Deduplicated usage directions and removed leading step-number artifacts.",
+          before: rawValue,
+          after: value,
+          evidence: ["Product.additionalProperty.Usage", "actionable usage contract", locale]
+        }, "Usage PropertyValue was deduplicated during final sentence QA.");
+      }
       if (!name || !value || isInvalidPropertyValue(name, value, locale)) {
         addRepair(warnings, repairs, {
           field: "Product.additionalProperty",
@@ -1163,18 +1181,83 @@ function repairGeneratedText(
 }
 
 function repairHowToStepUsageText(value: string): string {
-  let next = stripLeadingUsageMeasurementLabels(value);
+  let next = stripLeadingUsageStepMarkers(stripLeadingUsageMeasurementLabels(value));
   const cueIndex = usageRepairCueIndex(next);
   if (cueIndex > 0 && shouldRepairUsageFromCue(next.slice(0, cueIndex))) {
     next = next.slice(cueIndex).trim();
   }
 
-  return next
+  return stripLeadingUsageStepMarkers(next
+    .replace(/^\d+[.)]?\s+/, "")
     .replace(/^(?:[\p{L}\p{N}™®().,'\s-]{0,100})?(?:사용\s*방법|사용법)\s*\d*[:.]?\s*/iu, "")
     .replace(/^(?:[\p{L}\p{N}™®().,'\s-]{0,100})?(?:how\s*to\s*use|directions?)\s*\d*[:.]?\s*/iu, "")
     .replace(usageMeasurementLeadPattern(), "")
     .replace(/\s+/g, " ")
+    .trim());
+}
+
+function repairUsagePropertyValue(value: string, locale: PdpGeoLocale): string {
+  const steps = dedupeUsagePropertySteps(value
+    .split(/\s*;\s*/)
+    .flatMap((part) => part.split(/\n+/))
+    .map((part) => repairHowToStepUsageText(part))
+    .map((part) => part.replace(/[.。]+$/g, "").trim())
+    .filter((part) => part.length >= 8 && isActionableUsageText(part)));
+
+  if (steps.length === 0) {
+    return value;
+  }
+  if (steps.length === 1) {
+    return steps[0] ?? value;
+  }
+  if (locale === "ko-KR") {
+    return steps.map((step, index) => `${index + 1}단계: ${step}`).join("; ");
+  }
+  if (locale === "ja-JP") {
+    return steps.map((step, index) => `${index + 1}段階: ${step}`).join("; ");
+  }
+  return steps.map((step, index) => `Step ${index + 1}: ${step}`).join("; ");
+}
+
+function dedupeUsagePropertySteps(values: string[]): string[] {
+  const results: string[] = [];
+  for (const value of values) {
+    const key = usagePropertyStepKey(value);
+    if (!key || results.some((item) => {
+      const existing = usagePropertyStepKey(item);
+      return existing.includes(key) || key.includes(existing);
+    })) {
+      continue;
+    }
+    results.push(value);
+  }
+  return results;
+}
+
+function usagePropertyStepKey(value: string): string {
+  return stripLeadingUsageStepMarkers(value)
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\b(?:the|a|an|your|this|it|of|serum|cream|toner|product)\b/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
+}
+
+function stripLeadingUsageStepMarkers(value: string): string {
+  let next = value.trim();
+  for (let index = 0; index < 4; index += 1) {
+    const before = next;
+    next = next
+      .replace(/^\s*(?:[.;:·-]+\s*)+/, "")
+      .replace(/^\s*(?:step\s*)?\d+\s*(?:단계|段階)\s*[:.)-]*\s*/i, "")
+      .replace(/^\s*step\s*\d+\s*[:.)-]*\s*/i, "")
+      .replace(/^\s*\d+[.)]?\s+/, "")
+      .trim();
+    if (next === before) {
+      break;
+    }
+  }
+  return next;
 }
 
 function usageRepairCueIndex(value: string): number {
@@ -1302,6 +1385,9 @@ function repairKoreanReviewQuoteFragments(value: string): string {
 
 function repairKoreanSentenceQuality(value: string): string {
   return value
+    .replace(/상품\s*정보에는\s+([^.!?。！？\n]+?)(?:이|가)\s+함께\s+제시됩니다/g, (_match, phrase: string) => `${appendKoreanObjectParticle(formatKoreanListForSentence(phrase.trim()))} 함께 제공합니다`)
+    .replace(/상품\s*정보에는\s+([^.!?。！？\n]+?)(?:이|가)\s+제시됩니다/g, (_match, phrase: string) => `${appendKoreanObjectParticle(formatKoreanListForSentence(phrase.trim()))} 제공합니다`)
+    .replace(/제품\s*자료에서는\s+([^.!?。！？\n]+?)(?:으로|로)\s+설명됩니다/g, (_match, phrase: string) => `${phrase.trim()}입니다`)
     .replace(/(?:확인(?:된 결과\/정보|된 상품 정보| 가능한 정보)(?:에 따르면|는)?\s*)?([^.!?。！？\n]*?\s*성분\/기술은\s*[^.!?。！？\n]*?\s*효능 맥락과 연결되어\s*[^.!?。！？\n]*?\s*비교에 필요한 핵심 케어 근거(?:를)?\s*설명합니다)/g, (_match, claim: string) => rewriteKoreanMetaClaimForPublicCopy(claim) ?? claim)
     .replace(/(?:([^.!?。！？\n]+?)에서\s+)?([^.!?。！？\n]+?)\s*성분\/기술은\s*([^.!?。！？\n]+?)\s*케어와 맞물려 제품 특징을 구체화합니다/g, (_match, productType: string | undefined, ingredientPhrase: string, outcomePhrase: string) => {
       const productContext = productType ? `${productType.trim()}에서는 ` : "";
@@ -1669,6 +1755,10 @@ function formatKoreanListForSentence(value: string): string {
 
 function appendKoreanTopicParticle(value: string): string {
   return `${value}${hasKoreanBatchim(value) ? "은" : "는"}`;
+}
+
+function appendKoreanObjectParticle(value: string): string {
+  return `${value}${hasKoreanBatchim(value) ? "을" : "를"}`;
 }
 
 function hasKoreanBatchim(value: string): boolean {

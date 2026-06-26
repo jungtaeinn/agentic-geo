@@ -861,7 +861,8 @@ function extractPageTextBlocks($: ReturnType<typeof load>, productName: string):
     }
 
     seen.add(normalized);
-    for (const [chunkIndex, chunk] of chunkText(candidateText, 920).entries()) {
+    const chunkLimit = isFullIngredientList(candidateText) ? 3000 : 920;
+    for (const [chunkIndex, chunk] of chunkText(candidateText, chunkLimit).entries()) {
       blocks.push({
         id: `${candidate.id}-${chunkIndex + 1}`,
         title: candidate.title,
@@ -2224,6 +2225,9 @@ function sectionCategory(title: string, text: string, keywords: ClassifiedKeywor
   if (isNonProductCommerceText(joined) || isNonProductCommerceText(text)) {
     return "unknown";
   }
+  if (isFullIngredientList(text)) {
+    return "ingredient";
+  }
   if (/^(ingredients?|key ingredients?|formula|formulated without|성분|주요 성분|전성분|원료)$/i.test(label)) {
     return "ingredient";
   }
@@ -2271,7 +2275,9 @@ function sectionValues(text: string, category: ProductContentCategory): string[]
     return [];
   }
 
-  const maxLength = category === "ingredient" ? 1100 : 420;
+  const maxLength = category === "ingredient"
+    ? isFullIngredientList(text) ? 3000 : 1100
+    : 420;
   return chunkText(text, maxLength)
     .map((chunk) => cleanText(chunk))
     .filter((chunk) => chunk.length >= 12)
@@ -3312,7 +3318,7 @@ function trimSentenceInsight(value: string, category: KeywordCategory): string {
 
 function isFullIngredientList(value: string): boolean {
   const text = cleanText(stripSourceSectionLabel(value));
-  if (isFullIngredientLabel(text)) {
+  if (isFullIngredientLabel(text) && text.replace(/^(?:ingredients?|전성분|全成分)\s*:?\s*/i, "").length >= 12) {
     return true;
   }
 
@@ -3321,8 +3327,10 @@ function isFullIngredientList(value: string): boolean {
     return false;
   }
 
-  const matches = text.match(/\b(?:water|aqua|eau|glycerin|glycol|sodium|potassium|cocoyl|cocoate|betaine|acrylates?|peg-\d+|chloride|edta|extract|fragrance|parfum|limonene|benzoate|hydroxide|caprylyl|capryl|citrus|niacinamide|retinol|panthenol|ceramide|hyaluronic|butylene)\b/gi) ?? [];
-  return new Set(matches.map((match) => match.toLowerCase())).size >= 5;
+  const englishMatches = text.match(/\b(?:water|aqua|eau|glycerin|glycol|sodium|potassium|cocoyl|cocoate|betaine|acrylates?|peg-\d+|chloride|edta|extract|fragrance|parfum|limonene|benzoate|hydroxide|caprylyl|capryl|citrus|niacinamide|retinol|panthenol|ceramide|hyaluronic|butylene)\b/gi) ?? [];
+  const koreanMatches = text.match(/정제수|글리세린|글라이콜|다이올|오일|추출물|애씨드|알코올|세라마이드|판테놀|콜레스테롤|카보머|토코페롤|레시틴|왁스|폴리머|크로스폴리머|글루코|스쿠알란|실리카|이디티에이|트로메타민|잔탄검|하이드로|메티콘|스테아레이트|카프릴|팔미|라우릭|미리스틱|올레익|만니톨|소듐|포스페이트|락톤/gi) ?? [];
+  const matches = new Set([...englishMatches, ...koreanMatches].map((match) => match.toLowerCase()));
+  return matches.size >= 5;
 }
 
 function sentenceBelongsToCandidate(sentence: string, candidateText: string): boolean {
@@ -4559,6 +4567,9 @@ function isSemanticFieldValue(value: string, category: ClassifiedKeyword["catego
   }
 
   if (category === "ingredient") {
+    if (isFullIngredientList(text)) {
+      return true;
+    }
     return /(인삼|레티놀|나이아신아마이드|펩타이드|히알루론산|세라마이드|콜라겐|비타민|성분|ginseng|panax|retinol|niacinamide|peptide|hyaluronic|ceramide|collagen|vitamin|water|aqua|glycerin|extract)/i.test(text);
   }
 

@@ -102,6 +102,50 @@ describe("generatePdpGeo", () => {
     expect(process.every((step) => step.status === "done")).toBe(true);
   });
 
+  it("writes Korean FAQ answers as direct AI-citation-friendly customer answers", async () => {
+    const { result } = await generatePdpGeo({
+      product: {
+        geoProduct: {
+          name: "에스트라 아토베리어365 바디로션",
+          description: "건조 피부와 민감 피부를 위한 고보습 바디로션으로, 건조로 민감해진 피부장벽 강화에 도움을 줍니다.",
+          category: "바디로션",
+          benefits: ["보습 케어", "촘촘한 피부장벽 고밀도 케어"],
+          effects: ["하루종일 촉촉함을 유지하는 고보습 케어"],
+          ingredients: ["초미세세라마이드™", "세라마이드", "글루코사민"],
+          usage: ["부드럽게 마사지하듯 펴 발라주며 흡수시켜 주세요."]
+        }
+      },
+      source: {
+        type: "pdp-extractor",
+        url: "https://www.aestura.com/web/product/view.do?prdSeq=1086"
+      },
+      hints: {
+        locale: "ko-KR",
+        market: "KR"
+      }
+    });
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    const faq = graph.find((node) => node["@type"] === "FAQPage") as Record<string, any>;
+    const benefitFaq = faq.mainEntity.find((item: any) => String(item.name).includes("피부 고민")) as Record<string, any>;
+    const ingredientFaq = faq.mainEntity.find((item: any) => String(item.name).includes("성분/기술")) as Record<string, any>;
+    const benefitAnswer = String(benefitFaq.acceptedAnswer.text);
+    const ingredientAnswer = String(ingredientFaq.acceptedAnswer.text);
+
+    expect(product.description).toContain("효능/케어를 중심으로 한 제품");
+    expect(product.description).not.toMatch(/설명됩니다|상품 정보에는|제품 자료에서는/);
+    expect(benefitAnswer).toContain("건조 피부와 민감 피부에 적합하며");
+    expect(benefitAnswer).toContain("보습 케어");
+    expect(benefitAnswer).toContain("피부장벽");
+    expect(benefitAnswer).toContain("바디로션입니다");
+    expect(ingredientAnswer).toContain("포함되어 있으며");
+    expect(ingredientAnswer).toContain("핵심 성분/기술입니다");
+    expect(`${benefitAnswer} ${ingredientAnswer}`).not.toMatch(/상품 정보에는|제품 자료에서는|제시됩니다|설명됩니다|확인됩니다|정리됩니다/);
+    expect(result.content.sections.faq).toContain(benefitAnswer);
+    expect(result.content.sections.faq).toContain(ingredientAnswer);
+  });
+
   it("uses an optional product normalization agent before keyword normalization", async () => {
     const { result } = await generatePdpGeo(
       {
@@ -555,6 +599,145 @@ describe("generatePdpGeo", () => {
     expect(howToText).not.toContain("사용성 테스트 완료");
     expect(result.content.sections.howToUse).not.toContain("타 제품 사용했었는데");
     expect(result.content.sections.howToUse).not.toContain("사용성 테스트 완료");
+  });
+
+  it("keeps Korean body lotion HowTo steps limited to actual use directions", async () => {
+    const actualUsage = [
+      "샤워 후 수분끼가 남아 있을 때 사용해 주세요.",
+      "부드럽게 마사지하듯 펴 발라주며 흡수시켜 주세요"
+    ];
+    const noisyUsage = [
+      ...actualUsage,
+      "아토베리어® 바디로션 건조로 민감해진 피부장벽 강화에 도움을 주는 고밀착 바디로션 POINT · 부드럽고 빠른 흡수성 · 끈적임 없는 산뜻한 사용감 · 보습·탄력 케어 초미세세라마이드™",
+      "발림성이 가볍고 피부에 빠르게 흡수되는 밀크 타입의 바디 로션",
+      "눈으로 확인하는 촉촉하고 꽉 찬 수분의 힘 사용 전"
+    ];
+
+    const { result } = await generatePdpGeo({
+      product: {
+        geoProduct: {
+          name: "에스트라 아토베리어365 바디로션",
+          description: "건조로 민감해진 피부장벽을 강화하여 하루종일 촉촉함을 유지시켜주는 고보습 바디로션",
+          category: "바디로션",
+          benefits: ["피부 장벽", "보습", "탄력"],
+          ingredients: ["초미세세라마이드™", "글루코사민"],
+          usage: noisyUsage,
+          sourceTexts: [
+            "초미세 세라마이드™ 추천 피부 타입 바디 보습 피부 사용법 1 샤워 후 수분끼가 남아 있을 때 사용해 주세요. 2 부드럽게 마사지하듯 펴 발라주며 흡수시켜 주세요.",
+            ...noisyUsage
+          ],
+          semanticFacts: {
+            usageSteps: noisyUsage
+          }
+        }
+      },
+      source: {
+        type: "pdp-extractor",
+        url: "https://www.aestura.com/web/product/view.do?prdSeq=1086"
+      },
+      hints: {
+        locale: "ko-KR",
+        market: "KR",
+        category: "바디로션"
+      }
+    });
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
+    const usageContext = (product.additionalProperty as Array<Record<string, any>>)
+      .find((item) => item.name === "Usage")?.value as string;
+    const howToText = JSON.stringify(howTo.step);
+    const normalizedUsage = result.diagnostics.normalizedProduct.usage.join("\n");
+
+    expect(howTo.step).toHaveLength(2);
+    expect(howToText).toContain("샤워 후 수분끼가 남아 있을 때 사용해 주세요");
+    expect(howToText).toContain("부드럽게 마사지하듯 펴 발라주며 흡수시켜 주세요");
+    expect(howToText).not.toMatch(/부드럽고 빠른 흡수성|밀크 타입|수분의 힘 사용 전/);
+    expect(usageContext).toContain("샤워 후 수분끼가 남아 있을 때 사용해 주세요");
+    expect(usageContext).toContain("부드럽게 마사지하듯 펴 발라주며 흡수시켜 주세요");
+    expect(usageContext).not.toMatch(/부드럽고 빠른 흡수성|밀크 타입|수분의 힘 사용 전/);
+    expect(result.content.sections.howToUse).not.toMatch(/부드럽고 빠른 흡수성|밀크 타입|수분의 힘 사용 전/);
+    expect(normalizedUsage).not.toMatch(/부드럽고 빠른 흡수성|밀크 타입|수분의 힘 사용 전/);
+  });
+
+  it("deduplicates malformed Korean Usage property step markers", async () => {
+    const { result } = await generatePdpGeo({
+      product: {
+        geoProduct: {
+          name: "에스트라 아토베리어365 바디로션",
+          description: "건조 피부를 위한 고보습 바디로션입니다.",
+          category: "바디로션",
+          benefits: ["보습 케어"],
+          ingredients: ["세라마이드"],
+          usage: [
+            "샤워 후 손바닥에 적당량 덜어주세요",
+            ". 1 샤워 후 손바닥에 적당량 덜어주세요"
+          ]
+        }
+      },
+      hints: {
+        locale: "ko-KR",
+        market: "KR",
+        category: "바디로션"
+      }
+    });
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    const usageValue = String((product.additionalProperty as Array<Record<string, any>>)
+      .find((item) => item.name === "Usage")?.value ?? "");
+
+    expect(usageValue).toBe("샤워 후 손바닥에 적당량 덜어주세요");
+    expect(usageValue).not.toMatch(/2단계|\. 1|;\s*/);
+  });
+
+  it("renders Korean full ingredient lists from extracted ingredient data", async () => {
+    const koreanFullIngredients = [
+      "정제수",
+      "부틸렌글라이콜",
+      "글리세린",
+      "프로판다이올",
+      "1,2-헥산다이올",
+      "식물성스쿠알란",
+      "세테아릴알코올",
+      "하이드록시프로필스타치포스페이트",
+      "잔탄검",
+      "글리세릴스테아레이트",
+      "하이드로제네이티드레시틴",
+      "아크릴레이트/C10-30알킬아크릴레이트크로스폴리머",
+      "아세틸글루코사민",
+      "스테아릭애씨드",
+      "판테놀",
+      "글루코노락톤",
+      "카보머",
+      "콜레스테롤",
+      "세라마이드엔피",
+      "토코페롤"
+    ].join(", ");
+
+    const { result } = await generatePdpGeo({
+      product: {
+        geoProduct: {
+          name: "에스트라 아토베리어365 바디로션",
+          description: "건조로 민감해진 피부장벽을 위한 고보습 바디로션입니다.",
+          category: "바디로션",
+          benefits: ["피부 장벽", "보습"],
+          ingredients: [koreanFullIngredients],
+          usage: ["샤워 후 수분끼가 남아 있을 때 사용해 주세요."]
+        }
+      },
+      hints: {
+        locale: "ko-KR",
+        market: "KR",
+        category: "바디로션"
+      }
+    });
+
+    expect(result.diagnostics.normalizedProduct.ingredients.some((text) => text.includes("세라마이드엔피"))).toBe(true);
+    expect(result.content.sections.ingredients).toContain("전성분: 정제수");
+    expect(result.content.sections.ingredients).toContain("아크릴레이트/C10-30알킬아크릴레이트크로스폴리머");
+    expect(result.content.sections.ingredients).toContain("세라마이드엔피");
   });
 
   it("prefers semantic OCR facts over product-specific ingredient or metric regexes", async () => {
@@ -1117,6 +1300,8 @@ describe("generatePdpGeo", () => {
     }
 
     expect(capturedBody?.instructions).toContain("GEO research/geo-paper, CEP, and E-E-A-T");
+    expect(capturedBody?.instructions).toContain("Top priority: make public copy more likely to be selected, quoted, or cited by AI answer engines");
+    expect(capturedBody?.instructions).toContain("For Korean faqAnswers");
     expect(capturedBody?.instructions).toContain("schemaProperties");
     expect(capturedBody?.instructions).toContain("faqAnswers");
     const payload = JSON.parse(String(capturedBody?.input ?? "{}")) as Record<string, any>;
@@ -1124,6 +1309,7 @@ describe("generatePdpGeo", () => {
     expect(payload.currentCopy.schemaProperties).toBeTruthy();
     expect(Array.isArray(payload.currentCopy.faqAnswers)).toBe(true);
     expect(payload.extractionPriorities).toEqual(expect.arrayContaining([
+      expect.stringContaining("AI answer engine can quote"),
       expect.stringContaining("customer-entry-point"),
       expect.stringContaining("E-E-A-T")
     ]));
@@ -2159,6 +2345,54 @@ describe("generatePdpGeo", () => {
     expect(repaired.validationRepairs.some((repair) => repair.field === "content.sections.description" && String(repair.before).includes("수분감를") && String(repair.after).includes("수분감을"))).toBe(true);
     expect(repaired.validationRepairs.some((repair) => repair.field === "content.html" && String(repair.before).includes("<script>") && String(repair.after).includes("geo-content-accordion"))).toBe(true);
     expect(repaired.validationRepairs.some((repair) => repair.field === "Product.additionalProperty" && JSON.stringify(repair.before).includes("Reported details") && repair.after === null)).toBe(true);
+  });
+
+  it("repairs duplicated Korean Usage PropertyValue step artifacts", () => {
+    const repaired = validateAndRepairPdpGeoArtifacts({
+      locale: "ko-KR",
+      fallbackProductName: "에스트라 아토베리어365 바디로션",
+      fallbackDescription: "건조 피부를 위한 고보습 바디로션입니다.",
+      schemaMarkup: {
+        jsonLd: {
+          "@context": "https://schema.org",
+          "@graph": [
+            {
+              "@type": "Product",
+              "@id": "https://example.com/product#product",
+              name: "에스트라 아토베리어365 바디로션",
+              description: "건조 피부를 위한 고보습 바디로션입니다.",
+              additionalProperty: [
+                {
+                  "@type": "PropertyValue",
+                  name: "Usage",
+                  value: "1단계: 샤워 후 손바닥에 적당량 덜어주세요; 2단계:. 1 샤워 후 손바닥에 적당량 덜어주세요"
+                }
+              ]
+            }
+          ]
+        },
+        scriptTag: ""
+      },
+      content: {
+        sections: {
+          productName: "에스트라 아토베리어365 바디로션",
+          description: "건조 피부를 위한 고보습 바디로션입니다.",
+          quickFacts: "",
+          benefits: "",
+          ingredients: "",
+          howToUse: "1. 샤워 후 손바닥에 적당량 덜어주세요",
+          faq: ""
+        },
+        html: ""
+      }
+    });
+
+    const graph = repaired.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    const usageValue = String((product.additionalProperty as Array<Record<string, any>>)[0]?.value ?? "");
+
+    expect(usageValue).toBe("샤워 후 손바닥에 적당량 덜어주세요");
+    expect(repaired.validationRepairs.some((repair) => repair.field === "Product.additionalProperty.Usage")).toBe(true);
   });
 
   it("repairs public FAQ labels, metric decimals, and evidence duration consistency", () => {

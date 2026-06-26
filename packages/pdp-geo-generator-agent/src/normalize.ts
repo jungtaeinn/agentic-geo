@@ -1069,7 +1069,7 @@ function isLikelyVisualImageDescription(value: string): boolean {
 
 function isFullIngredientList(value: string): boolean {
   const text = cleanText(value);
-  if (/^(?:ingredients?|전성분|全成分)\s*:/i.test(text)) {
+  if (/^(?:ingredients?|전성분|全成分)\s*:?\s*/i.test(text) && text.replace(/^(?:ingredients?|전성분|全成分)\s*:?\s*/i, "").length >= 12) {
     return true;
   }
 
@@ -1078,8 +1078,10 @@ function isFullIngredientList(value: string): boolean {
     return false;
   }
 
-  const matches = text.match(/\b(?:water|aqua|eau|glycerin|glycol|sodium|potassium|cocoyl|cocoate|betaine|acrylates?|peg-\d+|chloride|edta|extract|fragrance|parfum|limonene|benzoate|hydroxide|caprylyl|capryl|citrus|niacinamide|retinol|panthenol|ceramide|hyaluronic|butylene)\b/gi) ?? [];
-  return new Set(matches.map((match) => match.toLowerCase())).size >= 5;
+  const englishMatches = text.match(/\b(?:water|aqua|eau|glycerin|glycol|sodium|potassium|cocoyl|cocoate|betaine|acrylates?|peg-\d+|chloride|edta|extract|fragrance|parfum|limonene|benzoate|hydroxide|caprylyl|capryl|citrus|niacinamide|retinol|panthenol|ceramide|hyaluronic|butylene)\b/gi) ?? [];
+  const koreanMatches = text.match(/정제수|글리세린|글라이콜|다이올|오일|추출물|애씨드|알코올|세라마이드|판테놀|콜레스테롤|카보머|토코페롤|레시틴|왁스|폴리머|크로스폴리머|글루코|스쿠알란|실리카|이디티에이|트로메타민|잔탄검|하이드로|메티콘|스테아레이트|카프릴|팔미|라우릭|미리스틱|올레익|만니톨|소듐|포스페이트|락톤/gi) ?? [];
+  const matches = new Set([...englishMatches, ...koreanMatches].map((match) => match.toLowerCase()));
+  return matches.size >= 5;
 }
 
 function isOcrFootnote(value: string): boolean {
@@ -1550,13 +1552,13 @@ function isSafetyOrTestClaimUsageCandidate(value: string): boolean {
 }
 
 function hasConcreteKoreanUsageAction(value: string): boolean {
-  return /(?:적당량|손에|물과\s*함께|거품\s*내|거품내|얼굴에|마사지하듯|마사지|문지르|미온수|헹구|마무리|화장솜|덜어|흡수|펴\s*바르|발라)/.test(value);
+  return hasKoreanInstructionVerb(value);
 }
 
 function normalizeSourceUsageInstruction(value: string): string {
   let normalized = stripLeadingUsageMeasurementLabels(cleanSourceSignalText(value)
     .replace(/\bStep\s+\d+\b\.?/gi, "")
-    .replace(/^\d+\.\s*/, "")
+    .replace(/^\d+[.)]?\s*/, "")
     .replace(/\s+/g, " ")
     .trim());
   const cueIndex = usageInstructionCueIndex(normalized);
@@ -1611,10 +1613,16 @@ function usageInstructionCueIndex(value: string): number {
 }
 
 function hasExplicitUsageAction(value: string): boolean {
-  return /\b(?:apply|dispense|massage|lather|rinse|pat|press|spread|smooth|warm|take|pump)\b|사용(?!감|할\s*수)|도포|바르|바릅|펴\s*바르|펴\s*바릅|흡수|마사지|거품\s*내|거품내|문지르|헹구|마무리|なじませ|塗布|使(?:う|い)/i.test(value)
+  return /\b(?:apply|dispense|massage|lather|rinse|pat|press|spread|smooth|warm|take|pump)\b|なじませ|塗布|使(?:う|い)/i.test(value)
+    || hasKoreanInstructionVerb(value)
     || /^\s*use\b/i.test(value)
     || /(?:^|[.;,]\s*)then\s+use\b/i.test(value)
     || /\buse\s+(?:morning|night|daily|twice|once|after|before|as|with|on|to)\b/i.test(value);
+}
+
+function hasKoreanInstructionVerb(value: string): boolean {
+  const text = cleanSourceSignalText(value);
+  return /(?:적당량|손에|물과\s*함께|거품\s*내|거품내|얼굴에|문지르|미온수|헹구|화장솜|덜어|펴\s*바르|펴\s*바릅|펴\s*발라|바르(?:고|며|듯|세요|십시오|기|면|는|도록)|바릅|바른\s*후|발라(?:주|주세요|줍니다|서|가며)|마사지(?:하듯|하[고여]|한\s*후|해|하세요|하며)|흡수(?:시켜|시키|될\s*때까지|되도록|해\s*주세요|시킵)|마무리(?:해|하세요|합니다|하십시오)|도포(?:해|하세요|합니다|하십시오|한\s*(?:뒤|후))|사용\s*(?:해|하세요|합니다|십시오|한다|하시|할\s*때)|(?:샤워|세안|토너|스킨케어|아침|저녁|매일|데일리)[^.!?。！？\n]{0,40}사용(?:합니다|하세요|해\s*주세요|해|$))/.test(text);
 }
 
 function isReviewKeyword(value: string): boolean {
