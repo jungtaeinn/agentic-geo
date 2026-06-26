@@ -779,6 +779,17 @@ button:disabled {
   white-space: nowrap;
 }
 
+.copyPanelButton.copied {
+  border-color: rgba(64, 214, 141, 0.28);
+  background: rgba(64, 214, 141, 0.13);
+  color: #e4ffee;
+}
+
+.copyPanelButton.copied:hover {
+  background: rgba(64, 214, 141, 0.18);
+  color: #f5fff8;
+}
+
 .artifactCopyButton {
   display: inline-flex;
   flex: 0 0 auto;
@@ -1555,14 +1566,15 @@ button:disabled {
   display: grid;
   grid-template-columns: 17px minmax(0, 1fr);
   gap: 8px;
-  align-items: start;
+  align-items: center;
+  width: 100%;
   min-width: 0;
-  min-height: 46px;
+  min-height: 48px;
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.035);
   color: rgba(255, 255, 255, 0.72);
-  padding: 8px;
+  padding: 7px 8px;
   text-align: left;
 }
 
@@ -1577,7 +1589,7 @@ button:disabled {
   color: rgba(255, 255, 255, 0.54);
 }
 
-.ragReferenceList button span,
+.ragReferenceList button .ragReferenceContent,
 .ragReferenceList button strong,
 .ragReferenceList button em {
   min-width: 0;
@@ -1585,24 +1597,24 @@ button:disabled {
   text-overflow: ellipsis;
 }
 
-.ragReferenceList button > span {
-  display: flex;
+.ragReferenceList button .ragReferenceContent {
+  display: grid;
   min-width: 0;
-  flex-direction: column;
   gap: 3px;
   overflow: hidden;
+  color: inherit;
+  line-height: 1.2;
 }
 
 .ragReferenceList button strong {
-  display: -webkit-box;
+  display: block;
   overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
   color: rgba(255, 255, 255, 0.84);
   font-size: 12px;
   font-weight: 750;
-  line-height: 1.28;
-  white-space: normal;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ragReferenceList button em {
@@ -1612,17 +1624,9 @@ button:disabled {
   font-style: normal;
   font-weight: 600;
   line-height: 1.25;
-  white-space: nowrap;
-}
-
-.ragReferenceList button em.ragReferenceUsage {
-  display: -webkit-box;
   overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  color: rgba(255, 255, 255, 0.58);
-  line-height: 1.35;
-  white-space: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .composerDock {

@@ -55,6 +55,7 @@ type RagProfileTarget = "extractor" | "generator";
 type WorkspaceMode = "extractor" | "generator";
 type ExtractorOutputView = "result" | "logs";
 type ModalCopyTarget = "panel-detail" | "rag-reference";
+type ArtifactCopySurface = "generator-floating" | "generator-panel" | "extractor-floating" | "extractor-panel";
 
 interface PanelRagReference {
   id: string;
@@ -93,6 +94,8 @@ interface GeoQualityDimension {
 interface GeoQualityEvaluation {
   overallScore: number;
   dimensions: GeoQualityDimension[];
+  validationDetails: string[];
+  validationImprovements: string[];
 }
 
 interface GeoGeneratorResult {
@@ -779,6 +782,7 @@ export function GeoGeneratorConsole() {
   const [selectedRagReference, setSelectedRagReference] = useState<PanelRagReference | null>(null);
   const [selectedPanelDetail, setSelectedPanelDetail] = useState<PanelDetail | null>(null);
   const [copiedModalTarget, setCopiedModalTarget] = useState<ModalCopyTarget | null>(null);
+  const [copiedArtifactTarget, setCopiedArtifactTarget] = useState<string | null>(null);
   const [isDragActive, setIsDragActive] = useState(false);
   const [composerStatus, setComposerStatus] = useState("");
   const [composerAttachments, setComposerAttachments] = useState<ComposerAttachment[]>([]);
@@ -793,6 +797,13 @@ export function GeoGeneratorConsole() {
     setCopiedModalTarget(target);
     window.setTimeout(() => {
       setCopiedModalTarget((current) => current === target ? null : current);
+    }, 1600);
+  };
+  const copyArtifactText = async (value: string, target: string) => {
+    await copyText(value);
+    setCopiedArtifactTarget(target);
+    window.setTimeout(() => {
+      setCopiedArtifactTarget((current) => current === target ? null : current);
     }, 1600);
   };
   const closePanelDetail = () => {
@@ -838,6 +849,8 @@ export function GeoGeneratorConsole() {
   }, null, 2) : "";
   const extractorJsonText = selectedExtractorResult ? JSON.stringify(selectedExtractorResult, null, 2) : "";
   const extractorDiagnosticsText = selectedExtractorLog ? JSON.stringify(selectedExtractorLog, null, 2) : "";
+  const generatorOutputText = outputView === "schema" ? schemaText : outputView === "content" ? selectedResult?.generator.content.html ?? "" : diagnosticsText;
+  const extractorOutputText = extractorOutputView === "result" ? extractorJsonText : extractorDiagnosticsText;
   const canSubmitComposer = activeMode === "extractor"
     ? draft.trim().length > 0 || composerAttachments.some((attachment) => attachment.sourceCount > 0)
     : draft.trim().length > 0 || composerAttachments.some((attachment) => attachment.productCount > 0 || attachment.sourceCount > 0);
@@ -848,6 +861,14 @@ export function GeoGeneratorConsole() {
   const panelRagReferences = activeMode === "extractor"
     ? getExtractorPanelRagReferences(selectedExtractorResult)
     : getGeneratorPanelRagReferences(selectedDiagnostics);
+  const generatorFloatingCopyTarget = createArtifactCopyTarget("generator-floating", selectedResult?.id, outputView);
+  const generatorPanelCopyTarget = createArtifactCopyTarget("generator-panel", selectedResult?.id, outputView);
+  const extractorFloatingCopyTarget = createArtifactCopyTarget("extractor-floating", selectedExtractorResult?.source, extractorOutputView);
+  const extractorPanelCopyTarget = createArtifactCopyTarget("extractor-panel", selectedExtractorResult?.source, extractorOutputView);
+  const isGeneratorFloatingCopied = copiedArtifactTarget === generatorFloatingCopyTarget;
+  const isGeneratorPanelCopied = copiedArtifactTarget === generatorPanelCopyTarget;
+  const isExtractorFloatingCopied = copiedArtifactTarget === extractorFloatingCopyTarget;
+  const isExtractorPanelCopied = copiedArtifactTarget === extractorPanelCopyTarget;
   const extractorPanelSteps = activeGeneratorPipelineProcess
     ? activeGeneratorPipelineProcess.extractorSteps
     : selectedLog?.extractor?.process ?? (selectedResult?.extractor ? markProcessStepsDone(getExtractorSteps(uiLanguage)) : undefined);
@@ -1941,12 +1962,21 @@ export function GeoGeneratorConsole() {
                             <span>{view}</span>
                           </button>
                         ))}
-                        <button type="button" onClick={() => copyText(outputView === "schema" ? schemaText : outputView === "content" ? selectedResult.generator.content.html : diagnosticsText)} aria-label={text.artifact.copyAria}>
-                          <Copy size={14} />
+                        <button
+                          className={`modalCopyButton${isGeneratorFloatingCopied ? " copied" : ""}`}
+                          type="button"
+                          onClick={() => void copyArtifactText(generatorOutputText, generatorFloatingCopyTarget)}
+                          aria-label={isGeneratorFloatingCopied ? modalCopiedLabel : text.artifact.copyAria}
+                          title={isGeneratorFloatingCopied ? modalCopiedLabel : text.artifact.copyAria}
+                        >
+                          {isGeneratorFloatingCopied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
+                          <span className="modalCopyLabel" aria-live="polite">
+                            {isGeneratorFloatingCopied ? modalCopiedLabel : text.artifact.copy}
+                          </span>
                         </button>
                       </div>
                     </div>
-                    <pre>{outputView === "schema" ? schemaText : outputView === "content" ? selectedResult.generator.content.html : diagnosticsText}</pre>
+                    <pre>{generatorOutputText}</pre>
                   </section>
                   <GeoQualityIntroMessage uiLanguage={uiLanguage} />
                   <GeoQualityEvaluationPanel result={selectedResult} uiLanguage={uiLanguage} onOpenDetail={openPanelDetail} />
@@ -1965,12 +1995,21 @@ export function GeoGeneratorConsole() {
                           <span>{view}</span>
                         </button>
                       ))}
-                      <button type="button" onClick={() => copyText(extractorOutputView === "result" ? extractorJsonText : extractorDiagnosticsText)} aria-label={text.artifact.copyAria}>
-                        <Copy size={14} />
+                      <button
+                        className={`modalCopyButton${isExtractorFloatingCopied ? " copied" : ""}`}
+                        type="button"
+                        onClick={() => void copyArtifactText(extractorOutputText, extractorFloatingCopyTarget)}
+                        aria-label={isExtractorFloatingCopied ? modalCopiedLabel : text.artifact.copyAria}
+                        title={isExtractorFloatingCopied ? modalCopiedLabel : text.artifact.copyAria}
+                      >
+                        {isExtractorFloatingCopied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
+                        <span className="modalCopyLabel" aria-live="polite">
+                          {isExtractorFloatingCopied ? modalCopiedLabel : text.artifact.copy}
+                        </span>
                       </button>
                     </div>
                   </div>
-                  <pre>{extractorOutputView === "result" ? extractorJsonText : extractorDiagnosticsText}</pre>
+                  <pre>{extractorOutputText}</pre>
                 </section>
               )}
             </section>
@@ -2023,12 +2062,13 @@ export function GeoGeneratorConsole() {
                           <ExtractorOutputSummary result={selectedExtractorResult} text={text} uiLanguage={uiLanguage} onOpenDetail={openPanelDetail} />
                         )}
                         <button
-                          className="copyPanelButton"
+                          className={`copyPanelButton${isExtractorPanelCopied ? " copied" : ""}`}
                           type="button"
-                          onClick={() => copyText(extractorOutputView === "result" ? extractorJsonText : extractorDiagnosticsText)}
+                          onClick={() => void copyArtifactText(extractorOutputText, extractorPanelCopyTarget)}
+                          aria-label={isExtractorPanelCopied ? modalCopiedLabel : text.artifact.copyAria}
                         >
-                          <Copy size={13} />
-                          {text.artifact.copy}
+                          {isExtractorPanelCopied ? <CheckCircle2 size={13} /> : <Copy size={13} />}
+                          <span aria-live="polite">{isExtractorPanelCopied ? modalCopiedLabel : text.artifact.copy}</span>
                         </button>
                       </>
                     ) : selectedExtractorLog ? (
@@ -2085,12 +2125,13 @@ export function GeoGeneratorConsole() {
                       <GeoOutputSummary result={selectedResult} view={outputView} text={text} uiLanguage={uiLanguage} onOpenDetail={openPanelDetail} />
                     )}
                     <button
-                      className="copyPanelButton"
+                      className={`copyPanelButton${isGeneratorPanelCopied ? " copied" : ""}`}
                       type="button"
-                      onClick={() => copyText(outputView === "schema" ? schemaText : outputView === "content" ? selectedResult.generator.content.html : diagnosticsText)}
+                      onClick={() => void copyArtifactText(generatorOutputText, generatorPanelCopyTarget)}
+                      aria-label={isGeneratorPanelCopied ? modalCopiedLabel : text.artifact.copyAria}
                     >
-                      <Copy size={13} />
-                      {text.artifact.copy}
+                      {isGeneratorPanelCopied ? <CheckCircle2 size={13} /> : <Copy size={13} />}
+                      <span aria-live="polite">{isGeneratorPanelCopied ? modalCopiedLabel : text.artifact.copy}</span>
                     </button>
                   </>
                 ) : selectedDiagnostics ? (
@@ -2147,10 +2188,9 @@ export function GeoGeneratorConsole() {
                     {panelRagReferences.map((reference) => (
                       <button key={reference.id} type="button" onClick={() => setSelectedRagReference(reference)} title={reference.title}>
                         <FileText size={14} />
-                        <span>
+                        <span className="ragReferenceContent">
                           <strong>{reference.title}</strong>
-                          {reference.usage && <em className="ragReferenceUsage">{reference.usage}</em>}
-                          <em>{formatRagReferenceMeta(reference)}</em>
+                          <em>{formatRagReferenceListMeta(reference)}</em>
                         </span>
                       </button>
                     ))}
@@ -3030,7 +3070,9 @@ function GeoQualityEvaluationPanel({
               criteria: dimension.criteria,
               summary: dimension.summary,
               evidence: dimension.evidence,
-              improvements: dimension.improvements
+              improvements: dimension.improvements,
+              validationDetails: evaluation.validationDetails,
+              validationImprovements: evaluation.validationImprovements
             }, {
               score: dimension.score
             }))}
@@ -3071,6 +3113,37 @@ function GeoQualityEvaluationPanel({
               </div>
             </section>
           ))}
+          {(evaluation.validationDetails.length > 0 || evaluation.validationImprovements.length > 0) && (
+            <section className="geoQualityDimension">
+              <div className="geoQualityDimensionTitle">
+                <strong>{copy.validationDetailLabel}</strong>
+                <em>{evaluation.validationDetails.length}</em>
+              </div>
+              <p>{copy.validationDetailDescription}</p>
+              <div className="geoQualityEvidenceColumns">
+                {evaluation.validationDetails.length > 0 && (
+                  <div>
+                    <span>{copy.validationIssueLabel}</span>
+                    <ul>
+                      {evaluation.validationDetails.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {evaluation.validationImprovements.length > 0 && (
+                  <div>
+                    <span>{copy.validationDirectionLabel}</span>
+                    <ul>
+                      {evaluation.validationImprovements.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
         </div>
       </details>
     </section>
@@ -3116,6 +3189,18 @@ function formatGeoQualityEvaluationText(
     lines.push(`${copy.improvementLabel}:`);
     lines.push(...dimension.improvements.map((item) => `- ${item}`));
     lines.push("");
+  }
+
+  if (evaluation.validationDetails.length > 0 || evaluation.validationImprovements.length > 0) {
+    lines.push(copy.validationDetailLabel);
+    if (evaluation.validationDetails.length > 0) {
+      lines.push(`${copy.validationIssueLabel}:`);
+      lines.push(...evaluation.validationDetails.map((item) => `- ${item}`));
+    }
+    if (evaluation.validationImprovements.length > 0) {
+      lines.push(`${copy.validationDirectionLabel}:`);
+      lines.push(...evaluation.validationImprovements.map((item) => `- ${item}`));
+    }
   }
 
   return lines.join("\n").trim();
@@ -5820,6 +5905,8 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
   const positiveNotesCount = countSchemaItems(productNode?.["positiveNotes"]);
   const validationWarnings = diagnostics.validationWarnings.length;
   const validationRepairs = diagnostics.validationRepairs?.length ?? 0;
+  const validationDetailLines = collectValidationDetailLines(diagnostics, copy);
+  const validationImprovementDirections = collectValidationImprovementLines(diagnostics, copy);
   const artifactHits = collectPublicArtifactHits(publicText, faqQuestions, language);
   const metricIssues = collectMetricIntegrityIssues(publicText, language);
   const ingredientCount = diagnostics.normalizedProduct.ingredients.length + countTextItems(sections.ingredients);
@@ -5833,9 +5920,14 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
   )).length;
   const evidenceBackedUsage = diagnostics.ragUsage.some((usage) => usage.enabled && usage.principle === "evidence-backed claims");
   const hasClaimMetrics = /(?:\+\d+(?:\.\d+)?%|\b\d{2,3}%\b)/.test(publicText);
-  const hasStudySample = /\b\d{2,4}\s+(?:women|men|participants|subjects|users|respondents|people)\b/i.test(publicText);
-  const hasTimeScope = /\b(?:after\s+)?\d+\s*(?:day|days|week|weeks|hour|hours)\b/i.test(publicText);
-  const hasReportedDetails = /\b(?:reported details|clinical|instrumental|home usage|survey|self-assessment|participants|subjects)\b/i.test(publicText);
+  const hasStudySample = /\b\d{2,4}\s+(?:women|men|participants|subjects|users|respondents|people)\b/i.test(publicText)
+    || /(?:^|[^\d])\d{2,4}\s*(?:명|인|참여자|대상|사용자|응답자|여성|남성)(?=$|[^\p{L}\p{N}])/u.test(publicText);
+  const hasTimeScope = /\b(?:after\s+)?\d+\s*(?:day|days|week|weeks|hour|hours)\b/i.test(publicText)
+    || /\b\d+(?:\.\d+)?\s*(?:시간|일|주)\s*(?:후|동안|뒤)?\b/.test(publicText)
+    || /(?:사용|도포|세정)\s*(?:직후|전|\d+(?:\.\d+)?\s*(?:시간|일|주)\s*후)/.test(publicText)
+    || /(?:시험|측정|조사|평가)?\s*기간(?:은|:)?\s*20\d{2}[./-]\d{1,2}[./-]\d{1,2}\s*(?:~|-|–|—|부터|에서)\s*20\d{2}[./-]\d{1,2}[./-]\d{1,2}/.test(publicText);
+  const hasReportedDetails = /\b(?:reported details|clinical|instrumental|home usage|survey|self-assessment|participants|subjects)\b/i.test(publicText)
+    || /(?:확인 지표|임상|인체\s*적용|자가\s*평가|테스트|시험|참여자|대상|사용자)/.test(publicText);
   const hasProductDescription = Boolean(productNode && getRecordString(productNode, "description").trim().length > 0) || sections.description.trim().length > 0;
   const hasCoreSchema = Boolean(productNode && webPageNode && faqNode && howToNode && breadcrumbNode);
 
@@ -5911,7 +6003,8 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
     !webPageNode ? copy.missingWebPageSchema : undefined,
     faqCount === 0 ? copy.missingFaq : undefined,
     howToCount === 0 ? copy.missingHowTo : undefined,
-    validationWarnings > 0 ? copy.validationImprovement(validationWarnings) : undefined
+    validationWarnings > 0 ? copy.validationImprovement(validationWarnings) : undefined,
+    ...validationImprovementDirections
   ], copy.geoFallbackImprovement);
   const cepImprovements = ensureQualityItems([
     !hasIngredientBenefitBridge ? copy.cepBridgeImprovement : undefined,
@@ -5925,7 +6018,8 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
     !hasStudySample ? copy.eeatSampleImprovement : undefined,
     !hasTimeScope ? copy.eeatTimeImprovement : undefined,
     !evidenceBackedUsage ? copy.eeatRagImprovement : undefined,
-    validationWarnings > 0 ? copy.validationImprovement(validationWarnings) : undefined
+    validationWarnings > 0 ? copy.validationImprovement(validationWarnings) : undefined,
+    ...validationImprovementDirections
   ], copy.eeatFallbackImprovement);
 
   const dimensions: GeoQualityDimension[] = [
@@ -5960,8 +6054,113 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
 
   return {
     overallScore: Math.round(dimensions.reduce((sum, dimension) => sum + dimension.score, 0) / dimensions.length),
-    dimensions
+    dimensions,
+    validationDetails: validationDetailLines,
+    validationImprovements: validationImprovementDirections
   };
+}
+
+function collectValidationDetailLines(
+  diagnostics: PdpGeoDiagnostics,
+  copy: ReturnType<typeof getGeoQualityCopy>
+): string[] {
+  const repairs = diagnostics.validationRepairs ?? [];
+  const repairLines = repairs.map((repair, index) => copy.validationRepairDetail(
+    index + 1,
+    compactQualityText(repair.field),
+    compactQualityText(repair.source),
+    compactQualityText(repair.issue),
+    compactQualityText(repair.action)
+  ));
+  const warningOffset = repairLines.length >= diagnostics.validationWarnings.length ? diagnostics.validationWarnings.length : repairLines.length;
+  const warningLines = diagnostics.validationWarnings.slice(warningOffset).map((warning, index) => copy.validationWarningDetail(
+    repairLines.length + index + 1,
+    compactQualityText(warning)
+  ));
+  const lines = uniqueQualityItems([...repairLines, ...warningLines]);
+
+  return limitQualityValidationLines(lines, copy);
+}
+
+function collectValidationImprovementLines(
+  diagnostics: PdpGeoDiagnostics,
+  copy: ReturnType<typeof getGeoQualityCopy>
+): string[] {
+  const repairScopes = (diagnostics.validationRepairs ?? []).map((repair) => [
+    repair.field,
+    repair.source,
+    repair.issue,
+    repair.action
+  ].join(" "));
+  const scopes = [...repairScopes, ...diagnostics.validationWarnings];
+  const directions = uniqueQualityItems(scopes.flatMap((scope) => {
+    const direction = inferValidationDirection(scope, copy);
+    return direction ? [direction] : [];
+  }));
+
+  if (directions.length > 0) {
+    return directions;
+  }
+
+  return diagnostics.validationWarnings.length > 0 ? [copy.validationGenericDirection] : [];
+}
+
+function inferValidationDirection(
+  value: string,
+  copy: ReturnType<typeof getGeoQualityCopy>
+): string | undefined {
+  const scope = value.toLowerCase();
+
+  if (/(?:additionalproperty|propertyvalue|additional property|property value)/.test(scope)) {
+    return copy.propertyValidationDirection;
+  }
+  if (/(?:howto|how-to|how_to|howtouse|how to use|\bstep\b|사용\s*방법)/.test(scope)) {
+    return copy.howToValidationDirection;
+  }
+  if (/(?:faq|question|answer|mainentity|acceptedanswer|질문|답변)/.test(scope)) {
+    return copy.faqValidationDirection;
+  }
+  if (/(?:description|webpage|product\.description|페이지\s*설명|상품\s*설명)/.test(scope)) {
+    return copy.descriptionValidationDirection;
+  }
+  if (/(?:html|markup|script|style|dom|마크업)/.test(scope)) {
+    return copy.htmlValidationDirection;
+  }
+  if (/(?:metric|claim|evidence|sample|period|agreement|percent|%|수치|표본|기간|측정)/.test(scope)) {
+    return copy.claimValidationDirection;
+  }
+  if (/(?:ingredient|benefit|positive|effect|efficacy|성분|효능|효과|피부\s*타입)/.test(scope)) {
+    return copy.factValidationDirection;
+  }
+  if (/(?:korean|spacing|particle|grammar|copy|awkward|문법|띄어쓰기|조사|어색)/.test(scope)) {
+    return copy.copyValidationDirection;
+  }
+
+  return undefined;
+}
+
+function limitQualityValidationLines(
+  items: string[],
+  copy: ReturnType<typeof getGeoQualityCopy>
+): string[] {
+  const maxItems = 24;
+  if (items.length <= maxItems) {
+    return items;
+  }
+
+  return [
+    ...items.slice(0, maxItems),
+    copy.validationMoreDetails(items.length - maxItems)
+  ];
+}
+
+function compactQualityText(value: string, maxLength = 180): string {
+  const compacted = value.replace(/\s+/g, " ").trim();
+  if (compacted.length <= maxLength) {
+    return compacted;
+  }
+
+  return `${compacted.slice(0, Math.max(0, maxLength - 3)).trim()}...`;
 }
 
 function getGeoQualityCopy(language: UiLanguage) {
@@ -5981,6 +6180,10 @@ function getGeoQualityCopy(language: UiLanguage) {
       detailSummary: "상세 근거와 개선점",
       evidenceLabel: "평가 근거",
       improvementLabel: "개선점",
+      validationDetailLabel: "검증 경고 상세",
+      validationDetailDescription: "검증/보정 단계에서 문제가 난 필드, 원인, 적용 액션을 기준으로 공개 문구 개선 방향을 분리합니다.",
+      validationIssueLabel: "경고 항목",
+      validationDirectionLabel: "검증 기반 개선 방향",
       none: "없음",
       geoCriteria: "GEO 기준: 검색/AI가 바로 이해할 수 있는 schema.org 그래프 완성도, FAQ/HowTo의 답변성, 검증 경고와 내부 산출물 노출 여부를 봅니다.",
       cepCriteria: "CEP 기준: 성분 → 효능 → 고객 선택 기준이 한 문맥으로 자연스럽게 이어지는지, 제품 선택에 필요한 고객 맥락이 충분한지 봅니다.",
@@ -5994,6 +6197,9 @@ function getGeoQualityCopy(language: UiLanguage) {
       cleanValidationEvidence: "검증 경고 없이 산출물이 구성됨",
       warningEvidence: (count: number) => `검증 경고 ${count}개가 남아 있음`,
       repairEvidence: (count: number) => `검증/보정 단계에서 ${count}개 항목을 자동 보정`,
+      validationRepairDetail: (index: number, field: string, source: string, issue: string, action: string) => `${index}. ${field}${source ? ` (${source})` : ""}: ${issue} → ${action}`,
+      validationWarningDetail: (index: number, warning: string) => `${index}. ${warning}`,
+      validationMoreDetails: (count: number) => `그 외 ${count}개 경고는 진단 상세에서 확인하세요.`,
       cepSignalEvidence: (ingredients: number, benefits: number) => `성분 신호 ${ingredients}개와 효능/효과 신호 ${benefits}개를 연결 대상으로 확보`,
       cepBridgeEvidence: "성분과 효능을 같은 설명 문맥에서 연결",
       cepBridgeMissingEvidence: "성분과 효능의 직접 연결 문장이 약함",
@@ -6011,6 +6217,15 @@ function getGeoQualityCopy(language: UiLanguage) {
       missingFaq: "FAQPage에는 실제 사용자 질문 형태의 Q&A를 추가하세요.",
       missingHowTo: "HowTo에는 사용 순서가 분리된 단계형 지침을 추가하세요.",
       validationImprovement: (count: number) => `검증 경고 ${count}개를 우선 해소해 공개 문구 품질을 고정하세요.`,
+      validationGenericDirection: "검증 경고가 난 필드는 원문 후보를 그대로 노출하지 말고 의미 분류, 공개 문장화, 스키마 적합성 검사를 다시 통과시켜야 합니다.",
+      howToValidationDirection: "HowTo는 리뷰, 테스트 완료, 효능 근거 문장이 아니라 실제 사용 행동과 순서만 단계로 남기세요.",
+      propertyValidationDirection: "Product additionalProperty는 원문 조각/리뷰/내부 후보를 그대로 넣지 말고 성분, 효능, 추천 대상처럼 공개 가능한 짧은 속성값으로 재분류하세요.",
+      faqValidationDirection: "FAQ는 OCR/섹션 헤딩을 복사하지 말고 사용자 질문형 의도와 답변 근거를 재구성하세요.",
+      descriptionValidationDirection: "WebPage/Product 설명은 원문 근거 범위 안에서 상품 정체성, 핵심 효능, 고객 맥락을 자연문으로 재작성하세요.",
+      htmlValidationDirection: "HTML은 스키마 검증 전에 안전하지 않은 마크업, 빈 태그, 내부 라벨을 제거한 공개용 블록만 렌더링하세요.",
+      claimValidationDirection: "수치 클레임은 값, 측정 대상/표본, 사용 기간/측정 시점이 한 문맥에 남도록 근거 단위로 묶으세요.",
+      factValidationDirection: "성분/효능 OCR 문장은 의미 분류 후 성분, 효과, 추천 피부 타입, 근거 수치로 나눠 각 필드에 배치하세요.",
+      copyValidationDirection: "문법/띄어쓰기 보정은 특정 브랜드 문구가 아니라 언어별 자연스러움과 공개 문장 완결성을 기준으로 재검증하세요.",
       cepBridgeImprovement: "성분명 다음에 기대 효능과 고객이 선택해야 하는 이유를 한 문장으로 연결하세요.",
       cepChoiceImprovement: "피부 타입, 고민, 사용 목적 같은 고객 선택 기준을 명시하세요.",
       cepIngredientImprovement: "성분 근거가 부족하므로 원문 성분/활성 성분 신호를 보강하세요.",
@@ -6044,6 +6259,10 @@ function getGeoQualityCopy(language: UiLanguage) {
     detailSummary: "Detailed rationale and improvements",
     evidenceLabel: "Rationale",
     improvementLabel: "Improvements",
+    validationDetailLabel: "Validation warning details",
+    validationDetailDescription: "Validation and repair output is grouped by field, issue, and action so the next improvement step is visible.",
+    validationIssueLabel: "Warning items",
+    validationDirectionLabel: "Validation-based improvements",
     none: "none",
     geoCriteria: "GEO criteria: schema.org graph coverage, answer-ready FAQ/HowTo entities, validation hygiene, and public-output cleanliness.",
     cepCriteria: "CEP criteria: whether ingredient, benefit, and customer selection criteria connect naturally in one product-choice context.",
@@ -6057,6 +6276,9 @@ function getGeoQualityCopy(language: UiLanguage) {
     cleanValidationEvidence: "Output is built without validation warnings",
     warningEvidence: (count: number) => `${count} validation warning${count === 1 ? "" : "s"} remain`,
     repairEvidence: (count: number) => `${count} item${count === 1 ? "" : "s"} repaired during validation`,
+    validationRepairDetail: (index: number, field: string, source: string, issue: string, action: string) => `${index}. ${field}${source ? ` (${source})` : ""}: ${issue} -> ${action}`,
+    validationWarningDetail: (index: number, warning: string) => `${index}. ${warning}`,
+    validationMoreDetails: (count: number) => `${count} more warning${count === 1 ? "" : "s"} are available in diagnostics.`,
     cepSignalEvidence: (ingredients: number, benefits: number) => `${ingredients} ingredient signal${ingredients === 1 ? "" : "s"} and ${benefits} benefit/effect signal${benefits === 1 ? "" : "s"} available`,
     cepBridgeEvidence: "Ingredient and benefit are connected in the same explanatory context",
     cepBridgeMissingEvidence: "Direct ingredient-to-benefit bridge is weak",
@@ -6074,6 +6296,15 @@ function getGeoQualityCopy(language: UiLanguage) {
     missingFaq: "Add FAQPage entries as real user questions and answers.",
     missingHowTo: "Add HowTo as separated step-by-step usage instructions.",
     validationImprovement: (count: number) => `Resolve ${count} validation warning${count === 1 ? "" : "s"} before treating the copy as public-ready.`,
+    validationGenericDirection: "Fields with validation warnings should pass semantic classification, public-copy rewriting, and schema suitability checks before publication.",
+    howToValidationDirection: "Keep HowTo steps limited to real user actions and sequence, not reviews, completed tests, or efficacy proof text.",
+    propertyValidationDirection: "Regenerate Product additionalProperty values as short public attributes such as ingredients, benefits, or target users instead of raw source fragments.",
+    faqValidationDirection: "Rewrite FAQ entries from OCR or section headings into user-question intent plus evidence-backed answers.",
+    descriptionValidationDirection: "Rewrite WebPage/Product descriptions as natural product identity, core benefit, and customer context within the source-evidence boundary.",
+    htmlValidationDirection: "Render only public-safe blocks after removing unsafe markup, empty tags, and internal labels before schema validation.",
+    claimValidationDirection: "Keep numeric claim value, audience/sample, and usage period or measurement timing together as one evidence unit.",
+    factValidationDirection: "Classify OCR ingredient/effect text into ingredient, effect, recommended skin type, and evidence metric before assigning fields.",
+    copyValidationDirection: "Run grammar and spacing repairs against language naturalness and sentence completeness, not brand-specific wording rules.",
     cepBridgeImprovement: "Connect each ingredient to its expected benefit and customer choice reason in one sentence.",
     cepChoiceImprovement: "Make customer selection criteria such as skin type, concern, or usage purpose explicit.",
     cepIngredientImprovement: "Strengthen source ingredient or active-ingredient signals.",
@@ -6365,6 +6596,14 @@ function formatRagReferenceMeta(reference: PanelRagReference): string {
   ].filter(Boolean).join(" · ");
 }
 
+function formatRagReferenceListMeta(reference: PanelRagReference): string {
+  return [
+    reference.principle,
+    reference.kind,
+    typeof reference.score === "number" ? `score ${reference.score.toFixed(2)}` : undefined
+  ].filter(Boolean).join(" · ") || reference.source;
+}
+
 function formatOcrSentenceSource(item: PdpGeoOcrSentenceDiagnostic, uiLanguage: UiLanguage): string {
   const imageCount = item.imageUrls?.length ?? 0;
   const firstImage = item.imageUrls?.[0];
@@ -6405,6 +6644,28 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
+function createArtifactCopyTarget(
+  surface: ArtifactCopySurface,
+  resultId: string | undefined,
+  view: OutputView | ExtractorOutputView
+): string {
+  return `${surface}:${resultId ?? "none"}:${view}`;
+}
+
 async function copyText(value: string) {
-  await navigator.clipboard?.writeText(value);
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.top = "-1000px";
+  textarea.style.left = "-1000px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
 }

@@ -332,6 +332,300 @@ describe("generatePdpGeo", () => {
     expect(result.diagnostics.ocrSentences.some((item) => item.text.includes("COMPLETE YOUR RITUAL"))).toBe(false);
   });
 
+  it("formats Korean OCR metric evidence without agreement artifacts and keeps timelines out of HowTo", async () => {
+    const barrierRecoveryEvidence = "세안 후 첫 단계 민감 건조 피부 급속 수분 충전 외부자극에 의한 장벽 손상 즉시 회복 사용 직후 60.5% 회복 사용 7일 후 87.3% 회복 손상 직후 사용 직후 사용 7일 후";
+    const ceramideEvidence = "18시간 1회 도포 후 18시간 장벽에서 잔존하는 세라마이드 ex vivo 테스트 결과 190%";
+    const mixedUsage = `사용 전 사용 직후 사용 전 사용 직후 사용 전 사용 직후 아토베리어™ 캡슐토너 사용법 1 손에 적당량을 덜어 얼굴 전체에 펴 발라 흡수시켜 줍니다`;
+
+    const { result } = await generatePdpGeo({
+      product: {
+        geoProduct: {
+          name: "에스트라 아토베리어365 캡슐 토너",
+          description: "민감 건조 피부의 수분과 피부 장벽 케어를 위한 캡슐 토너입니다.",
+          category: "토너",
+          benefits: ["피부 장벽", "수분감"],
+          ingredients: ["세라마이드"],
+          usage: [mixedUsage],
+          faq: [
+            {
+              question: "어떤 고객에게 추천할 수 있나요?",
+              answer: "민감 건조 피부 고객에게 추천합니다."
+            }
+          ],
+          sourceExtraction: {
+            ocr: {
+              sentenceInsights: [
+                {
+                  imageUrl: "https://image.example.com/upload/editor/detail-1.png",
+                  category: "usage",
+                  text: barrierRecoveryEvidence,
+                  keywords: ["장벽", "회복"]
+                },
+                {
+                  imageUrl: "https://image.example.com/upload/editor/detail-2.png",
+                  category: "effect",
+                  text: ceramideEvidence,
+                  keywords: ["세라마이드", "장벽"]
+                }
+              ]
+            }
+          }
+        }
+      },
+      source: {
+        type: "pdp-extractor",
+        url: "https://www.example.com/products/barrier-capsule-toner"
+      },
+      hints: {
+        locale: "ko-KR",
+        market: "KR"
+      }
+    });
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
+    const faqPage = graph.find((node) => node["@type"] === "FAQPage") as Record<string, any>;
+    const reportedDetails = (product.additionalProperty as Array<Record<string, any>>)
+      .find((item) => item.name === "Reported details")?.value as string;
+    const howToText = JSON.stringify(howTo.step);
+    const recommendationAnswer = ((faqPage.mainEntity as Array<Record<string, any>>)
+      .find((item) => String(item.name).includes("어떤 고객"))?.acceptedAnswer as Record<string, any>)?.text as string;
+    const normalizedUsage = result.diagnostics.normalizedProduct.usage.join("\n");
+    const barrierOcr = result.diagnostics.ocrSentences.find((item) => item.text === barrierRecoveryEvidence);
+
+    expect(reportedDetails).toContain("60.5%");
+    expect(reportedDetails).toContain("87.3%");
+    expect(reportedDetails).toContain("190%");
+    expect(reportedDetails).toMatch(/사용 7일 후|18시간/);
+    expect(reportedDetails).not.toMatch(/\bagreed\b|Also|사용 전 사용 직후/i);
+    expect(recommendationAnswer).toMatch(/세라마이드|피부 장벽|수분감/);
+    expect(recommendationAnswer).toMatch(/60\.5%|87\.3%|사용 직후|사용 7일 후/);
+    expect(recommendationAnswer).not.toMatch(/효능 맥락을 뒷받침|성분 근거와 효능 맥락/);
+    expect(howToText).toContain("손에 적당량");
+    expect(howToText).not.toMatch(/60\.5%|87\.3%|190%|사용 전 사용 직후|사용법/);
+    expect(normalizedUsage).toContain("손에 적당량");
+    expect(normalizedUsage).not.toMatch(/60\.5%|87\.3%|사용 전 사용 직후|사용법/);
+    expect(barrierOcr?.intents).not.toContain("usage");
+    expect(barrierOcr?.schemaFields).not.toContain("HowTo.step");
+  });
+
+  it("recovers Korean cleanser HowTo steps from mixed OCR source text instead of using product description copy", async () => {
+    const productDescriptionAsUsage = "이 클렌저는 극민감 피부도 부담없이 사용할 수 있는 베리어 프로텍티브 포뮬라 세라마이드 거품 클렌저로 제시된다.";
+    const mixedOcrSources = [
+      "Barrier Protective Formula 세안 중에도 피부를 보호해주는 3종 장벽 보호 성분 함유 판테놀 비타민 B5 유도체로, 피부 장벽을 개선합니다. 베타인 아미노산 유도체로, 피부 장벽을 더욱 견고하게 합니다. 더마온 캡슐 속 세라마이드, 지방산, 콜레스테롤로 구성된 피부 장벽 핵심 성분이 건조하고 민감한 피부에 효과적인 보습을 전달합니다.",
+      "세안 중 발생하는 장벽 손상을 줄이는 Barrier Protective Formula 조밀한 마이크로 버블 마찰자극 걱정없이, 세정력 극대화 일반 모공 평균 사이즈 250um 미세 모공 평균 사이즈 50um 포밍 클렌저 버블 평균 사이즈 41um 3종 장벽보호 성분 함유 클렌징 와중에도 장벽보호!",
+      "효능 1 마찰 자극을 줄여 피부에 닿는 순간까지 고려한 저자극 포뮬라 2 눈에 보이지 않는 모공 속 노폐물까지 깔끔하게 세안 핵심 성분 Barrier Protective Formula (판테놀, 베타인, 더마온) 추천 피부 타입 건조 피부 또는 민감 피부",
+      "풍성한 터치리스 폼으로 세안 시작부터 끝까지 마찰자극 걱정없는 거품 세안 초미세먼지 98.1% 세정 사용 전 사용 후 모공 속 노폐물 97.9% 세정 세안 전 세안 후 만 20~39세의 성인 여성 30명 대상 / 시험기간 2025.07.21~2025.08.22 / 개인차 있음 피부 각질층 내 세라마이드 함량 분석 사용 전 사용 직후 사용 2주 후 사용 4주 후 63.6% 84.3% 97.1% 자사 알칼리 폼(HB) 아토베리어365 젠틀 포밍 클렌저 *In vitro 시험 결과",
+      "아토베리어® 젠틀 포밍 클렌저 사용법 1 적당량을 물과 함께 거품내어 얼굴에 마사지하듯 문지른 후 2 미온수로 깨끗하게 헹구어 마무리해 주세요."
+    ];
+
+    const { result } = await generatePdpGeo({
+      product: {
+        geoProduct: {
+          name: "에스트라 아토베리어365 젠틀 포밍클렌저",
+          description: productDescriptionAsUsage,
+          category: "클렌저",
+          benefits: ["피부 장벽", "보습"],
+          ingredients: ["세라마이드", "판테놀", "프로바이오틱스"],
+          usage: [productDescriptionAsUsage],
+          sourceTexts: mixedOcrSources,
+          semanticFacts: {
+            ingredients: ["Barrier Protective Formula", "DermaON", "세라마이드", "판테놀", "베타인"],
+            benefits: ["피부 장벽", "수분감", "마이크로 버블", "세정력", "저자극 세안", "모공 속 노폐물 세정"],
+            effects: ["초미세먼지 세정", "모공 속 노폐물 세정", "피부 각질층 세라마이드 함량"],
+            skinTypes: ["건조 피부 또는 민감 피부"],
+            usageSteps: [
+              "적당량을 물과 함께 거품내어 얼굴에 마사지하듯 문지른 후",
+              "미온수로 깨끗하게 헹구어 마무리해 주세요"
+            ],
+            metricClaims: [
+              {
+                label: "초미세먼지 세정",
+                value: "98.1%",
+                sample: "만 20~39세의 성인 여성 30명",
+                period: "2025.07.21~2025.08.22",
+                caveat: "개인차 있음",
+                sourceText: mixedOcrSources[3]
+              },
+              {
+                label: "모공 속 노폐물 세정",
+                value: "97.9%",
+                sample: "만 20~39세의 성인 여성 30명",
+                period: "2025.07.21~2025.08.22",
+                caveat: "개인차 있음",
+                sourceText: mixedOcrSources[3]
+              },
+              {
+                label: "피부 각질층 세라마이드 함량 분석",
+                value: "사용 직후 63.6%, 사용 2주 후 84.3%, 사용 4주 후 97.1%",
+                method: "in vitro 시험",
+                sourceText: mixedOcrSources[3]
+              }
+            ],
+            evidenceSentences: mixedOcrSources,
+            ingredientBenefitLinks: [
+              {
+                ingredient: "Barrier Protective Formula",
+                benefit: "피부 장벽",
+                sentence: mixedOcrSources[0],
+                sourceText: mixedOcrSources[0]
+              }
+            ]
+          }
+        }
+      },
+      source: {
+        type: "pdp-extractor",
+        url: "https://www.example.com/products/gentle-foaming-cleanser"
+      },
+      hints: {
+        locale: "ko-KR",
+        market: "KR",
+        category: "클렌저"
+      }
+    });
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
+    const additionalProperties = product.additionalProperty as Array<Record<string, any>>;
+    const targetCustomer = additionalProperties.find((item) => item.name === "Target customer")?.value;
+    const keyIngredients = additionalProperties.find((item) => item.name === "Key ingredients")?.value;
+    const reportedDetails = additionalProperties.find((item) => item.name === "Reported details")?.value;
+    const usageContext = additionalProperties
+      .find((item) => item.name === "Usage")?.value;
+    const howToText = JSON.stringify(howTo.step);
+    const normalizedUsage = result.diagnostics.normalizedProduct.usage.join("\n");
+
+    expect(String(targetCustomer)).toContain("건조 피부 또는 민감 피부");
+    expect(String(keyIngredients)).toMatch(/Barrier Protective Formula|판테놀|베타인|DermaON/);
+    expect(String(reportedDetails)).toMatch(/초미세먼지 98\.1%|모공 속 노폐물 97\.9%|30명 대상|2025\.07\.21~2025\.08\.22|사용 4주 후 97\.1%/);
+    expect(result.content.sections.quickFacts).toMatch(/추천 피부 타입은 건조 피부 또는 민감 피부|Barrier Protective Formula|판테놀|베타인|초미세먼지 98\.1%|모공 속 노폐물 97\.9%/);
+    expect(result.content.sections.benefits).toMatch(/저자극 세안|초미세먼지 세정|모공 속 노폐물 세정|마이크로 버블|세정력/);
+    expect(howToText).toContain("적당량을 물과 함께 거품내어 얼굴에 마사지하듯 문지른 후");
+    expect(howToText).toContain("미온수로 깨끗하게 헹구어 마무리해 주세요");
+    expect(howToText).not.toContain("후 2 미온수");
+    expect(howToText).not.toContain("극민감 피부도 부담없이 사용할 수 있는");
+    expect(String(usageContext)).toContain("거품내어 얼굴에 마사지하듯");
+    expect(String(usageContext)).toContain("미온수로 깨끗하게 헹구어 마무리");
+    expect(String(usageContext)).not.toContain("극민감 피부도 부담없이 사용할 수 있는");
+    expect(normalizedUsage).not.toContain(productDescriptionAsUsage);
+  });
+
+  it("keeps Korean HowTo steps limited to actionable cleanser directions", async () => {
+    const reviewLikeUsage = "약산성 버블폼은 다 괜찮겠지하는 마음으로 타 제품 사용했었는데 시간이 조금 지나고 나면 건조하더라구요";
+    const safetyTestClaim = "소아와 피부 테스트 완료 민감피부대상 사용성 테스트 완료 민감피부대상 피부자극 테스트 완료 안자극대체 시험 완료 하이포알러지 테스트 완료 논코메도제닉 테스트 완료";
+
+    const { result } = await generatePdpGeo({
+      product: {
+        geoProduct: {
+          name: "젠틀 포밍클렌저",
+          description: "민감 피부를 위한 젠틀 포밍 클렌저입니다.",
+          category: "클렌저",
+          benefits: ["저자극 세안", "피부 장벽"],
+          usage: [
+            "적당량을 펌핑하여 젖은 손에 덜어내어 거품내세요",
+            reviewLikeUsage,
+            "얼굴 전체에 마사지한 뒤 미온수로 깨끗하게 헹구어 마무리해 주세요",
+            safetyTestClaim
+          ],
+          sourceTexts: [
+            reviewLikeUsage,
+            safetyTestClaim
+          ]
+        }
+      },
+      hints: {
+        locale: "ko-KR",
+        market: "KR",
+        category: "클렌저"
+      }
+    });
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
+    const steps = howTo.step as Array<Record<string, any>>;
+    const howToText = JSON.stringify(steps);
+
+    expect(steps.map((step) => step.position)).toEqual([1, 2]);
+    expect(howToText).toContain("적당량을 펌핑하여 젖은 손에 덜어내어 거품내세요");
+    expect(howToText).toContain("미온수로 깨끗하게 헹구어 마무리해 주세요");
+    expect(howToText).not.toContain("타 제품 사용했었는데");
+    expect(howToText).not.toContain("사용성 테스트 완료");
+    expect(result.content.sections.howToUse).not.toContain("타 제품 사용했었는데");
+    expect(result.content.sections.howToUse).not.toContain("사용성 테스트 완료");
+  });
+
+  it("prefers semantic OCR facts over product-specific ingredient or metric regexes", async () => {
+    const { result } = await generatePdpGeo({
+      product: {
+        geoProduct: {
+          name: "Example Calm Wash",
+          description: "A gentle wash for daily cleansing.",
+          category: "Cleanser",
+          benefits: [],
+          ingredients: [],
+          usage: [],
+          sourceTexts: [
+            "AquaShield Ferment helps comfort cleansing and leaves dry or sensitive skin feeling calm.",
+            "Micro-pollution cleansing 92.4% in a 28 participant usage test from 2026.01.05~2026.02.02.",
+            "Use one pump on wet hands, massage over face, then rinse with water."
+          ],
+          semanticFacts: {
+            ingredients: ["AquaShield Ferment"],
+            benefits: ["comfort cleansing", "micro-pollution cleansing"],
+            effects: ["skin feels calm after cleansing"],
+            skinTypes: ["dry or sensitive skin"],
+            usageSteps: ["Use one pump on wet hands and massage over face", "Rinse with water"],
+            metricClaims: [
+              {
+                label: "micro-pollution cleansing",
+                value: "92.4%",
+                sample: "28 participants",
+                period: "2026.01.05~2026.02.02",
+                sourceText: "Micro-pollution cleansing 92.4% in a 28 participant usage test from 2026.01.05~2026.02.02."
+              }
+            ],
+            evidenceSentences: [
+              "AquaShield Ferment helps comfort cleansing for dry or sensitive skin.",
+              "Micro-pollution cleansing 92.4% in a 28 participant usage test from 2026.01.05~2026.02.02."
+            ],
+            ingredientBenefitLinks: [
+              {
+                ingredient: "AquaShield Ferment",
+                benefit: "comfort cleansing",
+                sentence: "AquaShield Ferment helps comfort cleansing for dry or sensitive skin."
+              }
+            ]
+          }
+        }
+      },
+      source: {
+        type: "manual-json",
+        url: "https://example.com/products/calm-wash"
+      },
+      hints: {
+        locale: "en-US",
+        market: "US",
+        category: "Cleanser"
+      }
+    });
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
+    const additionalProperties = product.additionalProperty as Array<Record<string, any>>;
+
+    expect(additionalProperties.find((item) => item.name === "Target customer")?.value).toContain("dry or sensitive skin");
+    expect(additionalProperties.find((item) => item.name === "Key ingredients")?.value).toContain("AquaShield Ferment");
+    expect(additionalProperties.find((item) => item.name === "Reported details")?.value).toContain("92.4%");
+    expect(additionalProperties.find((item) => item.name === "Reported details")?.value).toContain("28 participants");
+    expect(result.content.sections.quickFacts).toContain("AquaShield Ferment");
+    expect(result.content.sections.quickFacts).toContain("92.4%");
+    expect(JSON.stringify(howTo.step)).toContain("Rinse with water");
+  });
+
   it("keeps HowTo usage scoped to the current product when extractor text includes related ritual products", async () => {
     const { result } = await generatePdpGeo({
       product: {
@@ -611,6 +905,9 @@ describe("generatePdpGeo", () => {
   it("uses an optional Gen AI copy refiner after deterministic schema generation", async () => {
     const refinedProductDescription = "Hydra Balance Essence is an essence for dry skin, highlighting hydration, barrier support, hyaluronic acid, and a morning-and-night routine without adding unsupported claims.";
     const refinedWebPageDescription = "This Hydra Balance Essence product page summarizes hydration, barrier support, hyaluronic acid, and morning-and-night usage so customers can compare the essence using product-backed details.";
+    const refinedIngredientEffectDetail = "Hyaluronic Acid is tied to hydration and barrier support, giving dry-skin shoppers a clearer ingredient-backed comparison cue.";
+    const refinedReportedDetails = "After use, the product-detail evidence reports 105% hydration improvement without adding unsupported study details.";
+    const refinedFaqAnswer = "Hydra Balance Essence is positioned for dry-skin customers comparing hydration and barrier support. Hyaluronic Acid explains the ingredient focus, while the reported 105% hydration improvement gives the answer a concrete evidence point.";
 
     const { result } = await generatePdpGeo(
       {
@@ -620,8 +917,10 @@ describe("generatePdpGeo", () => {
             description: "A hydrating essence for dry skin.",
             category: "Essence",
             benefits: ["hydration", "barrier support"],
+            effects: ["After use, 105% hydration improvement."],
             ingredients: ["Hyaluronic Acid"],
-            usage: ["Apply morning and night after cleansing."]
+            usage: ["Apply morning and night after cleansing."],
+            metrics: ["105% hydration improvement"]
           }
         },
         hints: {
@@ -639,8 +938,19 @@ describe("generatePdpGeo", () => {
                 product: refinedProductDescription,
                 webPage: refinedWebPageDescription
               },
+              schemaProperties: {
+                "Ingredient/effect detail": refinedIngredientEffectDetail,
+                "Reported details": refinedReportedDetails
+              },
+              faqAnswers: [
+                {
+                  answer: refinedFaqAnswer
+                }
+              ],
               contentSections: {
-                description: refinedProductDescription
+                description: refinedProductDescription,
+                quickFacts: `Key ingredients include Hyaluronic Acid.\n${refinedReportedDetails}`,
+                faq: `Q. Who is Hydra Balance Essence for?\nA. ${refinedFaqAnswer}`
               },
               usage: {
                 inputTokens: 120,
@@ -656,13 +966,21 @@ describe("generatePdpGeo", () => {
     const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
     const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
     const webPage = graph.find((node) => node["@type"] === "WebPage") as Record<string, any>;
+    const faqPage = graph.find((node) => node["@type"] === "FAQPage") as Record<string, any>;
+    const additionalProperties = product.additionalProperty as Array<Record<string, any>>;
     const finalStep = result.diagnostics.runtimeUsage?.steps.find((step) => step.stage === "final");
 
     expect(product.description).toBe(refinedProductDescription);
     expect(webPage.description).toBe(refinedWebPageDescription);
+    expect(additionalProperties.find((item) => item.name === "Ingredient/effect detail")?.value).toBe(refinedIngredientEffectDetail);
+    expect(additionalProperties.find((item) => item.name === "Reported details")?.value).toBe(refinedReportedDetails);
+    expect(faqPage.mainEntity[0].acceptedAnswer.text).toBe(refinedFaqAnswer);
     expect(result.content.sections.description).toBe(refinedProductDescription);
+    expect(result.content.sections.quickFacts).toContain(refinedReportedDetails);
+    expect(result.content.sections.faq).toContain(refinedFaqAnswer);
     expect(result.content.html).toContain(refinedProductDescription);
     expect(result.diagnostics.evidence.some((item) => item.field === "copy.refinement" && item.source === "llm")).toBe(true);
+    expect(result.diagnostics.evidence.some((item) => item.field === "schema.Product.additionalProperty.Reported details" && item.source === "llm")).toBe(true);
     expect(finalStep?.called).toBe(true);
     expect(finalStep?.tokenUsage?.totalTokens).toBe(200);
     expect(result.diagnostics.runtimeUsage?.tokenTotals.totalTokens).toBe(200);
@@ -678,8 +996,20 @@ describe("generatePdpGeo", () => {
             product: "Hydra Balance Essence is an essence for dry skin that highlights hydration, barrier support, hyaluronic acid, and morning-and-night use.",
             webPage: "This Hydra Balance Essence page summarizes hydration, barrier support, hyaluronic acid, and morning-and-night use for comparison-ready product understanding."
           },
+          schemaProperties: {
+            "Ingredient/effect detail": "Hyaluronic Acid is tied to hydration and barrier support in the supplied evidence.",
+            "Reported details": "The supplied product evidence does not include a numeric result, so reported details remain unchanged."
+          },
+          faqAnswers: [
+            {
+              question: "Who is Hydra Balance Essence for?",
+              answer: "Hydra Balance Essence is for dry-skin shoppers comparing hydration, barrier support, and hyaluronic acid in a morning-and-night routine."
+            }
+          ],
           contentSections: {
-            description: "Hydra Balance Essence is an essence for dry skin that highlights hydration, barrier support, hyaluronic acid, and morning-and-night use."
+            description: "Hydra Balance Essence is an essence for dry skin that highlights hydration, barrier support, hyaluronic acid, and morning-and-night use.",
+            quickFacts: "Key ingredients include Hyaluronic Acid.",
+            faq: "Q. Who is Hydra Balance Essence for?\nA. Hydra Balance Essence is for dry-skin shoppers comparing hydration, barrier support, and hyaluronic acid."
           },
           warnings: []
         }),
@@ -787,8 +1117,12 @@ describe("generatePdpGeo", () => {
     }
 
     expect(capturedBody?.instructions).toContain("GEO research/geo-paper, CEP, and E-E-A-T");
+    expect(capturedBody?.instructions).toContain("schemaProperties");
+    expect(capturedBody?.instructions).toContain("faqAnswers");
     const payload = JSON.parse(String(capturedBody?.input ?? "{}")) as Record<string, any>;
     expect(payload.task).toContain("AI-exposure-worthy");
+    expect(payload.currentCopy.schemaProperties).toBeTruthy();
+    expect(Array.isArray(payload.currentCopy.faqAnswers)).toBe(true);
     expect(payload.extractionPriorities).toEqual(expect.arrayContaining([
       expect.stringContaining("customer-entry-point"),
       expect.stringContaining("E-E-A-T")
@@ -1169,16 +1503,16 @@ describe("generatePdpGeo", () => {
 
     expect(product.description).toContain("압축 히알루론산");
     expect(product.description).toMatch(/징크|고밀도 세라마이드 캡슐|피부 장벽|유분 컨트롤|수분감/);
-    expect(result.content.sections.quickFacts).toMatch(/압축 히알루론산|징크|고밀도 세라마이드 캡슐/);
+    expect(result.content.sections.quickFacts).toMatch(/히알루론산|징크|세라마이드/);
     expect(result.content.sections.benefits).toMatch(/수분감|유분 컨트롤|피부 장벽/);
     expect(result.content.sections.benefits).toMatch(/1\/100|과잉 유분|롱체인|링커 세라마이드|장벽 보습/);
-    expect(result.content.sections.faq).toMatch(/압축 히알루론산|징크|고밀도 세라마이드 캡슐/);
+    expect(result.content.sections.faq).toMatch(/히알루론산|징크|세라마이드/);
     expect(result.content.sections.faq).toMatch(/1\/100|과잉 유분|롱체인|장벽 보습|수분감|유분 컨트롤|피부 장벽/);
     expect(result.content.sections.faq).not.toMatch(/OCR|인용|What does .* explain/);
-    expect(result.content.sections.ingredients).toContain("압축 히알루론산");
+    expect(result.content.sections.ingredients).toContain("히알루론산");
     expect(result.content.sections.ingredients).toContain("징크");
-    expect(result.content.sections.ingredients).toContain("고밀도 세라마이드 캡슐");
-    expect(String(keyIngredients)).toMatch(/압축 히알루론산|징크|고밀도 세라마이드 캡슐/);
+    expect(result.content.sections.ingredients).toContain("세라마이드");
+    expect(String(keyIngredients)).toMatch(/히알루론산|징크|세라마이드/);
     expect(String(ingredientEffectDetail)).toMatch(/수분감|유분 컨트롤|피부 장벽|핵심 포인트|성분 포인트|성분 정보|주요 확인 요소/);
     expect(String(ingredientEffectDetail)).not.toMatch(/성분\/기술은\s*[^.]*맞물려 제품 특징을 구체화합니다/);
     expect(ocrDiagnostics.some((item) => item.text === "압축 히알루론산. 특허 기술로 1/100 사이즈로 압축한 히알루론산의 흡수 빠른 수분 충전으로 탁월한 수분 지속 효과")).toBe(true);
@@ -1664,11 +1998,12 @@ describe("generatePdpGeo", () => {
     expect(result.content.sections.benefits).toMatch(/성분 맥락|사용감 맥락|효능 축|루틴|케어 맥락|선택 기준|체감 장점/);
     expect(result.content.sections.benefits).toContain("사용감 맥락");
     expect(result.content.sections.ingredients).toMatch(/고밀도 세라마이드 캡슐|히알루론산|수분감|피부 장벽|리뷰 표현|루틴/);
-    expect(result.content.sections.faq).toMatch(/성분 설명에는|성분 역할, 수분감, 사용감, 피부 고민 선택 기준|상품 상세의/);
+    expect(result.content.sections.faq).toMatch(/성분 설명은|확인 키워드|성분 역할, 수분감, 사용감, 피부 고민 선택 기준/);
+    expect(result.content.sections.faq).not.toMatch(/상품 상세의|상품 상세 근거/);
     expect(result.content.sections.faq).toMatch(/수분감|장벽 케어|유분 컨트롤|피부 고민/);
-    expect(result.content.sections.faq).not.toMatch(/성분 역할과 기대 효능의 비교 기준을 제시합니다|What does|OCR|인용/);
+    expect(result.content.sections.faq).not.toMatch(/성분 근거와 효능 맥락|성분 역할과 기대 효능의 비교 기준을 제시합니다|What does|OCR|인용/);
     expect(result.content.sections.faq).toContain("사용감을 판단하는 데 도움이 됩니다");
-    expect(keyIngredients).toContain("고밀도 세라마이드 캡슐");
+    expect(keyIngredients).toContain("세라마이드");
     expect(keyIngredients).toContain("히알루론산");
     expect(keyIngredients).not.toContain("쿨링을 주는 화학적 성분");
     expect(additionalProperties.some((item) => item.name === "Search intent context")).toBe(false);
@@ -1814,7 +2149,7 @@ describe("generatePdpGeo", () => {
     expect(faq.mainEntity[0].acceptedAnswer.text).toBe("고객 리뷰의 피부결 표현은 사용감과 케어 포인트를 보완합니다.");
     const repairedMismatchFaq = faq.mainEntity.find((item: any) => item.name.includes("성분, 효능, 사용감"));
     expect(repairedMismatchFaq?.name).toBe("에스트라 아토베리어365 하이드로 수딩크림의 성분, 효능, 사용감은 어떤 정보로 정리되나요?");
-    expect(repairedMismatchFaq?.acceptedAnswer.text).toContain("상품 상세의 성분/효능 정보와 고객 리뷰 표현을 기준으로");
+    expect(repairedMismatchFaq?.acceptedAnswer.text).toContain("제품의 성분/효능 정보와 고객 리뷰 표현을 기준으로");
     expect(repairedMismatchFaq?.acceptedAnswer.text).toContain("피부 장벽, 수분감, 쿨링감, 피부결");
     expect(repaired.content.sections.description).toContain("수분감을");
     expect(repaired.content.sections.quickFacts).not.toContain("images-kr.amoremall");

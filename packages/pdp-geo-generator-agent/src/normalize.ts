@@ -8,7 +8,10 @@ import type {
   PdpGeoOcrSentenceDiagnostic,
   PdpGeoOcrSentenceIntent,
   PdpGeoReviewItem,
-  PdpProductSignal
+  PdpProductSignal,
+  PdpSemanticFacts,
+  PdpSemanticIngredientBenefitLink,
+  PdpSemanticMetricClaim
 } from "./types";
 import { filterCurrentProductUsageInstructions } from "./product-scope";
 
@@ -61,6 +64,7 @@ export function normalizePdpProduct(
   const evidence: PdpGeoEvidence[] = [];
   const mapped = createMappedReader(source, context.fieldMapping, evidence);
   const ocrSentenceInsights = sentenceInsightItems(source);
+  const semanticFacts = normalizeSemanticFacts(source, ocrSentenceInsights);
   const looseFaq = faqFromLooseQuestionAnswerTexts(source);
   const sourceTexts = unique([
     ...ocrSentenceInsights.map((item) => item.text).filter(isUsefulSourceText),
@@ -86,16 +90,19 @@ export function normalizePdpProduct(
     ...mapped.strings("category"),
     ...textCandidatesByKey(source, /categoryName|categoryPath|taxonomy|productType|product_type/i)
   ].filter(isCategorySignal));
-  const benefits = normalizeFieldSignals([...mapped.strings("benefits"), ...sentenceInsightTexts(ocrSentenceInsights, "benefit"), ...sectionTexts(source, categoryKeywords.benefit), ...classifiedProductSections(source, "benefit")], "benefit").slice(0, 12);
-  const effects = normalizeFieldSignals([...mapped.strings("effects"), ...sentenceInsightTexts(ocrSentenceInsights, "effect"), ...sectionTexts(source, categoryKeywords.effect), ...classifiedProductSections(source, "effect")], "effect").slice(0, 12);
-  const ingredients = normalizeFieldSignals([...mapped.strings("ingredients"), ...sentenceInsightTexts(ocrSentenceInsights, "ingredient"), ...sectionTexts(source, categoryKeywords.ingredient), ...classifiedProductSections(source, "ingredient")], "ingredient").slice(0, 14);
-  const usage = normalizeFieldSignals([...mapped.strings("usage"), ...sentenceInsightTexts(ocrSentenceInsights, "usage"), ...sectionTexts(source, categoryKeywords.usage), ...classifiedProductSections(source, "usage")], "usage").slice(0, 8);
+  const benefits = normalizeFieldSignals([...semanticFacts.benefits, ...mapped.strings("benefits"), ...sentenceInsightTexts(ocrSentenceInsights, "benefit"), ...sectionTexts(source, categoryKeywords.benefit), ...classifiedProductSections(source, "benefit")], "benefit").slice(0, 12);
+  const effects = normalizeFieldSignals([...semanticFacts.effects, ...mapped.strings("effects"), ...sentenceInsightTexts(ocrSentenceInsights, "effect"), ...sectionTexts(source, categoryKeywords.effect), ...classifiedProductSections(source, "effect")], "effect").slice(0, 12);
+  const ingredients = normalizeFieldSignals([...semanticFacts.ingredients, ...mapped.strings("ingredients"), ...sentenceInsightTexts(ocrSentenceInsights, "ingredient"), ...sectionTexts(source, categoryKeywords.ingredient), ...classifiedProductSections(source, "ingredient")], "ingredient").slice(0, 14);
+  const usage = normalizeFieldSignals([...semanticFacts.usageSteps, ...mapped.strings("usage"), ...sentenceInsightTexts(ocrSentenceInsights, "usage"), ...sectionTexts(source, categoryKeywords.usage), ...classifiedProductSections(source, "usage")], "usage").slice(0, 8);
   const faq = uniqueFaq([...mapped.faq(), ...faqFromUnknown(source), ...looseFaq]).slice(0, 8);
   const reviews = normalizeReviews(source, mapped);
   const images = unique(mapped.strings("images").flatMap((value) => splitPotentialList(value)).map((value) => absolutizeUrl(value, context.sourceUrl))).slice(0, 80);
   const options = unique(mapped.strings("options").flatMap(splitPotentialList)).slice(0, 16);
   const priceRaw = first(mapped.strings("price"));
-  const metrics = unique(sourceTexts.flatMap(extractMetricPhrases)).slice(0, 20);
+  const metrics = unique([
+    ...semanticFacts.metricClaims.flatMap((claim) => [claim.sentence, claim.sourceText, claim.metric, claim.value].filter((value): value is string => Boolean(value))),
+    ...sourceTexts.flatMap(extractMetricPhrases)
+  ]).slice(0, 20);
   const breadcrumbs = normalizeBreadcrumbs(mapped.values("breadcrumbs"), {
     brand,
     category,
@@ -127,7 +134,8 @@ export function normalizePdpProduct(
     faq,
     reviews,
     breadcrumbs,
-    sourceTexts
+    sourceTexts,
+    semanticFacts
   });
 
   evidence.push({ field: "product.name", source: "input", value: name });
@@ -361,6 +369,7 @@ type ProductSignalField = "benefit" | "effect" | "ingredient" | "usage";
 function normalizeFieldSignals(values: string[], field: ProductSignalField): string[] {
   return unique(values
     .map(cleanSourceSignalText)
+    .map((value) => field === "usage" ? normalizeSourceUsageInstruction(value) : value)
     .filter((value) => isAllowedFieldSignal(value, field)));
 }
 
@@ -421,6 +430,9 @@ function isConciseBenefitSignal(value: string): boolean {
   if (/^(benefits?|효능|효과|장점|ベネフィット)$/i.test(text)) {
     return false;
   }
+  if (isMetricEvidenceText(text)) {
+    return false;
+  }
   if (text.length > 90 || /[.。]/.test(text) || isBrokenSourceFragment(text)) {
     return false;
   }
@@ -440,13 +452,16 @@ function isIngredientSignal(value: string): boolean {
   if (isFullIngredientList(text)) {
     return text.length <= fullIngredientListTextLimit;
   }
+  if (isMetricEvidenceText(text)) {
+    return false;
+  }
   if (text.length > 360) {
     return false;
   }
   if (/^(성분|원료|ingredient|ingredients)$/i.test(text)) {
     return false;
   }
-  return /ingredients?|active|actives?|formula|technology|tech|extract|herb|전성분|성분표|히알루론산|하이알루론산|세라마이드|징크|zinc|dermaon|ha\b|캡슐|ceramide|hyaluronic|retinol|niacinamide|peptide|ginseng|panthenol|aqua|glycerin/i.test(text);
+  return /ingredients?|active|actives?|formula|technology|tech|extract|herb|전성분|성분표|히알루론산|하이알루론산|세라마이드|징크|zinc|ha\b|캡슐|ceramide|hyaluronic|retinol|niacinamide|peptide|ginseng|panthenol|aqua|glycerin/i.test(text);
 }
 
 function isBrokenSourceFragment(value: string): boolean {
@@ -497,6 +512,7 @@ interface OcrSentenceInsightInput {
   imageUrl?: string;
   category: OcrSentenceCategory;
   keywords: string[];
+  semanticFacts?: Partial<PdpSemanticFacts>;
 }
 
 interface OcrTextCandidateInput {
@@ -532,7 +548,8 @@ function readSentenceInsights(value: unknown): OcrSentenceInsightInput[] {
       text,
       imageUrl,
       category: inferredCategory,
-      keywords
+      keywords,
+      semanticFacts: isRecord(item.semanticFacts) ? normalizeSemanticFactsObject(item.semanticFacts) : undefined
     }));
   });
 }
@@ -554,6 +571,146 @@ function uniqueSentenceInsights(items: OcrSentenceInsightInput[]): OcrSentenceIn
     seen.add(key);
     return item.text.length > 0;
   });
+}
+
+function normalizeSemanticFacts(source: unknown, insights: OcrSentenceInsightInput[]): PdpSemanticFacts {
+  return mergeSemanticFacts(
+    ...[
+      getByPath(source, "semanticFacts"),
+      getByPath(source, "geoProduct.semanticFacts"),
+      getByPath(source, "sourceExtraction.ocr.semanticFacts"),
+      getByPath(source, "ocr.semanticFacts"),
+      getByPath(source, "aiAnalysis.semanticFacts"),
+      ...insights.map((insight) => ({
+        ingredients: insight.category === "ingredient" ? semanticInsightValues(insight) : [],
+        benefits: insight.category === "benefit" ? [insight.text] : [],
+        effects: insight.category === "effect" ? [insight.text] : [],
+        skinTypes: [],
+        usageSteps: insight.category === "usage" ? [insight.text] : [],
+        metricClaims: insight.category === "metric" ? [{ sentence: insight.text, sourceText: insight.text }] : [],
+        evidenceSentences: [insight.text],
+        ingredientBenefitLinks: insight.category === "ingredient" && hasOutcomeLanguage(insight.text)
+          ? [{ sentence: insight.text, sourceText: insight.text }]
+          : [],
+        ...insight.semanticFacts
+      }))
+    ].map((item) => isRecord(item) ? normalizeSemanticFactsObject(item) : undefined)
+  );
+}
+
+function semanticInsightValues(insight: OcrSentenceInsightInput): string[] {
+  return insight.keywords.length > 0 ? insight.keywords : [insight.text];
+}
+
+function normalizeSemanticFactsObject(value: Record<string, unknown>): Partial<PdpSemanticFacts> {
+  return {
+    ingredients: textArray(value.ingredients),
+    benefits: textArray(value.benefits),
+    effects: textArray(value.effects),
+    skinTypes: textArray(value.skinTypes),
+    usageSteps: textArray(value.usageSteps),
+    evidenceSentences: textArray(value.evidenceSentences),
+    metricClaims: readSemanticMetricClaims(value.metricClaims),
+    ingredientBenefitLinks: readSemanticIngredientBenefitLinks(value.ingredientBenefitLinks)
+  };
+}
+
+function mergeSemanticFacts(...values: Array<Partial<PdpSemanticFacts> | undefined>): PdpSemanticFacts {
+  return {
+    ingredients: unique(values.flatMap((item) => item?.ingredients ?? []).map(cleanText).filter(isUsefulSourceText)).slice(0, 24),
+    benefits: unique(values.flatMap((item) => item?.benefits ?? []).map(cleanText).filter(isUsefulSourceText)).slice(0, 24),
+    effects: unique(values.flatMap((item) => item?.effects ?? []).map(cleanText).filter(isUsefulSourceText)).slice(0, 24),
+    skinTypes: unique(values.flatMap((item) => item?.skinTypes ?? []).map(cleanText).filter(isUsefulSourceText)).slice(0, 16),
+    usageSteps: unique(values.flatMap((item) => item?.usageSteps ?? []).map(cleanText).filter(isUsefulSourceText)).slice(0, 16),
+    metricClaims: uniqueSemanticMetricClaims(values.flatMap((item) => item?.metricClaims ?? [])).slice(0, 24),
+    evidenceSentences: unique(values.flatMap((item) => item?.evidenceSentences ?? []).map(cleanText).filter(isUsefulSourceText)).slice(0, 32),
+    ingredientBenefitLinks: uniqueSemanticIngredientBenefitLinks(values.flatMap((item) => item?.ingredientBenefitLinks ?? [])).slice(0, 24)
+  };
+}
+
+function textArray(value: unknown): string[] {
+  return flattenTextValues(value).map(cleanText).filter(isUsefulSourceText);
+}
+
+function readSemanticMetricClaims(value: unknown): PdpSemanticMetricClaim[] {
+  const values = Array.isArray(value) ? value : [];
+  return values.flatMap((item): PdpSemanticMetricClaim[] => {
+    if (!isRecord(item)) {
+      return [];
+    }
+    return [{
+      label: stringValue(item.label),
+      subject: stringValue(item.subject),
+      value: stringValue(item.value),
+      unit: stringValue(item.unit),
+      metric: stringValue(item.metric),
+      direction: stringValue(item.direction),
+      timing: stringValue(item.timing),
+      period: stringValue(item.period),
+      sample: stringValue(item.sample),
+      method: stringValue(item.method),
+      caveat: stringValue(item.caveat),
+      sentence: stringValue(item.sentence),
+      sourceText: stringValue(item.sourceText)
+    }];
+  });
+}
+
+function readSemanticIngredientBenefitLinks(value: unknown): PdpSemanticIngredientBenefitLink[] {
+  const values = Array.isArray(value) ? value : [];
+  return values.flatMap((item): PdpSemanticIngredientBenefitLink[] => {
+    if (!isRecord(item)) {
+      return [];
+    }
+    return [{
+      ingredient: stringValue(item.ingredient),
+      benefit: stringValue(item.benefit),
+      effect: stringValue(item.effect),
+      sentence: stringValue(item.sentence),
+      sourceText: stringValue(item.sourceText)
+    }];
+  });
+}
+
+function uniqueSemanticMetricClaims(values: PdpSemanticMetricClaim[]): PdpSemanticMetricClaim[] {
+  const seen = new Set<string>();
+  return values.filter((claim) => {
+    const key = cleanText([
+      claim.label,
+      claim.subject,
+      claim.value,
+      claim.metric,
+      claim.sentence,
+      claim.sourceText
+    ].filter(Boolean).join(" ")).toLowerCase();
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function uniqueSemanticIngredientBenefitLinks(values: PdpSemanticIngredientBenefitLink[]): PdpSemanticIngredientBenefitLink[] {
+  const seen = new Set<string>();
+  return values.filter((link) => {
+    const key = cleanText([
+      link.ingredient,
+      link.benefit,
+      link.effect,
+      link.sentence,
+      link.sourceText
+    ].filter(Boolean).join(" ")).toLowerCase();
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function hasOutcomeLanguage(value: string): boolean {
+  return /benefit|effect|support|help|improve|care|hydration|moisture|barrier|firm|elastic|texture|효능|효과|개선|케어|보습|수분|장벽|탄력|피부결/i.test(value);
 }
 
 function createOcrSentenceDiagnostics(items: OcrSentenceInsightInput[], locale: PdpGeoLocale): PdpGeoOcrSentenceDiagnostic[] {
@@ -595,6 +752,9 @@ function schemaFieldsForOcrIntents(intents: OcrSentenceCategory[]): string[] {
   if (intents.includes("review")) {
     fields.push("Review.reviewBody", "Product.positiveNotes", "FAQPage.mainEntity");
   }
+  if (intents.includes("metric")) {
+    fields.push("Product.additionalProperty[Reported details]", "Product.description", "FAQPage.mainEntity");
+  }
   return unique(fields);
 }
 
@@ -603,7 +763,14 @@ function geoUseForOcrSentence(intents: OcrSentenceCategory[], _locale: PdpGeoLoc
   const hasBenefit = intents.includes("benefit") || intents.includes("effect");
   const hasUsage = intents.includes("usage");
   const hasReview = intents.includes("review");
+  const hasMetric = intents.includes("metric");
 
+  if (hasMetric && hasIngredient) {
+    return "ingredient_metric_evidence";
+  }
+  if (hasMetric) {
+    return "metric_evidence";
+  }
   if (hasIngredient && hasBenefit) {
     return "ingredient_effect_evidence";
   }
@@ -934,7 +1101,8 @@ function inferOcrSentenceCategories(text: string, keywords: string[] = [], expli
   }
   if (route === "metric-evidence") {
     const metricCategories: OcrSentenceCategory[] = [];
-    if (/ingredients?|ingredient|active|actives?|formula|technology|tech|성분|원료|전성분|기술|히알루론산|하이알루론산|세라마이드|징크|zinc|dermaon|ha\b|캡슐|ceramide|hyaluronic|retinol|niacinamide|peptide|ginseng|panthenol/i.test(haystack)) {
+    metricCategories.push("metric");
+    if (/ingredients?|ingredient|active|actives?|formula|technology|tech|성분|원료|전성분|기술|히알루론산|하이알루론산|세라마이드|징크|zinc|betaine|probiotics?|ha\b|캡슐|ceramide|hyaluronic|retinol|niacinamide|peptide|ginseng|panthenol|판테놀|베타인|프로바이오틱스/i.test(haystack)) {
       metricCategories.push("ingredient");
     }
     metricCategories.push("effect", "benefit");
@@ -944,7 +1112,7 @@ function inferOcrSentenceCategories(text: string, keywords: string[] = [], expli
     return uniqueCategories([...categories, "ingredient"]);
   }
 
-  if (/ingredients?|ingredient|active|actives?|formula|technology|tech|성분|원료|전성분|기술|히알루론산|하이알루론산|세라마이드|징크|zinc|dermaon|ha\b|캡슐|ceramide|hyaluronic|retinol|niacinamide|peptide|ginseng|panthenol/i.test(haystack)) {
+  if (/ingredients?|ingredient|active|actives?|formula|technology|tech|성분|원료|전성분|기술|히알루론산|하이알루론산|세라마이드|징크|zinc|betaine|probiotics?|ha\b|캡슐|ceramide|hyaluronic|retinol|niacinamide|peptide|ginseng|panthenol|판테놀|베타인|프로바이오틱스/i.test(haystack)) {
     categories.push("ingredient");
   }
   if (/benefit|hydration|moisture|barrier|soothing|refreshing|firm|elastic|texture|comfort|oil|sebum|효능|효과|수분|속수분|보습|장벽|피지|유분|유수분|흡수|지속|컨트롤|밸런스|진정|탄력|피부결|산뜻|쿨링/i.test(haystack)) {
@@ -959,6 +1127,9 @@ function inferOcrSentenceCategories(text: string, keywords: string[] = [], expli
   }
   if (/review|customer|rating|리뷰|후기|평점|만족/i.test(haystack)) {
     categories.push("review");
+  }
+  if (/%|\d+(?:\.\d+)?\s*(?:배|명|주|일|시간)|\b\d+(?:\.\d+)?\s*(?:weeks?|days?|hours?|participants?|subjects?|users?)\b/i.test(haystack)) {
+    categories.push("metric");
   }
 
   return uniqueCategories(categories);
@@ -990,11 +1161,22 @@ function isCrossSellRoutineText(value: string): boolean {
 
 function isMetricEvidenceText(value: string): boolean {
   const text = cleanSourceSignalText(value);
-  const hasMetric = /%|\b\d+(?:\.\d+)?\s*(?:weeks?|days?|hours?|users?|participants?|women|men|subjects?|reviews?)\b|임상|인체\s*적용|자가\s*평가|사용자|참여자|대상|clinical|study|self-assess|instrumental|agreed|showed|改善|評価/i.test(text);
+  const hasMetric = /%|\b\d+(?:\.\d+)?\s*(?:weeks?|days?|hours?|users?|participants?|women|men|subjects?|reviews?)\b|\d+(?:\.\d+)?\s*배|임상|인체\s*적용|자가\s*평가|사용자|참여자|대상|clinical|study|self-assess|instrumental|agreed|showed|改善|評価/i.test(text);
   const hasUsageAction = hasExplicitUsageAction(text);
   const startsWithTimingMetric = /^(?:after|before|during)\s+\d+(?:\.\d+)?\s*(?:weeks?|days?|hours?)\b/i.test(text);
 
-  return hasMetric && (startsWithTimingMetric || !hasUsageAction);
+  return hasMetric && (startsWithTimingMetric || isKoreanMetricEvidenceText(text) || !hasUsageAction);
+}
+
+function isKoreanMetricEvidenceText(value: string): boolean {
+  const text = cleanSourceSignalText(value);
+  const timing = /(?:사용|도포|세정)\s*(?:전|직후|\d+(?:\.\d+)?\s*(?:시간|일|주)\s*후)|(?:\d+(?:\.\d+)?\s*(?:시간|일|주).{0,20})?(?:\d+\s*회\s*)?(?:사용|도포|측정)\s*후|\d+(?:\.\d+)?\s*(?:시간|일|주)\s*(?:후|동안|뒤)/;
+  const metricOutcome = /(?:\d+(?:\.\d+)?\s*(?:%|배).{0,40}(?:회복|개선|감소|증가)|(?:회복|개선|감소|증가).{0,40}\d+(?:\.\d+)?\s*(?:%|배))/;
+  const studyContext = /(?:임상|인체\s*적용|시험|테스트|결과|ex\s*vivo|in\s*vitro|Tape\s*Stripping|외부자극)/i;
+
+  return /[가-힣]/.test(text)
+    && (/%|\d+(?:\.\d+)?\s*배/.test(text))
+    && (metricOutcome.test(text) || (timing.test(text) && studyContext.test(text)));
 }
 
 function isOcrExplicitCategoryAllowedForText(text: string, category: OcrSentenceCategory): boolean {
@@ -1036,17 +1218,17 @@ function normalizeOcrCategory(value?: string): OcrSentenceCategory | undefined {
   if (/review|rating|customer|리뷰|후기/.test(normalized)) {
     return "review";
   }
+  if (/metric|claim|result|수치|지표|결과/.test(normalized)) {
+    return "metric";
+  }
   return undefined;
 }
 
 function extractOcrKeywords(text: string): string[] {
   const keywords = [
-    /압축\s*히알루론산/i.test(text) ? "압축 히알루론산" : undefined,
     /히알루론산|하이알루론산/i.test(text) ? "히알루론산" : undefined,
     /징크|zinc/i.test(text) ? "징크" : undefined,
-    /고밀도\s*세라마이드\s*캡슐/i.test(text) ? "고밀도 세라마이드 캡슐" : undefined,
     /세라마이드/i.test(text) ? "세라마이드" : undefined,
-    /dermaon/i.test(text) ? "DermaON" : undefined,
     /수분|hydration|moisture/i.test(text) ? "수분감" : undefined,
     /장벽|barrier/i.test(text) ? "피부 장벽" : undefined,
     /피지|유분|sebum|oil/i.test(text) ? "유분 컨트롤" : undefined
@@ -1305,14 +1487,14 @@ function isCategorySignal(value: string): boolean {
 }
 
 function isUsageInstruction(value: string): boolean {
-  const normalized = cleanSourceSignalText(value);
+  const normalized = normalizeSourceUsageInstruction(value);
   if (normalized.length < 18 || normalized.length > 260) {
     return false;
   }
   if (normalized.split(/\s+/).length < 4) {
     return false;
   }
-  if (isQuestionLikeSourceText(normalized) || /사용\s*적합|테스트를\s*완료|임산부|영유아|어린이|논코메도제닉/i.test(normalized)) {
+  if (isQuestionLikeSourceText(normalized) || isNonInstructionUsageText(normalized) || /사용\s*적합|테스트를\s*완료|임산부|영유아|어린이|논코메도제닉/i.test(normalized)) {
     return false;
   }
   if (isCrossSellRoutineText(normalized)) {
@@ -1336,16 +1518,100 @@ function isSensoryOnlyUsageInstruction(value: string): boolean {
 
 function isEvidenceOnlyUsageCandidate(value: string): boolean {
   const normalized = cleanSourceSignalText(value);
+  if (isSafetyOrTestClaimUsageCandidate(normalized)) {
+    return true;
+  }
   if (/^(?:after|before|during)\s+\d+(?:\.\d+)?\s*(?:weeks?|days?|hours?)\b/i.test(normalized)) {
     return true;
   }
-  const looksLikeEvidence = /%|\b\d+(?:\.\d+)?\s*(?:weeks?|days?|hours?|users?|participants?|women|men|subjects?)\b|임상|인체\s*적용|자가\s*평가|평점|리뷰\s*\d|사용자|참여자|대상|clinical|study|self-assess|instrumental|agreed|showed|test(?:ed)?|delivers?|helps?|supports?|improves?|boosts?|strengthens?|leaves?|leaving|visible|visibly/i.test(normalized);
+  if (isKoreanMetricEvidenceText(normalized)) {
+    return true;
+  }
+  const looksLikeEvidence = /%|\b\d+(?:\.\d+)?\s*(?:weeks?|days?|hours?|users?|participants?|women|men|subjects?)\b|\d+(?:\.\d+)?\s*배|임상|인체\s*적용|자가\s*평가|평점|리뷰\s*\d|사용자|참여자|대상|clinical|study|self-assess|instrumental|agreed|showed|test(?:ed)?|delivers?|helps?|supports?|improves?|boosts?|strengthens?|leaves?|leaving|visible|visibly/i.test(normalized);
 
   return looksLikeEvidence && !hasExplicitUsageAction(normalized);
 }
 
+function isNonInstructionUsageText(value: string): boolean {
+  return isReviewLikeUsageCandidate(value) || isSafetyOrTestClaimUsageCandidate(value);
+}
+
+function isReviewLikeUsageCandidate(value: string): boolean {
+  const text = cleanSourceSignalText(value);
+  if (!/[가-힣]/.test(text) || hasConcreteKoreanUsageAction(text)) {
+    return false;
+  }
+  return /(?:타\s*제품|사용해\s*봤|사용해봤|사용했|썼는데|써\s*봤|써봤|했었|더라구|더라고|구요|네요|어요|좋아요|괜찮겠지|마음으로|시간이\s*조금\s*지나)/i.test(text);
+}
+
+function isSafetyOrTestClaimUsageCandidate(value: string): boolean {
+  const text = cleanSourceSignalText(value);
+  return /(?:테스트|시험)\s*완료|사용성\s*테스트|피부\s*자극\s*테스트|피부\s*테스트|안자극|하이포알러지|논코메도제닉|민감\s*피부\s*대상|소아와?\s*피부\s*테스트|소아\s*피부\s*테스트/i.test(text);
+}
+
+function hasConcreteKoreanUsageAction(value: string): boolean {
+  return /(?:적당량|손에|물과\s*함께|거품\s*내|거품내|얼굴에|마사지하듯|마사지|문지르|미온수|헹구|마무리|화장솜|덜어|흡수|펴\s*바르|발라)/.test(value);
+}
+
+function normalizeSourceUsageInstruction(value: string): string {
+  let normalized = stripLeadingUsageMeasurementLabels(cleanSourceSignalText(value)
+    .replace(/\bStep\s+\d+\b\.?/gi, "")
+    .replace(/^\d+\.\s*/, "")
+    .replace(/\s+/g, " ")
+    .trim());
+  const cueIndex = usageInstructionCueIndex(normalized);
+  if (cueIndex > 0 && shouldStartUsageAtCue(normalized.slice(0, cueIndex))) {
+    normalized = normalized.slice(cueIndex).trim();
+  }
+  return normalized
+    .replace(/^(?:[\p{L}\p{N}™®().,'\s-]{0,100})?(?:사용\s*방법|사용법)\s*\d*[:.]?\s*/iu, "")
+    .replace(/^(?:[\p{L}\p{N}™®().,'\s-]{0,100})?(?:how\s*to\s*use|directions?)\s*\d*[:.]?\s*/iu, "")
+    .replace(usageMeasurementLeadPattern(), "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function shouldStartUsageAtCue(prefix: string): boolean {
+  const normalized = cleanSourceSignalText(prefix);
+  return isEvidenceOnlyUsageCandidate(normalized)
+    || usageMeasurementLeadPattern().test(normalized)
+    || repeatedUsageMeasurementLabelPattern().test(normalized);
+}
+
+function stripLeadingUsageMeasurementLabels(value: string): string {
+  return value
+    .replace(repeatedUsageMeasurementLabelPattern(), "")
+    .replace(usageMeasurementLeadPattern(), "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function repeatedUsageMeasurementLabelPattern(): RegExp {
+  return /^(?:(?:사용|도포|세정)\s*(?:전|직후|\d+(?:\.\d+)?\s*(?:시간|일|주)\s*후)\s*){2,}/;
+}
+
+function usageMeasurementLeadPattern(): RegExp {
+  return /^(?:(?:사용|도포|세정)\s*(?:전|직후|\d+(?:\.\d+)?\s*(?:시간|일|주)\s*후)\s*)+/;
+}
+
+function usageInstructionCueIndex(value: string): number {
+  const patterns = [
+    /사용\s*방법/i,
+    /사용법\s*\d*/i,
+    /\bhow\s+to\s+use\b/i,
+    /\bdirections?\b/i,
+    /손에\s*적당량/,
+    /화장솜/,
+    /\b(?:apply|dispense|massage|pump|lather|rinse|pat|press|smooth)\b/i
+  ];
+  const indexes = patterns
+    .map((pattern) => value.search(pattern))
+    .filter((index) => index > -1);
+  return indexes.length > 0 ? Math.min(...indexes) : -1;
+}
+
 function hasExplicitUsageAction(value: string): boolean {
-  return /\b(?:apply|dispense|massage|lather|rinse|pat|press|spread|smooth|warm|take|pump)\b|사용|도포|바르|바릅|펴\s*바르|펴\s*바릅|흡수|마사지|なじませ|塗布|使(?:う|い)/i.test(value)
+  return /\b(?:apply|dispense|massage|lather|rinse|pat|press|spread|smooth|warm|take|pump)\b|사용(?!감|할\s*수)|도포|바르|바릅|펴\s*바르|펴\s*바릅|흡수|마사지|거품\s*내|거품내|문지르|헹구|마무리|なじませ|塗布|使(?:う|い)/i.test(value)
     || /^\s*use\b/i.test(value)
     || /(?:^|[.;,]\s*)then\s+use\b/i.test(value)
     || /\buse\s+(?:morning|night|daily|twice|once|after|before|as|with|on|to)\b/i.test(value);

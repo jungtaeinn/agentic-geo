@@ -1,4 +1,4 @@
-import type { AiTokenUsage, ClassifiedKeyword, ClassifiedSentenceInsight } from "../types";
+import type { AiTokenUsage, ClassifiedKeyword, ClassifiedSentenceInsight, GeoSemanticFacts } from "../types";
 
 /** Provider IDs supported by the first extractor agent. */
 export type LlmProviderId = "mock" | "openai" | "gemini" | "azure-openai" | "aistudio";
@@ -68,6 +68,7 @@ export interface KeywordClassificationRequest {
 export interface KeywordClassificationResponse {
   keywords: ClassifiedKeyword[];
   sentenceInsights?: ClassifiedSentenceInsight[];
+  semanticFacts?: Partial<GeoSemanticFacts>;
   summary: string;
   rawText?: string;
   usage?: AiTokenUsage;

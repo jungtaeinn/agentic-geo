@@ -116,13 +116,14 @@ export interface ClassifiedKeyword {
   source: "dom" | "jsonLd" | "review" | "ocr" | "llm" | "mock";
 }
 
-/** Sentence-level OCR evidence reconstructed from visual copy and classified with related keywords. */
+/** Sentence-level OCR evidence semantically interpreted from visual copy and classified with related keywords. */
 export interface ClassifiedSentenceInsight {
   text: string;
   category: KeywordCategory;
   keywords: string[];
   confidence: number;
   source: "ocr" | "llm" | "mock";
+  semanticFacts?: Partial<GeoSemanticFacts>;
 }
 
 /** Public sentence-level OCR insight retained without model confidence for downstream schema/content generation. */
@@ -131,6 +132,42 @@ export interface GeoSentenceInsight {
   text: string;
   category: KeywordCategory;
   keywords: string[];
+  semanticFacts?: Partial<GeoSemanticFacts>;
+}
+
+export interface GeoSemanticMetricClaim {
+  label?: string;
+  subject?: string;
+  value?: string;
+  unit?: string;
+  metric?: string;
+  direction?: string;
+  timing?: string;
+  period?: string;
+  sample?: string;
+  method?: string;
+  caveat?: string;
+  sentence?: string;
+  sourceText?: string;
+}
+
+export interface GeoSemanticIngredientBenefitLink {
+  ingredient?: string;
+  benefit?: string;
+  effect?: string;
+  sentence?: string;
+  sourceText?: string;
+}
+
+export interface GeoSemanticFacts {
+  ingredients: string[];
+  benefits: string[];
+  effects: string[];
+  skinTypes: string[];
+  usageSteps: string[];
+  metricClaims: GeoSemanticMetricClaim[];
+  evidenceSentences: string[];
+  ingredientBenefitLinks: GeoSemanticIngredientBenefitLink[];
 }
 
 /** Keyword categories used by GEO downstream agents. */
@@ -271,13 +308,16 @@ export interface GeoProductRawData {
       }>;
       textBlocks: string[];
       sentenceInsights: GeoSentenceInsight[];
+      semanticFacts?: GeoSemanticFacts;
     };
   };
   aiAnalysis: {
     keywords: GeoKeywordGroups;
     categorizedSections: ProductContentSection[];
     summary?: string;
+    semanticFacts?: GeoSemanticFacts;
   };
+  semanticFacts?: GeoSemanticFacts;
   categorizedProductInfo: {
     benefits: string[];
     effects: string[];

@@ -876,6 +876,9 @@ function runtimeProviderLabel(provider: PdpGeoGeneratorOptions["provider"]): str
   if (provider === "azure-openai") {
     return "azure-api";
   }
+  if (provider === "aistudio") {
+    return "external-agent";
+  }
   return provider ?? "mock";
 }
 

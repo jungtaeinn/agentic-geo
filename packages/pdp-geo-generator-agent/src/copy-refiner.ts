@@ -400,7 +400,7 @@ function createCopyRefinementPrompt(request: PdpGeoCopyRefinementRequest): { sys
   return {
     system: [
       "You are a conservative GEO product-copy reasoning agent for structured PDP schema descriptions.",
-      "Return strict JSON only: {\"schemaDescriptions\":{\"webPage\":\"\",\"product\":\"\"},\"contentSections\":{\"description\":\"\"},\"warnings\":[]}.",
+      "Return strict JSON only: {\"schemaDescriptions\":{\"webPage\":\"\",\"product\":\"\"},\"schemaProperties\":{\"Ingredient/effect detail\":\"\",\"Reported details\":\"\",\"Customer review context\":\"\"},\"faqAnswers\":[{\"question\":\"\",\"answer\":\"\"}],\"contentSections\":{\"description\":\"\",\"quickFacts\":\"\",\"faq\":\"\"},\"warnings\":[]}.",
       "Your job is to use GEO research/geo-paper, CEP, and E-E-A-T guidance to identify product facts, keywords, and source-backed phrases that are likely to be useful in AI answer exposure.",
       "Use selected strategic chunks as the primary task-specific guidance. Use hydrated full RAG documents only as controlled background for missing context, conflict resolution, and policy completeness.",
       "When guidance conflicts, apply this priority: source product evidence first, E-E-A-T trust and claim safety, schema validity, GEO answer-readiness, then CEP/customer phrasing.",
@@ -408,6 +408,9 @@ function createCopyRefinementPrompt(request: PdpGeoCopyRefinementRequest): { sys
       "Prioritize concrete facts: product type, target concern or customer entry point, differentiating formula/ingredient, measured effect, usage context, and review-intent language.",
       "Use only the supplied product evidence and strategic RAG guidance. Do not invent claims, ingredients, metrics, study details, prices, awards, or certifications.",
       "Preserve numeric claims, study populations, usage instructions, ingredient names, and product names exactly when they appear in evidence.",
+      "For schemaProperties, refine only existing Product.additionalProperty values. Rewrite rigid labels such as Reported details, Ingredient/effect detail, and Customer review context into natural source-backed target-locale sentences.",
+      "For faqAnswers, keep the same question intent and order as currentCopy.faqAnswers. Improve answer naturalness and GEO usefulness by blending ingredient, benefit/effect, metric, usage, and review evidence only when supplied.",
+      "Never add a new number, percentage, duration, sample size, study population, usage period, certification, or claim mechanism that is absent from productEvidence or currentCopy.",
       "Rewrite OCR-like evidence into natural target-locale sentences before using it. Never copy raw all-caps image text, footnote markers, bilingual product labels, or alternate-language product-type labels into public copy.",
       "Respect field evidence contracts: HowTo and usage answers may contain only actionable usage directions; ingredient sections may contain only ingredient/formula/full-INCI evidence; benefit sections may contain only outcomes, effects, review-backed positives, or concise evidence topics.",
       "If a sentence is useful evidence but belongs to a different field, rewrite it only in the correct field and do not move the raw phrase across public fields.",
@@ -421,6 +424,8 @@ function createCopyRefinementPrompt(request: PdpGeoCopyRefinementRequest): { sys
 
 function createCopyRefinementPayload(request: PdpGeoCopyRefinementRequest): Record<string, unknown> {
   const descriptions = readSchemaDescriptions(request.schemaMarkup.jsonLd);
+  const schemaProperties = readProductAdditionalProperties(request.schemaMarkup.jsonLd);
+  const faqAnswers = readSchemaFaqItems(request.schemaMarkup.jsonLd);
   const strategicChunks = selectStrategicRagGuidanceChunks(request.ragChunks, maxRagChunks);
   return {
     task: "Select AI-exposure-worthy product keywords and sentences from productEvidence, guided by GEO research/geo-paper, CEP, and E-E-A-T. Combine only grounded facts into public PDP description copy.",
@@ -428,8 +433,12 @@ function createCopyRefinementPayload(request: PdpGeoCopyRefinementRequest): Reco
     market: request.market,
     currentCopy: {
       schemaDescriptions: descriptions,
+      schemaProperties,
+      faqAnswers,
       contentSections: {
-        description: request.content.sections.description
+        description: request.content.sections.description,
+        quickFacts: request.content.sections.quickFacts,
+        faq: request.content.sections.faq
       }
     },
     productEvidence: {
@@ -491,23 +500,41 @@ function applyCopyRefinement(
   const warnings: string[] = [];
   const evidence: PdpGeoEvidence[] = [];
   const descriptions = readSchemaDescriptions(request.schemaMarkup.jsonLd);
+  const claimEvidenceCorpus = createClaimEvidenceCorpus(request);
   const productDescription = acceptRefinedText(
     result.schemaDescriptions?.product ?? result.contentSections?.description,
     descriptions.product ?? request.content.sections.description,
     "Product.description",
-    warnings
+    warnings,
+    { evidenceCorpus: claimEvidenceCorpus, requireSupportedClaimTokens: true }
   );
   const webPageDescription = acceptRefinedText(
     result.schemaDescriptions?.webPage,
     descriptions.webPage,
     "WebPage.description",
-    warnings
+    warnings,
+    { evidenceCorpus: claimEvidenceCorpus, requireSupportedClaimTokens: true }
   );
   const contentDescription = acceptRefinedText(
     result.contentSections?.description ?? productDescription,
     request.content.sections.description,
     "content.sections.description",
-    warnings
+    warnings,
+    { evidenceCorpus: claimEvidenceCorpus, requireSupportedClaimTokens: true }
+  );
+  const contentQuickFacts = acceptRefinedText(
+    result.contentSections?.quickFacts,
+    request.content.sections.quickFacts,
+    "content.sections.quickFacts",
+    warnings,
+    { minLength: 20, maxLength: 2200, evidenceCorpus: claimEvidenceCorpus, requireSupportedClaimTokens: true }
+  );
+  const contentFaq = acceptRefinedText(
+    result.contentSections?.faq,
+    request.content.sections.faq,
+    "content.sections.faq",
+    warnings,
+    { minLength: 20, maxLength: 3200, evidenceCorpus: claimEvidenceCorpus, requireSupportedClaimTokens: true }
   );
 
   const nextProductDescription = productDescription ?? contentDescription;
@@ -542,6 +569,47 @@ function applyCopyRefinement(
     applied = true;
   }
 
+  const propertyRefinements = acceptedSchemaPropertyRefinements(
+    request,
+    result.schemaProperties,
+    warnings,
+    claimEvidenceCorpus
+  );
+  for (const refinement of propertyRefinements) {
+    schemaMarkup = writeProductAdditionalProperty(schemaMarkup, refinement.name, refinement.value);
+    evidence.push({ field: `schema.Product.additionalProperty.${refinement.name}`, source: "llm", value: summarizeRefinement(refinement.before, refinement.value) });
+    applied = true;
+  }
+
+  const faqRefinements = acceptedFaqAnswerRefinements(request, result.faqAnswers, warnings, claimEvidenceCorpus);
+  for (const refinement of faqRefinements) {
+    schemaMarkup = writeFaqAnswer(schemaMarkup, refinement.index, refinement.answer);
+    evidence.push({ field: `schema.FAQPage.mainEntity.${refinement.index + 1}.acceptedAnswer`, source: "llm", value: summarizeRefinement(refinement.before, refinement.answer) });
+    applied = true;
+  }
+
+  const nextQuickFacts = contentQuickFacts;
+  const nextFaq = contentFaq ?? (faqRefinements.length > 0 ? createFaqSectionFromSchema(schemaMarkup.jsonLd) : undefined);
+  if ((nextQuickFacts && nextQuickFacts !== content.sections.quickFacts) || (nextFaq && nextFaq !== content.sections.faq)) {
+    const sections = {
+      ...content.sections,
+      quickFacts: nextQuickFacts ?? content.sections.quickFacts,
+      faq: nextFaq ?? content.sections.faq
+    };
+    content = {
+      ...content,
+      sections,
+      html: createPdpGeoContentHtml(sections, request.locale)
+    };
+    if (nextQuickFacts && nextQuickFacts !== request.content.sections.quickFacts) {
+      evidence.push({ field: "content.quickFacts", source: "llm", value: summarizeRefinement(request.content.sections.quickFacts, nextQuickFacts) });
+    }
+    if (nextFaq && nextFaq !== request.content.sections.faq) {
+      evidence.push({ field: "content.faq", source: "llm", value: summarizeRefinement(request.content.sections.faq, nextFaq) });
+    }
+    applied = true;
+  }
+
   return {
     schemaMarkup,
     content,
@@ -551,7 +619,20 @@ function applyCopyRefinement(
   };
 }
 
-function acceptRefinedText(value: unknown, fallbackValue: string | undefined, field: string, warnings: string[]): string | undefined {
+interface AcceptRefinedTextOptions {
+  minLength?: number;
+  maxLength?: number;
+  evidenceCorpus?: string;
+  requireSupportedClaimTokens?: boolean;
+}
+
+function acceptRefinedText(
+  value: unknown,
+  fallbackValue: string | undefined,
+  field: string,
+  warnings: string[],
+  options: AcceptRefinedTextOptions = {}
+): string | undefined {
   if (typeof value !== "string") {
     return undefined;
   }
@@ -560,11 +641,13 @@ function acceptRefinedText(value: unknown, fallbackValue: string | undefined, fi
   if (!text || text === fallbackValue) {
     return text || undefined;
   }
-  if (text.length < 40) {
+  const minLength = options.minLength ?? 40;
+  const maxLength = options.maxLength ?? 1800;
+  if (text.length < minLength) {
     warnings.push(`${field} refinement rejected because it is too short.`);
     return undefined;
   }
-  if (text.length > 1800) {
+  if (text.length > maxLength) {
     warnings.push(`${field} refinement rejected because it is too long.`);
     return undefined;
   }
@@ -572,8 +655,121 @@ function acceptRefinedText(value: unknown, fallbackValue: string | undefined, fi
     warnings.push(`${field} refinement rejected because it contains internal labels or visual-caption artifacts.`);
     return undefined;
   }
+  if (options.requireSupportedClaimTokens && hasUnsupportedClaimTokens(text, options.evidenceCorpus ?? "")) {
+    warnings.push(`${field} refinement rejected because it introduced unsupported numeric or study claim details.`);
+    return undefined;
+  }
 
   return text;
+}
+
+const refinableSchemaPropertyNames = new Set([
+  "Ingredient/effect detail",
+  "Reported details",
+  "Customer review context"
+]);
+
+function acceptedSchemaPropertyRefinements(
+  request: PdpGeoCopyRefinementRequest,
+  values: PdpGeoCopyRefinementResult["schemaProperties"],
+  warnings: string[],
+  evidenceCorpus: string
+): Array<{ name: string; value: string; before: string }> {
+  if (!values || !isRecord(values)) {
+    return [];
+  }
+
+  const currentProperties = readProductAdditionalProperties(request.schemaMarkup.jsonLd);
+  return Object.entries(values).flatMap(([name, value]) => {
+    if (!refinableSchemaPropertyNames.has(name)) {
+      return [];
+    }
+    const before = currentProperties[name];
+    if (!before) {
+      return [];
+    }
+    const accepted = acceptRefinedText(
+      value,
+      before,
+      `Product.additionalProperty.${name}`,
+      warnings,
+      { minLength: 12, maxLength: 900, evidenceCorpus, requireSupportedClaimTokens: true }
+    );
+    return accepted && accepted !== before ? [{ name, value: accepted, before }] : [];
+  });
+}
+
+function acceptedFaqAnswerRefinements(
+  request: PdpGeoCopyRefinementRequest,
+  values: PdpGeoCopyRefinementResult["faqAnswers"],
+  warnings: string[],
+  evidenceCorpus: string
+): Array<{ index: number; answer: string; before: string }> {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  const currentFaq = readSchemaFaqItems(request.schemaMarkup.jsonLd);
+  return values.flatMap((item, index) => {
+    if (!isRecord(item)) {
+      return [];
+    }
+    const answer = typeof item.answer === "string" ? item.answer : undefined;
+    const matchingIndex = typeof item.question === "string"
+      ? currentFaq.findIndex((faq) => normalizeComparableText(faq.question) === normalizeComparableText(item.question ?? ""))
+      : index;
+    const faqIndex = matchingIndex >= 0 ? matchingIndex : index;
+    const before = currentFaq[faqIndex]?.answer;
+    if (!before) {
+      return [];
+    }
+    const accepted = acceptRefinedText(
+      answer,
+      before,
+      `FAQPage.mainEntity.${faqIndex + 1}.acceptedAnswer`,
+      warnings,
+      { minLength: 24, maxLength: 900, evidenceCorpus, requireSupportedClaimTokens: true }
+    );
+    return accepted && accepted !== before ? [{ index: faqIndex, answer: accepted, before }] : [];
+  });
+}
+
+function normalizeComparableText(value: string): string {
+  return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+function createClaimEvidenceCorpus(request: PdpGeoCopyRefinementRequest): string {
+  return normalizeClaimTokenText(JSON.stringify({
+    product: request.product,
+    currentCopy: {
+      schemaDescriptions: readSchemaDescriptions(request.schemaMarkup.jsonLd),
+      schemaProperties: readProductAdditionalProperties(request.schemaMarkup.jsonLd),
+      faqAnswers: readSchemaFaqItems(request.schemaMarkup.jsonLd),
+      contentSections: request.content.sections
+    }
+  }));
+}
+
+function hasUnsupportedClaimTokens(value: string, evidenceCorpus: string): boolean {
+  const corpus = normalizeClaimTokenText(evidenceCorpus);
+  return extractClaimTokens(value).some((token) => !corpus.includes(token));
+}
+
+function extractClaimTokens(value: string): string[] {
+  return unique([
+    ...(value.match(/[+\-−]?\d+(?:\.\d+)?\s?(?:%|배)/gi) ?? []),
+    ...(value.match(/\b\d+(?:\.\d+)?\s?(?:weeks?|days?|hours?|users?|participants?|women|men|subjects?|reviews?)\b/gi) ?? []),
+    ...(value.match(/\b(?:after|in)\s+\d+(?:\.\d+)?\s?(?:weeks?|days?|hours?)\b/gi) ?? []),
+    ...(value.match(/\b\d+(?:\.\d+)?\s?(?:명|인|참여자|대상|사용자|여성|남성|주|일|시간|회)\b/g) ?? [])
+  ].map(normalizeClaimTokenText));
+}
+
+function normalizeClaimTokenText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[−]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function readSchemaDescriptions(jsonLd: JsonObject): { webPage?: string; product?: string } {
@@ -586,6 +782,40 @@ function readSchemaDescriptions(jsonLd: JsonObject): { webPage?: string; product
   };
 }
 
+function readProductAdditionalProperties(jsonLd: JsonObject): Record<string, string> {
+  const graph = Array.isArray(jsonLd["@graph"]) ? jsonLd["@graph"] : [];
+  const product = graph.find((node) => isSchemaNodeOfType(node, "Product"));
+  if (!isRecord(product) || !Array.isArray(product.additionalProperty)) {
+    return {};
+  }
+
+  const properties: Record<string, string> = {};
+  for (const item of product.additionalProperty) {
+    if (!isRecord(item) || typeof item.name !== "string" || typeof item.value !== "string") {
+      continue;
+    }
+    properties[item.name] = item.value;
+  }
+  return properties;
+}
+
+function readSchemaFaqItems(jsonLd: JsonObject): Array<{ question: string; answer: string }> {
+  const graph = Array.isArray(jsonLd["@graph"]) ? jsonLd["@graph"] : [];
+  const faqPage = graph.find((node) => isSchemaNodeOfType(node, "FAQPage"));
+  if (!isRecord(faqPage) || !Array.isArray(faqPage.mainEntity)) {
+    return [];
+  }
+
+  return faqPage.mainEntity.flatMap((item): Array<{ question: string; answer: string }> => {
+    if (!isRecord(item) || typeof item.name !== "string") {
+      return [];
+    }
+    const acceptedAnswer = isRecord(item.acceptedAnswer) ? item.acceptedAnswer : undefined;
+    const answer = acceptedAnswer && typeof acceptedAnswer.text === "string" ? acceptedAnswer.text : undefined;
+    return answer ? [{ question: item.name, answer }] : [];
+  });
+}
+
 function writeSchemaDescription(schemaMarkup: PdpGeoSchemaMarkup, type: "WebPage" | "Product", description: string): PdpGeoSchemaMarkup {
   const jsonLd = cloneJsonObject(schemaMarkup.jsonLd);
   const graph = Array.isArray(jsonLd["@graph"]) ? jsonLd["@graph"] : [];
@@ -594,10 +824,47 @@ function writeSchemaDescription(schemaMarkup: PdpGeoSchemaMarkup, type: "WebPage
       node.description = description;
     }
   }
+  return schemaMarkupFromJsonLd(jsonLd);
+}
+
+function writeProductAdditionalProperty(schemaMarkup: PdpGeoSchemaMarkup, name: string, value: string): PdpGeoSchemaMarkup {
+  const jsonLd = cloneJsonObject(schemaMarkup.jsonLd);
+  const graph = Array.isArray(jsonLd["@graph"]) ? jsonLd["@graph"] : [];
+  const product = graph.find((node) => isSchemaNodeOfType(node, "Product"));
+  if (isRecord(product) && Array.isArray(product.additionalProperty)) {
+    for (const item of product.additionalProperty) {
+      if (isRecord(item) && item.name === name) {
+        item.value = value;
+      }
+    }
+  }
+  return schemaMarkupFromJsonLd(jsonLd);
+}
+
+function writeFaqAnswer(schemaMarkup: PdpGeoSchemaMarkup, index: number, answer: string): PdpGeoSchemaMarkup {
+  const jsonLd = cloneJsonObject(schemaMarkup.jsonLd);
+  const graph = Array.isArray(jsonLd["@graph"]) ? jsonLd["@graph"] : [];
+  const faqPage = graph.find((node) => isSchemaNodeOfType(node, "FAQPage"));
+  const item = isRecord(faqPage) && Array.isArray(faqPage.mainEntity) ? faqPage.mainEntity[index] : undefined;
+  const acceptedAnswer = isRecord(item) && isRecord(item.acceptedAnswer) ? item.acceptedAnswer : undefined;
+  if (acceptedAnswer) {
+    acceptedAnswer.text = answer;
+  }
+  return schemaMarkupFromJsonLd(jsonLd);
+}
+
+function schemaMarkupFromJsonLd(jsonLd: JsonObject): PdpGeoSchemaMarkup {
   return {
     jsonLd,
     scriptTag: `<script type="application/ld+json">${escapeScriptJson(JSON.stringify(jsonLd, null, 2))}</script>`
   };
+}
+
+function createFaqSectionFromSchema(jsonLd: JsonObject): string | undefined {
+  const items = readSchemaFaqItems(jsonLd);
+  return items.length > 0
+    ? items.map((item) => `Q. ${item.question}\nA. ${item.answer}`).join("\n\n")
+    : undefined;
 }
 
 function readDescription(value: unknown): string | undefined {
@@ -632,8 +899,23 @@ function parseCopyRefinementJson(text: string): PdpGeoCopyRefinementResult {
       webPage: typeof payload.schemaDescriptions.webPage === "string" ? payload.schemaDescriptions.webPage : undefined,
       product: typeof payload.schemaDescriptions.product === "string" ? payload.schemaDescriptions.product : undefined
     } : undefined,
-    contentSections: isRecord(payload.contentSections) && typeof payload.contentSections.description === "string"
-      ? { description: payload.contentSections.description }
+    schemaProperties: isRecord(payload.schemaProperties)
+      ? Object.fromEntries(Object.entries(payload.schemaProperties).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+      : undefined,
+    faqAnswers: Array.isArray(payload.faqAnswers)
+      ? payload.faqAnswers
+        .filter(isRecord)
+        .map((item) => ({
+          question: typeof item.question === "string" ? item.question : undefined,
+          answer: typeof item.answer === "string" ? item.answer : undefined
+        }))
+      : undefined,
+    contentSections: isRecord(payload.contentSections)
+      ? {
+          description: typeof payload.contentSections.description === "string" ? payload.contentSections.description : undefined,
+          quickFacts: typeof payload.contentSections.quickFacts === "string" ? payload.contentSections.quickFacts : undefined,
+          faq: typeof payload.contentSections.faq === "string" ? payload.contentSections.faq : undefined
+        }
       : undefined,
     warnings: Array.isArray(payload.warnings) ? payload.warnings.map(String).filter(Boolean) : undefined,
     rawText

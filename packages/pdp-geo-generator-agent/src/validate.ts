@@ -292,7 +292,8 @@ function repairGraphNode(
   }
 
   if (node["@type"] === "HowTo" && Array.isArray(node.step)) {
-    node.step = node.step.filter(isRecord).flatMap((item, index) => {
+    let nextPosition = 1;
+    node.step = node.step.filter(isRecord).flatMap((item) => {
       const text = stringValue(item.text);
       if (!text) {
         addRepair(warnings, repairs, {
@@ -321,7 +322,7 @@ function repairGraphNode(
       }
       return [{
         "@type": "HowToStep",
-        position: numberValue(item.position) ?? index + 1,
+        position: nextPosition++,
         name: stringValue(item.name) ? repairGeneratedText(stringValue(item.name) ?? "", locale, "HowTo.step.name", warnings, repairs) : undefined,
         text: repairedText
       }];
@@ -775,6 +776,9 @@ function hasInternalFieldLabel(value: string): boolean {
 
 function isActionableUsageText(value: string): boolean {
   const text = stripListMarker(value);
+  if (isNonInstructionUsageText(text)) {
+    return false;
+  }
   if (isEvidenceOnlyUsageText(text)) {
     return false;
   }
@@ -791,14 +795,38 @@ function isSensoryOnlyUsageText(value: string): boolean {
 
 function isEvidenceOnlyUsageText(value: string): boolean {
   const text = value.trim();
+  if (isSafetyOrTestClaimUsageText(text)) {
+    return true;
+  }
   const looksLikeEvidence = isRawMetricEvidenceText(text)
     || /\b(?:delivers?|helps?|supports?|improves?|boosts?|strengthens?|leaves?|leaving|visible|visibly|clinical|instrumental|self[-\s]?assessment|test(?:ed)?|agreed|showed)\b/i.test(text);
 
   return looksLikeEvidence && !hasUsageActionVerb(text);
 }
 
+function isNonInstructionUsageText(value: string): boolean {
+  return isReviewLikeUsageText(value) || isSafetyOrTestClaimUsageText(value);
+}
+
+function isReviewLikeUsageText(value: string): boolean {
+  const text = value.trim();
+  if (!/[가-힣]/.test(text) || hasConcreteKoreanUsageAction(text)) {
+    return false;
+  }
+  return /(?:타\s*제품|사용해\s*봤|사용해봤|사용했|썼는데|써\s*봤|써봤|했었|더라구|더라고|구요|네요|어요|좋아요|괜찮겠지|마음으로|시간이\s*조금\s*지나)/i.test(text);
+}
+
+function isSafetyOrTestClaimUsageText(value: string): boolean {
+  const text = value.trim();
+  return /(?:테스트|시험)\s*완료|사용성\s*테스트|피부\s*자극\s*테스트|피부\s*테스트|안자극|하이포알러지|논코메도제닉|민감\s*피부\s*대상|소아와?\s*피부\s*테스트|소아\s*피부\s*테스트/i.test(text);
+}
+
+function hasConcreteKoreanUsageAction(value: string): boolean {
+  return /(?:적당량|손에|물과\s*함께|거품\s*내|거품내|얼굴에|마사지하듯|마사지|문지르|미온수|헹구|마무리|화장솜|덜어|흡수|펴\s*바르|발라)/.test(value);
+}
+
 function hasUsageActionVerb(value: string): boolean {
-  return /\b(?:apply|dispense|massage|lather|rinse|pat|press|spread|smooth|warm|take|pump)\b|사용|도포|바르|바릅|펴\s*바르|펴\s*바릅|흡수|마사지|なじませ|塗布|使(?:う|い)/i.test(value)
+  return /\b(?:apply|dispense|massage|lather|rinse|pat|press|spread|smooth|warm|take|pump)\b|사용|도포|바르|바릅|펴\s*바르|펴\s*바릅|흡수|마사지|거품\s*내|거품내|문지르|헹구|마무리|なじませ|塗布|使(?:う|い)/i.test(value)
     || /^\s*use\b/i.test(value)
     || /(?:^|[.;,]\s*)then\s+use\b/i.test(value)
     || /\buse\s+(?:morning|night|daily|twice|once|after|before|as|with|on|to)\b/i.test(value);
@@ -944,7 +972,7 @@ function ensureKoreanFaqAnswerSourceContext(answer: string): string {
   if (/상품\s*상세|상세\s*정보|제품\s*정보|성분\/효능\s*정보|기준으로|바탕으로|확인\s*정보/.test(answer)) {
     return answer;
   }
-  return `상품 상세의 성분/효능 정보와 고객 리뷰 표현을 기준으로 ${lowercaseKoreanSentenceStart(answer)}`;
+  return `제품의 성분/효능 정보와 고객 리뷰 표현을 기준으로 ${lowercaseKoreanSentenceStart(answer)}`;
 }
 
 function lowercaseKoreanSentenceStart(value: string): string {
@@ -1095,6 +1123,10 @@ function repairGeneratedText(
     .replace(/\n[ \t]+/g, "\n")
     .trim();
 
+  if (path === "HowTo.step.text") {
+    next = repairHowToStepUsageText(next);
+  }
+
   if (locale === "ko-KR") {
     next = repairKoreanReviewQuoteFragments(next);
     next = repairKoreanEvidenceFragments(next);
@@ -1128,6 +1160,60 @@ function repairGeneratedText(
   }
 
   return next;
+}
+
+function repairHowToStepUsageText(value: string): string {
+  let next = stripLeadingUsageMeasurementLabels(value);
+  const cueIndex = usageRepairCueIndex(next);
+  if (cueIndex > 0 && shouldRepairUsageFromCue(next.slice(0, cueIndex))) {
+    next = next.slice(cueIndex).trim();
+  }
+
+  return next
+    .replace(/^(?:[\p{L}\p{N}™®().,'\s-]{0,100})?(?:사용\s*방법|사용법)\s*\d*[:.]?\s*/iu, "")
+    .replace(/^(?:[\p{L}\p{N}™®().,'\s-]{0,100})?(?:how\s*to\s*use|directions?)\s*\d*[:.]?\s*/iu, "")
+    .replace(usageMeasurementLeadPattern(), "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function usageRepairCueIndex(value: string): number {
+  const patterns = [
+    /사용\s*방법/i,
+    /사용법\s*\d*/i,
+    /\bhow\s+to\s+use\b/i,
+    /\bdirections?\b/i,
+    /손에\s*적당량/,
+    /화장솜/,
+    /\b(?:apply|dispense|massage|pump|lather|rinse|pat|press|smooth)\b/i
+  ];
+  const indexes = patterns
+    .map((pattern) => value.search(pattern))
+    .filter((index) => index > -1);
+  return indexes.length > 0 ? Math.min(...indexes) : -1;
+}
+
+function shouldRepairUsageFromCue(prefix: string): boolean {
+  const text = prefix.replace(/\s+/g, " ").trim();
+  return isRawMetricEvidenceText(text)
+    || usageMeasurementLeadPattern().test(text)
+    || repeatedUsageMeasurementLabelPattern().test(text);
+}
+
+function stripLeadingUsageMeasurementLabels(value: string): string {
+  return value
+    .replace(repeatedUsageMeasurementLabelPattern(), "")
+    .replace(usageMeasurementLeadPattern(), "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function repeatedUsageMeasurementLabelPattern(): RegExp {
+  return /^(?:(?:사용|도포|세정)\s*(?:전|직후|\d+(?:\.\d+)?\s*(?:시간|일|주)\s*후)\s*){2,}/;
+}
+
+function usageMeasurementLeadPattern(): RegExp {
+  return /^(?:(?:사용|도포|세정)\s*(?:전|직후|\d+(?:\.\d+)?\s*(?:시간|일|주)\s*후)\s*)+/;
 }
 
 function repairEnglishSentenceQuality(value: string): string {
@@ -1387,6 +1473,9 @@ function stripTrailingKoreanObjectParticle(value: string): string {
 }
 
 function isDanglingFragment(value: string): boolean {
+  if (/(?:결과|효과|성과|평가|근거)$/u.test(value.trim())) {
+    return false;
+  }
   return /(?:,|및|또는|그리고|으로|로|을|를|은|는|이|가|과|와|with|and|or|such as|including)$/i.test(value.trim());
 }
 

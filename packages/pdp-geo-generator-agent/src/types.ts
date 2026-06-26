@@ -193,6 +193,41 @@ export interface PdpGeoBreadcrumbItem {
   url?: string;
 }
 
+export interface PdpSemanticMetricClaim {
+  label?: string;
+  subject?: string;
+  value?: string;
+  unit?: string;
+  metric?: string;
+  direction?: string;
+  timing?: string;
+  period?: string;
+  sample?: string;
+  method?: string;
+  caveat?: string;
+  sentence?: string;
+  sourceText?: string;
+}
+
+export interface PdpSemanticIngredientBenefitLink {
+  ingredient?: string;
+  benefit?: string;
+  effect?: string;
+  sentence?: string;
+  sourceText?: string;
+}
+
+export interface PdpSemanticFacts {
+  ingredients: string[];
+  benefits: string[];
+  effects: string[];
+  skinTypes: string[];
+  usageSteps: string[];
+  metricClaims: PdpSemanticMetricClaim[];
+  evidenceSentences: string[];
+  ingredientBenefitLinks: PdpSemanticIngredientBenefitLink[];
+}
+
 /** Normalized product facts inferred from arbitrary product JSON. */
 export interface PdpProductSignal {
   name: string;
@@ -221,6 +256,7 @@ export interface PdpProductSignal {
   };
   breadcrumbs: PdpGeoBreadcrumbItem[];
   sourceTexts: string[];
+  semanticFacts?: PdpSemanticFacts;
 }
 
 export type PdpGeoRagKind = "orchestration" | "schema" | "eeat" | "cep" | "best-practice" | "geo-research" | "official-docs" | "locale" | "terminology" | "product" | "custom";
@@ -475,7 +511,12 @@ export interface PdpGeoCopyRefinementResult {
     webPage?: string;
     product?: string;
   };
-  contentSections?: Partial<Pick<PdpGeoContentSections, "description">>;
+  schemaProperties?: Record<string, string>;
+  faqAnswers?: Array<{
+    question?: string;
+    answer?: string;
+  }>;
+  contentSections?: Partial<Pick<PdpGeoContentSections, "description" | "quickFacts" | "faq">>;
   warnings?: string[];
   rawText?: string;
   usage?: PdpGeoTokenUsage;
@@ -562,7 +603,7 @@ export interface PdpGeoRuntimeUsage {
   tokenNote?: string;
 }
 
-export type PdpGeoOcrSentenceIntent = "benefit" | "effect" | "ingredient" | "usage" | "review";
+export type PdpGeoOcrSentenceIntent = "benefit" | "effect" | "ingredient" | "usage" | "review" | "metric";
 
 export interface PdpGeoOcrSentenceDiagnostic {
   text: string;

@@ -74,7 +74,22 @@ export class AzureApiKeywordClassifier implements KeywordClassifier {
     }));
 
     try {
-      return await this.requestImageOcr(request, directImages, deployment);
+      const direct = await this.requestImageOcr(request, directImages, deployment);
+      const missingImageUrls = imageUrlsWithoutExtractedText(request.imageUrls, direct.images);
+
+      if (missingImageUrls.length === 0) {
+        return direct;
+      }
+
+      const fallback = await this.extractImageTextsWithDownloadedImages(
+        { ...request, imageUrls: missingImageUrls },
+        deployment,
+        new Error(`${missingImageUrls.length} remote image OCR result(s) returned no readable text.`)
+      );
+
+      return fallback.images.length > 0
+        ? mergeImageTextExtractionResponses(direct, fallback)
+        : direct;
     } catch (directError) {
       const fallback = await this.extractImageTextsWithDownloadedImages(request, deployment, directError);
 
@@ -212,6 +227,32 @@ function parseImageOcrJson(text: string, imageUrls: string[]): ImageTextExtracti
       }))
       .filter((image) => image.imageUrl.length > 0 && image.text.trim().length > 0),
     rawText: text
+  };
+}
+
+function imageUrlsWithoutExtractedText(requestedImageUrls: string[], extractedImages: ImageTextExtractionResponse["images"]): string[] {
+  const extractedUrls = new Set(extractedImages.map((image) => image.imageUrl));
+  return requestedImageUrls.filter((imageUrl) => !extractedUrls.has(imageUrl));
+}
+
+function mergeImageTextExtractionResponses(
+  primary: ImageTextExtractionResponse,
+  fallback: ImageTextExtractionResponse
+): ImageTextExtractionResponse {
+  const seen = new Set<string>();
+  const images = [...primary.images, ...fallback.images].filter((image) => {
+    const key = image.imageUrl;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return image.text.trim().length > 0;
+  });
+
+  return {
+    images,
+    rawText: [primary.rawText, fallback.rawText].filter(Boolean).join("\n"),
+    usage: mergeTokenUsages([primary.usage, fallback.usage].filter((usage): usage is AiTokenUsage => Boolean(usage)))
   };
 }
 

@@ -184,6 +184,56 @@ describe("AistudioKeywordClassifier", () => {
     expect(result?.usage?.totalTokens).toBe(26);
   });
 
+  it("downloads the image and retries with a data URL when remote image OCR returns no text", async () => {
+    const imageUrl = "https://image.example.com/upload/editor/detail-long.png";
+    const endpoint = "https://dev-aistudio.example.com:8082/v1/agent/abc/openai/deployments/gpt-5.5/chat/completions";
+    let chatCallCount = 0;
+    const fetchMock = vi.fn(async (url: string | URL, _init?: RequestInit) => {
+      const href = String(url);
+
+      if (href === endpoint) {
+        chatCallCount += 1;
+        if (chatCallCount === 1) {
+          return chatCompletionResponse({ images: [] });
+        }
+        return chatCompletionResponse({
+          images: [{ imageUrl, text: "세라마이드 캡슐이 피부 장벽 보습을 돕습니다." }]
+        });
+      }
+
+      if (href === imageUrl) {
+        return new Response(Buffer.from("fake-png"), {
+          status: 200,
+          headers: { "Content-Type": "image/png" }
+        });
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const classifier = new AistudioKeywordClassifier({
+      provider: "aistudio",
+      apiKey: "studio-key",
+      endpoint: "https://dev-aistudio.example.com:8082/v1/agent/abc",
+      deployments: { ocr: "gpt-5.5" }
+    });
+    const result = await classifier.extractImageTexts?.({
+      source: "https://example.com/products/toner",
+      productName: "Toner",
+      imageUrls: [imageUrl]
+    });
+    const retryBody = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body ?? "{}"));
+    const retryImagePart = retryBody.messages[0].content.find((part: { type?: string }) => part.type === "image_url");
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(retryImagePart.image_url.url).toMatch(/^data:image\/png;base64,/);
+    expect(result?.images[0]).toEqual({
+      imageUrl,
+      text: "세라마이드 캡슐이 피부 장벽 보습을 돕습니다."
+    });
+  });
+
   it("appends api-version only when explicitly provided", async () => {
     const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) =>
       chatCompletionResponse({ keywords: [], summary: "ok" })

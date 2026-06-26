@@ -56,7 +56,21 @@ export class OpenAIKeywordClassifier implements KeywordClassifier {
     }));
 
     try {
-      return await this.requestImageOcr(request, directImages);
+      const direct = await this.requestImageOcr(request, directImages);
+      const missingImageUrls = imageUrlsWithoutExtractedText(request.imageUrls, direct.images);
+
+      if (missingImageUrls.length === 0) {
+        return direct;
+      }
+
+      const fallback = await this.extractImageTextsWithDownloadedImages(
+        { ...request, imageUrls: missingImageUrls },
+        new Error(`${missingImageUrls.length} remote image OCR result(s) returned no readable text.`)
+      );
+
+      return fallback.images.length > 0
+        ? mergeImageTextExtractionResponses(direct, fallback)
+        : direct;
     } catch (directError) {
       if (isQuotaOrBillingError(directError)) {
         throw directError;
@@ -112,11 +126,14 @@ export class OpenAIKeywordClassifier implements KeywordClassifier {
     for (const imageUrl of request.imageUrls) {
       try {
         const direct = await this.requestImageOcr(request, [{ displayUrl: imageUrl, inputUrl: imageUrl }]);
-        images.push(...direct.images);
-        if (direct.usage) {
-          usages.push(direct.usage);
+        if (direct.images.length > 0) {
+          images.push(...direct.images);
+          if (direct.usage) {
+            usages.push(direct.usage);
+          }
+          continue;
         }
-        continue;
+        errors.push(direct.rawText ? `Remote image OCR returned no readable text: ${direct.rawText.slice(0, 240)}` : "Remote image OCR returned no readable text.");
       } catch (error) {
         if (isQuotaOrBillingError(error)) {
           throw error;
@@ -231,6 +248,32 @@ function parseImageOcrJson(text: string, imageUrls: string[]): ImageTextExtracti
       .filter((image) => image.imageUrl.length > 0 && image.text.trim().length > 0),
     rawText,
     usage: tokenUsageFromOpenAi(parsed.usage)
+  };
+}
+
+function imageUrlsWithoutExtractedText(requestedImageUrls: string[], extractedImages: ImageTextExtractionResponse["images"]): string[] {
+  const extractedUrls = new Set(extractedImages.map((image) => image.imageUrl));
+  return requestedImageUrls.filter((imageUrl) => !extractedUrls.has(imageUrl));
+}
+
+function mergeImageTextExtractionResponses(
+  primary: ImageTextExtractionResponse,
+  fallback: ImageTextExtractionResponse
+): ImageTextExtractionResponse {
+  const seen = new Set<string>();
+  const images = [...primary.images, ...fallback.images].filter((image) => {
+    const key = image.imageUrl;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return image.text.trim().length > 0;
+  });
+
+  return {
+    images,
+    rawText: [primary.rawText, fallback.rawText].filter(Boolean).join("\n"),
+    usage: mergeTokenUsages([primary.usage, fallback.usage].filter((usage): usage is AiTokenUsage => Boolean(usage)))
   };
 }
 

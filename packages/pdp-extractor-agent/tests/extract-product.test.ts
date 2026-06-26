@@ -899,6 +899,152 @@ elasticity and resilience helping to diminish visible signs of aging"
     expect(result.geoProduct.ocr.textBlocks.join(" ")).toContain("Compressed Hyaluronic Acid");
   });
 
+  it("uses semantic OCR sentence analysis instead of raw OCR copy for downstream evidence", async () => {
+    const detailImage = "https://assets.example.com/upload/editor/barrier-capsule-detail.png";
+    const ocrText = [
+      "고밀도 세라마이드 캡슐",
+      "링커 세라마이드가 피부 장벽과 수분 보습을 돕습니다.",
+      "사용 전 사용 직후 수분량 105% 개선"
+    ].join("\n");
+    const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      const content = body.input?.[0]?.content;
+      const imageParts = Array.isArray(content) ? content.filter((part: { type?: string }) => part.type === "input_image") : [];
+
+      if (imageParts.length > 0) {
+        return new Response(JSON.stringify({
+          output_text: JSON.stringify({
+            images: [
+              {
+                imageUrl: detailImage,
+                text: ocrText
+              }
+            ]
+          })
+        }), { status: 200 });
+      }
+
+      return new Response(JSON.stringify({
+        output_text: JSON.stringify({
+          keywords: [
+            { keyword: "고밀도 세라마이드 캡슐", category: "ingredient", confidence: 0.94, source: "llm" },
+            { keyword: "링커 세라마이드", category: "ingredient", confidence: 0.9, source: "llm" },
+            { keyword: "피부 장벽", category: "benefit", confidence: 0.9, source: "llm" },
+            { keyword: "수분 보습", category: "benefit", confidence: 0.86, source: "llm" },
+            { keyword: "105%", category: "metric", confidence: 0.88, source: "llm" }
+          ],
+          sentenceInsights: [
+            {
+              text: "고밀도 세라마이드 캡슐과 링커 세라마이드는 피부 장벽과 수분 보습 케어를 뒷받침하는 성분 기술입니다.",
+              category: "ingredient",
+              keywords: ["고밀도 세라마이드 캡슐", "링커 세라마이드", "피부 장벽", "수분 보습"],
+              confidence: 0.92,
+              source: "llm"
+            },
+            {
+              text: "사용 전과 사용 직후의 수분량 105% 개선은 사용 직후 보습 효과 지표입니다.",
+              category: "metric",
+              keywords: ["사용 직후", "수분량", "105%", "보습 효과"],
+              confidence: 0.88,
+              source: "llm"
+            }
+          ],
+          summary: "semantic OCR evidence classified"
+        })
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = await extractProductFromHtml(
+      `
+        <main>
+          <h1>Barrier Capsule Toner</h1>
+          <section class="product-detail rich-text-content">
+            <h2>상품 상세</h2>
+            <img src="${detailImage}" />
+          </section>
+        </main>
+      `,
+      "https://brand.example.com/products/barrier-capsule-toner",
+      { provider: "openai", apiKey: "test-key", model: "gpt-5.4-mini" }
+    );
+    const insightTexts = result.geoProduct.ocr.sentenceInsights.map((item) => item.text);
+
+    expect(result.geoProduct.sourceExtraction.ocr.imageTexts[0]?.text).toContain("사용 전 사용 직후");
+    expect(insightTexts.some((text) => text.includes("성분 기술"))).toBe(true);
+    expect(insightTexts.some((text) => text.includes("105% 개선"))).toBe(true);
+    expect(insightTexts.some((text) => text.includes("사용 전 사용 직후"))).toBe(false);
+    expect(insightTexts.some((text) => /상품 상세|OCR|image|evidence/i.test(text))).toBe(false);
+    expect(result.geoProduct.usage.some((text) => text.includes("사용 전"))).toBe(false);
+    expect(result.geoProduct.metrics).toContain("105%");
+  });
+
+  it("sends escaped product-detail HTML images to OCR even when gallery images are present", async () => {
+    const galleryImages = [
+      "https://assets.example.com/upload/product/barrier-toner-main.png",
+      "https://assets.example.com/upload/product/barrier-toner-texture.png"
+    ];
+    const escapedDetailImage = "https://assets.example.com/cms/rich-content/long-scroll-detail.png";
+    const sentImageUrls: string[] = [];
+    const htmlWithEscapedDetailImage = `
+      <main>
+        <h1>Barrier Capsule Toner</h1>
+        <section class="product-gallery product-media">
+          <h2>Product images</h2>
+          ${galleryImages.map((imageUrl) => `<img src="${imageUrl}" alt="Barrier Capsule Toner product image" />`).join("\n")}
+        </section>
+        <section class="product-detail rich-text-content">
+          <h2>상품 상세</h2>
+          <div class="cms-html-container" style="display:none;">
+            &lt;p&gt;&lt;img src=&quot;${escapedDetailImage}&quot; title=&quot;long-scroll-detail.png&quot;&gt;&lt;/p&gt;
+          </div>
+        </section>
+      </main>
+    `;
+    const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      const content = body.input?.[0]?.content;
+      const imageParts = Array.isArray(content) ? content.filter((part: { type?: string }) => part.type === "input_image") : [];
+
+      if (imageParts.length > 0) {
+        const urls = imageParts.map((part: { image_url: string }) => part.image_url);
+        sentImageUrls.push(...urls);
+        return new Response(JSON.stringify({
+          output_text: JSON.stringify({
+            images: [
+              {
+                imageUrl: escapedDetailImage,
+                text: "세라마이드 캡슐 기술\n고밀도 세라마이드 캡슐이 피부 장벽 수분 보습을 돕습니다."
+              }
+            ]
+          })
+        }), { status: 200 });
+      }
+
+      return new Response(JSON.stringify({
+        output_text: JSON.stringify({
+          keywords: [
+            { keyword: "세라마이드 캡슐", category: "ingredient", confidence: 0.9, source: "llm" },
+            { keyword: "피부 장벽", category: "benefit", confidence: 0.9, source: "llm" }
+          ],
+          sentenceInsights: [],
+          summary: "classified"
+        })
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = await extractProductFromHtml(
+      htmlWithEscapedDetailImage,
+      "https://brand.example.com/products/barrier-capsule-toner",
+      { provider: "openai", apiKey: "test-key", model: "gpt-5.4-mini" }
+    );
+
+    expect(sentImageUrls).toContain(escapedDetailImage);
+    expect(result.geoProduct.sourceExtraction.ocr.imageTexts.some((item) => item.imageUrl === escapedDetailImage)).toBe(true);
+    expect(result.geoProduct.ocr.textBlocks.join(" ")).toContain("고밀도 세라마이드 캡슐");
+  });
+
   it("warns when an image OCR provider returns no readable product text", async () => {
     const imageOnlyHtml = `
       <main>
