@@ -1,0 +1,41 @@
+{
+  "name": "@agentic-geo/geo-citation-content-agent",
+  "author": "jungtaeinn",
+  "license": "MIT",
+  "description": "Reusable GEO citation content agent that turns product intelligence and evidence into channel-specific, citation-ready Reddit artifacts.",
+  "keywords": [
+    "agentic-geo",
+    "geo-citation-content-agent",
+    "sub-agent",
+    "generative-engine-optimization",
+    "citation-ready-content",
+    "reddit",
+    "rag",
+    "evidence",
+    "claim-validation"
+  ],
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./mock": "./src/mock.ts",
+    "./rag-profile": "./src/rag/profile.ts",
+    "./rest": "./src/rest.ts",
+    "./types": "./src/types.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "25.9.3",
+    "tsx": "4.22.4",
+    "vitest": "4.1.9"
+  }
+}

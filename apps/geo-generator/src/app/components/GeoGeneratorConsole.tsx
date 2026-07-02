@@ -31,6 +31,12 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import type { ChangeEvent, DragEvent } from "react";
+import type {
+  GeoCitationDiagnostics,
+  GeoCitationGenerationResult,
+  GeoCitationGenerationStageId,
+  GeoCitationGenerationStep
+} from "@agentic-geo/geo-citation-content-agent/types";
 import type { ProductExtractionDiagnostics, ProductExtractionResult, ProductExtractionStep } from "@agentic-geo/pdp-extractor-agent/types";
 import type {
   PdpGeoDiagnostics,
@@ -46,16 +52,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 type SourceMode = "auto" | "url" | "restApi" | "manual-json";
 type RunStatus = "idle" | "running" | "done" | "error";
 type OutputView = "schema" | "content" | "diagnostics";
+type MagazineOutputView = "reddit" | "readiness" | "diagnostics";
 type SettingsTab = "run" | "ai" | "rag";
 type UiLanguage = "ko" | "en";
 type ProviderId = "mock" | "openai" | "gemini" | "azure-openai" | "aistudio";
 type ConnectionStatus = "idle" | "checking" | "connected" | "error";
 type ModelLoadStatus = "idle" | "loading" | "ready" | "error";
 type RagProfileTarget = "extractor" | "generator";
-type WorkspaceMode = "extractor" | "generator";
+type WorkspaceMode = "extractor" | "generator" | "magazine";
 type ExtractorOutputView = "result" | "logs";
 type ModalCopyTarget = "panel-detail" | "rag-reference";
-type ArtifactCopySurface = "generator-floating" | "generator-panel" | "extractor-floating" | "extractor-panel";
+type ArtifactCopySurface = "generator-floating" | "generator-panel" | "extractor-floating" | "extractor-panel" | "magazine-floating" | "magazine-panel";
 
 interface PanelRagReference {
   id: string;
@@ -80,6 +87,7 @@ interface PanelDetail {
 }
 
 type GeoQualityDimensionId = "geo" | "cep" | "eeat";
+type MagazineQualityDimensionId = "citation" | "reddit" | "evidence";
 
 interface GeoQualityDimension {
   id: GeoQualityDimensionId;
@@ -94,6 +102,23 @@ interface GeoQualityDimension {
 interface GeoQualityEvaluation {
   overallScore: number;
   dimensions: GeoQualityDimension[];
+  validationDetails: string[];
+  validationImprovements: string[];
+}
+
+interface MagazineQualityDimension {
+  id: MagazineQualityDimensionId;
+  label: string;
+  score: number;
+  criteria: string;
+  summary: string;
+  evidence: string[];
+  improvements: string[];
+}
+
+interface MagazineQualityEvaluation {
+  overallScore: number;
+  dimensions: MagazineQualityDimension[];
   validationDetails: string[];
   validationImprovements: string[];
 }
@@ -116,6 +141,22 @@ interface GeoGeneratorLog {
   extractor?: ProductExtractionDiagnostics;
   generator: PdpGeoDiagnostics;
   generatorProcess: PdpGeoGenerationStep[];
+}
+
+interface MagazineGeneratorResult {
+  id: string;
+  source: string;
+  sourceType: "url" | "restApi" | "manual-json";
+  extractor?: ProductExtractionResult;
+  magazine: GeoCitationGenerationResult;
+  runDurationMs?: number;
+}
+
+interface MagazineGeneratorLog {
+  source: string;
+  extractor?: ProductExtractionDiagnostics;
+  magazine: GeoCitationDiagnostics;
+  magazineProcess: GeoCitationGenerationStep[];
 }
 
 interface GeoGeneratorResponse {
@@ -142,6 +183,30 @@ type GeoGeneratorStreamEvent =
   | { type: "result"; payload: GeoGeneratorResponse }
   | { type: "error"; error: string };
 
+interface MagazineGeneratorResponse {
+  results: MagazineGeneratorResult[];
+  logs: MagazineGeneratorLog[];
+  failures: Array<{
+    source: string;
+    sourceType: SourceMode;
+    error: string;
+  }>;
+  error?: string;
+}
+
+type MagazineGeneratorStreamEvent =
+  | {
+    type: "progress";
+    group: "extractor" | "magazine";
+    source: string;
+    sourceType: "url" | "restApi" | "manual-json";
+    sourceIndex: number;
+    sourceCount: number;
+    step: ProductExtractionStep | GeoCitationGenerationStep;
+  }
+  | { type: "result"; payload: MagazineGeneratorResponse }
+  | { type: "error"; error: string };
+
 interface ProductExtractorResponse {
   results: TimedProductExtractionResult[];
   logs: ProductExtractionDiagnostics[];
@@ -158,7 +223,7 @@ interface ChatMessage {
   role: "agent" | "user" | "tool";
   body: string;
   command?: string;
-  results?: GeoGeneratorResult[];
+  results?: GeoGeneratorResult[] | MagazineGeneratorResult[];
 }
 
 interface ComposerAttachment {
@@ -269,7 +334,7 @@ interface RuntimeRagProfile {
 }
 
 type ProcessStep = {
-  id: string | PdpGeoGenerationStageId;
+  id: string | PdpGeoGenerationStageId | GeoCitationGenerationStageId;
   title: string;
   description: string;
   status: "pending" | "running" | "done" | "error";
@@ -278,8 +343,8 @@ type ProcessStep = {
 
 interface GeoPipelineProcessState {
   status: RunStatus;
-  currentGroup: "extractor" | "generator";
-  currentStepId: string | PdpGeoGenerationStageId;
+  currentGroup: "extractor" | "generator" | "magazine";
+  currentStepId: string | PdpGeoGenerationStageId | GeoCitationGenerationStageId;
   sourceCount: number;
   completedSourceCount: number;
   activeSource?: string;
@@ -287,6 +352,7 @@ interface GeoPipelineProcessState {
   errorMessage?: string;
   extractorSteps?: ProductExtractionStep[];
   generatorSteps?: PdpGeoGenerationStep[];
+  magazineSteps?: GeoCitationGenerationStep[];
 }
 
 const ragModeLabels: Record<PdpGeoRagMode, string> = {
@@ -300,6 +366,7 @@ const RUN_SETTINGS_STORAGE_KEY = "agentic-geo.geo-generator.run-settings.v1";
 const RAG_SETTINGS_STORAGE_KEY = "agentic-geo.geo-generator.rag-profile-settings.v1";
 const HISTORY_STORAGE_KEY = "agentic-geo.geo-generator.history.v1";
 const EXTRACTOR_HISTORY_STORAGE_KEY = "agentic-geo.geo-generator.extractor-history.v1";
+const MAGAZINE_HISTORY_STORAGE_KEY = "agentic-geo.geo-generator.magazine-history.v1";
 const HISTORY_LIMIT = 30;
 
 const defaultProviderSettings: ProviderSettings = {
@@ -382,12 +449,20 @@ const uiCopy = {
         searchPlaceholder: "추출 히스토리 검색"
       },
       generator: {
-        label: "Generator",
+        label: "Schema Generator",
         description: "GEO schema/content 생성",
         newChat: "새 생성",
-        history: "Generator 히스토리",
+        history: "Schema Generator 히스토리",
         emptyHistory: "아직 생성 히스토리가 없습니다",
         searchPlaceholder: "생성 히스토리 검색"
+      },
+      magazine: {
+        label: "Magazine Generator",
+        description: "GEO magazine/content 생성",
+        newChat: "새 매거진 생성",
+        history: "Magazine Generator 히스토리",
+        emptyHistory: "아직 매거진 생성 히스토리가 없습니다",
+        searchPlaceholder: "매거진 히스토리 검색"
       }
     },
     header: {
@@ -418,6 +493,11 @@ const uiCopy = {
       extractorRunningTitle: "Extractor 실행 중",
       extractorRunningBody: "상품 수집, OCR/리뷰 신호, RAG chunk 생성을 처리하고 있습니다.",
       extractorNoSource: "Extractor 모드는 상품 URL 또는 REST API 주소만 처리합니다.",
+      magazineStart: "상품 원천 정보를 citation evidence로 정규화한 뒤 Reddit용 GEO magazine/content를 생성합니다.",
+      magazinePartial: (results: number, failures: number) => `${results}개 Reddit 콘텐츠와 ${failures}개 실패가 반환되었습니다.`,
+      magazineDone: (results: number) => `${results}개 Reddit magazine/content가 생성되었습니다.`,
+      magazineRunningTitle: "Magazine pipeline 실행 중",
+      magazineRunningBody: "Extractor 결과를 기반으로 GEO citation readiness와 Reddit 토론글을 생성하고 있습니다.",
       warning: "실행 경고"
     },
     panel: {
@@ -425,6 +505,7 @@ const uiCopy = {
       nextResult: "다음 결과",
       extractor: "Extractor",
       generator: "Generator",
+      magazine: "Magazine",
       output: "출력",
       analysisLog: "분석 로그",
       source: "출처",
@@ -545,12 +626,20 @@ const uiCopy = {
         searchPlaceholder: "Search extraction history"
       },
       generator: {
-        label: "Generator",
+        label: "Schema Generator",
         description: "Generate GEO schema/content",
         newChat: "New generation",
-        history: "Generator history",
+        history: "Schema Generator history",
         emptyHistory: "No generation history yet",
         searchPlaceholder: "Search generation history"
+      },
+      magazine: {
+        label: "Magazine Generator",
+        description: "Generate GEO magazine/content",
+        newChat: "New magazine",
+        history: "Magazine Generator history",
+        emptyHistory: "No magazine history yet",
+        searchPlaceholder: "Search magazine history"
       }
     },
     header: {
@@ -581,6 +670,11 @@ const uiCopy = {
       extractorRunningTitle: "Extractor running",
       extractorRunningBody: "Collecting product source, OCR/review signals, and RAG chunks.",
       extractorNoSource: "Extractor mode only accepts product URLs or REST API endpoints.",
+      magazineStart: "Normalizing product source data into citation evidence, then generating Reddit GEO magazine/content.",
+      magazinePartial: (results: number, failures: number) => `${results} Reddit content result${results === 1 ? "" : "s"} and ${failures} failure${failures === 1 ? "" : "s"} returned.`,
+      magazineDone: (results: number) => `${results} Reddit magazine/content artifact${results === 1 ? "" : "s"} generated.`,
+      magazineRunningTitle: "Magazine pipeline running",
+      magazineRunningBody: "Using Extractor output to create GEO citation readiness and a Reddit discussion post.",
       warning: "Run warning"
     },
     panel: {
@@ -588,6 +682,7 @@ const uiCopy = {
       nextResult: "Next result",
       extractor: "Extractor",
       generator: "Generator",
+      magazine: "Magazine",
       output: "Output",
       analysisLog: "Analysis log",
       source: "Sources",
@@ -720,8 +815,42 @@ const generatorStepCopy = {
   }
 } satisfies Record<UiLanguage, Record<PdpGeoGenerationStageId, readonly [string, string]>>;
 
+const magazineStepCopy = {
+  ko: {
+    input: ["입력 검증", "상품 JSON과 Reddit target surface를 검증"],
+    normalize: ["상품 신호 정규화", "상품정보를 citation content signal로 변환"],
+    "mandatory-rag-load": ["Mandatory RAG 로드", "GEO, E-E-A-T, CEP, claim safety 문서를 로드"],
+    "surface-rag-load": ["Reddit RAG 로드", "Reddit guideline과 post pattern 문서를 로드"],
+    "evidence-normalize": ["Evidence 정규화", "상품/리뷰/이미지/뉴스/논문/기존 GEO 결과를 evidence로 분리"],
+    chunk: ["Evidence chunk 구성", "claim grounding에 쓸 evidence chunk를 준비"],
+    retrieve: ["Evidence RAG 검색", "검색 의도와 상품 맥락에 맞는 chunk를 선택"],
+    rerank: ["Evidence 리랭킹", "source type, freshness, lexical overlap 기준으로 재정렬"],
+    brief: ["Content brief 생성", "AI answer chunk와 Reddit 토론 흐름을 함께 구성"],
+    generate: ["Reddit 콘텐츠 생성", "title과 bodyMarkdown 초안을 생성"],
+    validate: ["Claim/channel 검증", "unsupported claim, 홍보 톤, Reddit channel risk를 점검"],
+    repair: ["방어 보정", "검증 결과를 바탕으로 안전한 문장으로 보정"],
+    artifact: ["최종 artifact 생성", "Reddit 업로드용 title/bodyMarkdown과 diagnostics 생성"]
+  },
+  en: {
+    input: ["Validate input", "Validate product JSON and the Reddit target surface"],
+    normalize: ["Normalize product signals", "Convert product data into citation content signals"],
+    "mandatory-rag-load": ["Load mandatory RAG", "Load GEO, E-E-A-T, CEP, and claim-safety documents"],
+    "surface-rag-load": ["Load Reddit RAG", "Load Reddit guideline and post-pattern documents"],
+    "evidence-normalize": ["Normalize evidence", "Separate product, review, image, news, paper, and existing GEO evidence"],
+    chunk: ["Build evidence chunks", "Prepare evidence chunks for claim grounding"],
+    retrieve: ["Retrieve evidence RAG", "Select chunks that match search intent and product context"],
+    rerank: ["Rerank evidence", "Sort by source type, freshness, and lexical overlap"],
+    brief: ["Create content brief", "Blend AI answer chunks with Reddit discussion flow"],
+    generate: ["Generate Reddit content", "Create the title and bodyMarkdown draft"],
+    validate: ["Validate claims/channel", "Check unsupported claims, promotional tone, and Reddit channel risk"],
+    repair: ["Repair defensively", "Repair the artifact into safer public copy"],
+    artifact: ["Create final artifact", "Create Reddit-ready title/bodyMarkdown and diagnostics"]
+  }
+} satisfies Record<UiLanguage, Record<GeoCitationGenerationStageId, readonly [string, string]>>;
+
 const extractorStepIds = extractorStepCopy.ko.map(([id]) => id);
 const generatorStepIds = Object.keys(generatorStepCopy.ko) as PdpGeoGenerationStageId[];
+const magazineStepIds = Object.keys(magazineStepCopy.ko) as GeoCitationGenerationStageId[];
 
 export function GeoGeneratorConsole() {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -752,9 +881,14 @@ export function GeoGeneratorConsole() {
   const [extractorResults, setExtractorResults] = useState<TimedProductExtractionResult[]>([]);
   const [extractorLogs, setExtractorLogs] = useState<ProductExtractionDiagnostics[]>([]);
   const [selectedExtractorIndex, setSelectedExtractorIndex] = useState(0);
+  const [magazineMessages, setMagazineMessages] = useState<ChatMessage[]>([]);
+  const [magazineResults, setMagazineResults] = useState<MagazineGeneratorResult[]>([]);
+  const [magazineLogs, setMagazineLogs] = useState<MagazineGeneratorLog[]>([]);
+  const [selectedMagazineIndex, setSelectedMagazineIndex] = useState(0);
   const [isHistoryReady, setIsHistoryReady] = useState(false);
   const [runStatus, setRunStatus] = useState<RunStatus>("idle");
   const [extractorRunStatus, setExtractorRunStatus] = useState<RunStatus>("idle");
+  const [magazineRunStatus, setMagazineRunStatus] = useState<RunStatus>("idle");
   const [pipelineProcess, setPipelineProcess] = useState<GeoPipelineProcessState>({
     status: "idle",
     currentGroup: "extractor",
@@ -763,6 +897,13 @@ export function GeoGeneratorConsole() {
     completedSourceCount: 0
   });
   const [extractorPipelineProcess, setExtractorPipelineProcess] = useState<GeoPipelineProcessState>({
+    status: "idle",
+    currentGroup: "extractor",
+    currentStepId: "input",
+    sourceCount: 0,
+    completedSourceCount: 0
+  });
+  const [magazinePipelineProcess, setMagazinePipelineProcess] = useState<GeoPipelineProcessState>({
     status: "idle",
     currentGroup: "extractor",
     currentStepId: "input",
@@ -779,6 +920,7 @@ export function GeoGeneratorConsole() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("run");
   const [outputView, setOutputView] = useState<OutputView>("schema");
   const [extractorOutputView, setExtractorOutputView] = useState<ExtractorOutputView>("result");
+  const [magazineOutputView, setMagazineOutputView] = useState<MagazineOutputView>("reddit");
   const [selectedRagReference, setSelectedRagReference] = useState<PanelRagReference | null>(null);
   const [selectedPanelDetail, setSelectedPanelDetail] = useState<PanelDetail | null>(null);
   const [copiedModalTarget, setCopiedModalTarget] = useState<ModalCopyTarget | null>(null);
@@ -820,9 +962,17 @@ export function GeoGeneratorConsole() {
   const selectedDiagnostics = selectedResult?.generator.diagnostics ?? selectedLog?.generator;
   const selectedExtractorResult = extractorResults[selectedExtractorIndex];
   const selectedExtractorLog = selectedExtractorResult ? extractorLogs.find((log) => log.source === selectedExtractorResult.source) : undefined;
+  const selectedMagazineResult = magazineResults[selectedMagazineIndex];
+  const selectedMagazineLog = selectedMagazineResult ? magazineLogs.find((log) => log.source === selectedMagazineResult.source) : undefined;
+  const selectedMagazineDiagnostics = selectedMagazineResult?.magazine.diagnostics ?? selectedMagazineLog?.magazine;
   const activeGeneratorPipelineProcess = runStatus === "running" || (runStatus === "error" && !selectedResult) ? pipelineProcess : undefined;
   const activeExtractorPipelineProcess = extractorRunStatus === "running" || (extractorRunStatus === "error" && !selectedExtractorResult) ? extractorPipelineProcess : undefined;
-  const activePipelineProcess = activeMode === "extractor" ? activeExtractorPipelineProcess : activeGeneratorPipelineProcess;
+  const activeMagazinePipelineProcess = magazineRunStatus === "running" || (magazineRunStatus === "error" && !selectedMagazineResult) ? magazinePipelineProcess : undefined;
+  const activePipelineProcess = activeMode === "extractor"
+    ? activeExtractorPipelineProcess
+    : activeMode === "magazine"
+      ? activeMagazinePipelineProcess
+      : activeGeneratorPipelineProcess;
   const processProgressLabel = activePipelineProcess ? formatGeoProcessProgress(activePipelineProcess, uiLanguage) : "";
   const panelSources = activeMode === "extractor"
     ? selectedExtractorResult
@@ -830,6 +980,12 @@ export function GeoGeneratorConsole() {
       : activePipelineProcess?.activeSource
         ? [activePipelineProcess.activeSource]
         : []
+    : activeMode === "magazine"
+      ? selectedMagazineResult
+        ? [selectedMagazineResult.source]
+        : activePipelineProcess?.activeSource
+          ? [activePipelineProcess.activeSource]
+          : []
     : selectedResult
       ? [selectedResult.source]
       : activePipelineProcess?.activeSource
@@ -837,9 +993,10 @@ export function GeoGeneratorConsole() {
         : [];
   const generatorHasStarted = messages.length > 0 || runStatus !== "idle";
   const extractorHasStarted = extractorMessages.length > 0 || extractorRunStatus !== "idle";
-  const hasStarted = activeMode === "extractor" ? extractorHasStarted : generatorHasStarted;
-  const activeMessages = activeMode === "extractor" ? extractorMessages : messages;
-  const activeRunStatus = activeMode === "extractor" ? extractorRunStatus : runStatus;
+  const magazineHasStarted = magazineMessages.length > 0 || magazineRunStatus !== "idle";
+  const hasStarted = activeMode === "extractor" ? extractorHasStarted : activeMode === "magazine" ? magazineHasStarted : generatorHasStarted;
+  const activeMessages = activeMode === "extractor" ? extractorMessages : activeMode === "magazine" ? magazineMessages : messages;
+  const activeRunStatus = activeMode === "extractor" ? extractorRunStatus : activeMode === "magazine" ? magazineRunStatus : runStatus;
   const runElapsedLabel = useRunElapsedLabel(activeRunStatus === "running");
   const activeModeCopy = text.modes[activeMode];
   const schemaText = selectedResult ? JSON.stringify(selectedResult.generator.schemaMarkup.jsonLd, null, 2) : "";
@@ -849,8 +1006,15 @@ export function GeoGeneratorConsole() {
   }, null, 2) : "";
   const extractorJsonText = selectedExtractorResult ? JSON.stringify(selectedExtractorResult, null, 2) : "";
   const extractorDiagnosticsText = selectedExtractorLog ? JSON.stringify(selectedExtractorLog, null, 2) : "";
+  const magazinePostText = selectedMagazineResult ? `${selectedMagazineResult.magazine.artifact.title}\n\n${selectedMagazineResult.magazine.artifact.bodyMarkdown}` : "";
+  const magazineReadinessText = selectedMagazineResult ? JSON.stringify(selectedMagazineResult.magazine.diagnostics.geoCitationReadiness, null, 2) : "";
+  const magazineDiagnosticsText = selectedMagazineResult ? JSON.stringify({
+    extractor: selectedMagazineLog?.extractor,
+    magazine: selectedMagazineResult.magazine.diagnostics
+  }, null, 2) : "";
   const generatorOutputText = outputView === "schema" ? schemaText : outputView === "content" ? selectedResult?.generator.content.html ?? "" : diagnosticsText;
   const extractorOutputText = extractorOutputView === "result" ? extractorJsonText : extractorDiagnosticsText;
+  const magazineOutputText = magazineOutputView === "reddit" ? magazinePostText : magazineOutputView === "readiness" ? magazineReadinessText : magazineDiagnosticsText;
   const canSubmitComposer = activeMode === "extractor"
     ? draft.trim().length > 0 || composerAttachments.some((attachment) => attachment.sourceCount > 0)
     : draft.trim().length > 0 || composerAttachments.some((attachment) => attachment.productCount > 0 || attachment.sourceCount > 0);
@@ -860,15 +1024,21 @@ export function GeoGeneratorConsole() {
   const selectedRagFile = selectedRagProfile.files.find((file) => file.id === selectedRagFileId) ?? selectedRagProfile.files[0];
   const panelRagReferences = activeMode === "extractor"
     ? getExtractorPanelRagReferences(selectedExtractorResult)
-    : getGeneratorPanelRagReferences(selectedDiagnostics);
+    : activeMode === "magazine"
+      ? getMagazinePanelRagReferences(selectedMagazineDiagnostics)
+      : getGeneratorPanelRagReferences(selectedDiagnostics);
   const generatorFloatingCopyTarget = createArtifactCopyTarget("generator-floating", selectedResult?.id, outputView);
   const generatorPanelCopyTarget = createArtifactCopyTarget("generator-panel", selectedResult?.id, outputView);
   const extractorFloatingCopyTarget = createArtifactCopyTarget("extractor-floating", selectedExtractorResult?.source, extractorOutputView);
   const extractorPanelCopyTarget = createArtifactCopyTarget("extractor-panel", selectedExtractorResult?.source, extractorOutputView);
+  const magazineFloatingCopyTarget = createArtifactCopyTarget("magazine-floating", selectedMagazineResult?.id, magazineOutputView);
+  const magazinePanelCopyTarget = createArtifactCopyTarget("magazine-panel", selectedMagazineResult?.id, magazineOutputView);
   const isGeneratorFloatingCopied = copiedArtifactTarget === generatorFloatingCopyTarget;
   const isGeneratorPanelCopied = copiedArtifactTarget === generatorPanelCopyTarget;
   const isExtractorFloatingCopied = copiedArtifactTarget === extractorFloatingCopyTarget;
   const isExtractorPanelCopied = copiedArtifactTarget === extractorPanelCopyTarget;
+  const isMagazineFloatingCopied = copiedArtifactTarget === magazineFloatingCopyTarget;
+  const isMagazinePanelCopied = copiedArtifactTarget === magazinePanelCopyTarget;
   const extractorPanelSteps = activeGeneratorPipelineProcess
     ? activeGeneratorPipelineProcess.extractorSteps
     : selectedLog?.extractor?.process ?? (selectedResult?.extractor ? markProcessStepsDone(getExtractorSteps(uiLanguage)) : undefined);
@@ -878,6 +1048,12 @@ export function GeoGeneratorConsole() {
   const extractorOnlyPanelSteps = activeExtractorPipelineProcess
     ? activeExtractorPipelineProcess.extractorSteps
     : selectedExtractorLog?.process ?? (selectedExtractorResult ? markProcessStepsDone(getExtractorSteps(uiLanguage)) : undefined);
+  const magazineExtractorPanelSteps = activeMagazinePipelineProcess
+    ? activeMagazinePipelineProcess.extractorSteps
+    : selectedMagazineLog?.extractor?.process ?? (selectedMagazineResult?.extractor ? markProcessStepsDone(getExtractorSteps(uiLanguage)) : undefined);
+  const magazinePanelSteps = activeMagazinePipelineProcess
+    ? activeMagazinePipelineProcess.magazineSteps
+    : selectedMagazineLog?.magazineProcess ?? (selectedMagazineResult ? markProcessStepsDone(getMagazineSteps(uiLanguage)) : undefined);
   const visibleGeneratorHistory = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
 
@@ -910,6 +1086,23 @@ export function GeoGeneratorConsole() {
         ].join(" ").toLowerCase().includes(query);
       });
   }, [extractorResults, searchQuery]);
+  const visibleMagazineHistory = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+
+    return magazineResults
+      .map((result, index) => ({ result, index }))
+      .filter(({ result }) => {
+        if (!query) {
+          return true;
+        }
+        return [
+          result.source,
+          result.sourceType,
+          result.magazine.artifact.title,
+          result.magazine.diagnostics.normalizedProduct.name
+        ].join(" ").toLowerCase().includes(query);
+      });
+  }, [magazineResults, searchQuery]);
   const shellClassName = [
     "codexShell",
     isSidebarCollapsed ? "sidebarCollapsed" : "",
@@ -919,8 +1112,8 @@ export function GeoGeneratorConsole() {
   ].filter(Boolean).join(" ");
 
   const runSummary = useMemo(() => {
-    const status = activeMode === "extractor" ? extractorRunStatus : runStatus;
-    const count = activeMode === "extractor" ? extractorResults.length : results.length;
+    const status = activeMode === "extractor" ? extractorRunStatus : activeMode === "magazine" ? magazineRunStatus : runStatus;
+    const count = activeMode === "extractor" ? extractorResults.length : activeMode === "magazine" ? magazineResults.length : results.length;
 
     if (status === "running") {
       return text.runStatus.running;
@@ -932,7 +1125,7 @@ export function GeoGeneratorConsole() {
       return text.runStatus.error;
     }
     return text.runStatus.idle;
-  }, [activeMode, extractorResults.length, extractorRunStatus, results.length, runStatus, text]);
+  }, [activeMode, extractorResults.length, extractorRunStatus, magazineResults.length, magazineRunStatus, results.length, runStatus, text]);
 
   const settingsTitle = settingsTab === "run" ? text.settings.run : settingsTab === "ai" ? text.settings.ai : text.settings.rag;
   const settingsDescription = settingsTab === "run"
@@ -953,6 +1146,7 @@ export function GeoGeneratorConsole() {
     const storedRagProfiles = readStoredRagProfiles();
     const storedHistory = readStoredGeoHistory();
     const storedExtractorHistory = readStoredExtractorHistory();
+    const storedMagazineHistory = readStoredMagazineHistory();
 
     setProviderSettings(storedProviderSettings);
     setSourceMode(storedRunSettings.sourceMode);
@@ -967,11 +1161,15 @@ export function GeoGeneratorConsole() {
     setExtractorLogs(storedExtractorHistory.logs);
     setSelectedExtractorIndex(storedExtractorHistory.results.length > 0 ? 0 : -1);
     setExtractorRunStatus(storedExtractorHistory.results.length > 0 ? "done" : "idle");
+    setMagazineResults(storedMagazineHistory.results);
+    setMagazineLogs(storedMagazineHistory.logs);
+    setSelectedMagazineIndex(storedMagazineHistory.results.length > 0 ? 0 : -1);
+    setMagazineRunStatus(storedMagazineHistory.results.length > 0 ? "done" : "idle");
     setSelectedRagFileId(storedRagProfiles.generator.files[0]?.id ?? storedRagProfiles.extractor.files[0]?.id ?? null);
     setConnectionStatus(isAuthorizedAiSettings(storedProviderSettings) ? "connected" : "idle");
     setConnectionMessage(isAuthorizedAiSettings(storedProviderSettings)
       ? `${providerLabel(storedProviderSettings.provider, "ko")} 연결 테스트가 완료된 설정을 불러왔습니다.`
-      : "OpenAI, Gemini, Azure API 중 하나를 연결하면 Extractor와 Generator 실행에 함께 사용됩니다.");
+      : "OpenAI, Gemini, Azure API는 Extractor와 Schema Generator에 사용되고, Azure API는 Magazine Generator의 citation 콘텐츠 생성에도 사용됩니다.");
     setModelMessage("AI 키를 입력한 뒤 모델 목록을 불러올 수 있습니다.");
     setRagMessage("Extractor와 Generator RAG 프로필을 불러오고 있습니다.");
     setIsHistoryReady(true);
@@ -1026,8 +1224,23 @@ export function GeoGeneratorConsole() {
   }, [extractorLogs, extractorResults, isHistoryReady]);
 
   useEffect(() => {
+    if (!isHistoryReady) {
+      return;
+    }
+
+    try {
+      window.sessionStorage.setItem(MAGAZINE_HISTORY_STORAGE_KEY, JSON.stringify({
+        results: magazineResults.slice(0, HISTORY_LIMIT),
+        logs: magazineLogs.slice(0, HISTORY_LIMIT)
+      }));
+    } catch {
+      // Session storage is best effort; keep the in-memory history available if quota is exceeded.
+    }
+  }, [isHistoryReady, magazineLogs, magazineResults]);
+
+  useEffect(() => {
     setSelectedRagReference(null);
-  }, [activeMode, selectedExtractorIndex, selectedIndex]);
+  }, [activeMode, selectedExtractorIndex, selectedIndex, selectedMagazineIndex]);
 
   function selectWorkspaceMode(mode: WorkspaceMode) {
     setActiveMode(mode);
@@ -1052,6 +1265,18 @@ export function GeoGeneratorConsole() {
         completedSourceCount: 0
       });
       setExtractorOutputView("result");
+    } else if (activeMode === "magazine") {
+      setMagazineMessages([]);
+      setSelectedMagazineIndex(-1);
+      setMagazineRunStatus("idle");
+      setMagazinePipelineProcess({
+        status: "idle",
+        currentGroup: "extractor",
+        currentStepId: "input",
+        sourceCount: 0,
+        completedSourceCount: 0
+      });
+      setMagazineOutputView("reddit");
     } else {
       setMessages([]);
       setSelectedIndex(-1);
@@ -1071,6 +1296,10 @@ export function GeoGeneratorConsole() {
   async function submit() {
     if (activeMode === "extractor") {
       await submitExtractor();
+      return;
+    }
+    if (activeMode === "magazine") {
+      await submitMagazine();
       return;
     }
 
@@ -1190,6 +1419,130 @@ export function GeoGeneratorConsole() {
       }));
       setErrorMessage(message);
       setMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          role: "agent",
+          body: appendRunDuration(message, runDurationLabel, uiLanguage)
+        }
+      ]);
+    }
+  }
+
+  async function submitMagazine() {
+    if (magazineRunStatus === "running") {
+      return;
+    }
+
+    let input: NormalizedComposerInput;
+    try {
+      input = normalizeComposerInput(draft, composerAttachments, sourceMode, text);
+    } catch (error) {
+      setMagazineRunStatus("error");
+      setErrorMessage(error instanceof Error ? error.message : text.composer.invalidJson);
+      return;
+    }
+
+    if (input.products.length === 0 && input.sources.length === 0) {
+      return;
+    }
+
+    const sourceCount = Math.max(input.products.length + input.sources.length, 1);
+    const firstSource = input.sources[0] ?? (input.products.length > 0 ? text.composer.jsonSummary(input.products.length) : undefined);
+    const runStartedAt = getRunClockMs();
+
+    setMagazineRunStatus("running");
+    setErrorMessage("");
+    setSelectedMagazineIndex(-1);
+    setMagazineOutputView("reddit");
+    setMagazinePipelineProcess({
+      status: "running",
+      currentGroup: input.sources.length > 0 ? "extractor" : "magazine",
+      currentStepId: "input",
+      sourceCount,
+      completedSourceCount: 0,
+      activeSource: firstSource,
+      skipExtractor: input.sources.length === 0
+    });
+    setMagazineMessages((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        role: "user",
+        command: sourceModeLabel(sourceMode, text),
+        body: input.displayValue
+      },
+      {
+        id: crypto.randomUUID(),
+        role: "tool",
+        command: "pdp-extractor-agent → geo-citation-content-agent",
+        body: text.messages.magazineStart
+      }
+    ]);
+    setDraft("");
+    setComposerStatus("");
+    setComposerAttachments([]);
+
+    try {
+      const body = createMagazineRequestBody(input);
+      const { payload, ok } = await requestMagazineGenerator(body, (event) => {
+        applyMagazineProgressEvent(
+          event,
+          setMagazinePipelineProcess,
+          getExtractorSteps(uiLanguage) as ProductExtractionStep[],
+          getMagazineSteps(uiLanguage)
+        );
+      });
+
+      if (!ok && !payload.results?.length) {
+        throw new Error(payload.error ?? "GEO magazine/content generation failed.");
+      }
+
+      const runDurationMs = getRunClockMs() - runStartedAt;
+      const runDurationLabel = formatElapsedDuration(runDurationMs);
+      const incomingResults = attachRunDurationToMagazineResults(payload.results ?? [], runDurationMs);
+      const nextResults = mergeMagazineHistoryResults(incomingResults, magazineResults);
+      const nextLogs = mergeMagazineHistoryLogs(payload.logs ?? [], magazineLogs);
+      setMagazineResults(nextResults);
+      setMagazineLogs(nextLogs);
+      setSelectedMagazineIndex(incomingResults.length ? 0 : -1);
+      setMagazineRunStatus(payload.failures?.length ? "error" : "done");
+      setMagazinePipelineProcess({
+        status: payload.failures?.length ? "error" : "done",
+        currentGroup: "magazine",
+        currentStepId: "artifact",
+        sourceCount,
+        completedSourceCount: incomingResults.length + (payload.failures?.length ?? 0),
+        activeSource: incomingResults[0]?.source ?? payload.failures?.[0]?.source ?? firstSource,
+        skipExtractor: input.sources.length === 0,
+        errorMessage: payload.failures?.[0]?.error
+      });
+      setErrorMessage(payload.failures?.map((failure) => `${failure.source}: ${failure.error}`).join("\n") ?? "");
+      setMagazineMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          role: "agent",
+          body: appendRunDuration(
+            payload.failures?.length
+              ? text.messages.magazinePartial(incomingResults.length, payload.failures.length)
+              : text.messages.magazineDone(incomingResults.length),
+            runDurationLabel,
+            uiLanguage
+          )
+        }
+      ]);
+    } catch (error) {
+      const runDurationLabel = formatElapsedDuration(getRunClockMs() - runStartedAt);
+      const message = error instanceof Error ? error.message : "GEO magazine/content generation failed.";
+      setMagazineRunStatus("error");
+      setMagazinePipelineProcess((current) => ({
+        ...current,
+        status: "error",
+        errorMessage: message
+      }));
+      setErrorMessage(message);
+      setMagazineMessages((current) => [
         ...current,
         {
           id: crypto.randomUUID(),
@@ -1735,6 +2088,42 @@ export function GeoGeneratorConsole() {
     };
   }
 
+  function createMagazineRequestBody(input: NormalizedComposerInput) {
+    const generatorRag = createRuntimeRagConfig(ragProfiles.generator);
+    const extractorRag = createRuntimeRagConfig(ragProfiles.extractor);
+    const common = {
+      target: {
+        surface: "reddit",
+        locale,
+        market: marketForLocale(locale),
+        audience: uiLanguage === "ko" ? "상품을 비교하고 근거를 확인하려는 Reddit 사용자" : "Reddit users comparing products and evidence",
+        communityOrChannelHint: "reddit"
+      },
+      strategy: {
+        avoidPromotionalTone: true,
+        contentAngle: "buyer-question",
+        generationMode: "single-best",
+        variants: {
+          diversity: "high",
+          avoidNearDuplicate: true
+        }
+      },
+      rag: {
+        mode: ragMode === "managed-vector-store-rag" ? "managed-vector-store-rag" : "local-versioned-rag",
+        ...generatorRag
+      },
+      extractorRag,
+      headers: parseHeadersJson(headersJson),
+      llm: createRuntimeLlmConfig(providerSettings)
+    };
+
+    return {
+      ...common,
+      ...(input.products.length > 0 ? { products: input.products } : {}),
+      ...(input.sources.length > 0 ? { sources: input.sources, sourceType: input.sourceType } : {})
+    };
+  }
+
   function createExtractorRequestBody(input: NormalizedComposerInput) {
     const extractorRag = createRuntimeRagConfig(ragProfiles.extractor);
 
@@ -1770,7 +2159,7 @@ export function GeoGeneratorConsole() {
 
         <section className="modeAccordion" aria-label={text.modes.label}>
           <span className="modeLabel navText">{text.modes.label}</span>
-          {(["extractor", "generator"] as WorkspaceMode[]).map((mode) => (
+          {(["extractor", "generator", "magazine"] as WorkspaceMode[]).map((mode) => (
             <button
               className={`modeAccordionItem ${activeMode === mode ? "active" : ""}`}
               type="button"
@@ -1827,6 +2216,25 @@ export function GeoGeneratorConsole() {
                         <span className="historySource">{result.source}</span>
                       </span>
                       <time dateTime={result.generatedAt}>{formatHistoryTime(result.generatedAt, text)}</time>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )
+          ) : activeMode === "magazine" ? (
+            visibleMagazineHistory.length === 0 ? (
+              <p className="emptyHistory">{magazineResults.length === 0 ? activeModeCopy.emptyHistory : text.sidebar.noSearchResults}</p>
+            ) : (
+              <div className="historyList">
+                {visibleMagazineHistory.map(({ result, index }) => (
+                  <div className={`queueThread ${index === selectedMagazineIndex ? "active" : ""}`} key={result.id}>
+                    <button className="queueThreadMain" type="button" onClick={() => setSelectedMagazineIndex(index)}>
+                      <CheckCircle2 className="statusIcon done" size={14} />
+                      <span className="historyText">
+                        <span className="historyTitle">{result.magazine.artifact.title}</span>
+                        <span className="historySource">{result.source}</span>
+                      </span>
+                      <time dateTime={result.magazine.diagnostics.generatedAt}>{formatHistoryTime(result.magazine.diagnostics.generatedAt, text)}</time>
                     </button>
                   </div>
                 ))}
@@ -1933,10 +2341,10 @@ export function GeoGeneratorConsole() {
                 <article className="chatBlock tool">
                   <div className="commandLine">
                     <Loader2 className="spin" size={14} />
-                    <span>{activeMode === "extractor" ? text.messages.extractorRunningTitle : text.messages.runningTitle}</span>
+                    <span>{activeMode === "extractor" ? text.messages.extractorRunningTitle : activeMode === "magazine" ? text.messages.magazineRunningTitle : text.messages.runningTitle}</span>
                     <span className="runTimer" aria-label="elapsed time">{runElapsedLabel}</span>
                   </div>
-                  <p>{activeMode === "extractor" ? text.messages.extractorRunningBody : text.messages.runningBody}</p>
+                  <p>{activeMode === "extractor" ? text.messages.extractorRunningBody : activeMode === "magazine" ? text.messages.magazineRunningBody : text.messages.runningBody}</p>
                 </article>
               )}
               {errorMessage && (
@@ -2012,6 +2420,45 @@ export function GeoGeneratorConsole() {
                   <pre>{extractorOutputText}</pre>
                 </section>
               )}
+              {activeMode === "magazine" && selectedMagazineResult && (
+                <>
+                  <section className="floatingArtifact" aria-label="Selected magazine output">
+                    <div className="artifactTop">
+                      <div>
+                        <span>{[
+                          selectedMagazineResult.magazine.artifact.surface,
+                          `readiness ${selectedMagazineResult.magazine.diagnostics.geoCitationReadiness.score}`,
+                          selectedMagazineResult.magazine.artifact.flairSuggestion,
+                          formatRunDurationMeta(selectedMagazineResult.runDurationMs, uiLanguage)
+                        ].filter(Boolean).join(" · ")}</span>
+                        <strong>{selectedMagazineResult.magazine.artifact.title}</strong>
+                      </div>
+                      <div className="windowActions">
+                        {(["reddit", "readiness", "diagnostics"] as MagazineOutputView[]).map((view) => (
+                          <button className={magazineOutputView === view ? "active" : ""} type="button" key={view} onClick={() => setMagazineOutputView(view)}>
+                            <span>{view === "diagnostics" ? "diag" : view}</span>
+                          </button>
+                        ))}
+                        <button
+                          className={`modalCopyButton${isMagazineFloatingCopied ? " copied" : ""}`}
+                          type="button"
+                          onClick={() => void copyArtifactText(magazineOutputText, magazineFloatingCopyTarget)}
+                          aria-label={isMagazineFloatingCopied ? modalCopiedLabel : text.artifact.copyAria}
+                          title={isMagazineFloatingCopied ? modalCopiedLabel : text.artifact.copyAria}
+                        >
+                          {isMagazineFloatingCopied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
+                          <span className="modalCopyLabel" aria-live="polite">
+                            {isMagazineFloatingCopied ? modalCopiedLabel : text.artifact.copy}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                    <pre>{magazineOutputText}</pre>
+                  </section>
+                  <MagazineQualityIntroMessage uiLanguage={uiLanguage} />
+                  <MagazineQualityEvaluationPanel result={selectedMagazineResult} uiLanguage={uiLanguage} onOpenDetail={openPanelDetail} />
+                </>
+              )}
             </section>
           )}
 
@@ -2026,10 +2473,14 @@ export function GeoGeneratorConsole() {
                 <button
                   className="resultCycleButton"
                   type="button"
-                  disabled={activeMode === "extractor" ? extractorResults.length <= 1 : results.length <= 1}
+                  disabled={activeMode === "extractor" ? extractorResults.length <= 1 : activeMode === "magazine" ? magazineResults.length <= 1 : results.length <= 1}
                   onClick={() => {
                     if (activeMode === "extractor") {
                       setSelectedExtractorIndex((current) => (current + 1) % extractorResults.length);
+                      return;
+                    }
+                    if (activeMode === "magazine") {
+                      setSelectedMagazineIndex((current) => (current + 1) % magazineResults.length);
                       return;
                     }
                     setSelectedIndex((current) => (current + 1) % results.length);
@@ -2085,6 +2536,69 @@ export function GeoGeneratorConsole() {
                         {uiLanguage === "ko"
                           ? `${activeExtractorPipelineProcess.sourceCount}개 입력 처리 중${processProgressLabel ? ` · ${processProgressLabel}` : ""}`
                           : `${activeExtractorPipelineProcess.sourceCount} input${activeExtractorPipelineProcess.sourceCount === 1 ? "" : "s"} running${processProgressLabel ? ` · ${processProgressLabel}` : ""}`}
+                      </strong>
+                    ) : (
+                      <strong>{text.panel.noDiagnostics}</strong>
+                    )}
+                  </div>
+                </>
+              ) : activeMode === "magazine" ? (
+                <>
+                  <ProcessGroup title={text.panel.extractor} steps={magazineExtractorPanelSteps} fallback={getExtractorSteps(uiLanguage)} runtimeProcess={activeMagazinePipelineProcess} skipped={activeMagazinePipelineProcess?.skipExtractor ?? selectedMagazineResult?.sourceType === "manual-json"} uiLanguage={uiLanguage} group="extractor" skippedMessage={text.artifact.skipped} onOpenDetail={openPanelDetail} />
+                  <div className="panelDivider" />
+                  <ProcessGroup
+                    title={text.panel.magazine}
+                    steps={magazinePanelSteps}
+                    fallback={getMagazineSteps(uiLanguage)}
+                    runtimeProcess={activeMagazinePipelineProcess}
+                    uiLanguage={uiLanguage}
+                    group="magazine"
+                    skippedMessage={text.artifact.skipped}
+                    onOpenDetail={openPanelDetail}
+                    createStepDetail={(step, status, localized) => createMagazineProcessPanelDetail(step, status, localized, selectedMagazineResult, selectedMagazineDiagnostics, selectedMagazineLog, uiLanguage)}
+                  />
+
+                  <div className="panelDivider" />
+                  <div className="panelBlock">
+                    <span>{text.panel.output}</span>
+                    {selectedMagazineResult ? (
+                      <>
+                        <div className="outputTabs three" role="tablist" aria-label="Output view">
+                          {(["reddit", "readiness", "diagnostics"] as MagazineOutputView[]).map((view) => (
+                            <button className={magazineOutputView === view ? "active" : ""} type="button" key={view} title={view} onClick={() => setMagazineOutputView(view)}>
+                              {compactMagazineOutputViewLabel(view)}
+                            </button>
+                          ))}
+                        </div>
+                        {magazineOutputView === "diagnostics" ? (
+                          <MagazineDiagnosticLog diagnostics={selectedMagazineDiagnostics} process={selectedMagazineLog?.magazineProcess} text={text} uiLanguage={uiLanguage} onOpenDetail={openPanelDetail} />
+                        ) : (
+                          <MagazineOutputSummary result={selectedMagazineResult} view={magazineOutputView} text={text} uiLanguage={uiLanguage} onOpenDetail={openPanelDetail} />
+                        )}
+                        <button
+                          className={`copyPanelButton${isMagazinePanelCopied ? " copied" : ""}`}
+                          type="button"
+                          onClick={() => void copyArtifactText(magazineOutputText, magazinePanelCopyTarget)}
+                          aria-label={isMagazinePanelCopied ? modalCopiedLabel : text.artifact.copyAria}
+                        >
+                          {isMagazinePanelCopied ? <CheckCircle2 size={13} /> : <Copy size={13} />}
+                          <span aria-live="polite">{isMagazinePanelCopied ? modalCopiedLabel : text.artifact.copy}</span>
+                        </button>
+                      </>
+                    ) : selectedMagazineDiagnostics ? (
+                      <>
+                        <div className="outputTabs" role="tablist" aria-label="Output view">
+                          <button className="active" type="button">
+                            diagnostics
+                          </button>
+                        </div>
+                        <MagazineDiagnosticLog diagnostics={selectedMagazineDiagnostics} process={selectedMagazineLog?.magazineProcess} text={text} uiLanguage={uiLanguage} onOpenDetail={openPanelDetail} />
+                      </>
+                    ) : activePipelineProcess ? (
+                      <strong>
+                        {uiLanguage === "ko"
+                          ? `${activeMagazinePipelineProcess?.sourceCount ?? 0}개 입력 처리 중${processProgressLabel ? ` · ${processProgressLabel}` : ""}`
+                          : `${activeMagazinePipelineProcess?.sourceCount ?? 0} input${activeMagazinePipelineProcess?.sourceCount === 1 ? "" : "s"} running${processProgressLabel ? ` · ${processProgressLabel}` : ""}`}
                       </strong>
                     ) : (
                       <strong>{text.panel.noDiagnostics}</strong>
@@ -2266,7 +2780,7 @@ export function GeoGeneratorConsole() {
               </div>
             )}
             <textarea
-              aria-label={activeMode === "extractor" ? "PDP extractor input" : "PDP GEO input"}
+              aria-label={activeMode === "extractor" ? "PDP extractor input" : activeMode === "magazine" ? "GEO magazine input" : "PDP GEO input"}
               value={draft}
               onChange={(event) => {
                 setDraft(event.target.value);
@@ -2527,7 +3041,7 @@ export function GeoGeneratorConsole() {
                   <section className="settingsSection">
                     <h3>{text.settings.aiScopeSection}</h3>
                     <div className="settingsCard">
-                      <strong>pdp-extractor-agent + pdp-geo-generator-agent</strong>
+                      <strong>pdp-extractor-agent + pdp-geo-generator-agent + geo-citation-content-agent</strong>
                       <p>{aiScopeMessage(uiLanguage)}</p>
                     </div>
                   </section>
@@ -3010,6 +3524,128 @@ function GeoOutputSummary({
   );
 }
 
+function MagazineOutputSummary({
+  onOpenDetail,
+  result,
+  text,
+  uiLanguage,
+  view
+}: Readonly<{
+  onOpenDetail: (detail: PanelDetail) => void;
+  result: MagazineGeneratorResult;
+  text: (typeof uiCopy)[UiLanguage];
+  uiLanguage: UiLanguage;
+  view: MagazineOutputView;
+}>) {
+  const artifact = result.magazine.artifact;
+  const diagnostics = result.magazine.diagnostics;
+  const readiness = diagnostics.geoCitationReadiness;
+  const productName = diagnostics.normalizedProduct.name;
+  const runDuration = formatRunDurationValue(result.runDurationMs);
+
+  if (view === "readiness") {
+    const passedChecks = readiness.checks.filter((check) => check.passed).length;
+    return (
+      <div className="outputSummary">
+        <strong>{uiLanguage === "ko" ? "GEO citation readiness" : "GEO citation readiness"}</strong>
+        <div className="outputMetricGrid">
+          <OutputMetricButton
+            label="Score"
+            value={readiness.score}
+            detail={createPanelDetail("Magazine readiness", "GEO citation readiness", productName, readiness, {
+              score: readiness.score,
+              passed: readiness.passed
+            })}
+            onOpenDetail={onOpenDetail}
+          />
+          <OutputMetricButton
+            label={uiLanguage === "ko" ? "통과" : "Passed"}
+            value={`${passedChecks}/${readiness.checks.length}`}
+            detail={createPanelDetail("Magazine readiness", uiLanguage === "ko" ? "Readiness checks" : "Readiness checks", productName, readiness.checks, {
+              passed: passedChecks,
+              total: readiness.checks.length
+            })}
+            onOpenDetail={onOpenDetail}
+          />
+          <OutputMetricButton
+            label="Keywords"
+            value={`${readiness.keywordCoverage.present.length}/${readiness.keywordCoverage.required.length}`}
+            detail={createPanelDetail("Magazine readiness", "Keyword coverage", productName, readiness.keywordCoverage, {
+              coverage: Math.round(readiness.keywordCoverage.coverageRatio * 100)
+            })}
+            onOpenDetail={onOpenDetail}
+          />
+          <OutputMetricButton
+            label={uiLanguage === "ko" ? "경고" : "Warnings"}
+            value={readiness.warnings.length}
+            detail={createPanelDetail("Magazine readiness", uiLanguage === "ko" ? "Readiness warnings" : "Readiness warnings", productName, readiness.warnings, {
+              warnings: readiness.warnings.length
+            })}
+            onOpenDetail={onOpenDetail}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="outputSummary">
+      <strong>{artifact.title}</strong>
+      <div className="outputMetricGrid">
+        {runDuration && (
+          <OutputMetricButton
+            label={uiLanguage === "ko" ? "소요" : "Elapsed"}
+            value={runDuration}
+            detail={createPanelDetail("Run detail", uiLanguage === "ko" ? "최종 실행 시간" : "Final run time", productName, {
+              runDurationMs: result.runDurationMs,
+              runDuration
+            }, {
+              durationMs: result.runDurationMs ?? 0
+            })}
+            onOpenDetail={onOpenDetail}
+          />
+        )}
+        <OutputMetricButton
+          label="Body"
+          value={formatCompactNumber(artifact.bodyMarkdown.length)}
+          detail={createPanelDetail("Magazine output", "Reddit bodyMarkdown", artifact.title, artifact.bodyMarkdown, {
+            length: artifact.bodyMarkdown.length
+          })}
+          onOpenDetail={onOpenDetail}
+        />
+        <OutputMetricButton
+          label="Answers"
+          value={result.magazine.brief.answerChunks.length}
+          detail={createPanelDetail("Magazine brief", "AI answer chunks", productName, result.magazine.brief.answerChunks, {
+            chunks: result.magazine.brief.answerChunks.length
+          })}
+          onOpenDetail={onOpenDetail}
+        />
+        <OutputMetricButton
+          label={text.panel.evidence}
+          value={diagnostics.usedEvidence.length}
+          detail={createPanelDetail("Magazine diagnostics", text.panel.evidence, productName, diagnostics.usedEvidence, {
+            evidence: diagnostics.usedEvidence.length
+          })}
+          onOpenDetail={onOpenDetail}
+        />
+        <OutputMetricButton
+          label="RAG"
+          value={diagnostics.selectedRagChunks.length}
+          detail={createPanelDetail("Magazine RAG", "Selected evidence chunks", productName, {
+            selectedRagChunks: diagnostics.selectedRagChunks,
+            ragUsage: diagnostics.ragUsage
+          }, {
+            chunks: diagnostics.selectedRagChunks.length
+          })}
+          onOpenDetail={onOpenDetail}
+        />
+      </div>
+      <span>{uiLanguage === "ko" ? "홍보 톤 점수" : "Promotional tone"}: {diagnostics.promotionalToneScore}</span>
+    </div>
+  );
+}
+
 function GeoQualityEvaluationPanel({
   onOpenDetail,
   result,
@@ -3165,6 +3801,197 @@ function GeoQualityIntroMessage({
       <p>{copy.sequenceNote}</p>
     </article>
   );
+}
+
+function MagazineQualityIntroMessage({
+  uiLanguage
+}: Readonly<{
+  uiLanguage: UiLanguage;
+}>) {
+  const copy = getMagazineQualityCopy(uiLanguage);
+  return (
+    <article className="chatBlock agent geoQualityIntroMessage">
+      <div className="commandLine">
+        <CheckCircle2 size={14} />
+        <span>{copy.kicker}</span>
+      </div>
+      <p>{copy.sequenceNote}</p>
+    </article>
+  );
+}
+
+function MagazineQualityEvaluationPanel({
+  onOpenDetail,
+  result,
+  uiLanguage
+}: Readonly<{
+  onOpenDetail: (detail: PanelDetail) => void;
+  result: MagazineGeneratorResult;
+  uiLanguage: UiLanguage;
+}>) {
+  const [copied, setCopied] = useState(false);
+  const evaluation = evaluateMagazineQuality(result, uiLanguage);
+  const copy = getMagazineQualityCopy(uiLanguage);
+  const copyTextValue = formatMagazineQualityEvaluationText(result, evaluation, copy);
+
+  async function copyEvaluation() {
+    await copyText(copyTextValue);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  }
+
+  return (
+    <section className="geoQualityPanel" aria-label={copy.panelLabel}>
+      <div className="geoQualityHeader">
+        <div>
+          <span>{copy.kicker}</span>
+          <strong>{copy.title}</strong>
+        </div>
+        <div className="geoQualityHeaderActions">
+          <em>{evaluation.overallScore}/100</em>
+          <button
+            className={`geoQualityCopyButton${copied ? " copied" : ""}`}
+            type="button"
+            onClick={() => void copyEvaluation()}
+            aria-label={copied ? copy.copyDoneLabel : copy.copyLabel}
+            title={copied ? copy.copyDoneLabel : copy.copyLabel}
+          >
+            {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
+          </button>
+          {copied && (
+            <span className="geoQualityCopyFeedback" role="status" aria-live="polite">
+              {copy.copyDoneLabel}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="geoQualityScoreGrid" aria-label={copy.summaryLabel}>
+        {evaluation.dimensions.map((dimension) => (
+          <button
+            className="geoQualityScoreButton"
+            type="button"
+            key={dimension.id}
+            onClick={() => onOpenDetail(createPanelDetail(copy.detailLabel, `${dimension.label} ${dimension.score}/100`, dimension.criteria, {
+              criteria: dimension.criteria,
+              summary: dimension.summary,
+              evidence: dimension.evidence,
+              improvements: dimension.improvements,
+              validationDetails: evaluation.validationDetails,
+              validationImprovements: evaluation.validationImprovements
+            }, {
+              score: dimension.score
+            }))}
+          >
+            <span>{dimension.label}</span>
+            <strong>{dimension.score}</strong>
+            <small>{dimension.summary}</small>
+          </button>
+        ))}
+      </div>
+      <details className="geoQualityDetails" open>
+        <summary>{copy.detailSummary}</summary>
+        <div className="geoQualityDimensionList">
+          {evaluation.dimensions.map((dimension) => (
+            <section className="geoQualityDimension" key={dimension.id}>
+              <div className="geoQualityDimensionTitle">
+                <strong>{dimension.label}</strong>
+                <em>{dimension.score}/100</em>
+              </div>
+              <p>{dimension.criteria}</p>
+              <div className="geoQualityEvidenceColumns">
+                <div>
+                  <span>{copy.evidenceLabel}</span>
+                  <ul>
+                    {dimension.evidence.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <span>{copy.improvementLabel}</span>
+                  <ul>
+                    {dimension.improvements.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </section>
+          ))}
+          {(evaluation.validationDetails.length > 0 || evaluation.validationImprovements.length > 0) && (
+            <section className="geoQualityDimension">
+              <div className="geoQualityDimensionTitle">
+                <strong>{copy.validationDetailLabel}</strong>
+                <em>{evaluation.validationDetails.length}</em>
+              </div>
+              <p>{copy.validationDetailDescription}</p>
+              <div className="geoQualityEvidenceColumns">
+                {evaluation.validationDetails.length > 0 && (
+                  <div>
+                    <span>{copy.validationIssueLabel}</span>
+                    <ul>
+                      {evaluation.validationDetails.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {evaluation.validationImprovements.length > 0 && (
+                  <div>
+                    <span>{copy.validationDirectionLabel}</span>
+                    <ul>
+                      {evaluation.validationImprovements.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+        </div>
+      </details>
+    </section>
+  );
+}
+
+function formatMagazineQualityEvaluationText(
+  result: MagazineGeneratorResult,
+  evaluation: MagazineQualityEvaluation,
+  copy: ReturnType<typeof getMagazineQualityCopy>
+): string {
+  const productName = result.magazine.diagnostics.normalizedProduct.name;
+  const lines = [
+    copy.title,
+    `${copy.productLabel}: ${productName}`,
+    `${copy.overallScoreLabel}: ${evaluation.overallScore}/100`,
+    ""
+  ];
+
+  for (const dimension of evaluation.dimensions) {
+    lines.push(`${dimension.label}: ${dimension.score}/100`);
+    lines.push(`${copy.criteriaLabel}: ${dimension.criteria}`);
+    lines.push(`${copy.summaryLabel}: ${dimension.summary}`);
+    lines.push(`${copy.evidenceLabel}:`);
+    lines.push(...dimension.evidence.map((item) => `- ${item}`));
+    lines.push(`${copy.improvementLabel}:`);
+    lines.push(...dimension.improvements.map((item) => `- ${item}`));
+    lines.push("");
+  }
+
+  if (evaluation.validationDetails.length > 0 || evaluation.validationImprovements.length > 0) {
+    lines.push(copy.validationDetailLabel);
+    if (evaluation.validationDetails.length > 0) {
+      lines.push(`${copy.validationIssueLabel}:`);
+      lines.push(...evaluation.validationDetails.map((item) => `- ${item}`));
+    }
+    if (evaluation.validationImprovements.length > 0) {
+      lines.push(`${copy.validationDirectionLabel}:`);
+      lines.push(...evaluation.validationImprovements.map((item) => `- ${item}`));
+    }
+  }
+
+  return lines.join("\n").trim();
 }
 
 function formatGeoQualityEvaluationText(
@@ -3468,6 +4295,126 @@ function createGeneratorProcessPanelDetail(
   }, baseMetadata);
 }
 
+function createMagazineProcessPanelDetail(
+  step: ProcessStep,
+  status: ProcessStep["status"],
+  localized: Pick<ProcessStep, "title" | "description">,
+  result: MagazineGeneratorResult | undefined,
+  diagnostics: GeoCitationDiagnostics | undefined,
+  log: MagazineGeneratorLog | undefined,
+  uiLanguage: UiLanguage
+): PanelDetail | undefined {
+  if (!diagnostics) {
+    return undefined;
+  }
+
+  const stageId = String(step.id);
+  const stageBase = {
+    id: step.id,
+    title: step.title,
+    localized,
+    status,
+    message: step.message,
+    startedAt: "startedAt" in step ? step.startedAt : undefined,
+    completedAt: "completedAt" in step ? step.completedAt : undefined
+  };
+  const baseMetadata = {
+    id: stageId,
+    status
+  };
+
+  if (stageId === "validate" || stageId === "repair") {
+    return createPanelDetail("Magazine process", localized.title, localized.description, {
+      stage: stageBase,
+      readiness: diagnostics.geoCitationReadiness,
+      unsupportedClaims: diagnostics.unsupportedClaims,
+      channelWarnings: diagnostics.channelWarnings,
+      validationWarnings: diagnostics.validationWarnings,
+      promotionalToneScore: diagnostics.promotionalToneScore,
+      artifact: result?.magazine.artifact
+    }, {
+      ...baseMetadata,
+      warnings: diagnostics.validationWarnings.length + diagnostics.channelWarnings.length,
+      unsupportedClaims: diagnostics.unsupportedClaims.length
+    });
+  }
+
+  if (stageId === "retrieve" || stageId === "rerank") {
+    return createPanelDetail("Magazine process", localized.title, localized.description, {
+      stage: stageBase,
+      selectedRagChunks: diagnostics.selectedRagChunks,
+      ragUsage: diagnostics.ragUsage,
+      usedEvidence: diagnostics.usedEvidence
+    }, {
+      ...baseMetadata,
+      chunks: diagnostics.selectedRagChunks.length,
+      evidence: diagnostics.usedEvidence.length
+    });
+  }
+
+  if (stageId === "brief") {
+    return createPanelDetail("Magazine process", localized.title, localized.description, {
+      stage: stageBase,
+      brief: result?.magazine.brief,
+      strategy: result?.magazine.strategy,
+      variantStrategy: diagnostics.variantStrategy
+    }, {
+      ...baseMetadata,
+      answerChunks: result?.magazine.brief.answerChunks.length ?? 0
+    });
+  }
+
+  if (stageId === "generate") {
+    return createPanelDetail("Magazine process", localized.title, localized.description, {
+      stage: stageBase,
+      artifact: result?.magazine.artifact,
+      normalizedProduct: diagnostics.normalizedProduct,
+      eeatSignals: result?.magazine.brief.eeatSignals,
+      cepContexts: result?.magazine.brief.cepContexts
+    }, {
+      ...baseMetadata,
+      readiness: diagnostics.geoCitationReadiness.score
+    });
+  }
+
+  if (stageId === "normalize") {
+    return createPanelDetail("Magazine process", localized.title, localized.description, {
+      stage: stageBase,
+      normalizedProduct: diagnostics.normalizedProduct,
+      evidence: diagnostics.evidence.filter((item) => item.source === "input")
+    }, {
+      ...baseMetadata,
+      evidence: diagnostics.evidence.length
+    });
+  }
+
+  if (stageId === "artifact") {
+    return createPanelDetail("Magazine process", localized.title, localized.description, {
+      stage: stageBase,
+      result: result?.magazine,
+      diagnostics,
+      process: log?.magazineProcess ?? []
+    }, {
+      ...baseMetadata,
+      readiness: diagnostics.geoCitationReadiness.score,
+      evidence: diagnostics.usedEvidence.length
+    });
+  }
+
+  return createPanelDetail("Magazine process", localized.title, localized.description, {
+    stage: stageBase,
+    diagnosticsSummary: {
+      readiness: diagnostics.geoCitationReadiness.score,
+      recommendations: diagnostics.recommendations.length,
+      evidence: diagnostics.evidence.length,
+      selectedRagChunks: diagnostics.selectedRagChunks.length,
+      channelWarnings: diagnostics.channelWarnings.length,
+      validationWarnings: diagnostics.validationWarnings.length
+    },
+    process: log?.magazineProcess ?? []
+  }, baseMetadata);
+}
+
 function stringifyPanelData(data: unknown): string {
   if (typeof data === "string") {
     return data.trim().length > 0 ? data : "(empty)";
@@ -3684,7 +4631,7 @@ function ProcessGroup({
   runtimeProcess?: GeoPipelineProcessState;
   skipped?: boolean;
   uiLanguage: UiLanguage;
-  group: "extractor" | "generator";
+  group: "extractor" | "generator" | "magazine";
   skippedMessage: string;
 }) {
   const displaySteps = steps ?? fallback;
@@ -3895,6 +4842,164 @@ function GeoDiagnosticLog({
             >
               <b>{chunk.kind} · {chunk.source}</b>
               <span>{chunk.title ?? chunk.text}</span>
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MagazineDiagnosticLog({
+  diagnostics,
+  onOpenDetail,
+  process,
+  text,
+  uiLanguage
+}: Readonly<{
+  diagnostics?: GeoCitationDiagnostics;
+  onOpenDetail: (detail: PanelDetail) => void;
+  process?: GeoCitationGenerationStep[];
+  text: (typeof uiCopy)[UiLanguage];
+  uiLanguage: UiLanguage;
+}>) {
+  if (!diagnostics) {
+    return <strong>{text.panel.noDiagnostics}</strong>;
+  }
+
+  const processItems = process?.length ? process : [];
+  const recommendations = diagnostics.recommendations.slice(0, 8);
+  const evidence = diagnostics.evidence.slice(0, 8);
+  const ragUsage = diagnostics.ragUsage.slice(0, 8);
+  const readinessWarnings = diagnostics.geoCitationReadiness.warnings.slice(0, 8);
+
+  return (
+    <div className="diagnosticLog">
+      <div className="diagnosticStats">
+        <button type="button" onClick={() => onOpenDetail(createPanelDetail("Magazine diagnostics", "Runtime usage", undefined, diagnostics.runtimeUsage, { called: diagnostics.runtimeUsage.called ? "yes" : "no" }))}>runtime {diagnostics.runtimeUsage.called ? "called" : "mock"}</button>
+        <button type="button" onClick={() => onOpenDetail(createPanelDetail("Magazine logs", "Process", undefined, processItems, { count: processItems.length }))}>process {processItems.length}</button>
+        <button type="button" onClick={() => onOpenDetail(createPanelDetail("Magazine diagnostics", "Readiness", undefined, diagnostics.geoCitationReadiness, { score: diagnostics.geoCitationReadiness.score }))}>readiness {diagnostics.geoCitationReadiness.score}</button>
+        <button type="button" onClick={() => onOpenDetail(createPanelDetail("Magazine diagnostics", text.panel.recommendations, undefined, diagnostics.recommendations, { count: diagnostics.recommendations.length }))}>recommendations {diagnostics.recommendations.length}</button>
+        <button type="button" onClick={() => onOpenDetail(createPanelDetail("Magazine diagnostics", text.panel.evidence, undefined, diagnostics.evidence, { count: diagnostics.evidence.length }))}>evidence {diagnostics.evidence.length}</button>
+        <button type="button" onClick={() => onOpenDetail(createPanelDetail("Magazine diagnostics", "RAG usage", undefined, diagnostics.ragUsage, { count: diagnostics.ragUsage.length }))}>RAG usage {diagnostics.ragUsage.length}</button>
+      </div>
+      <div className="diagnosticSection">
+        <strong>Runtime</strong>
+        <button
+          className="diagnosticEntryButton"
+          type="button"
+          onClick={() => onOpenDetail(createPanelDetail("Magazine runtime", diagnostics.runtimeUsage.service, diagnostics.runtimeUsage.details, diagnostics.runtimeUsage, {
+            provider: diagnostics.runtimeUsage.provider,
+            called: diagnostics.runtimeUsage.called ? "yes" : "no"
+          }))}
+        >
+          <b>{diagnostics.runtimeUsage.provider} · {diagnostics.runtimeUsage.service}</b>
+          <span>{diagnostics.runtimeUsage.details}</span>
+        </button>
+      </div>
+      <div className="diagnosticSection">
+        <strong>Process</strong>
+        {processItems.length === 0 ? (
+          <p>{uiLanguage === "ko" ? "진행 로그가 없습니다." : "No process log yet."}</p>
+        ) : (
+          processItems.map((step) => {
+            const localized = localizeProcessStep(step, "magazine", uiLanguage);
+            return (
+              <button
+                className="diagnosticEntryButton"
+                key={step.id}
+                type="button"
+                onClick={() => onOpenDetail(createPanelDetail("Magazine process", localized.title, step.message ?? localized.description, {
+                  ...step,
+                  localized
+                }, {
+                  id: step.id,
+                  status: step.status
+                }))}
+              >
+                <b>{localized.title}</b>
+                <span>{step.message ?? localized.description}</span>
+              </button>
+            );
+          })
+        )}
+      </div>
+      <div className="diagnosticSection">
+        <strong>Readiness</strong>
+        {readinessWarnings.length === 0 ? (
+          <p>{uiLanguage === "ko" ? "readiness 경고가 없습니다." : "No readiness warnings."}</p>
+        ) : (
+          readinessWarnings.map((warning) => (
+            <button
+              className="diagnosticEntryButton"
+              key={warning}
+              type="button"
+              onClick={() => onOpenDetail(createPanelDetail("Magazine readiness", "Readiness warning", warning, warning))}
+            >
+              <b>{diagnostics.geoCitationReadiness.score}/100</b>
+              <span>{warning}</span>
+            </button>
+          ))
+        )}
+      </div>
+      <div className="diagnosticSection">
+        <strong>{text.panel.recommendations}</strong>
+        {recommendations.length === 0 ? (
+          <p>{text.panel.noRecommendations}</p>
+        ) : (
+          recommendations.map((item) => (
+            <button
+              className="diagnosticEntryButton"
+              key={`${item.field}-${item.message}-${item.reason}`}
+              type="button"
+              onClick={() => onOpenDetail(createPanelDetail("Magazine recommendation", item.field, item.message, item, {
+                field: item.field
+              }))}
+            >
+              <b>{item.field}</b>
+              <span>{item.reason}</span>
+            </button>
+          ))
+        )}
+      </div>
+      <div className="diagnosticSection">
+        <strong>{text.panel.evidence}</strong>
+        {evidence.length === 0 ? (
+          <p>{text.panel.noEvidence}</p>
+        ) : (
+          evidence.map((item) => (
+            <button
+              className="diagnosticEntryButton"
+              key={`${item.field}-${item.source}-${item.value.slice(0, 30)}`}
+              type="button"
+              onClick={() => onOpenDetail(createPanelDetail("Magazine evidence", `${item.field} · ${item.source}`, item.value, item, {
+                field: item.field,
+                source: item.source
+              }))}
+            >
+              <b>{item.field} · {item.source}</b>
+              <span>{item.value}</span>
+            </button>
+          ))
+        )}
+      </div>
+      <div className="diagnosticSection">
+        <strong>{uiLanguage === "ko" ? "RAG 활용 판단" : "RAG usage"}</strong>
+        {ragUsage.length === 0 ? (
+          <p>{uiLanguage === "ko" ? "선택된 RAG usage가 없습니다." : "No selected RAG usage."}</p>
+        ) : (
+          ragUsage.map((usage, index) => (
+            <button
+              className="diagnosticEntryButton"
+              key={`${usage.source}-${usage.sourceType}-${usage.score}-${index}-${usage.usage.slice(0, 30)}`}
+              type="button"
+              onClick={() => onOpenDetail(createPanelDetail("Magazine RAG usage", `${usage.sourceType} · ${usage.source}`, usage.usage, usage, {
+                score: Math.round(usage.score * 100) / 100,
+                sourceType: usage.sourceType
+              }))}
+            >
+              <b>{usage.sourceType} · score {usage.score.toFixed(2)}</b>
+              <span>{usage.usage}</span>
             </button>
           ))
         )}
@@ -4630,12 +5735,18 @@ function workspaceTitle(mode: WorkspaceMode, language: UiLanguage): string {
   if (mode === "extractor") {
     return language === "ko" ? "agentic-geo PDP Extractor" : "agentic-geo PDP Extractor";
   }
+  if (mode === "magazine") {
+    return language === "ko" ? "agentic-geo Magazine Generator" : "agentic-geo Magazine Generator";
+  }
   return language === "ko" ? "agentic-geo PDP GEO 생성" : "agentic-geo PDP GEO Generator";
 }
 
 function workspaceWelcomeTitle(mode: WorkspaceMode, language: UiLanguage): string {
   if (mode === "extractor") {
     return language === "ko" ? "추출할 PDP 또는 REST API를 입력하세요" : "Enter a PDP or REST API to extract product data";
+  }
+  if (mode === "magazine") {
+    return language === "ko" ? "Reddit GEO 콘텐츠를 생성할 PDP를 입력하세요" : "Enter a PDP to generate Reddit GEO content";
   }
   return language === "ko" ? "GEO 아티팩트를 생성할 PDP를 입력하세요" : "Enter a PDP to generate GEO artifacts";
 }
@@ -4649,6 +5760,11 @@ function workspaceWelcomeCards(
       ? [["URL 입력", "상품 상세 페이지"], ["REST API", "상품 데이터 응답"], ["RAW JSON", "추출 결과"]] as const
       : [["URL input", "Product detail page"], ["REST API", "Product data response"], ["RAW JSON", "Extraction result"]] as const;
   }
+  if (mode === "magazine") {
+    return language === "ko"
+      ? [["URL 입력", "상품 상세 페이지"], ["JSON 파일", "상품 정보 첨부"], ["Reddit 결과", "title/bodyMarkdown"]] as const
+      : [["URL input", "Product detail page"], ["JSON file", "Product data attachment"], ["Reddit result", "title/bodyMarkdown"]] as const;
+  }
 
   return language === "ko"
     ? [["URL 입력", "상품 상세 페이지"], ["REST API", "상품 데이터 응답"], ["JSON 결과", "복사 가능한 출력"]] as const
@@ -4660,6 +5776,11 @@ function workspaceComposerPlaceholder(mode: WorkspaceMode, language: UiLanguage)
     return language === "ko"
       ? "상품 URL 또는 REST API 주소를 붙여넣으면 상품 RAW JSON을 추출합니다."
       : "Paste a product URL or REST API endpoint to extract product RAW JSON.";
+  }
+  if (mode === "magazine") {
+    return language === "ko"
+      ? "상품 URL/API 주소를 붙여넣거나 상품 JSON 파일을 첨부하면 Reddit용 GEO 콘텐츠를 생성합니다."
+      : "Paste a product URL/API endpoint or attach product JSON to generate Reddit GEO content.";
   }
   return language === "ko"
     ? "상품 URL이나 API 주소를 붙여넣고, JSON이 있다면 그대로 넣어주세요."
@@ -4714,6 +5835,10 @@ function compactOutputViewLabel(view: OutputView): string {
   return view === "diagnostics" ? "diag" : view;
 }
 
+function compactMagazineOutputViewLabel(view: MagazineOutputView): string {
+  return view === "diagnostics" ? "diag" : view;
+}
+
 function connectionStatusLabel(status: ConnectionStatus, language: UiLanguage): string {
   if (status === "checking") {
     return language === "ko" ? "확인 중" : "Checking";
@@ -4757,8 +5882,8 @@ function modelFailedMessage(provider: string, language: UiLanguage): string {
 
 function providerInitialMessage(language: UiLanguage): string {
   return language === "ko"
-    ? "OpenAI, Gemini, Azure API 중 하나를 연결하면 Extractor와 Generator 실행에 함께 사용됩니다."
-    : "Connect OpenAI, Gemini, or Azure API settings to use it across Extractor and Generator runs.";
+    ? "OpenAI, Gemini, Azure API는 Extractor와 Schema Generator에 사용되고, Azure API는 Magazine Generator의 citation 콘텐츠 생성에도 사용됩니다."
+    : "OpenAI, Gemini, and Azure API settings are used for Extractor and Schema Generator runs; Azure API is also used for Magazine Generator citation content.";
 }
 
 function providerPendingMessage(language: UiLanguage): string {
@@ -4793,8 +5918,8 @@ function mockProviderMessage(language: UiLanguage): string {
 
 function aiScopeMessage(language: UiLanguage): string {
   return language === "ko"
-    ? "저장한 AI 연동 설정은 URL/REST API 입력의 상품정보 추출 단계와 GEO schema/content 생성 단계에 함께 전달됩니다. 키는 서버에 영구 저장하지 않고 이 브라우저의 로컬 저장소에만 보관합니다."
-    : "Saved AI settings are passed to both product extraction for URL/REST inputs and GEO schema/content generation. Keys stay in this browser's local storage and are not permanently stored on the server.";
+    ? "저장한 AI 연동 설정은 URL/REST API 입력의 상품정보 추출과 GEO schema/content 생성에 전달됩니다. Azure API 설정은 Reddit magazine/content 생성 단계에도 전달됩니다. 키는 서버에 영구 저장하지 않고 이 브라우저의 로컬 저장소에만 보관합니다."
+    : "Saved AI settings are passed to URL/REST product extraction and GEO schema/content generation. Azure API settings are also passed to Reddit magazine/content generation. Keys stay in this browser's local storage and are not permanently stored on the server.";
 }
 
 function ragInitialMessage(language: UiLanguage): string {
@@ -4908,6 +6033,77 @@ async function requestGeoGenerator(
   };
 }
 
+async function requestMagazineGenerator(
+  body: object,
+  onProgress: (event: Extract<MagazineGeneratorStreamEvent, { type: "progress" }>) => void
+): Promise<{ payload: MagazineGeneratorResponse; ok: boolean }> {
+  const response = await fetch("/api/magazine", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      ...body,
+      stream: true
+    })
+  });
+
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!response.body || !contentType.includes("application/x-ndjson")) {
+    const payload = await response.json() as MagazineGeneratorResponse;
+    return { payload, ok: response.ok };
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let payload: MagazineGeneratorResponse | undefined;
+  let streamError: string | undefined;
+
+  const handleLine = (line: string) => {
+    if (!line.trim()) {
+      return;
+    }
+    const event = JSON.parse(line) as MagazineGeneratorStreamEvent;
+    if (event.type === "progress") {
+      onProgress(event);
+      return;
+    }
+    if (event.type === "result") {
+      payload = event.payload;
+      return;
+    }
+    streamError = event.error;
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    lines.forEach(handleLine);
+  }
+
+  buffer += decoder.decode();
+  handleLine(buffer);
+
+  if (streamError) {
+    throw new Error(streamError);
+  }
+  if (!payload) {
+    throw new Error("GEO magazine/content stream ended without a result.");
+  }
+
+  return {
+    payload,
+    ok: payload.failures.length === 0
+  };
+}
+
 function applyGeneratorProgressEvent(
   event: Extract<GeoGeneratorStreamEvent, { type: "progress" }>,
   setPipelineProcess: (update: (current: GeoPipelineProcessState) => GeoPipelineProcessState) => void,
@@ -4935,6 +6131,37 @@ function applyGeneratorProgressEvent(
       generatorSteps: event.group === "generator"
         ? mergeRuntimeStep(current.generatorSteps, generatorFallback, event.step as PdpGeoGenerationStep)
         : current.generatorSteps
+    };
+  });
+}
+
+function applyMagazineProgressEvent(
+  event: Extract<MagazineGeneratorStreamEvent, { type: "progress" }>,
+  setPipelineProcess: (update: (current: GeoPipelineProcessState) => GeoPipelineProcessState) => void,
+  extractorFallback: ProductExtractionStep[],
+  magazineFallback: GeoCitationGenerationStep[]
+) {
+  setPipelineProcess((current) => {
+    const isCompletedSource = event.group === "magazine" && event.step.id === "artifact" && event.step.status === "done";
+    const completedSourceCount = isCompletedSource
+      ? Math.max(current.completedSourceCount, event.sourceIndex + 1)
+      : Math.max(current.completedSourceCount, event.sourceIndex);
+
+    return {
+      ...current,
+      status: "running",
+      currentGroup: event.group,
+      currentStepId: event.step.id,
+      sourceCount: event.sourceCount,
+      completedSourceCount: Math.min(event.sourceCount, completedSourceCount),
+      activeSource: event.source,
+      skipExtractor: current.skipExtractor,
+      extractorSteps: event.group === "extractor"
+        ? mergeRuntimeStep(current.extractorSteps, extractorFallback, event.step as ProductExtractionStep)
+        : current.extractorSteps,
+      magazineSteps: event.group === "magazine"
+        ? mergeRuntimeStep(current.magazineSteps, magazineFallback, event.step as GeoCitationGenerationStep)
+        : current.magazineSteps
     };
   });
 }
@@ -5461,6 +6688,42 @@ function readStoredExtractorHistory(): { results: TimedProductExtractionResult[]
   }
 }
 
+function readStoredMagazineHistory(): { results: MagazineGeneratorResult[]; logs: MagazineGeneratorLog[] } {
+  if (typeof window === "undefined") {
+    return { results: [], logs: [] };
+  }
+
+  try {
+    const rawHistory = window.sessionStorage.getItem(MAGAZINE_HISTORY_STORAGE_KEY);
+
+    if (!rawHistory) {
+      return { results: [], logs: [] };
+    }
+
+    const parsed = JSON.parse(rawHistory) as Partial<{
+      results: unknown[];
+      logs: unknown[];
+    }>;
+    const results = Array.isArray(parsed.results)
+      ? parsed.results.map(normalizeStoredMagazineResult).filter((result): result is MagazineGeneratorResult => Boolean(result))
+      : [];
+    const resultSources = new Set(results.map((result) => result.source));
+    const logs = Array.isArray(parsed.logs)
+      ? parsed.logs
+          .map(normalizeStoredMagazineLog)
+          .filter((log): log is MagazineGeneratorLog => Boolean(log))
+          .filter((log) => resultSources.has(log.source))
+      : [];
+
+    return {
+      results: results.slice(0, HISTORY_LIMIT),
+      logs: logs.slice(0, HISTORY_LIMIT)
+    };
+  } catch {
+    return { results: [], logs: [] };
+  }
+}
+
 function normalizeStoredGeoResult(value: unknown): GeoGeneratorResult | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
@@ -5482,6 +6745,27 @@ function normalizeStoredGeoResult(value: unknown): GeoGeneratorResult | undefine
   };
 }
 
+function normalizeStoredMagazineResult(value: unknown): MagazineGeneratorResult | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const result = value as Partial<MagazineGeneratorResult>;
+
+  if (typeof result.source !== "string" || !isGeoSourceType(result.sourceType) || !result.magazine) {
+    return undefined;
+  }
+
+  return {
+    id: typeof result.id === "string" && result.id.length > 0 ? result.id : crypto.randomUUID(),
+    source: result.source,
+    sourceType: result.sourceType,
+    extractor: result.extractor,
+    magazine: result.magazine,
+    runDurationMs: normalizeRunDurationMs(result.runDurationMs)
+  };
+}
+
 function normalizeStoredGeoLog(value: unknown): GeoGeneratorLog | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
@@ -5498,6 +6782,25 @@ function normalizeStoredGeoLog(value: unknown): GeoGeneratorLog | undefined {
     extractor: log.extractor,
     generator: log.generator,
     generatorProcess: Array.isArray(log.generatorProcess) ? log.generatorProcess : []
+  };
+}
+
+function normalizeStoredMagazineLog(value: unknown): MagazineGeneratorLog | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const log = value as Partial<MagazineGeneratorLog>;
+
+  if (typeof log.source !== "string" || !log.magazine) {
+    return undefined;
+  }
+
+  return {
+    source: log.source,
+    extractor: log.extractor,
+    magazine: log.magazine,
+    magazineProcess: Array.isArray(log.magazineProcess) ? log.magazineProcess : []
   };
 }
 
@@ -5571,6 +6874,13 @@ function attachRunDurationToGeoResults(results: GeoGeneratorResult[], runDuratio
   }));
 }
 
+function attachRunDurationToMagazineResults(results: MagazineGeneratorResult[], runDurationMs: number): MagazineGeneratorResult[] {
+  return results.map((result) => ({
+    ...result,
+    runDurationMs
+  }));
+}
+
 function attachRunDurationToExtractorResults(results: TimedProductExtractionResult[], runDurationMs: number): TimedProductExtractionResult[] {
   return results.map((result) => ({
     ...result,
@@ -5579,6 +6889,28 @@ function attachRunDurationToExtractorResults(results: TimedProductExtractionResu
 }
 
 function geoHistoryResultKey(result: Pick<GeoGeneratorResult, "source" | "sourceType">): string {
+  return `${result.sourceType}:${result.source}`;
+}
+
+function mergeMagazineHistoryResults(incoming: MagazineGeneratorResult[], current: MagazineGeneratorResult[]): MagazineGeneratorResult[] {
+  const incomingKeys = new Set(incoming.map(magazineHistoryResultKey));
+
+  return [
+    ...incoming,
+    ...current.filter((result) => !incomingKeys.has(magazineHistoryResultKey(result)))
+  ].slice(0, HISTORY_LIMIT);
+}
+
+function mergeMagazineHistoryLogs(incoming: MagazineGeneratorLog[], current: MagazineGeneratorLog[]): MagazineGeneratorLog[] {
+  const incomingKeys = new Set(incoming.map((log) => log.source));
+
+  return [
+    ...incoming,
+    ...current.filter((log) => !incomingKeys.has(log.source))
+  ].slice(0, HISTORY_LIMIT);
+}
+
+function magazineHistoryResultKey(result: Pick<MagazineGeneratorResult, "source" | "sourceType">): string {
   return `${result.sourceType}:${result.source}`;
 }
 
@@ -5724,6 +7056,15 @@ function getGeneratorSteps(language: UiLanguage): PdpGeoGenerationStep[] {
   }));
 }
 
+function getMagazineSteps(language: UiLanguage): GeoCitationGenerationStep[] {
+  return Object.entries(magazineStepCopy[language]).map(([id, [title, description]]) => ({
+    id: id as GeoCitationGenerationStageId,
+    title,
+    description,
+    status: "pending"
+  }));
+}
+
 function markProcessStepsDone<Step extends ProcessStep>(steps: Step[]): Step[] {
   return steps.map((step) => ({
     ...step,
@@ -5731,9 +7072,17 @@ function markProcessStepsDone<Step extends ProcessStep>(steps: Step[]): Step[] {
   }));
 }
 
-function localizeProcessStep(step: ProcessStep, group: "extractor" | "generator", language: UiLanguage): Pick<ProcessStep, "title" | "description"> {
+function localizeProcessStep(step: ProcessStep, group: "extractor" | "generator" | "magazine", language: UiLanguage): Pick<ProcessStep, "title" | "description"> {
   if (group === "generator" && isGeneratorStageId(step.id)) {
     const [title, description] = generatorStepCopy[language][step.id];
+    return {
+      title,
+      description: language === "ko" ? step.message ?? description : description
+    };
+  }
+
+  if (group === "magazine" && isMagazineStageId(step.id)) {
+    const [title, description] = magazineStepCopy[language][step.id];
     return {
       title,
       description: language === "ko" ? step.message ?? description : description
@@ -5757,8 +7106,8 @@ function localizeProcessStep(step: ProcessStep, group: "extractor" | "generator"
 }
 
 function getPipelineStepStatus(
-  stepId: string | PdpGeoGenerationStageId,
-  group: "extractor" | "generator",
+  stepId: string | PdpGeoGenerationStageId | GeoCitationGenerationStageId,
+  group: "extractor" | "generator" | "magazine",
   process: GeoPipelineProcessState
 ): ProcessStep["status"] {
   if (process.skipExtractor && group === "extractor") {
@@ -5781,7 +7130,7 @@ function getPipelineStepStatus(
     return "pending";
   }
 
-  const order = group === "extractor" ? extractorStepIds : generatorStepIds;
+  const order = group === "extractor" ? extractorStepIds : group === "magazine" ? magazineStepIds : generatorStepIds;
   const currentIndex = order.findIndex((id) => id === process.currentStepId);
   const stepIndex = order.findIndex((id) => id === stepId);
 
@@ -5848,6 +7197,10 @@ function isGeneratorStageId(value: string | PdpGeoGenerationStageId): value is P
   return value in generatorStepCopy.ko;
 }
 
+function isMagazineStageId(value: string | GeoCitationGenerationStageId): value is GeoCitationGenerationStageId {
+  return value in magazineStepCopy.ko;
+}
+
 function formatHistoryTime(value: string, text: (typeof uiCopy)[UiLanguage]): string {
   const timestamp = new Date(value).getTime();
   if (!Number.isFinite(timestamp)) {
@@ -5865,6 +7218,415 @@ function formatHistoryTime(value: string, text: (typeof uiCopy)[UiLanguage]): st
     return text.time.hours(diffHours);
   }
   return text.time.days(Math.round(diffHours / 24));
+}
+
+function evaluateMagazineQuality(result: MagazineGeneratorResult, language: UiLanguage): MagazineQualityEvaluation {
+  const copy = getMagazineQualityCopy(language);
+  const artifact = result.magazine.artifact;
+  const diagnostics = result.magazine.diagnostics;
+  const readiness = diagnostics.geoCitationReadiness;
+  const publicText = `${artifact.title}\n${artifact.bodyMarkdown}`;
+  const bodyText = artifact.bodyMarkdown;
+  const readinessScore = Math.round(readiness.score * 100);
+  const passedChecks = readiness.checks.filter((check) => check.passed).length;
+  const keywordCoverageScore = Math.round(readiness.keywordCoverage.coverageRatio * 100);
+  const headingCount = countRegexMatches(bodyText, /^##\s+/gm);
+  const bulletCount = countRegexMatches(bodyText, /^\s*[-*]\s+\S/gm);
+  const answerChunkCount = result.magazine.brief.answerChunks.length;
+  const evidenceCount = diagnostics.usedEvidence.length;
+  const sourceTypeCount = new Set(diagnostics.usedEvidence.map((item) => item.sourceType)).size;
+  const selectedRagCount = diagnostics.selectedRagChunks.length;
+  const productMentionCount = countTextOccurrences(publicText, diagnostics.normalizedProduct.name);
+  const caveatCount = countRegexMatches(publicText, /\b(caveat|careful|limitation|directional|not definitive|not a guarantee)\b|주의|한계|조심|불확실/gi);
+  const hasShortVersion = /short version|tl;dr|요약/i.test(bodyText);
+  const hasOpenQuestion = /[?？]\s*$/.test(bodyText.trim()) || artifact.commentSeeds.some((seed) => /[?？]\s*$/.test(seed.trim()));
+  const hasQuestionTitle = /[?？]/.test(artifact.title) || /\b(looked|noticed|compared|who would|is .+ worth)\b/i.test(artifact.title);
+  const duplicateLines = collectDuplicateMagazineLines(bodyText);
+  const publicCopyIssues = collectMagazinePublicCopyIssues(result, language);
+  const marketingSignals = collectMagazineMarketingSignals(publicText, language);
+  const titleIssueCount = artifact.title.length > 120 ? 1 : 0;
+  const internalRefIssueCount = /\bEvidence refs?:\s*[a-z0-9:_-]+/i.test(publicText) ? 1 : 0;
+  const hardIssueCount = publicCopyIssues.length + diagnostics.unsupportedClaims.length + diagnostics.channelWarnings.length;
+
+  const citationScore = clampQualityScore(
+    34
+    + Math.round(readinessScore * 0.36)
+    + Math.min(12, answerChunkCount * 3)
+    + Math.round(keywordCoverageScore * 0.1)
+    + (hasShortVersion ? 5 : 0)
+    + (bulletCount >= 2 ? 5 : 0)
+    - Math.min(12, diagnostics.validationWarnings.length * 3)
+    - Math.min(16, diagnostics.unsupportedClaims.length * 8)
+    - Math.min(8, internalRefIssueCount * 8)
+  );
+
+  const redditScore = clampQualityScore(
+    48
+    + (hasQuestionTitle ? 8 : 0)
+    + (hasOpenQuestion ? 8 : 0)
+    + (headingCount >= 4 ? 7 : 0)
+    + (productMentionCount <= 7 ? 5 : 0)
+    + (caveatCount >= 1 && caveatCount <= 3 ? 6 : 0)
+    - Math.min(14, titleIssueCount * 14)
+    - Math.min(14, duplicateLines.length * 7)
+    - Math.min(18, publicCopyIssues.length * 4)
+    - Math.min(10, marketingSignals.length * 4)
+  );
+
+  const evidenceScore = clampQualityScore(
+    38
+    + Math.min(20, evidenceCount * 4)
+    + Math.min(15, sourceTypeCount * 5)
+    + Math.min(12, selectedRagCount * 4)
+    + (readiness.checks.find((check) => check.id === "source-type-separation")?.passed ? 6 : 0)
+    + (readiness.checks.find((check) => check.id === "claim-evidence-language")?.passed ? 5 : 0)
+    - Math.min(18, diagnostics.unsupportedClaims.length * 9)
+    - Math.min(12, diagnostics.channelWarnings.length * 4)
+    - (evidenceCount === 0 ? 10 : 0)
+  );
+
+  const validationDetails = uniqueQualityItems([
+    ...publicCopyIssues,
+    ...marketingSignals,
+    ...duplicateLines.map((line) => copy.duplicateLineIssue(compactQualityText(line, 140))),
+    ...diagnostics.unsupportedClaims.map((claim) => copy.unsupportedClaimIssue(compactQualityText(claim, 140))),
+    ...diagnostics.channelWarnings.map((warning) => copy.channelWarningIssue(compactQualityText(warning, 140))),
+    ...diagnostics.validationWarnings.map((warning) => copy.validationWarningIssue(compactQualityText(warning, 140))),
+    ...readiness.warnings.map((warning) => copy.readinessWarningIssue(compactQualityText(warning, 140)))
+  ]);
+  const validationImprovements = ensureQualityItems([
+    artifact.title.length > 120 ? copy.titleImprovement : undefined,
+    hasAudienceLeak(publicText) ? copy.audienceLeakImprovement : undefined,
+    hasIngredientDump(publicText) ? copy.ingredientDumpImprovement : undefined,
+    caveatCount > 3 ? copy.caveatImprovement : undefined,
+    internalRefIssueCount > 0 ? copy.evidenceRefImprovement : undefined,
+    duplicateLines.length > 0 ? copy.duplicateImprovement : undefined,
+    diagnostics.unsupportedClaims.length > 0 ? copy.unsupportedClaimImprovement : undefined,
+    diagnostics.channelWarnings.length > 0 ? copy.channelWarningImprovement : undefined,
+    evidenceCount < 3 ? copy.evidenceDepthImprovement : undefined,
+    sourceTypeCount < 2 ? copy.sourceSeparationImprovement : undefined
+  ], copy.fallbackImprovement);
+
+  const dimensions: MagazineQualityDimension[] = [
+    {
+      id: "citation",
+      label: "GEO Citation",
+      score: citationScore,
+      criteria: copy.citationCriteria,
+      summary: copy.scoreSummary(citationScore, diagnostics.validationWarnings.length + diagnostics.unsupportedClaims.length + internalRefIssueCount),
+      evidence: uniqueQualityItems([
+        copy.readinessEvidence(readinessScore, passedChecks, readiness.checks.length),
+        copy.keywordEvidence(readiness.keywordCoverage.present.length, readiness.keywordCoverage.required.length),
+        copy.answerChunkEvidence(answerChunkCount),
+        hasShortVersion ? copy.shortVersionEvidence : copy.shortVersionMissingEvidence
+      ]),
+      improvements: ensureQualityItems([
+        readinessScore < 78 ? copy.readinessImprovement : undefined,
+        keywordCoverageScore < 70 ? copy.keywordImprovement : undefined,
+        internalRefIssueCount > 0 ? copy.evidenceRefImprovement : undefined,
+        diagnostics.unsupportedClaims.length > 0 ? copy.unsupportedClaimImprovement : undefined
+      ], copy.citationFallbackImprovement)
+    },
+    {
+      id: "reddit",
+      label: "Reddit UX",
+      score: redditScore,
+      criteria: copy.redditCriteria,
+      summary: copy.scoreSummary(redditScore, publicCopyIssues.length + duplicateLines.length + marketingSignals.length),
+      evidence: uniqueQualityItems([
+        hasQuestionTitle ? copy.questionTitleEvidence : copy.questionTitleMissingEvidence,
+        hasOpenQuestion ? copy.openQuestionEvidence : copy.openQuestionMissingEvidence,
+        copy.structureEvidence(headingCount, bulletCount),
+        copy.productMentionEvidence(productMentionCount),
+        caveatCount >= 1 && caveatCount <= 3 ? copy.caveatBalancedEvidence(caveatCount) : copy.caveatImbalancedEvidence(caveatCount)
+      ]),
+      improvements: ensureQualityItems([
+        artifact.title.length > 120 ? copy.titleImprovement : undefined,
+        hasAudienceLeak(publicText) ? copy.audienceLeakImprovement : undefined,
+        hasIngredientDump(publicText) ? copy.ingredientDumpImprovement : undefined,
+        caveatCount > 3 ? copy.caveatImprovement : undefined,
+        duplicateLines.length > 0 ? copy.duplicateImprovement : undefined,
+        marketingSignals.length > 0 ? copy.marketingToneImprovement : undefined
+      ], copy.redditFallbackImprovement)
+    },
+    {
+      id: "evidence",
+      label: "Evidence",
+      score: evidenceScore,
+      criteria: copy.evidenceCriteria,
+      summary: copy.scoreSummary(evidenceScore, Math.max(0, 3 - evidenceCount) + diagnostics.channelWarnings.length),
+      evidence: uniqueQualityItems([
+        copy.evidenceCountEvidence(evidenceCount, sourceTypeCount),
+        copy.ragEvidence(selectedRagCount),
+        readiness.checks.find((check) => check.id === "source-type-separation")?.passed ? copy.sourceSeparationEvidence : copy.sourceSeparationMissingEvidence,
+        readiness.checks.find((check) => check.id === "claim-evidence-language")?.passed ? copy.claimEvidenceLanguageEvidence : copy.claimEvidenceLanguageMissingEvidence
+      ]),
+      improvements: ensureQualityItems([
+        evidenceCount < 3 ? copy.evidenceDepthImprovement : undefined,
+        sourceTypeCount < 2 ? copy.sourceSeparationImprovement : undefined,
+        selectedRagCount === 0 ? copy.ragImprovement : undefined,
+        diagnostics.channelWarnings.length > 0 ? copy.channelWarningImprovement : undefined
+      ], copy.evidenceFallbackImprovement)
+    }
+  ];
+
+  return {
+    overallScore: clampQualityScore(Math.round((citationScore * 0.36) + (redditScore * 0.34) + (evidenceScore * 0.3)) - Math.min(8, hardIssueCount)),
+    dimensions,
+    validationDetails: limitMagazineQualityValidationLines(validationDetails, copy),
+    validationImprovements
+  };
+}
+
+function collectMagazinePublicCopyIssues(result: MagazineGeneratorResult, language: UiLanguage): string[] {
+  const copy = getMagazineQualityCopy(language);
+  const artifact = result.magazine.artifact;
+  const publicText = `${artifact.title}\n${artifact.bodyMarkdown}`;
+  const longLines = artifact.bodyMarkdown
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 420);
+
+  return uniqueQualityItems([
+    artifact.title.length > 120 ? copy.titleIssue(artifact.title.length) : undefined,
+    hasAudienceLeak(publicText) ? copy.audienceLeakIssue : undefined,
+    hasIngredientDump(publicText) ? copy.ingredientDumpIssue : undefined,
+    /\bEvidence refs?:\s*[a-z0-9:_-]+/i.test(publicText) ? copy.evidenceRefIssue : undefined,
+    countRegexMatches(publicText, /\bCaveat:/gi) > 2 ? copy.caveatRepeatIssue : undefined,
+    /(?:\.\.|,,|;;)/.test(publicText) ? copy.punctuationIssue : undefined,
+    longLines.length > 0 ? copy.longLineIssue(longLines.length) : undefined
+  ]);
+}
+
+function collectMagazineMarketingSignals(value: string, language: UiLanguage): string[] {
+  const copy = getMagazineQualityCopy(language);
+  const patterns: Array<[RegExp, string]> = [
+    [/\bpowerhouse\b/i, copy.marketingSignal("powerhouse")],
+    [/\bmelts into skin\b/i, copy.marketingSignal("melts into skin")],
+    [/\badvanced capsule technology\b/i, copy.marketingSignal("advanced capsule technology")],
+    [/\bessential nutrients\b/i, copy.marketingSignal("essential nutrients")],
+    [/™|®/g, copy.marketingSignal("trademark-heavy wording")]
+  ];
+
+  return patterns.flatMap(([pattern, message]) => pattern.test(value) ? [message] : []);
+}
+
+function collectDuplicateMagazineLines(value: string): string[] {
+  const seen = new Map<string, string>();
+  const duplicates: string[] = [];
+
+  for (const line of value.split("\n")) {
+    const trimmed = line.replace(/^[-*#\s]+/, "").replace(/\s+/g, " ").trim();
+    if (trimmed.length < 44) {
+      continue;
+    }
+    const normalized = trimmed.toLowerCase();
+    const existing = seen.get(normalized);
+    if (existing) {
+      duplicates.push(existing);
+      continue;
+    }
+    seen.set(normalized, trimmed);
+  }
+
+  return uniqueQualityItems(duplicates).slice(0, 6);
+}
+
+function hasAudienceLeak(value: string): boolean {
+  return /상품을\s*비교하고\s*근거를\s*확인하려는\s*Reddit\s*사용자|Reddit users comparing products and evidence/i.test(value);
+}
+
+function hasIngredientDump(value: string): boolean {
+  return /INGREDIENTS:\s*.{450,}/is.test(value)
+    || /FORMULATED WITHOUT:\s*.{180,}/is.test(value)
+    || /Compare against other product options[\s\S]{0,1200}INGREDIENTS:/i.test(value);
+}
+
+function countRegexMatches(value: string, pattern: RegExp): number {
+  return value.match(pattern)?.length ?? 0;
+}
+
+function countTextOccurrences(value: string, needle: string): number {
+  const trimmedNeedle = needle.trim();
+  if (!trimmedNeedle) {
+    return 0;
+  }
+  return value.toLowerCase().split(trimmedNeedle.toLowerCase()).length - 1;
+}
+
+function limitMagazineQualityValidationLines(
+  items: string[],
+  copy: ReturnType<typeof getMagazineQualityCopy>
+): string[] {
+  const maxItems = 18;
+  if (items.length <= maxItems) {
+    return items;
+  }
+
+  return [
+    ...items.slice(0, maxItems),
+    copy.validationMoreDetails(items.length - maxItems)
+  ];
+}
+
+function getMagazineQualityCopy(language: UiLanguage) {
+  if (language === "ko") {
+    return {
+      panelLabel: "Reddit GEO 콘텐츠 품질 평가",
+      sequenceNote: "Reddit 결과물 생성 후 citation readiness, Reddit 자연스러움, evidence grounding을 평가합니다.",
+      kicker: "후속 평가",
+      title: "Reddit 콘텐츠 품질 평가",
+      summaryLabel: "평가 요약",
+      productLabel: "상품",
+      overallScoreLabel: "종합 점수",
+      criteriaLabel: "평가 기준",
+      copyLabel: "전체 지표 복사",
+      copyDoneLabel: "복사 완료",
+      detailLabel: "Reddit 품질 평가 상세",
+      detailSummary: "상세 근거와 개선점",
+      evidenceLabel: "평가 근거",
+      improvementLabel: "개선점",
+      validationDetailLabel: "품질 경고 상세",
+      validationDetailDescription: "Reddit 사람이 읽기 어색한 표현, AI 인용에 방해되는 구조, evidence 연결 문제를 분리해 보여줍니다.",
+      validationIssueLabel: "경고 항목",
+      validationDirectionLabel: "개선 방향",
+      citationCriteria: "GEO Citation 기준: answer-ready chunk, 키워드 커버리지, 근거 언어, readiness check를 봅니다.",
+      redditCriteria: "Reddit UX 기준: 질문형 제목, 자연스러운 토론 흐름, 과도한 마케팅/반복/내부 라벨 노출 여부를 봅니다.",
+      evidenceCriteria: "Evidence 기준: source type 분리, 사용 근거 수, RAG chunk, unsupported claim/channel warning 여부를 봅니다.",
+      scoreSummary: (score: number, issueCount: number) => issueCount > 0
+        ? `${score}점 · 보완 이슈 ${issueCount}개`
+        : `${score}점 · 주요 기준 충족`,
+      readinessEvidence: (score: number, passed: number, total: number) => `GEO citation readiness ${score}/100, check ${passed}/${total} 통과`,
+      keywordEvidence: (present: number, required: number) => `필수 keyword coverage ${present}/${required}`,
+      answerChunkEvidence: (count: number) => `${count}개 AI answer chunk가 생성됨`,
+      shortVersionEvidence: "Short version이 있어 answer engine이 가져가기 쉬운 구조",
+      shortVersionMissingEvidence: "Short version 구조가 약하거나 bullet answer chunk가 부족함",
+      questionTitleEvidence: "제목이 질문/리서치 관찰형으로 구성됨",
+      questionTitleMissingEvidence: "제목이 질문 또는 리서치 관찰형으로 충분히 보이지 않음",
+      openQuestionEvidence: "본문 마지막이 커뮤니티 질문으로 끝남",
+      openQuestionMissingEvidence: "본문 마지막 커뮤니티 질문이 약함",
+      structureEvidence: (headings: number, bullets: number) => `섹션 heading ${headings}개, bullet ${bullets}개`,
+      productMentionEvidence: (count: number) => `상품명 반복 ${count}회`,
+      caveatBalancedEvidence: (count: number) => `caveat/limitation 표현 ${count}회로 균형 유지`,
+      caveatImbalancedEvidence: (count: number) => `caveat/limitation 표현 ${count}회로 부족하거나 반복적`,
+      evidenceCountEvidence: (evidence: number, sourceTypes: number) => `사용 evidence ${evidence}개, source type ${sourceTypes}종`,
+      ragEvidence: (count: number) => `선택된 evidence RAG chunk ${count}개`,
+      sourceSeparationEvidence: "product/review/stronger source 분리 신호가 있음",
+      sourceSeparationMissingEvidence: "source type 분리 신호가 약함",
+      claimEvidenceLanguageEvidence: "supported/evidence/verify 같은 근거 언어가 있음",
+      claimEvidenceLanguageMissingEvidence: "근거 언어가 약함",
+      titleIssue: (length: number) => `제목이 너무 깁니다 (${length}자). 검색 질의처럼 보일 수 있습니다.`,
+      audienceLeakIssue: "내부 audience 문구가 공개 Reddit 본문에 노출됨",
+      ingredientDumpIssue: "성분/FORMULATED WITHOUT 전체 덤프가 길게 노출됨",
+      evidenceRefIssue: "product:profile 같은 내부 evidence ref ID가 공개 본문에 노출됨",
+      caveatRepeatIssue: "Caveat 문구가 반복적으로 노출됨",
+      punctuationIssue: "마침표/구두점 반복이 있어 생성 티가 날 수 있음",
+      longLineIssue: (count: number) => `긴 문단/라인 ${count}개가 있어 Reddit 가독성이 떨어질 수 있음`,
+      marketingSignal: (value: string) => `마케팅성이 강한 표현 감지: ${value}`,
+      duplicateLineIssue: (line: string) => `반복 문장 감지: ${line}`,
+      unsupportedClaimIssue: (claim: string) => `unsupported claim: ${claim}`,
+      channelWarningIssue: (warning: string) => `channel warning: ${warning}`,
+      validationWarningIssue: (warning: string) => `validation warning: ${warning}`,
+      readinessWarningIssue: (warning: string) => `readiness warning: ${warning}`,
+      titleImprovement: "제목은 상품명 + 비교/검증 의도 중심으로 80~110자 안쪽에서 다시 압축하세요.",
+      audienceLeakImprovement: "내부 audience 설명은 제거하고 실제 Reddit 사용자 문맥으로 자연스럽게 바꾸세요.",
+      ingredientDumpImprovement: "전체 성분표는 접고, 비교에 필요한 2~4개 성분/클레임만 answer chunk로 요약하세요.",
+      caveatImprovement: "같은 caveat를 반복하지 말고, 한 번만 구체적인 한계로 남기세요.",
+      evidenceRefImprovement: "내부 evidence ref ID는 diagnostics에만 남기고 본문에는 'product page', 'review signal'처럼 자연어로 바꾸세요.",
+      duplicateImprovement: "반복 문장은 하나의 섹션으로 합치고 다른 섹션에서는 새로운 판단 기준을 넣으세요.",
+      unsupportedClaimImprovement: "근거가 부족한 claim은 제거하거나 'brand says/appears' 수준으로 낮추세요.",
+      channelWarningImprovement: "Reddit surface warning이 난 항목은 홍보/CTA/과도한 제품명 반복을 줄이세요.",
+      evidenceDepthImprovement: "review/news/paper/custom evidence를 추가해 단일 product claim 의존도를 낮추세요.",
+      sourceSeparationImprovement: "product claim, review signal, stronger source를 별도 섹션으로 분리하세요.",
+      readinessImprovement: "readiness warning을 먼저 해소해 answer engine이 가져갈 수 있는 chunk 구조를 고정하세요.",
+      keywordImprovement: "필수 키워드가 자연스럽게 본문 heading 또는 short version에 포함되도록 보강하세요.",
+      ragImprovement: "selected evidence RAG chunk가 없으면 evidence chunk 생성/검색 조건을 보강하세요.",
+      marketingToneImprovement: "브랜드식 수식어는 줄이고 관찰/비교/한계 중심의 Reddit 문장으로 바꾸세요.",
+      citationFallbackImprovement: "현재 answer chunk 구조를 유지하되 내부 ref ID와 중복 caveat를 회귀 검증하세요.",
+      redditFallbackImprovement: "현재 토론글 흐름을 유지하되 제목 길이, 마지막 질문, 반복 문구를 회귀 검증하세요.",
+      evidenceFallbackImprovement: "현재 근거 구조를 유지하되 source type 분리가 계속 유지되는지 확인하세요.",
+      fallbackImprovement: "현재 구조를 유지하되 공개 본문과 diagnostics 분리가 깨지지 않는지 회귀 검증하세요.",
+      validationMoreDetails: (count: number) => `그 외 ${count}개 경고는 진단 상세에서 확인하세요.`
+    };
+  }
+
+  return {
+    panelLabel: "Reddit GEO content quality evaluation",
+    sequenceNote: "After Reddit generation, citation readiness, Reddit naturalness, and evidence grounding are evaluated.",
+    kicker: "Follow-up evaluation",
+    title: "Reddit content quality",
+    summaryLabel: "Evaluation summary",
+    productLabel: "Product",
+    overallScoreLabel: "Overall score",
+    criteriaLabel: "Criteria",
+    copyLabel: "Copy all metrics",
+    copyDoneLabel: "Copied",
+    detailLabel: "Reddit quality detail",
+    detailSummary: "Detailed rationale and improvements",
+    evidenceLabel: "Rationale",
+    improvementLabel: "Improvements",
+    validationDetailLabel: "Quality warning details",
+    validationDetailDescription: "Separates awkward Reddit copy, structures that weaken AI citation, and evidence-grounding issues.",
+    validationIssueLabel: "Warning items",
+    validationDirectionLabel: "Improvement directions",
+    citationCriteria: "GEO Citation criteria: answer-ready chunks, keyword coverage, evidence language, and readiness checks.",
+    redditCriteria: "Reddit UX criteria: question-style title, natural discussion flow, and absence of heavy marketing, repetition, or internal labels.",
+    evidenceCriteria: "Evidence criteria: source-type separation, used evidence, RAG chunks, and unsupported-claim/channel warnings.",
+    scoreSummary: (score: number, issueCount: number) => issueCount > 0
+      ? `${score} · ${issueCount} issue${issueCount === 1 ? "" : "s"} to improve`
+      : `${score} · major criteria met`,
+    readinessEvidence: (score: number, passed: number, total: number) => `GEO citation readiness ${score}/100, ${passed}/${total} checks passed`,
+    keywordEvidence: (present: number, required: number) => `Required keyword coverage ${present}/${required}`,
+    answerChunkEvidence: (count: number) => `${count} AI answer chunk${count === 1 ? "" : "s"} generated`,
+    shortVersionEvidence: "Short version exists for answer-engine extraction",
+    shortVersionMissingEvidence: "Short version or bullet answer chunks are weak",
+    questionTitleEvidence: "Title is framed as a question or research observation",
+    questionTitleMissingEvidence: "Title is not clearly question or research-observation shaped",
+    openQuestionEvidence: "Body ends with an open community question",
+    openQuestionMissingEvidence: "Final community question is weak",
+    structureEvidence: (headings: number, bullets: number) => `${headings} section heading${headings === 1 ? "" : "s"}, ${bullets} bullet${bullets === 1 ? "" : "s"}`,
+    productMentionEvidence: (count: number) => `Product name appears ${count} time${count === 1 ? "" : "s"}`,
+    caveatBalancedEvidence: (count: number) => `${count} caveat/limitation signal${count === 1 ? "" : "s"} with reasonable balance`,
+    caveatImbalancedEvidence: (count: number) => `${count} caveat/limitation signal${count === 1 ? "" : "s"}; missing or repetitive`,
+    evidenceCountEvidence: (evidence: number, sourceTypes: number) => `${evidence} used evidence item${evidence === 1 ? "" : "s"}, ${sourceTypes} source type${sourceTypes === 1 ? "" : "s"}`,
+    ragEvidence: (count: number) => `${count} selected evidence RAG chunk${count === 1 ? "" : "s"}`,
+    sourceSeparationEvidence: "Product/review/stronger-source separation is present",
+    sourceSeparationMissingEvidence: "Source-type separation is weak",
+    claimEvidenceLanguageEvidence: "Supported/evidence/verify wording is present",
+    claimEvidenceLanguageMissingEvidence: "Evidence language is weak",
+    titleIssue: (length: number) => `Title is too long (${length} chars) and may read like a search query.`,
+    audienceLeakIssue: "Internal audience wording leaked into public Reddit copy",
+    ingredientDumpIssue: "Long ingredient/FORMULATED WITHOUT dump appears in public copy",
+    evidenceRefIssue: "Internal evidence ref IDs such as product:profile appear in public copy",
+    caveatRepeatIssue: "Caveat wording repeats too often",
+    punctuationIssue: "Repeated punctuation may make the copy look generated",
+    longLineIssue: (count: number) => `${count} long paragraph/line${count === 1 ? "" : "s"} reduce Reddit readability`,
+    marketingSignal: (value: string) => `Marketing-heavy phrase detected: ${value}`,
+    duplicateLineIssue: (line: string) => `Repeated sentence detected: ${line}`,
+    unsupportedClaimIssue: (claim: string) => `Unsupported claim: ${claim}`,
+    channelWarningIssue: (warning: string) => `Channel warning: ${warning}`,
+    validationWarningIssue: (warning: string) => `Validation warning: ${warning}`,
+    readinessWarningIssue: (warning: string) => `Readiness warning: ${warning}`,
+    titleImprovement: "Compress the title around product/entity plus comparison or verification intent, ideally under 80-110 chars.",
+    audienceLeakImprovement: "Remove internal audience text and rewrite it as natural Reddit context.",
+    ingredientDumpImprovement: "Collapse the full ingredient list into 2-4 comparison-relevant ingredient or claim points.",
+    caveatImprovement: "Keep one specific caveat instead of repeating the same limitation language.",
+    evidenceRefImprovement: "Keep internal evidence ref IDs in diagnostics and rewrite public copy as natural source labels.",
+    duplicateImprovement: "Merge repeated sentences and use the freed space for a new comparison criterion.",
+    unsupportedClaimImprovement: "Remove unsupported claims or soften them to 'brand says/appears' language.",
+    channelWarningImprovement: "Reduce promotional/CTA phrasing and excessive product-name repetition flagged by Reddit validation.",
+    evidenceDepthImprovement: "Add review, news, paper, or custom evidence so the post does not rely only on product claims.",
+    sourceSeparationImprovement: "Separate product claims, review signals, and stronger sources into distinct sections.",
+    readinessImprovement: "Resolve readiness warnings first so answer-engine chunk structure is stable.",
+    keywordImprovement: "Place missing required keywords naturally in the heading or short version.",
+    ragImprovement: "Strengthen evidence chunking/retrieval when no selected evidence RAG chunk appears.",
+    marketingToneImprovement: "Replace brand-like adjectives with observation, comparison, and caveat language.",
+    citationFallbackImprovement: "Keep the current answer-chunk structure and regression-check internal ref IDs and repeated caveats.",
+    redditFallbackImprovement: "Keep the current discussion flow and regression-check title length, ending question, and repetition.",
+    evidenceFallbackImprovement: "Keep the current evidence structure and verify source-type separation persists.",
+    fallbackImprovement: "Keep the current structure and regression-check separation between public copy and diagnostics.",
+    validationMoreDetails: (count: number) => `${count} more warning${count === 1 ? "" : "s"} are available in diagnostics.`
+  };
 }
 
 function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): GeoQualityEvaluation {
@@ -6572,6 +8334,44 @@ function getGeneratorPanelRagReferences(diagnostics?: PdpGeoDiagnostics): PanelR
   }));
 }
 
+function getMagazinePanelRagReferences(diagnostics?: GeoCitationDiagnostics): PanelRagReference[] {
+  const chunks = diagnostics?.selectedRagChunks ?? [];
+  const usageReferences = (diagnostics?.ragUsage ?? []).map((usage, index) => {
+    const matchedChunk = chunks.find((chunk) => chunk.sourceType === usage.sourceType && chunk.text.includes(usage.excerpt.slice(0, 40)));
+    return {
+      id: `magazine-rag-usage-${index}-${usage.source}-${usage.sourceType}`,
+      title: `${usage.sourceType} · ${usage.source}`,
+      source: usage.source,
+      kind: usage.sourceType,
+      text: matchedChunk?.text ?? usage.excerpt,
+      score: usage.score,
+      usage: usage.usage,
+      metadata: {
+        sourceType: usage.sourceType,
+        score: Math.round(usage.score * 100) / 100,
+        source: usage.source
+      }
+    } satisfies PanelRagReference;
+  });
+
+  if (usageReferences.length > 0) {
+    return usageReferences;
+  }
+
+  return chunks.map((chunk, index) => ({
+    id: `magazine-rag-${chunk.id}-${index}`,
+    title: chunk.title ?? `${chunk.sourceType} evidence`,
+    source: chunk.url ?? chunk.sourceType,
+    kind: chunk.sourceType,
+    text: chunk.text,
+    score: chunk.score,
+    metadata: {
+      reason: chunk.reason,
+      sourceType: chunk.sourceType
+    }
+  }));
+}
+
 function getExtractorPanelRagReferences(result?: ProductExtractionResult): PanelRagReference[] {
   return (result?.geoProduct.rag.chunks ?? []).map((chunk, index) => ({
     id: `extractor-rag-${chunk.id}-${index}`,
@@ -6647,7 +8447,7 @@ function isHttpUrl(value: string): boolean {
 function createArtifactCopyTarget(
   surface: ArtifactCopySurface,
   resultId: string | undefined,
-  view: OutputView | ExtractorOutputView
+  view: OutputView | ExtractorOutputView | MagazineOutputView
 ): string {
   return `${surface}:${resultId ?? "none"}:${view}`;
 }

@@ -4,6 +4,52 @@
 
 앱 없이 함수로 직접 호출할 수 있고, Next.js Route Handler 같은 Web API 환경에서는 REST 어댑터로 사용할 수 있습니다. 전체 Agentic GEO 오케스트레이션에서는 URL/REST 입력을 상품 중심 데이터로 바꾸는 첫 번째 agent 역할을 맡습니다.
 
+## 빠른 호출 가이드
+
+이 패키지는 독립 HTTP 서버가 아니라, 앱/서버에서 import해서 쓰는 agent 라이브러리입니다. 호출 방식은 두 가지입니다.
+
+### 함수로 직접 호출
+
+```ts
+import { extractProduct } from "@agentic-geo/pdp-extractor-agent";
+
+const run = await extractProduct(
+  {
+    sourceType: "url",
+    source: "https://example.com/products/serum",
+    aiProvider: "mock"
+  },
+  {
+    provider: "mock"
+  }
+);
+
+console.log(run.result.geoProduct);
+```
+
+### REST API로 노출
+
+Next.js Route Handler, Express, Hono, Worker 같은 Web API 환경에 REST handler를 붙이면 POST로 호출할 수 있습니다.
+
+```ts
+import { createProductExtractorRestHandler } from "@agentic-geo/pdp-extractor-agent/rest";
+
+export const POST = createProductExtractorRestHandler({
+  provider: "mock"
+});
+```
+
+요청 payload:
+
+```json
+{
+  "sources": ["https://example.com/products/serum"],
+  "sourceType": "url"
+}
+```
+
+`apps/geo-generator`와 `apps/pdp-extractor`에서는 이 adapter가 이미 `/api/extract`에 연결되어 있습니다.
+
 ## When To Use
 
 | 상황 | 사용 방식 |

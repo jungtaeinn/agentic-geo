@@ -13,6 +13,64 @@
 
 `0.2.0` 기준으로 이 agent는 특정 상품 문장을 막는 하드코딩 방식이 아니라, RAG의 field evidence contract를 기준으로 문장을 분류하고 재구성합니다. FAQ, HowTo, ingredient, benefit, claim evidence가 서로 섞이지 않도록 generation 후 validation/repair 단계에서도 같은 계약을 다시 확인합니다.
 
+## 빠른 호출 가이드
+
+이 패키지는 독립 HTTP 서버가 아니라, 앱/서버에서 import해서 쓰는 agent 라이브러리입니다. 호출 방식은 두 가지입니다.
+
+### 함수로 직접 호출
+
+```ts
+import { generatePdpGeo } from "@agentic-geo/pdp-geo-generator-agent";
+
+const run = await generatePdpGeo({
+  product: {
+    name: "Hydra Barrier Cream",
+    description: "Daily hydration cream for moisture barrier care.",
+    benefits: ["hydration"],
+    usage: ["Apply after serum."]
+  },
+  hints: {
+    locale: "ko-KR",
+    market: "KR"
+  }
+});
+
+console.log(run.result.schemaMarkup.scriptTag);
+console.log(run.result.content.html);
+```
+
+### REST API로 노출
+
+Next.js Route Handler, Express, Hono, Worker 같은 Web API 환경에 REST handler를 붙이면 POST로 호출할 수 있습니다.
+
+```ts
+import { createPdpGeoGeneratorRestHandler } from "@agentic-geo/pdp-geo-generator-agent/rest";
+
+export const POST = createPdpGeoGeneratorRestHandler({
+  provider: "mock",
+  rag: {
+    mode: "local-versioned-rag"
+  }
+});
+```
+
+요청 payload:
+
+```json
+{
+  "product": {
+    "name": "Hydra Barrier Cream",
+    "description": "Daily hydration cream for moisture barrier care."
+  },
+  "hints": {
+    "locale": "ko-KR",
+    "market": "KR"
+  }
+}
+```
+
+`apps/geo-generator`에서는 이 adapter가 이미 `/api/generator`에 연결되어 있습니다. URL/REST API 수집부터 GEO 생성까지 한 번에 실행하려면 `/api/generate` 오케스트레이션 route를 사용합니다.
+
 ## 핵심 개념
 
 이 agent는 단순히 상품명을 키워드로 늘리는 도구가 아닙니다. 상품 데이터를 보고, RAG 문서의 기준을 참고해, AI 검색/생성형 답변에서 이해하기 쉬운 구조로 재작성합니다.

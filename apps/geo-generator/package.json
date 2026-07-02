@@ -27,6 +27,7 @@
     "typecheck": "next typegen && tsc --noEmit"
   },
   "dependencies": {
+    "@agentic-geo/geo-citation-content-agent": "workspace:*",
     "@agentic-geo/pdp-extractor-agent": "workspace:*",
     "@agentic-geo/pdp-geo-generator-agent": "workspace:*",
     "lucide-react": "1.18.0",

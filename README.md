@@ -1,5 +1,7 @@
 # Agentic GEO
 
+![Agentic GEO 워크플로우](docs/images/agentic-geo-workflow.png)
+
 Agentic GEO는 서비스에서 필요한 GEO(Generative Engine Optimization) 작업을 여러 AI agent로 나누고, 입력 유형과 목적에 맞게 오케스트레이션하는 multi AI agent workspace입니다. PDP 상품 페이지, REST API, 임의 상품 JSON을 받아 추출, 정규화, RAG 검색, 생성, 검증 단계를 분리된 agent가 처리하고, 앱은 필요한 조합만 연결해 schema.org JSON-LD와 GEO 최적화 PDP content를 만듭니다.
 
 핵심 방향은 하나의 거대한 처리기가 아니라, 재사용 가능한 agent들을 서비스 요구사항에 따라 조합하는 구조입니다. 각 agent는 자체 RAG와 AI provider를 활용해 상품 정보 해석, 리뷰/OCR/FAQ 신호 분류, agentic query planning, contextual chunking, hybrid retrieval, lightweight reranking, GEO 문맥 reasoning, schema/content 생성, field-contract validation을 수행합니다. 예를 들어 PDP URL을 입력하면 `pdp-extractor-agent`가 상품/리뷰/OCR/FAQ/RAG 근거를 추출하고, `pdp-geo-generator-agent`가 그 결과를 기반으로 JSON-LD schema markup과 accordion HTML content를 생성한 뒤 validation/repair diagnostics를 제공합니다. 이미 정리된 상품 JSON이 있는 서비스라면 extractor를 건너뛰고 generator agent만 호출할 수 있습니다.
