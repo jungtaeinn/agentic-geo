@@ -662,18 +662,46 @@ function repairContentSections(
   warnings: string[],
   repairs: PdpGeoValidationRepair[]
 ): PdpGeoContentSections {
-  const repairedFaq = repairGeneratedText(sections.faq, locale, "content.sections.faq", warnings, repairs);
+  const repairedFaq = repairMultilineGeneratedText(sections.faq, locale, "content.sections.faq", warnings, repairs);
   const repaired = {
     productName: repairGeneratedText(sections.productName, locale, "content.sections.productName", warnings, repairs),
     description: repairGeneratedText(sections.description, locale, "content.sections.description", warnings, repairs),
-    quickFacts: repairGeneratedText(sections.quickFacts, locale, "content.sections.quickFacts", warnings, repairs),
-    benefits: repairGeneratedText(sections.benefits, locale, "content.sections.benefits", warnings, repairs),
-    ingredients: repairGeneratedText(sections.ingredients, locale, "content.sections.ingredients", warnings, repairs),
-    howToUse: repairGeneratedText(sections.howToUse, locale, "content.sections.howToUse", warnings, repairs),
+    quickFacts: repairMultilineGeneratedText(sections.quickFacts, locale, "content.sections.quickFacts", warnings, repairs),
+    benefits: repairMultilineGeneratedText(sections.benefits, locale, "content.sections.benefits", warnings, repairs),
+    ingredients: repairMultilineGeneratedText(sections.ingredients, locale, "content.sections.ingredients", warnings, repairs),
+    howToUse: repairMultilineGeneratedText(sections.howToUse, locale, "content.sections.howToUse", warnings, repairs),
     faq: repairFaqSectionText(repairedFaq, locale, warnings, repairs)
   };
 
   return repairContentFieldContracts(repaired, locale, warnings, repairs);
+}
+
+function repairMultilineGeneratedText(
+  value: string,
+  locale: PdpGeoLocale,
+  path: string,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[]
+): string {
+  if (!value.includes("\n")) {
+    return repairGeneratedText(value, locale, path, warnings, repairs);
+  }
+
+  return value
+    .split("\n")
+    .map((line) => {
+      if (!line.trim()) {
+        return "";
+      }
+      const prefix = line.match(/^(\s*(?:[-*]|\d+[.)]|[QA][.:])\s+)([\s\S]+)$/i);
+      if (!prefix?.[1] || !prefix[2]) {
+        return repairGeneratedText(line, locale, path, warnings, repairs);
+      }
+      return `${prefix[1]}${repairGeneratedText(prefix[2], locale, path, warnings, repairs)}`;
+    })
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function repairContentFieldContracts(
@@ -846,7 +874,7 @@ function isIngredientEvidenceText(value: string): boolean {
   if (/\b(?:ingredient|formula|technology|complex|extract|acid|oil|peptide|blend|capsule|ferment|filtrate|root|leaf|seed|flower|fruit|water\s*\/\s*aqua|aqua|glycerin|glycol|panthenol|retinol|niacinamide|ceramide|hyaluronic|zinc)\b/i.test(text)) {
     return true;
   }
-  if (/(?:성분|전성분|추출물|오일|펩타이드|레티놀|나이아신아마이드|세라마이드|히알루론산|징크|판테놀|成分|エキス|レチノール|セラミド)/i.test(text)) {
+  if (/(?:성분|전성분|기술|복합체|추출물|오일|펩타이드|레티놀|나이아신아마이드|세라마이드|히알루론산|하이알루론산|징크|판테놀|콜라겐|사포닌|인삼|진생|진세노믹스|비타민|유도체|成分|エキス|レチノール|セラミド)/i.test(text)) {
     return true;
   }
   return /^[A-Z][\p{L}\p{N}™®-]+(?:\s+[A-Z][\p{L}\p{N}™®-]+){0,4}$/u.test(text);
@@ -1106,7 +1134,7 @@ function isInvalidPropertyValue(name: string, value: string, locale: PdpGeoLocal
   if (/reported details/i.test(name) && isQuestionLike(value, locale)) {
     return true;
   }
-  if (/key ingredients/i.test(name)) {
+  if (/^key ingredients$/i.test(name)) {
     return value.split(",").some((item) => {
       const token = item.trim();
       return token.length === 0
@@ -1147,7 +1175,7 @@ function repairGeneratedText(
 
   if (locale === "ko-KR") {
     next = repairKoreanReviewQuoteFragments(next);
-    next = repairKoreanEvidenceFragments(next);
+    next = repairKoreanEvidenceFragments(next, path);
     next = repairKoreanSentenceQuality(next);
     next = repairKoreanParticles(next);
     if (isShortKoreanLabelValue(path, next)) {
@@ -1300,19 +1328,19 @@ function usageMeasurementLeadPattern(): RegExp {
 }
 
 function repairEnglishSentenceQuality(value: string): string {
-  return value
+  const next = value
     .replace(/\b(\d)\s*based\b/gi, "$1 based")
     .replace(/,\s*\./g, ".")
-    .replace(/\bProduct details pair In an? ([^.]+?) with key ingredients, visible benefits, texture, comfort, and usage context/gi, "Source-backed product evidence reports an $1")
-    .replace(/\bProduct details include In an? ([^.]+)$/gi, "Source-backed product evidence includes an $1")
-    .replace(/\bProduct details add In an? ([^.]+?) to the formula and care story/gi, "Source-backed product evidence supports the formula and care story through an $1")
+    .replace(/\bProduct details pair In an? ([^.]+?) with key ingredients, visible benefits, texture, comfort, and usage context/gi, "An $1 connects key ingredients, visible benefits, texture, comfort, and routine use")
+    .replace(/\bProduct details include In an? ([^.]+)$/gi, "An $1 supports the product's care story")
+    .replace(/\bProduct details add In an? ([^.]+?) to the formula and care story/gi, "An $1 supports the formula and care story")
     .replace(/The ingredient context of ([^.]+?) anchors the ([^.]+?) around benefit terms such as ([^.]+?), texture language, and use-feel comparison/gi, "$1 appears with $3 in the $2 for formula, texture, and routine comparison")
-    .replace(/(.+?) gives (.+?) ingredient context for (.+?) care, usage context, and comparison-led product discovery/gi, "$1 helps $2 understand the formula behind $3 care and everyday use context")
+    .replace(/(.+?) gives (.+?) ingredient context for (.+?) care, usage context, and comparison-led product discovery/gi, "$1 helps $2 understand the formula behind $3 care and everyday routine use")
     .replace(/(.+?) builds a product discovery context around (.+?), blending benefit terms, ingredient terms, texture, and use-feel language/gi, "$1 brings together $2, texture, and comfort details that shoppers look for in a skin-care routine")
-    .replace(/Product detail context adds/gi, "Source-backed product evidence includes")
-    .replace(/Product detail context organises/gi, "Source-backed product evidence organizes")
-    .replace(/\bProduct detail context\b/g, "Product details")
-    .replace(/\bproduct detail context\b/g, "product details")
+    .replace(/Product detail context adds/gi, "The product adds")
+    .replace(/Product detail context organises/gi, "The product brings together")
+    .replace(/\bProduct detail context\b/g, "The product")
+    .replace(/\bproduct detail context\b/g, "the product")
     .replace(/\bbenefit terms\b/gi, "visible benefits")
     .replace(/\bingredient terms\b/gi, "key ingredients")
     .replace(/\bingredient context\b/gi, "formula details")
@@ -1325,8 +1353,29 @@ function repairEnglishSentenceQuality(value: string): string {
     .replace(/\buse-feel language\b/gi, "comfort details")
     .replace(/\buse-feel\b/gi, "comfort")
     .replace(/\btexture language\b/gi, "texture")
-    .replace(/\s{2,}/g, " ")
+    .replace(/[ \t]{2,}/g, " ")
     .trim();
+
+  return removeEnglishMetaNarrationSentences(next)
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([,.!?])/g, "$1")
+    .trim();
+}
+
+function removeEnglishMetaNarrationSentences(value: string): string {
+  if (value.includes("\n")) {
+    return value
+      .split("\n")
+      .map((line) => removeEnglishMetaNarrationSentences(line))
+      .filter(Boolean)
+      .join("\n");
+  }
+  const sentences = value.split(/(?<=[.!?])\s+/).map((sentence) => sentence.trim()).filter(Boolean);
+  if (sentences.length <= 1) {
+    return value;
+  }
+  const filtered = sentences.filter((sentence) => !isEnglishMetaNarrationFrame(sentence));
+  return filtered.length > 0 ? filtered.join(" ") : value;
 }
 
 function repairEnglishOcrArtifacts(value: string): string {
@@ -1335,7 +1384,7 @@ function repairEnglishOcrArtifacts(value: string): string {
     .replace(/\bS[ÉE]RUM\s+ACTIVATEUR\b[\p{L}\s™®-]*?(?=\s+(?:so|and|with|for|that)\b|[.。!?]|$)/giu, "")
     .replace(/\bCR[ÈE]ME\b[\p{L}\s™®-]*?(?=\s+(?:so|and|with|for|that)\b|[.。!?]|$)/giu, "")
     .replace(/\b([A-Z]{3,})\s+([A-Z]{3,})\s+([A-Z]{3,})(?=\s+(?:so|and|with|for|that)\b)/g, (_match, a: string, b: string, c: string) => `${a.toLowerCase()} ${b.toLowerCase()} ${c.toLowerCase()}`)
-    .replace(/\s{2,}/g, " ")
+    .replace(/[ \t]{2,}/g, " ")
     .replace(/\s+([,.!?])/g, "$1")
     .trim();
 }
@@ -1348,7 +1397,7 @@ function describeGeneratedTextIssue(before: string, after: string): string {
   if (hasTruncationMarker(before)) {
     issues.push("truncated fragment was present");
   }
-  if (isBrokenGeneratedFragment(before) || /Evidence signal|Review signals|technology signals|benefit terms|ingredient terms|use-feel|product discovery context/i.test(before)) {
+  if (isBrokenGeneratedFragment(before) || isEnglishMetaNarrationFrame(before) || /Evidence signal|Review signals|technology signals|benefit terms|ingredient terms|use-feel|product discovery context/i.test(before)) {
     issues.push("internal generation/RAG label appeared in public copy");
   }
   if (/([가-힣]{1,40})(?:을|를|은|는|이|가|와|과)(?=[\s,.!?。！？]|$)/.test(before) && before !== after) {
@@ -1363,15 +1412,44 @@ function describeGeneratedTextIssue(before: string, after: string): string {
   return issues.join("; ");
 }
 
-function repairKoreanEvidenceFragments(value: string): string {
-  return value
+function repairKoreanEvidenceFragments(value: string, path: string): string {
+  const withoutMetaQuestions = shouldRemoveKoreanMetaQuestionFragments(path)
+    ? removeKoreanMetaQuestionFragments(value)
+    : value;
+  return withoutMetaQuestions
     .replace(/확인\s*(?:가능한\s*)?정보로\s*고객 리뷰 표현:\s*([^.!?。！？\n]+?)(?:을|를)\s*포함합니다/g, (_match, phrase: string) => {
       const cleanPhrase = phrase.trim().replace(/\s*,\s*/g, ", ");
       return `고객 리뷰의 ${cleanPhrase} 표현은 사용감과 케어 포인트를 보완합니다`;
     })
-    .replace(/확인된\s*(?:결과\/정보|상품 정보|정보)?(?:로|는)?\s*[^.。!?]*?(?:인가요|나요|까요)\??(?:을|를)?\s*(?:참고할 수 있습니다|포함합니다|확인할 수 있습니다|입니다)?[.。]?/g, "")
     .replace(/\s{2,}/g, " ")
     .trim();
+}
+
+function isEnglishMetaNarrationFrame(value: string): boolean {
+  const sourceSubject = "(?:source-backed\\s+)?(?:product\\s+)?(?:evidence|source\\s+evidence|source\\s+material|product-detail\\s+evidence|product\\s+detail\\s+context|usage\\s+guidance|texture\\s+context|routine\\s+context|reported\\s+benefit\\s+cues)";
+  const reportingPredicate = "(?:reports?|includes?|adds?|organizes?|organises?|presents?|summari[sz]es?|covers?|supports?|reflects?|states?|can\\s+be\\s+compared|is\\s+described|is\\s+framed)";
+  return new RegExp(`\\b${sourceSubject}\\b[^.!?\\n]{0,56}\\b${reportingPredicate}\\b`, "i").test(value);
+}
+
+function shouldRemoveKoreanMetaQuestionFragments(path: string): boolean {
+  return /(?:description|quickFacts|benefits|ingredients|faq|acceptedAnswer|additionalProperty|positiveNotes|reviewBody)/i.test(path)
+    && !/(?:mainEntity\.name|HowTo\.step\.name|productName)$/i.test(path);
+}
+
+function removeKoreanMetaQuestionFragments(value: string): string {
+  return value
+    .split(/(?<=[.!?。！？])\s+|\n+/u)
+    .filter((sentence) => !isKoreanMetaQuestionFragment(sentence))
+    .join(" ")
+    .trim();
+}
+
+function isKoreanMetaQuestionFragment(value: string): boolean {
+  const text = value.trim();
+  if (!text || !/(?:인가요|나요|까요)\??/.test(text)) {
+    return false;
+  }
+  return isKoreanMetaNarrationFrame(text) || /(?:확인(?:된| 가능한)?|상품\s*정보|제품\s*자료|결과\/정보)/.test(text);
 }
 
 function repairKoreanReviewQuoteFragments(value: string): string {
@@ -1384,10 +1462,12 @@ function repairKoreanReviewQuoteFragments(value: string): string {
 }
 
 function repairKoreanSentenceQuality(value: string): string {
-  return value
-    .replace(/상품\s*정보에는\s+([^.!?。！？\n]+?)(?:이|가)\s+함께\s+제시됩니다/g, (_match, phrase: string) => `${appendKoreanObjectParticle(formatKoreanListForSentence(phrase.trim()))} 함께 제공합니다`)
-    .replace(/상품\s*정보에는\s+([^.!?。！？\n]+?)(?:이|가)\s+제시됩니다/g, (_match, phrase: string) => `${appendKoreanObjectParticle(formatKoreanListForSentence(phrase.trim()))} 제공합니다`)
-    .replace(/제품\s*자료에서는\s+([^.!?。！？\n]+?)(?:으로|로)\s+설명됩니다/g, (_match, phrase: string) => `${phrase.trim()}입니다`)
+  return repairKoreanMetaNarrationFrames(value)
+    .replace(/제품로/g, "제품으로")
+    .replace(/(?:합니다|줍니다|입니다)입니다/g, (match) => match.replace(/입니다$/, ""))
+    .replace(/(?:하세요|주세요)입니다/g, (match) => match.replace(/입니다$/, ""))
+    .replace(/으로으로/g, "으로")
+    .replace(/로로/g, "로")
     .replace(/(?:확인(?:된 결과\/정보|된 상품 정보| 가능한 정보)(?:에 따르면|는)?\s*)?([^.!?。！？\n]*?\s*성분\/기술은\s*[^.!?。！？\n]*?\s*효능 맥락과 연결되어\s*[^.!?。！？\n]*?\s*비교에 필요한 핵심 케어 근거(?:를)?\s*설명합니다)/g, (_match, claim: string) => rewriteKoreanMetaClaimForPublicCopy(claim) ?? claim)
     .replace(/(?:([^.!?。！？\n]+?)에서\s+)?([^.!?。！？\n]+?)\s*성분\/기술은\s*([^.!?。！？\n]+?)\s*케어와 맞물려 제품 특징을 구체화합니다/g, (_match, productType: string | undefined, ingredientPhrase: string, outcomePhrase: string) => {
       const productContext = productType ? `${productType.trim()}에서는 ` : "";
@@ -1413,6 +1493,54 @@ function repairKoreanSentenceQuality(value: string): string {
     .replace(/([.。！？])(?=\S)/g, addSentencePunctuationSpacing)
     .replace(/\s{2,}/g, " ")
     .trim();
+}
+
+function repairKoreanMetaNarrationFrames(value: string): string {
+  const sourceSubject = koreanMetaNarrationSourceSubjectPattern();
+  const reportingPredicate = "(?:정리|요약|제시|설명|노출|포함|구성)";
+  return value
+    .replace(new RegExp(`${sourceSubject}\\s*(?:은|는|에는|에서는|으로는)?\\s*(?:다음처럼\\s*)?${reportingPredicate}(?:됩니다|합니다)[.:]?\\s*`, "g"), "")
+    .replace(new RegExp(`${sourceSubject}\\s*(?:은|는|에는|에서는|으로는)?\\s*([^.!?。！？\\n]{2,180}?)(?:내용)?(?:이|가|을|를)?\\s*(?:함께\\s*)?(?:포함|제시|노출|정리|요약|구성)(?:됩니다|합니다|되어\\s*있습니다)`, "g"), (_match, phrase: string) =>
+      rewriteKoreanMetaNarrationPhrase(phrase, "provide")
+    )
+    .replace(new RegExp(`${sourceSubject}\\s*(?:은|는|에는|에서는|으로는)?\\s*([^.!?。！？\\n]{2,180}?)(?:으로|로)\\s*설명됩니다`, "g"), (_match, phrase: string) =>
+      rewriteKoreanMetaNarrationPhrase(phrase, "describe")
+    );
+}
+
+function isKoreanMetaNarrationFrame(value: string): boolean {
+  const text = value.trim();
+  if (!/[가-힣]/.test(text)) {
+    return false;
+  }
+  const sourceSubject = koreanMetaNarrationSourceSubjectPattern();
+  return new RegExp(`${sourceSubject}.{0,80}(?:정리|요약|제시|설명|노출|포함|구성)(?:됩니다|합니다|되어\\s*있습니다)`).test(text);
+}
+
+function koreanMetaNarrationSourceSubjectPattern(): string {
+  return "(?:상품\\s*(?:페이지|상세|정보)?|제품\\s*(?:자료|정보|의\\s*확인\\s*근거)?|확인(?:된)?\\s*(?:결과\\/정보|상품\\s*정보|가능한\\s*정보|근거|정보|결과)|성분\\/효능\\s*근거|근거|내용|자료|리뷰\\s*(?:기반\\s*)?표현)";
+}
+
+function rewriteKoreanMetaNarrationPhrase(phrase: string, mode: "provide" | "describe"): string {
+  const cleanPhrase = phrase
+    .replace(/구체적인\s*상품\s*정보와\s*확인\s*근거/g, "효능, 성분, 사용 정보")
+    .replace(/상품\s*정보|확인\s*근거|내용$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleanPhrase) {
+    return "";
+  }
+  const comparison = cleanPhrase.match(/(.+?)\s*비교할 때 필요한/);
+  if (comparison?.[1]) {
+    return `${comparison[1].trim()} 비교에 필요한 효능, 성분, 사용 정보를 제공합니다`;
+  }
+  if (/리뷰|후기|사용감|만족도/.test(cleanPhrase)) {
+    return `리뷰에서는 ${formatKoreanListForSentence(cleanPhrase)} 같은 사용감 표현이 반복됩니다`;
+  }
+  if (mode === "describe" && cleanPhrase.length <= 80) {
+    return `${cleanPhrase}입니다`;
+  }
+  return `${appendKoreanObjectParticle(formatKoreanListForSentence(cleanPhrase))} 제공합니다`;
 }
 
 function rewriteKoreanMetaClaimForPublicCopy(value: string): string | undefined {
@@ -1568,7 +1696,7 @@ function isDanglingFragment(value: string): boolean {
 function normalizeRepeatedPunctuation(value: string): string {
   return value
     .replace(/([.!?。！？])\1{1,}/g, "$1")
-    .replace(/\s{2,}/g, " ")
+    .replace(/[ \t]{2,}/g, " ")
     .replace(/\s+\n/g, "\n")
     .replace(/\n\s+/g, "\n");
 }
@@ -1600,7 +1728,7 @@ function isBrokenGeneratedFragment(value: string): boolean {
   const openParens = (text.match(/\(/g) ?? []).length;
   const closeParens = (text.match(/\)/g) ?? []).length;
   return openParens !== closeParens
-    || /(property value|Evidence signal|Review signals|technology signals|main benefit signal|리뉴얼 전 제품|고객님들이 만족하셨던 속성)/i.test(text);
+    || /(property value|Evidence signal|Review signals|technology signals|main benefit signal)/i.test(text);
 }
 
 function isStandaloneUrlLike(value: string): boolean {

@@ -38,9 +38,11 @@ type ChatCompletionsPayload = {
   usage?: unknown;
 };
 
-const CHAT_COMPLETIONS_TIMEOUT_MS = 60_000;
+const CHAT_COMPLETIONS_TIMEOUT_MS = 420_000;
 const maxEvidenceItems = 10;
 const maxRagChunks = 8;
+const maxHydratedDocumentChars = 8_000;
+const maxEvidenceTextChars = 520;
 const strategicRagKinds = new Set(["geo-research", "geo-paper", "cep", "eeat"]);
 
 export async function refinePdpGeoCopy(
@@ -146,7 +148,7 @@ export class ModelBackedCopyRefiner implements PdpGeoCopyRefiner {
     }
 
     const prompt = createCopyRefinementPrompt(request);
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetchWithTimeout("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.config.apiKey}`,
@@ -157,7 +159,7 @@ export class ModelBackedCopyRefiner implements PdpGeoCopyRefiner {
         instructions: prompt.system,
         input: prompt.user
       })
-    });
+    }, CHAT_COMPLETIONS_TIMEOUT_MS, "OpenAI copy refinement");
 
     if (!response.ok) {
       throw new Error(`OpenAI copy refinement failed: ${response.status}`);
@@ -177,7 +179,7 @@ export class ModelBackedCopyRefiner implements PdpGeoCopyRefiner {
     }
 
     const prompt = createCopyRefinementPrompt(request);
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${this.config.model}:generateContent`, {
+    const response = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${this.config.model}:generateContent`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -187,7 +189,7 @@ export class ModelBackedCopyRefiner implements PdpGeoCopyRefiner {
         systemInstruction: { parts: [{ text: prompt.system }] },
         contents: [{ role: "user", parts: [{ text: prompt.user }] }]
       })
-    });
+    }, CHAT_COMPLETIONS_TIMEOUT_MS, "Gemini copy refinement");
 
     if (!response.ok) {
       throw new Error(`Gemini copy refinement failed: ${response.status}`);
@@ -405,16 +407,23 @@ function createCopyRefinementPrompt(request: PdpGeoCopyRefinementRequest): { sys
       "Top priority: make public copy more likely to be selected, quoted, or cited by AI answer engines such as ChatGPT, Gemini, Perplexity, and Google AI by creating concise, self-contained, source-backed answer units.",
       "Use selected strategic chunks as the primary task-specific guidance. Use hydrated full RAG documents only as controlled background for missing context, conflict resolution, and policy completeness.",
       "When guidance conflicts, apply this priority: source product evidence first, E-E-A-T trust and claim safety, schema validity, GEO answer-readiness, then CEP/customer phrasing.",
+      "Follow official AI/Search guidance as constraints: build helpful, crawlable, people-first content; do not rely on AI-only markup tricks; make structured data consistent with visible source facts and current PDP evidence.",
       "Extract those useful facts from the supplied product evidence only, then combine them into natural public product sentences.",
       "Prioritize concrete facts: product type, target concern or customer entry point, differentiating formula/ingredient, measured effect, usage context, and review-intent language.",
+      "Treat Product.name as the representative product entity. Keep SKU badges, bracketed commerce labels, volume/size qualifiers, and option labels in alternateName, offer, option, or FAQ context only when they are source-backed; do not let them dominate Product.description.",
       "Use only the supplied product evidence and strategic RAG guidance. Do not invent claims, ingredients, metrics, study details, prices, awards, or certifications.",
       "Preserve numeric claims, study populations, usage instructions, ingredient names, and product names exactly when they appear in evidence.",
       "For schemaProperties, refine only existing Product.additionalProperty values. Rewrite rigid labels such as Reported details, Ingredient/effect detail, and Customer review context into natural source-backed target-locale sentences.",
       "For faqAnswers, keep the same question intent and order as currentCopy.faqAnswers. Improve answer naturalness and GEO usefulness by blending ingredient, benefit/effect, metric, usage, and review evidence only when supplied.",
+      "For FAQ breadth, prefer BestPractice-level coverage when evidence exists: benefit, ingredient/technology, usage, review texture, skin suitability, evidence/metric, variant comparison, routine synergy, persistence, renewal/replacement, and purchase/gift context. Keep unsupported intents unchanged rather than inventing answers.",
       "For faqAnswers, make the first sentence directly answer the question and stand alone as a citation-ready claim unit: include the product name, target concern or customer, product type, key ingredient/technology, benefit/effect, usage context, or metric only when each fact is supported.",
-      "For Korean faqAnswers, avoid observer/reporting phrasing such as '상품 정보에는', '제품 자료에서는', '제시됩니다', '설명됩니다', '확인됩니다', or '정리됩니다' unless describing a literal evidence source. Use direct commerce-answer phrasing such as '적합하며', '포함되어 있으며', '케어를 돕습니다', '효능/케어를 제공합니다', and '사용하면 됩니다'.",
-      "For Korean suitability/benefit questions, answer in the shape '[제품명]은 [피부 고민/대상]에 적합하며, [효능/케어]를 돕는 [제품 유형]입니다.' Adapt naturally and do not force the template when evidence is missing.",
-      "For Korean ingredient/technology questions, answer in the shape '[제품명]에는 [성분/기술]이 포함되어 있으며, [효능/케어]를 돕는 핵심 성분/기술입니다.' If a technology is supplied, connect it to the supported benefit without inventing a mechanism.",
+      "For Korean and English public copy, avoid meta-narration: outside the opening WebPage.description page-introduction sentence, do not make the page, source material, evidence, information, product details, usage guidance, context, or generation process the grammatical subject of a sentence. The customer-facing subject should be the product, ingredient/technology, benefit, usage action, review pattern, option, or customer concern.",
+      "For English public copy, avoid observer frames such as \"source-backed evidence reports\", \"product details include\", \"usage guidance covers\", \"texture context supports\", or \"routine context can be compared\". Prefer direct product sentences such as \"the formula includes\", \"customer reviews mention\", \"the product is suitable for\", \"use it\", or \"the option differs by\".",
+      "For WebPage.description, start by introducing the PDP/product page, but make product evidence the first reasoning source: product name, product type, target customer or concern, benefits, ingredients/technology, usage, reviews, variants, offers, and reported results. Then infer the page-level coverage from available page elements and user intents instead of inserting stock wording such as \"The page helps answer...\".",
+      "Do not solve copy quality by copying a fixed template. Infer the sentence structure from the target locale, product type, supported evidence, user intent, and field role. Vary syntax naturally while keeping the claim verifiable.",
+      "For Korean and English faqAnswers, write direct commerce-answer sentences. Start with the answer itself, then add one supported fact. Use natural predicate families such as suitability, inclusion, care support, benefit delivery, usage action, review texture, comparison, or measured result; avoid passive observer/reporting frames unless the question literally asks about a source or document.",
+      "For suitability/benefit questions, infer a natural sentence that connects product, customer concern, product type, and supported benefit. Do not force a fixed wording pattern when the evidence points to another structure.",
+      "For ingredient/technology questions, infer a natural sentence that connects ingredient or technology to the supported benefit without inventing a mechanism.",
       "Never add a new number, percentage, duration, sample size, study population, usage period, certification, or claim mechanism that is absent from productEvidence or currentCopy.",
       "Rewrite OCR-like evidence into natural target-locale sentences before using it. Never copy raw all-caps image text, footnote markers, bilingual product labels, or alternate-language product-type labels into public copy.",
       "Respect field evidence contracts: HowTo and usage answers may contain only actionable usage directions; ingredient sections may contain only ingredient/formula/full-INCI evidence; benefit sections may contain only outcomes, effects, review-backed positives, or concise evidence topics.",
@@ -433,7 +442,7 @@ function createCopyRefinementPayload(request: PdpGeoCopyRefinementRequest): Reco
   const faqAnswers = readSchemaFaqItems(request.schemaMarkup.jsonLd);
   const strategicChunks = selectStrategicRagGuidanceChunks(request.ragChunks, maxRagChunks);
   return {
-    task: "Select AI-exposure-worthy product keywords and sentences from productEvidence, guided by GEO research/geo-paper, CEP, and E-E-A-T. Combine only grounded facts into public PDP description copy.",
+    task: "Select AI-exposure-worthy product keywords and sentences from productEvidence, guided by GEO research/geo-paper, CEP, and E-E-A-T. Use model reasoning to compose natural target-locale public PDP copy from grounded facts; do not rely on fixed public sentence templates.",
     locale: request.locale,
     market: request.market,
     currentCopy: {
@@ -451,18 +460,53 @@ function createCopyRefinementPayload(request: PdpGeoCopyRefinementRequest): Reco
       originalName: request.product.originalName,
       brand: request.product.brand,
       category: request.product.category,
-      benefits: request.product.benefits.slice(0, maxEvidenceItems),
-      effects: request.product.effects.slice(0, maxEvidenceItems),
-      ingredients: request.product.ingredients.slice(0, maxEvidenceItems),
-      usage: request.product.usage.slice(0, maxEvidenceItems),
-      metrics: request.product.metrics.slice(0, maxEvidenceItems),
+      benefits: compactEvidenceList(request.product.benefits, maxEvidenceItems),
+      effects: compactEvidenceList(request.product.effects, maxEvidenceItems),
+      ingredients: compactEvidenceList(request.product.ingredients, maxEvidenceItems),
+      usage: compactEvidenceList(request.product.usage, maxEvidenceItems),
+      metrics: compactEvidenceList(request.product.metrics, maxEvidenceItems),
+      faq: request.product.faq.slice(0, 12).map((item) => ({
+        question: truncate(cleanText(item.question), 220),
+        answer: truncate(cleanText(item.answer), 900)
+      })),
       reviewSummary: {
         rating: request.product.reviews.rating,
         reviewCount: request.product.reviews.reviewCount,
-        keywords: request.product.reviews.keywords.slice(0, maxEvidenceItems),
-        examples: request.product.reviews.items.map((review) => review.body).slice(0, 5)
+        keywords: compactEvidenceList(request.product.reviews.keywords, maxEvidenceItems),
+        examples: compactEvidenceList(request.product.reviews.items.map((review) => review.body), 5)
       },
-      sourceTexts: unique(request.product.sourceTexts).slice(0, maxEvidenceItems)
+      sourceTexts: selectHighValueEvidenceTexts(request.product.sourceTexts, maxEvidenceItems)
+    },
+    descriptionEvidence: {
+      purpose: "Use these compact, source-backed candidates to reason about richer WebPage.description and Product.description. Do not copy all items; select the strongest evidence for each field.",
+      webPageRole: "Start by introducing the PDP/product page as the page for this product. Ground that opening in product information first: product identity, product type, target customer or concern, major benefits, ingredients or technology, usage, reviews, options, offers, and reported results when supported. Then describe page coverage at a higher level.",
+      productRole: "Describe the product entity itself: product type, customer concern, key benefits, ingredients/technology, usage or routine fit, reviews, and supported metrics.",
+      sourceBackedFaq: request.product.faq.slice(0, 12).map((item) => ({
+        question: truncate(cleanText(item.question), 220),
+        answer: truncate(cleanText(item.answer), 900)
+      })),
+      semanticMetricClaims: (request.product.semanticFacts?.metricClaims ?? []).slice(0, 8).map((claim) => ({
+        label: claim.label,
+        subject: claim.subject,
+        value: claim.value,
+        unit: claim.unit,
+        metric: claim.metric,
+        timing: claim.timing,
+        period: claim.period,
+        sample: claim.sample,
+        method: claim.method,
+        sentence: claim.sentence ? truncate(cleanText(claim.sentence), maxEvidenceTextChars) : undefined,
+        sourceText: claim.sourceText ? truncate(cleanText(claim.sourceText), maxEvidenceTextChars) : undefined
+      })),
+      ingredientBenefitLinks: (request.product.semanticFacts?.ingredientBenefitLinks ?? []).slice(0, 8).map((link) => ({
+        ingredient: link.ingredient,
+        benefit: link.benefit,
+        effect: link.effect,
+        sentence: link.sentence ? truncate(cleanText(link.sentence), maxEvidenceTextChars) : undefined,
+        sourceText: link.sourceText ? truncate(cleanText(link.sourceText), maxEvidenceTextChars) : undefined
+      })),
+      evidenceSentences: selectHighValueEvidenceTexts(request.product.semanticFacts?.evidenceSentences ?? [], 10),
+      highValueSourceTexts: selectHighValueEvidenceTexts(request.product.sourceTexts, 10)
     },
     extractionPriorities: [
       "Choose product facts that directly answer likely generative-search questions.",
@@ -470,7 +514,18 @@ function createCopyRefinementPayload(request: PdpGeoCopyRefinementRequest): Reco
       "Prefer source-backed specificity over broad marketing language.",
       "Map CEP/customer-entry-point language to the product's actual target concern, routine moment, or comparison context.",
       "Use E-E-A-T guidance to keep claims verifiable, attributed to page evidence, and free of exaggeration.",
-      "Use GEO research guidance to make descriptions answer-ready without exposing internal optimization language."
+      "Use GEO research guidance to make descriptions answer-ready without exposing internal optimization language.",
+      "When currentCopy contains stiff fallback wording, rewrite the meaning from productEvidence instead of paraphrasing the fallback template.",
+      "For English as well as Korean, generate the final sentence through evidence-based reasoning rather than inserting a stock phrase.",
+      "For WebPage.description, make the first sentence a product-page introduction grounded first in productEvidence, then replace fallback frames like \"The page helps answer...\" with natural page-level coverage language grounded in actual FAQ, HowTo, review, variant, offer, ingredient, benefit, or reported-result evidence."
+    ],
+    publicCopyQualityGate: [
+      "Reject meta-narration where the grammatical subject is source material, evidence, product details, page information, usage guidance, context, or the generation process.",
+      "Reject WebPage.description if it does not begin by introducing the product page or if the page introduction is not grounded in concrete product information.",
+      "Reject WebPage.description wording that uses a stock helper phrase such as \"The page helps answer\" instead of reasoning from the actual page elements and supported customer intent.",
+      "Reject copy that reads like a report about available information instead of product-facing PDP content.",
+      "Accept only sentences that remain natural when quoted by ChatGPT, Gemini, Google AI, or another answer engine.",
+      "Accept fewer FAQ answers when only fewer distinct source-backed search intents are available."
     ],
     strategicExposureGuidance: strategicChunks.map(formatRagGuidanceChunk),
     strategicFullDocuments: (request.hydratedRagDocuments ?? []).map(formatHydratedRagDocument),
@@ -497,6 +552,42 @@ function createCopyRefinementPayload(request: PdpGeoCopyRefinementRequest): Reco
       }))
     } : undefined
   };
+}
+
+function compactEvidenceList(values: string[], limit: number): string[] {
+  return selectHighValueEvidenceTexts(values, limit);
+}
+
+function selectHighValueEvidenceTexts(values: string[], limit: number): string[] {
+  return unique(values
+    .map(cleanText)
+    .filter((value) => value.length >= 4)
+    .sort((left, right) => evidenceTextScore(right) - evidenceTextScore(left)))
+    .slice(0, limit)
+    .map((value) => truncate(value, maxEvidenceTextChars));
+}
+
+function evidenceTextScore(value: string): number {
+  let score = 0;
+  if (/[0-9０-９]/.test(value)) {
+    score += 6;
+  }
+  if (/%|배|\b(?:weeks?|days?|hours?|participants?|women|men|subjects?|reviews?)\b|명|인|주|일|시간/i.test(value)) {
+    score += 7;
+  }
+  if (/(?:임상|인체\s*적용|자가\s*평가|시험|테스트|결과|개선|지속|만족|clinical|study|self[-\s]?assessment|instrumental|result|improvement|agreed)/i.test(value)) {
+    score += 6;
+  }
+  if (/(?:성분|기술|포뮬러|진세노믹스|펩타이드|비타민|콜라겐|레티놀|ingredient|technology|formula|peptide|vitamin|collagen|retinol|ginseng)/i.test(value)) {
+    score += 5;
+  }
+  if (/(?:보습|수분|탄력|주름|피부결|장벽|진정|리프팅|밀도|hydration|firming|wrinkle|texture|barrier|soothing|lifting|density)/i.test(value)) {
+    score += 5;
+  }
+  if (/(?:사용|아침|저녁|루틴|단계|apply|use|routine|morning|night)/i.test(value)) {
+    score += 2;
+  }
+  return score;
 }
 
 function applyCopyRefinement(
@@ -659,6 +750,14 @@ function acceptRefinedText(
   }
   if (containsInternalOrVisualArtifact(text)) {
     warnings.push(`${field} refinement rejected because it contains internal labels or visual-caption artifacts.`);
+    return undefined;
+  }
+  if (containsPublicMetaNarrationArtifact(text)) {
+    warnings.push(`${field} refinement rejected because it uses meta-narration instead of customer-facing product copy.`);
+    return undefined;
+  }
+  if (field === "WebPage.description" && !startsWithProductPageIntroduction(text)) {
+    warnings.push(`${field} refinement rejected because it does not start with a product-page introduction grounded in product information.`);
     return undefined;
   }
   if (options.requireSupportedClaimTokens && hasUnsupportedClaimTokens(text, options.evidenceCorpus ?? "")) {
@@ -983,13 +1082,15 @@ function formatRagGuidanceChunk(chunk: PdpGeoCopyRefinementRequest["ragChunks"][
 }
 
 function formatHydratedRagDocument(document: NonNullable<PdpGeoCopyRefinementRequest["hydratedRagDocuments"]>[number]): Record<string, unknown> {
+  const cleanContent = cleanText(document.content);
   return {
     source: document.source,
     version: document.version,
     kind: document.kind,
     hydrationMode: document.hydrationMode,
     selectedChunkTitles: document.selectedChunkTitles,
-    content: document.content
+    content: truncate(cleanContent, maxHydratedDocumentChars),
+    contentTruncated: cleanContent.length > maxHydratedDocumentChars
   };
 }
 
@@ -1067,6 +1168,34 @@ function numberField(value: unknown): number | undefined {
 
 function containsInternalOrVisualArtifact(value: string): boolean {
   return /\b(RAG|GEO|geo-paper|geo research|CEP|E-E-A-T|EEAT|OCR|schema optimization|citation-ready|image caption|product shot|pack shot|with text|in the corner|person applying|model applying)\b/i.test(value);
+}
+
+function containsPublicMetaNarrationArtifact(value: string): boolean {
+  return containsEnglishPublicMetaNarrationArtifact(value) || containsKoreanPublicMetaNarrationArtifact(value);
+}
+
+function containsEnglishPublicMetaNarrationArtifact(value: string): boolean {
+  if (/\bThe\s+page\s+helps\s+answer\b/i.test(value)) {
+    return true;
+  }
+  const sourceSubject = "(?:source-backed\\s+)?(?:product\\s+)?(?:evidence|source\\s+evidence|source\\s+material|product-detail\\s+evidence|product\\s+detail\\s+context|usage\\s+guidance|texture\\s+context|routine\\s+context|reported\\s+benefit\\s+cues)";
+  const reportingPredicate = "(?:reports?|includes?|adds?|organizes?|organises?|presents?|summari[sz]es?|covers?|supports?|reflects?|states?|can\\s+be\\s+compared|is\\s+described|is\\s+framed)";
+  return new RegExp(`\\b${sourceSubject}\\b[^.!?\\n]{0,56}\\b${reportingPredicate}\\b`, "i").test(value);
+}
+
+function containsKoreanPublicMetaNarrationArtifact(value: string): boolean {
+  if (!/[가-힣]/.test(value)) {
+    return false;
+  }
+  const sourceSubject = "(?:상품|제품|페이지|상품\\s*상세|상품\\s*정보|제품\\s*정보|제품\\s*자료|확인(?:된)?\\s*(?:근거|정보|결과)|근거|내용|자료|성분\\s*영역|효능\\s*정보|리뷰\\s*(?:기반\\s*)?표현)";
+  const reportingPredicate = "(?:정리|요약|제시|설명|노출|포함|구성)";
+  return new RegExp(`${sourceSubject}.{0,28}(?:은|는|에는|에서는|으로는|로|를|을)?[^.!?。！？\\n]{0,48}${reportingPredicate}(?:하|되|됩|합니다|됩니다)`).test(value);
+}
+
+function startsWithProductPageIntroduction(value: string): boolean {
+  const opening = value.split(/[.!?。！？]\s+/)[0] ?? value;
+  return /(?:product\s+page|product-detail\s+page|PDP|상품\s*페이지|제품\s*페이지|商品ページ)/i.test(opening)
+    && /(?:product|상품|제품|成分|ベネフィット|benefit|ingredient|technology|formula|routine|usage|review|variant|offer|reported|customer|concern|skin|피부|고객|クリーム|美容液|化粧水|クレンザー)/i.test(opening);
 }
 
 function cloneJsonObject(value: JsonObject): JsonObject {

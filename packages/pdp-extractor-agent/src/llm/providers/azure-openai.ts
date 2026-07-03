@@ -14,8 +14,8 @@ type ChatCompletionsPayload = {
   usage?: unknown;
 };
 
-const CHAT_COMPLETIONS_TIMEOUT_MS = 60_000;
-const IMAGE_DOWNLOAD_TIMEOUT_MS = 20_000;
+const CHAT_COMPLETIONS_TIMEOUT_MS = 300_000;
+const IMAGE_DOWNLOAD_TIMEOUT_MS = 60_000;
 
 /** Azure API adapter using deployment-scoped chat completions. */
 export class AzureApiKeywordClassifier implements KeywordClassifier {

@@ -25,6 +25,7 @@ When policies overlap, choose the stricter source-backed rule and keep the decis
 GEO output should help generative engines cite and verify the product from structured, evidence-rich facts. Citation readiness means varied, natural product expressions and complete facts, not public citation labels, quote phrases, or repeated stock claim sentences.
 
 - Prefer product-specific facts over generic SEO claims.
+- Treat ChatGPT Search, Gemini grounding, and Google AI Search as retrieval-and-citation environments: they reward crawlable, visible, source-backed content units, not hidden AI-only instructions or artificial markup tricks.
 - Compose descriptions from: target customer + core benefit + ingredient or technology + usage context + source-supported or review-backed detail.
 - Never expose internal wording such as "GEO-ready", "PDP name", "schema optimization", or "for generative engines" inside public schema/content.
 - Do not use analysis labels such as "usage", "review", "benefit", or "keyword" as product category values.
@@ -35,7 +36,8 @@ GEO output should help generative engines cite and verify the product from struc
 Public JSON-LD values and PDP content should read like customer-facing product information, not internal optimization notes.
 
 - Do not expose internal labels such as "evidence signal", "review signals", "main benefit signal", "ingredient signal", "technology signals", "GEO", "RAG", "schema optimization", or "citation optimization".
-- Prefer natural public wording such as "customer reviews mention", "available product information includes", "the formula includes", "key ingredients and technologies include", or "reported product details include".
+- Make the public sentence subject the product, ingredient/technology, benefit, usage action, review pattern, option, or customer concern. Do not make "evidence", "source material", "product page", "product details", "usage guidance", "context", "information", or the generation process the subject unless the user-facing question is explicitly about a document/source.
+- Prefer direct public wording such as "the formula includes", "key ingredients and technologies include", "customer reviews mention", "the product is suitable for", "use it", "the routine uses", or "the option differs by". Avoid passive report-like wording that says information is organized, presented, exposed, summarized, included, reported, or covered.
 - When adding expression variety, vary ingredient, benefit, texture, routine, and review wording naturally; do not add phrases whose only purpose is to look quotable.
 - Keep diagnostic terms in diagnostics only. Do not place diagnostic labels in `WebPage.description`, `Product.description`, `positiveNotes`, `additionalProperty.value`, `FAQPage.mainEntity`, or `HowTo.step`.
 
@@ -83,7 +85,7 @@ Role: describe the product as the commercial entity being sold or evaluated.
 
 Recommended composition:
 
-`[Product name] is a [product type] for [target customer/concern]. It supports [specific benefits/effects] with [key ingredients/technologies]. It can be used [usage/routine context]. Representative customer reviews mention [texture, comfort, or satisfaction phrasing]. Product details should connect supported results or evidence with key actives, visible benefits, texture, comfort, and usage context.`
+`[Product name] is a [product type] for [target customer/concern]. It supports [specific benefits/effects] with [key ingredients/technologies]. It can be used [usage/routine context]. Representative customer reviews mention [texture, comfort, or satisfaction phrasing]. A supporting sentence can connect reported results with key actives, visible benefits, texture, comfort, and routine use.`
 
 Use `Product.description` to expose:
 
@@ -108,16 +110,18 @@ Avoid:
 The `Product` node should be dense but verifiable.
 Do not reuse the same description for `WebPage.description` and `Product.description`. The WebPage description should explain what the page covers at a higher level while still naming the key benefit areas, ingredients or technologies, customer review language, reported results, and target-customer decision context. Product.description should be a product-specific, answer-ready entity description that explains who the product is for, what benefits and major ingredients it has, what representative customer reviews say, how the product can be used, and which supported result details are available.
 
+Resolve product identity before writing copy. Many commerce PDPs expose a SKU name such as `[Brand][small size] Representative Product 30ml`, while the BestPractice product entity should be the representative sellable product such as `Brand Representative Product`. Preserve the full source SKU name in `alternateName`, option facts, offer labels, and diagnostics; do not let bracketed badges, volume labels, or promotion labels become the canonical `Product.name`.
+
 Recommended fields:
 
-- `name`: local market product name.
-- `alternateName`: global or English product name when available.
+- `name`: local market representative product name, normalized away from commerce badges, source brackets, and SKU-only volume labels when the source clearly separates them.
+- `alternateName`: global, English, original source, or SKU-specific product name when available.
 - `description`: product-specific description containing benefits, core technology or ingredients, target use case, and evidence. Avoid generic marketing filler.
 - `brand`: `Brand` with local and alternate names.
 - `manufacturer`: organization when known.
 - `category`: hierarchical commerce category, for example `Skincare > Cream > Anti-aging Cream`. Do not use content section names.
 - `audience`: use when the product clearly targets a demographic or need state. Keep it evidence-based.
-- `offers`: list variants as separate offers when volume, SKU, price, currency, and availability differ.
+- `offers`: list variants as separate offers when volume, SKU, price, currency, and availability differ. If only the current SKU has trustworthy price evidence, attach that price to the current offer and avoid mixing prices from other variants.
 - `award`: include only clear awards, rankings, certifications, or sales claims with period and source context.
 - `additionalProperty`: use `PropertyValue` entries to preserve facts that generative engines can quote.
 - Keep each `additionalProperty.value` atomic and single-line. Do not place a multiline Quick facts paragraph in Product schema; split it into target customer, key benefit, key ingredients, customer reviews, and reported details instead. Put actual usage instructions in HowTo or the generated usage section, not as a separate use-context property.
@@ -188,6 +192,8 @@ The language may change, but the structure must remain fact-first.
 Generate FAQ from customer intent and product evidence. Mix factual questions with shopping-decision questions.
 Do not copy visible PDP FAQ questions and answers into `FAQPage.mainEntity` as-is. Treat page FAQ as one evidence source, then reconstruct the final question set from GEO intent patterns, repeated customer review language, product benefit/effect facts, ingredient or technology facts, usage context, and selected RAG guidance.
 
+BestPractice depth is usually 8-14 questions for a rich beauty PDP. A thin 4-question FAQ often misses the citation surface that AI Search systems need for query fan-out, comparison, and follow-up questions. Keep the set smaller only when the source truly lacks evidence.
+
 Recommended FAQ types:
 
 - Effectiveness: "What skin concerns does this product address?"
@@ -205,6 +211,8 @@ Recommended FAQ types:
 - Natural-language customer questions, such as "I am starting to worry about wrinkles and firmness" or "I want a lightweight anti-aging cream."
 
 Answers should contain concise, reusable product facts with varied benefit, ingredient, review, and use-context wording. Include metrics only when they exist in the input evidence. Do not invent study populations, durations, rankings, or regulatory claims.
+
+FAQ answers should start with the direct answer, then add one short evidence or comparison detail. Choose the FAQ count by search-intent coverage rather than a fixed number: 4-6 for thin products, 6-10 for normal beauty PDPs with ingredient/effect/usage/review/option evidence, and up to 8-12 when BestPractice-level evidence covers clinical results, ingredient technology, option comparison, sensitive skin, routine synergy, reviews, gift or purchase context. Quality-gate FAQ first and cap at 12: if only 7 answers are source-backed and distinct, use 7. Avoid observer phrasing such as "the product page says" unless the question is explicitly about what the page contains. The best answer unit should still make sense when ChatGPT, Gemini, or Google AI quotes it outside the original page.
 
 ## HowTo Best Practice
 

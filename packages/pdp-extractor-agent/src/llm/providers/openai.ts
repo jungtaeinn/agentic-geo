@@ -9,6 +9,9 @@ import type {
 } from "../types";
 import type { AiTokenUsage } from "../../types";
 
+const RESPONSES_TIMEOUT_MS = 300_000;
+const IMAGE_DOWNLOAD_TIMEOUT_MS = 60_000;
+
 /** OpenAI Responses API adapter for OCR keyword classification. */
 export class OpenAIKeywordClassifier implements KeywordClassifier {
   constructor(private readonly config: LlmProviderConfig) {}
@@ -22,7 +25,7 @@ export class OpenAIKeywordClassifier implements KeywordClassifier {
     }
 
     const prompt = createKeywordClassificationPromptParts(request);
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetchWithTimeout("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.config.apiKey}`,
@@ -33,7 +36,7 @@ export class OpenAIKeywordClassifier implements KeywordClassifier {
         instructions: prompt.system,
         input: prompt.user
       })
-    });
+    }, RESPONSES_TIMEOUT_MS, "OpenAI keyword classification");
 
     if (!response.ok) {
       throw new Error(`OpenAI keyword classification failed: ${response.status}`);
@@ -91,7 +94,7 @@ export class OpenAIKeywordClassifier implements KeywordClassifier {
     images: Array<{ displayUrl: string; inputUrl: string }>
   ): Promise<ImageTextExtractionResponse> {
     const content = createImageOcrContent(request, images);
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetchWithTimeout("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.config.apiKey}`,
@@ -106,7 +109,7 @@ export class OpenAIKeywordClassifier implements KeywordClassifier {
           }
         ]
       })
-    });
+    }, RESPONSES_TIMEOUT_MS, "OpenAI image OCR");
 
     if (!response.ok) {
       throw new Error(`OpenAI image OCR failed: ${response.status}${await responseErrorSuffix(response)}`);
@@ -314,12 +317,12 @@ function numberField(value: unknown): number | undefined {
 }
 
 async function downloadImageAsDataUrl(imageUrl: string): Promise<string> {
-  const response = await fetch(imageUrl, {
+  const response = await fetchWithTimeout(imageUrl, {
     headers: {
       Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
       "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
     }
-  });
+  }, IMAGE_DOWNLOAD_TIMEOUT_MS, "Image download for OCR");
 
   if (!response.ok) {
     throw new Error(`Image download failed: ${response.status}${await responseErrorSuffix(response)}`);
@@ -350,4 +353,45 @@ async function responseErrorSuffix(response: Response): Promise<string> {
 function isQuotaOrBillingError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return /(exceeded your current quota|insufficient_quota|billing|check your plan|rate limit|too many requests)/i.test(message);
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, label: string): Promise<Response> {
+  const { signal, cancel } = createTimeoutSignal(timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...init,
+      signal
+    });
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s.`);
+    }
+    throw error;
+  } finally {
+    cancel();
+  }
+}
+
+function createTimeoutSignal(timeoutMs: number): { signal: AbortSignal; cancel: () => void } {
+  if (typeof AbortSignal.timeout === "function") {
+    return {
+      signal: AbortSignal.timeout(timeoutMs),
+      cancel: () => {}
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    cancel: () => clearTimeout(timeout)
+  };
+}
+
+function isAbortError(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "name" in error
+    && (error as { name?: unknown }).name === "AbortError";
 }

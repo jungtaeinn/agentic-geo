@@ -63,6 +63,11 @@ type WorkspaceMode = "extractor" | "generator" | "magazine";
 type ExtractorOutputView = "result" | "logs";
 type ModalCopyTarget = "panel-detail" | "rag-reference";
 type ArtifactCopySurface = "generator-floating" | "generator-panel" | "extractor-floating" | "extractor-panel" | "magazine-floating" | "magazine-panel";
+type RunSettingsFeedback = "saved" | "reset" | null;
+type AiSettingsFeedback = "tested" | "saved" | "reset" | null;
+type AiSettingsAction = "test" | "save" | null;
+type RagSettingsFeedback = "saved" | "reset" | null;
+type RagSettingsAction = "save" | "reset" | null;
 
 interface PanelRagReference {
   id: string;
@@ -538,7 +543,7 @@ const uiCopy = {
       back: "앱으로 돌아가기",
       search: "설정 검색...",
       group: "GEO 생성",
-      run: "Run",
+      run: "입력 설정",
       ai: "AI 연동",
       rag: "RAG 프로필",
       close: "설정 닫기",
@@ -564,13 +569,18 @@ const uiCopy = {
       testingConnection: "테스트 중",
       saveAndApply: "저장 및 적용",
       checking: "확인 중",
-      saveRun: "Run 설정 저장",
-      saveRag: "RAG 프로필 저장",
+      tested: "테스트 완료",
+      saving: "저장 중",
+      resetting: "초기화 중",
+      saveRun: "저장",
+      saved: "저장됨",
+      saveRag: "저장",
       attachRag: "GEO/RAG 파일 첨부",
       edit: "편집",
       emptyRag: "첨부된 파일이 없습니다",
       emptyRagHelp: "Schema BestPractice, E-E-A-T, CEP, locale 용어집 같은 md/txt/json/csv 파일을 첨부할 수 있습니다.",
       reset: "초기화",
+      resetDone: "초기화됨",
       apply: "적용"
     },
     artifact: {
@@ -715,7 +725,7 @@ const uiCopy = {
       back: "Back to app",
       search: "Search settings...",
       group: "GEO generation",
-      run: "Run",
+      run: "Input",
       ai: "AI",
       rag: "RAG profile",
       close: "Close settings",
@@ -741,13 +751,18 @@ const uiCopy = {
       testingConnection: "Testing",
       saveAndApply: "Save and apply",
       checking: "Checking",
-      saveRun: "Save run settings",
-      saveRag: "Save RAG profile",
+      tested: "Tested",
+      saving: "Saving",
+      resetting: "Resetting",
+      saveRun: "Save",
+      saved: "Saved",
+      saveRag: "Save",
       attachRag: "Attach GEO/RAG file",
       edit: "Edit",
       emptyRag: "No files attached",
       emptyRagHelp: "Attach md/txt/json/csv files such as Schema BestPractice, E-E-A-T, CEP, or locale terminology guides.",
       reset: "Reset",
+      resetDone: "Reset",
       apply: "Apply"
     },
     artifact: {
@@ -855,6 +870,9 @@ const magazineStepIds = Object.keys(magazineStepCopy.ko) as GeoCitationGeneratio
 export function GeoGeneratorConsole() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const ragFileInputRef = useRef<HTMLInputElement>(null);
+  const runSettingsFeedbackTimerRef = useRef<number | null>(null);
+  const aiSettingsFeedbackTimerRef = useRef<number | null>(null);
+  const ragSettingsFeedbackTimerRef = useRef<number | null>(null);
   const [draft, setDraft] = useState("");
   const [uiLanguage, setUiLanguage] = useState<UiLanguage>("ko");
   const [activeMode, setActiveMode] = useState<WorkspaceMode>("generator");
@@ -862,6 +880,11 @@ export function GeoGeneratorConsole() {
   const [locale, setLocale] = useState<PdpGeoLocale>("ko-KR");
   const [ragMode, setRagMode] = useState<PdpGeoRagMode>("local-versioned-rag");
   const [headersJson, setHeadersJson] = useState("{}");
+  const [runSettingsFeedback, setRunSettingsFeedback] = useState<RunSettingsFeedback>(null);
+  const [aiSettingsFeedback, setAiSettingsFeedback] = useState<AiSettingsFeedback>(null);
+  const [aiSettingsAction, setAiSettingsAction] = useState<AiSettingsAction>(null);
+  const [ragSettingsFeedback, setRagSettingsFeedback] = useState<RagSettingsFeedback>(null);
+  const [ragSettingsAction, setRagSettingsAction] = useState<RagSettingsAction>(null);
   const [providerSettings, setProviderSettings] = useState<ProviderSettings>(defaultProviderSettings);
   const [isProviderSettingsReady, setIsProviderSettingsReady] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("idle");
@@ -1241,6 +1264,77 @@ export function GeoGeneratorConsole() {
   useEffect(() => {
     setSelectedRagReference(null);
   }, [activeMode, selectedExtractorIndex, selectedIndex, selectedMagazineIndex]);
+
+  useEffect(() => {
+    return () => {
+      if (runSettingsFeedbackTimerRef.current !== null) {
+        window.clearTimeout(runSettingsFeedbackTimerRef.current);
+      }
+      if (aiSettingsFeedbackTimerRef.current !== null) {
+        window.clearTimeout(aiSettingsFeedbackTimerRef.current);
+      }
+      if (ragSettingsFeedbackTimerRef.current !== null) {
+        window.clearTimeout(ragSettingsFeedbackTimerRef.current);
+      }
+    };
+  }, []);
+
+  function clearRunSettingsFeedback() {
+    if (runSettingsFeedbackTimerRef.current !== null) {
+      window.clearTimeout(runSettingsFeedbackTimerRef.current);
+      runSettingsFeedbackTimerRef.current = null;
+    }
+    setRunSettingsFeedback(null);
+  }
+
+  function showRunSettingsFeedback(feedback: Exclude<RunSettingsFeedback, null>) {
+    if (runSettingsFeedbackTimerRef.current !== null) {
+      window.clearTimeout(runSettingsFeedbackTimerRef.current);
+    }
+    setRunSettingsFeedback(feedback);
+    runSettingsFeedbackTimerRef.current = window.setTimeout(() => {
+      setRunSettingsFeedback(null);
+      runSettingsFeedbackTimerRef.current = null;
+    }, 1600);
+  }
+
+  function clearAiSettingsFeedback() {
+    if (aiSettingsFeedbackTimerRef.current !== null) {
+      window.clearTimeout(aiSettingsFeedbackTimerRef.current);
+      aiSettingsFeedbackTimerRef.current = null;
+    }
+    setAiSettingsFeedback(null);
+  }
+
+  function showAiSettingsFeedback(feedback: Exclude<AiSettingsFeedback, null>) {
+    if (aiSettingsFeedbackTimerRef.current !== null) {
+      window.clearTimeout(aiSettingsFeedbackTimerRef.current);
+    }
+    setAiSettingsFeedback(feedback);
+    aiSettingsFeedbackTimerRef.current = window.setTimeout(() => {
+      setAiSettingsFeedback(null);
+      aiSettingsFeedbackTimerRef.current = null;
+    }, 1600);
+  }
+
+  function clearRagSettingsFeedback() {
+    if (ragSettingsFeedbackTimerRef.current !== null) {
+      window.clearTimeout(ragSettingsFeedbackTimerRef.current);
+      ragSettingsFeedbackTimerRef.current = null;
+    }
+    setRagSettingsFeedback(null);
+  }
+
+  function showRagSettingsFeedback(feedback: Exclude<RagSettingsFeedback, null>) {
+    if (ragSettingsFeedbackTimerRef.current !== null) {
+      window.clearTimeout(ragSettingsFeedbackTimerRef.current);
+    }
+    setRagSettingsFeedback(feedback);
+    ragSettingsFeedbackTimerRef.current = window.setTimeout(() => {
+      setRagSettingsFeedback(null);
+      ragSettingsFeedbackTimerRef.current = null;
+    }, 1600);
+  }
 
   function selectWorkspaceMode(mode: WorkspaceMode) {
     setActiveMode(mode);
@@ -1774,6 +1868,7 @@ export function GeoGeneratorConsole() {
   }
 
   function updateProviderSetting<Key extends keyof ProviderSettings>(key: Key, value: ProviderSettings[Key]) {
+    clearAiSettingsFeedback();
     setProviderSettings((current) => ({
       ...current,
       [key]: value
@@ -1792,6 +1887,7 @@ export function GeoGeneratorConsole() {
 
   async function checkProviderConnection(shouldSave: boolean) {
     const validationMessage = getProviderValidationMessage(providerSettings, uiLanguage);
+    clearAiSettingsFeedback();
 
     if (validationMessage) {
       setConnectionStatus("error");
@@ -1799,6 +1895,7 @@ export function GeoGeneratorConsole() {
       return;
     }
 
+    setAiSettingsAction(shouldSave ? "save" : "test");
     setConnectionStatus("checking");
     setConnectionMessage(connectionCheckingMessage(activeProviderLabel, uiLanguage));
 
@@ -1818,9 +1915,13 @@ export function GeoGeneratorConsole() {
       setConnectionMessage(shouldSave
         ? providerSavedMessage(result.message, uiLanguage)
         : providerReadyMessage(result.message, uiLanguage));
+      showAiSettingsFeedback(shouldSave ? "saved" : "tested");
     } catch (error) {
       setConnectionStatus("error");
       setConnectionMessage(error instanceof Error ? error.message : providerFailedMessage(activeProviderLabel, uiLanguage));
+      clearAiSettingsFeedback();
+    } finally {
+      setAiSettingsAction(null);
     }
   }
 
@@ -1869,6 +1970,7 @@ export function GeoGeneratorConsole() {
   }
 
   function updateProviderModel(provider: ProviderId, value: string) {
+    clearAiSettingsFeedback();
     setProviderSettings((current) => {
       if (provider === "openai") {
         return { ...current, openaiModel: value };
@@ -1891,6 +1993,7 @@ export function GeoGeneratorConsole() {
   }
 
   function resetProviderSettings() {
+    clearAiSettingsFeedback();
     window.localStorage.removeItem(SETTINGS_STORAGE_KEY);
     LEGACY_SETTINGS_STORAGE_KEYS.forEach((key) => window.localStorage.removeItem(key));
     setProviderSettings(defaultProviderSettings);
@@ -1899,6 +2002,7 @@ export function GeoGeneratorConsole() {
     setModelLoadStatus("idle");
     setModelMessage(modelIdleMessage(uiLanguage));
     setConnectionMessage(providerResetMessage(uiLanguage));
+    showAiSettingsFeedback("reset");
   }
 
   function saveRunSettings() {
@@ -1910,7 +2014,9 @@ export function GeoGeneratorConsole() {
         headersJson
       }));
       setErrorMessage("");
+      showRunSettingsFeedback("saved");
     } catch (error) {
+      clearRunSettingsFeedback();
       setErrorMessage(error instanceof Error ? error.message : "Headers JSON is invalid.");
     }
   }
@@ -1920,14 +2026,18 @@ export function GeoGeneratorConsole() {
     setSourceMode("auto");
     setLocale("ko-KR");
     setHeadersJson("{}");
+    setErrorMessage("");
+    showRunSettingsFeedback("reset");
   }
 
   function selectRagTarget(target: RagProfileTarget) {
+    clearRagSettingsFeedback();
     setSelectedRagTarget(target);
     setSelectedRagFileId(ragProfiles[target].files[0]?.id ?? null);
   }
 
   function updateRagAnalysisPrompt(value: string) {
+    clearRagSettingsFeedback();
     setRagProfiles((current) => ({
       ...current,
       [selectedRagTarget]: {
@@ -1943,6 +2053,7 @@ export function GeoGeneratorConsole() {
       return;
     }
 
+    clearRagSettingsFeedback();
     const attachments = await Promise.all(
       files.map(async (file) => ({
         id: crypto.randomUUID(),
@@ -1973,6 +2084,7 @@ export function GeoGeneratorConsole() {
   }
 
   function removeRagFile(id: string) {
+    clearRagSettingsFeedback();
     setRagProfiles((current) => {
       const nextFiles = current[selectedRagTarget].files.filter((file) => file.id !== id);
       setSelectedRagFileId((selected) => selected === id ? nextFiles[0]?.id ?? null : selected);
@@ -1989,6 +2101,7 @@ export function GeoGeneratorConsole() {
   }
 
   function updateRagFileContent(id: string, content: string) {
+    clearRagSettingsFeedback();
     setRagProfiles((current) => ({
       ...current,
       [selectedRagTarget]: {
@@ -2006,6 +2119,7 @@ export function GeoGeneratorConsole() {
   }
 
   function updateRagFileVersion(id: string, version: string) {
+    clearRagSettingsFeedback();
     const normalizedVersion = normalizeRagVersion(version);
 
     setRagProfiles((current) => ({
@@ -2024,6 +2138,7 @@ export function GeoGeneratorConsole() {
   }
 
   function toggleRagFileEnabled(id: string) {
+    clearRagSettingsFeedback();
     setRagProfiles((current) => ({
       ...current,
       [selectedRagTarget]: {
@@ -2040,6 +2155,8 @@ export function GeoGeneratorConsole() {
   }
 
   async function saveRagProfileSettings() {
+    clearRagSettingsFeedback();
+    setRagSettingsAction("save");
     try {
       const profiles = await writeRagProfile(selectedRagTarget, ragProfiles[selectedRagTarget]);
       const mergedProfiles = mergeRagProfileUiState(profiles, ragProfiles);
@@ -2047,20 +2164,30 @@ export function GeoGeneratorConsole() {
       setSelectedRagFileId(mergedProfiles[selectedRagTarget].files.find((file) => file.id === selectedRagFileId)?.id ?? mergedProfiles[selectedRagTarget].files[0]?.id ?? null);
       window.localStorage.setItem(RAG_SETTINGS_STORAGE_KEY, JSON.stringify(mergedProfiles));
       setRagMessage(ragSavedMessage(selectedRagTarget, uiLanguage));
+      showRagSettingsFeedback("saved");
     } catch (error) {
       setRagMessage(error instanceof Error ? error.message : ragSaveFailedMessage(uiLanguage));
+      clearRagSettingsFeedback();
+    } finally {
+      setRagSettingsAction(null);
     }
   }
 
   async function resetRagProfileSettings() {
+    clearRagSettingsFeedback();
+    setRagSettingsAction("reset");
     try {
       const profiles = await resetPackageRagProfile(selectedRagTarget);
       setRagProfiles(profiles);
       setSelectedRagFileId(profiles[selectedRagTarget].files[0]?.id ?? null);
       window.localStorage.setItem(RAG_SETTINGS_STORAGE_KEY, JSON.stringify(profiles));
       setRagMessage(ragResetMessage(selectedRagTarget, uiLanguage));
+      showRagSettingsFeedback("reset");
     } catch (error) {
       setRagMessage(error instanceof Error ? error.message : ragResetFailedMessage(uiLanguage));
+      clearRagSettingsFeedback();
+    } finally {
+      setRagSettingsAction(null);
     }
   }
 
@@ -2907,11 +3034,21 @@ export function GeoGeneratorConsole() {
                   </section>
 
                   <div className="settingsActions">
-                    <button type="button" onClick={resetRunSettings}>
-                      {text.settings.reset}
+                    <button
+                      className={runSettingsFeedback === "reset" ? "confirmed" : ""}
+                      type="button"
+                      onClick={resetRunSettings}
+                    >
+                      {runSettingsFeedback === "reset" && <CheckCircle2 size={14} />}
+                      <span>{runSettingsFeedback === "reset" ? text.settings.resetDone : text.settings.reset}</span>
                     </button>
-                    <button className="primary" type="button" onClick={saveRunSettings}>
-                      {text.settings.saveRun}
+                    <button
+                      className={`primary${runSettingsFeedback === "saved" ? " confirmed" : ""}`}
+                      type="button"
+                      onClick={saveRunSettings}
+                    >
+                      {runSettingsFeedback === "saved" && <CheckCircle2 size={14} />}
+                      <span>{runSettingsFeedback === "saved" ? text.settings.saved : text.settings.saveRun}</span>
                     </button>
                   </div>
                 </>
@@ -3047,27 +3184,41 @@ export function GeoGeneratorConsole() {
                   </section>
 
                   <div className="settingsActions">
-                    <button type="button" onClick={resetProviderSettings}>
-                      {text.settings.reset}
+                    <button
+                      className={aiSettingsFeedback === "reset" ? "confirmed" : ""}
+                      type="button"
+                      disabled={aiSettingsAction !== null}
+                      onClick={resetProviderSettings}
+                      aria-live="polite"
+                    >
+                      {aiSettingsFeedback === "reset" && <CheckCircle2 size={14} />}
+                      <span>{aiSettingsFeedback === "reset" ? text.settings.resetDone : text.settings.reset}</span>
                     </button>
                     <button
+                      className={aiSettingsFeedback === "tested" ? "confirmed" : ""}
                       type="button"
-                      disabled={connectionStatus === "checking" || !isProviderSettingsReady}
+                      disabled={aiSettingsAction !== null || !isProviderSettingsReady}
                       onClick={() => {
                         void testProviderConnection();
                       }}
+                      aria-live="polite"
                     >
-                      {connectionStatus === "checking" ? text.settings.testingConnection : text.settings.testConnection}
+                      {aiSettingsAction === "test" && <Loader2 className="spin" size={14} />}
+                      {aiSettingsFeedback === "tested" && <CheckCircle2 size={14} />}
+                      <span>{aiSettingsAction === "test" ? text.settings.testingConnection : aiSettingsFeedback === "tested" ? text.settings.tested : text.settings.testConnection}</span>
                     </button>
                     <button
-                      className="primary"
+                      className={`primary${aiSettingsFeedback === "saved" ? " confirmed" : ""}`}
                       type="button"
-                      disabled={connectionStatus === "checking" || !isProviderSettingsReady}
+                      disabled={aiSettingsAction !== null || !isProviderSettingsReady}
                       onClick={() => {
                         void saveProviderSettings();
                       }}
+                      aria-live="polite"
                     >
-                      {connectionStatus === "checking" ? text.settings.checking : text.settings.saveAndApply}
+                      {aiSettingsAction === "save" && <Loader2 className="spin" size={14} />}
+                      {aiSettingsFeedback === "saved" && <CheckCircle2 size={14} />}
+                      <span>{aiSettingsAction === "save" ? text.settings.saving : aiSettingsFeedback === "saved" ? text.settings.saved : text.settings.saveAndApply}</span>
                     </button>
                   </div>
                 </>
@@ -3252,21 +3403,30 @@ export function GeoGeneratorConsole() {
 
                     <div className="settingsActions">
                       <button
+                        className={ragSettingsFeedback === "reset" ? "confirmed" : ""}
                         type="button"
+                        disabled={ragSettingsAction !== null}
                         onClick={() => {
                           void resetRagProfileSettings();
                         }}
+                        aria-live="polite"
                       >
-                        {text.settings.reset}
+                        {ragSettingsAction === "reset" && <Loader2 className="spin" size={14} />}
+                        {ragSettingsFeedback === "reset" && <CheckCircle2 size={14} />}
+                        <span>{ragSettingsAction === "reset" ? text.settings.resetting : ragSettingsFeedback === "reset" ? text.settings.resetDone : text.settings.reset}</span>
                       </button>
                       <button
-                        className="primary"
+                        className={`primary${ragSettingsFeedback === "saved" ? " confirmed" : ""}`}
                         type="button"
+                        disabled={ragSettingsAction !== null}
                         onClick={() => {
                           void saveRagProfileSettings();
                         }}
+                        aria-live="polite"
                       >
-                        {text.settings.saveRag}
+                        {ragSettingsAction === "save" && <Loader2 className="spin" size={14} />}
+                        {ragSettingsFeedback === "saved" && <CheckCircle2 size={14} />}
+                        <span>{ragSettingsAction === "save" ? text.settings.saving : ragSettingsFeedback === "saved" ? text.settings.saved : text.settings.saveRag}</span>
                       </button>
                     </div>
                   </div>

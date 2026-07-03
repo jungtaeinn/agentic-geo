@@ -14,6 +14,7 @@ export type ProductExtractionInput = z.infer<typeof ProductExtractionInputSchema
 /** Product details normalized from meta tags, JSON-LD, DOM text, OCR, and API responses. */
 export interface ProductProfile {
   name: string;
+  brand?: string;
   price?: string;
   currency?: string;
   description?: string;
@@ -275,6 +276,7 @@ export interface ProductExtractorRagUsageDiagnostic {
 /** Product-centered raw data prepared for downstream GEO schema/content agents. */
 export interface GeoProductRawData {
   name: string;
+  brand?: string;
   price?: {
     raw: string;
     amount?: number;

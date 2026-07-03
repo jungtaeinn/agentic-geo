@@ -127,6 +127,43 @@ describe("extractProductFromHtml", () => {
     expect(diagnostics.process.find((step) => step.id === "json")?.status).toBe("done");
   });
 
+  it("keeps source-backed brand separate from SKU-heavy product names", async () => {
+    const skuHeavyHtml = `
+      <!doctype html>
+      <html>
+        <head>
+          <title>[Source Beauty][Mini] Renewal Cream 30ml</title>
+          <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": "Product",
+              "name": "[Source Beauty][Mini] Renewal Cream 30ml",
+              "brand": { "@type": "Brand", "name": "Source Beauty" },
+              "description": "Renewal cream for firming and hydration care.",
+              "offers": { "@type": "Offer", "price": "168000", "priceCurrency": "KRW" }
+            }
+          </script>
+        </head>
+        <body>
+          <main>
+            <a href="/brand/source-beauty">Source Beauty</a>
+            <h1>[Source Beauty][Mini] Renewal Cream 30ml</h1>
+            <section>
+              <h2>Key Ingredients</h2>
+              <p>Peptide complex and vitamin derivative support firming care.</p>
+            </section>
+          </main>
+        </body>
+      </html>
+    `;
+
+    const { result, diagnostics } = await extractProductFromHtml(skuHeavyHtml, "https://example.com/products/renewal-cream");
+
+    expect(result.geoProduct.name).toBe("[Source Beauty][Mini] Renewal Cream 30ml");
+    expect(result.geoProduct.brand).toBe("Source Beauty");
+    expect(diagnostics.evidence.some((item) => item.field === "product.brand" && item.value === "Source Beauty")).toBe(true);
+  });
+
   it("uses an optional product profile normalization agent before OCR and RAG extraction", async () => {
     const rawPayload = {
       upstreamPayload: {

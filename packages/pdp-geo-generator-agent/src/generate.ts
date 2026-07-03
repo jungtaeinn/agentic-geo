@@ -175,7 +175,69 @@ export function generatePdpGeoArtifacts(input: GenerateArtifactsInput): Generate
 }
 
 function createGeoProductName(product: PdpProductSignal, _locale: PdpGeoLocale, _localizedTerms: string[], _hints?: PdpGeoGenerationHints): string {
-  return product.name.trim();
+  return canonicalProductEntityName(product) ?? product.name.trim();
+}
+
+function canonicalProductEntityName(product: PdpProductSignal): string | undefined {
+  const sourceName = cleanSignal(product.name);
+  if (!sourceName) {
+    return undefined;
+  }
+
+  const bracketTokens = Array.from(sourceName.matchAll(/\[([^\]]{1,36})\]/g))
+    .map((match) => cleanSignal(match[1] ?? ""))
+    .filter(Boolean);
+  const sourceBackedBrand = selectSourceBackedBrandPrefix(product.brand, bracketTokens);
+  const hasSkuQualifier = bracketTokens.some(isVariantOrCommerceToken)
+    || product.options.length > 0
+    || /\b\d+(?:\.\d+)?\s*(?:ml|mL|g|oz|fl\.?\s*oz|매|개|입)\b/.test(sourceName);
+
+  let name = sourceName
+    .replace(/\[[^\]]{1,36}\]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (hasSkuQualifier) {
+    name = name
+      .replace(/\s+\d+(?:\.\d+)?\s*(?:ml|mL|g|oz|fl\.?\s*oz|매|개|입)\s*$/i, "")
+      .replace(/\s+\d+(?:\.\d+)?\s*(?:ml|mL|g|oz|fl\.?\s*oz)\b.*$/i, "")
+      .trim();
+  }
+
+  if (!name) {
+    return undefined;
+  }
+  if (sourceBackedBrand && !containsEntityToken(name, sourceBackedBrand)) {
+    name = `${sourceBackedBrand} ${name}`;
+  }
+  return cleanSignal(name);
+}
+
+function selectSourceBackedBrandPrefix(brand: string | undefined, bracketTokens: string[]): string | undefined {
+  const cleanBrand = cleanSignal(brand ?? "");
+  if (cleanBrand && bracketTokens.some((token) => sameEntityToken(token, cleanBrand))) {
+    return cleanBrand;
+  }
+  return undefined;
+}
+
+function isVariantOrCommerceToken(value: string): boolean {
+  const text = cleanSignal(value);
+  if (!text) {
+    return false;
+  }
+  return /\d+(?:\.\d+)?\s*(?:ml|mL|g|oz|fl\.?\s*oz|매|개|입)|%|\+|[₩$€£¥]|(?:^|[\s-])(?:set|kit|bundle|refill|mini|trial|sample|gift|limited|special|online|exclusive|new|best|sale)(?:$|[\s-])/i.test(text);
+}
+
+function containsEntityToken(value: string, token: string): boolean {
+  const normalizedValue = value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  const normalizedToken = token.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  return Boolean(normalizedToken) && normalizedValue.includes(normalizedToken);
+}
+
+function sameEntityToken(left: string, right: string): boolean {
+  return cleanSignal(left).toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "")
+    === cleanSignal(right).toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
 function createGeoDescription(
@@ -198,11 +260,10 @@ function createGeoDescription(
   switch (locale) {
     case "ko-KR":
       return compactSentence([
-        `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(context.targetCustomer)} 위한 ${context.productType}로, ${benefit} 효능/케어를 중심으로 한 제품입니다`,
-        createProductIngredientDescription(locale, context),
+        createKoreanProductLeadDescription(productName, context, benefit),
+        createKoreanProductIngredientDescription(context),
         createProductUsageDescription(locale, context.usage),
-        createLocalizedReviewDescription(locale, context),
-        evidence ? createProductEvidenceDescription(locale, evidence) : undefined
+        createLocalizedReviewDescription(locale, context)
       ]);
     case "ja-JP":
       return compactSentence([
@@ -237,37 +298,287 @@ function createWebPageDescription(
   switch (locale) {
     case "ko-KR":
       return compactSentence([
-        `${productName} 상품 페이지는 ${appendKoreanTopicParticle(context.targetCustomer)} ${appendKoreanObjectParticle(context.productType)} 비교할 때 필요한 구체적인 상품 정보와 확인 근거를 정리합니다`,
-        context.benefitPhrase ? `핵심 효능은 ${context.benefitPhrase}입니다` : undefined,
-        context.ingredientPhrase ? `성분 영역은 ${context.ingredientPhrase}${context.ingredientDetail ? ` 등 주요 성분 설명` : ""}을 중심으로 구성됩니다` : undefined,
-        context.pageFactPhrase ? createWebPageFactDescription(locale, context.pageFactPhrase) : undefined,
+        createKoreanWebPageCoverageLead(product, productName, context),
+        createKoreanWebPageCoverageScopeDescription(product, context),
+        createKoreanWebPageDecisionDescription(context),
+        createKoreanWebPageAnswerCoverageDescription(product, context),
         context.usage ? createWebPageUsageDescription(locale, context.usage) : undefined,
-        context.reviewPhrase ? `리뷰 기반 표현으로는 ${context.reviewPhrase}가 함께 노출됩니다` : undefined,
         context.reportedDetail ? createWebPageEvidenceDescription(locale, context.reportedDetail) : undefined
       ]);
     case "ja-JP":
       return compactSentence([
-        `${productName}の商品ページは${context.targetCustomer}が${context.productType}を検討するために、具体的な商品情報と確認根拠を整理します`,
-        context.benefitPhrase ? `主なベネフィットは${context.benefitPhrase}です` : undefined,
-        context.ingredientPhrase ? `成分情報では${context.ingredientPhrase}${context.ingredientDetail ? `などの主要成分説明` : ""}を確認できます` : undefined,
-        context.pageFactPhrase ? createWebPageFactDescription(locale, context.pageFactPhrase) : undefined,
+        createJapaneseWebPageCoverageLead(product, productName, context),
+        createJapaneseWebPageCoverageScopeDescription(product, context),
+        createJapaneseWebPageDecisionDescription(context),
+        createJapaneseWebPageAnswerCoverageDescription(product, context),
         context.usage ? createWebPageUsageDescription(locale, context.usage) : undefined,
-        context.reviewPhrase ? `レビュー由来の表現として${context.reviewPhrase}も示します` : undefined,
-        context.reportedDetail ? `確認できる結果・情報として${truncate(context.reportedDetail, 420)}を参照できます` : undefined
+        context.reportedDetail ? createWebPageEvidenceDescription(locale, context.reportedDetail) : undefined
       ]);
     case "en-GB":
     case "en-US":
     default:
       return compactSentence([
-        `This ${productName} product page summarizes specific product facts about the ${lowercaseEnglishProductType(context.productType)} for ${context.targetCustomer}`,
-        context.benefitPhrase ? `The page identifies benefits such as ${context.benefitPhrase}` : undefined,
-        context.ingredientPhrase ? `It surfaces key ingredients and technologies including ${context.ingredientPhrase}${context.ingredientDetail ? `, with formula details such as ${context.ingredientDetail}` : ""}` : undefined,
-        context.pageFactPhrase ? createWebPageFactDescription(locale, context.pageFactPhrase) : undefined,
+        createEnglishWebPageCoverageLead(product, productName, context),
+        createEnglishWebPageCoverageScopeDescription(product, context),
+        context.benefitPhrase ? `Decision details on the page include ${context.benefitPhrase}` : undefined,
+        context.ingredientPhrase ? `It connects those decision details with key ingredients and technologies including ${context.ingredientPhrase}${context.ingredientDetail ? `, with formula details such as ${context.ingredientDetail}` : ""}` : undefined,
+        createEnglishWebPageAnswerCoverageDescription(product, context),
+        !context.ingredientPhrase && context.pageFactPhrase ? createEnglishWebPageFactDescription(context.pageFactPhrase) : undefined,
         context.usage ? createWebPageUsageDescription(locale, context.usage) : undefined,
         context.reviewPhrase ? `It also reflects customer review language such as ${context.reviewPhrase}` : undefined,
         context.reportedDetail ? createWebPageEvidenceDescription(locale, context.reportedDetail) : undefined
       ]);
   }
+}
+
+function createKoreanWebPageCoverageLead(product: PdpProductSignal, productName: string, context: DescriptionContext): string {
+  const primaryFacts = formatDescriptionList(selectWebPagePrimaryProductFacts(product, context, "ko-KR"), "ko-KR", 3);
+  const productTypeObject = appendKoreanObjectParticle(context.productType);
+  return primaryFacts
+    ? `${productName} 상품 페이지는 ${context.targetCustomer}이 ${productTypeObject} 비교할 때 ${primaryFacts} 같은 상품 정보를 먼저 확인할 수 있도록 소개하는 페이지입니다`
+    : `${productName} 상품 페이지는 ${context.targetCustomer}이 ${productTypeObject} 비교할 때 필요한 상품 정보를 먼저 확인할 수 있도록 소개하는 페이지입니다`;
+}
+
+function createKoreanWebPageCoverageScopeDescription(product: PdpProductSignal, context: DescriptionContext): string | undefined {
+  const coverage = formatDescriptionList(selectWebPageCoverageTopics(product, context, "ko-KR"), "ko-KR", 8);
+  return coverage ? `비교 과정에서는 ${coverage}를 이어서 살펴볼 수 있습니다` : undefined;
+}
+
+function createKoreanWebPageDecisionDescription(context: DescriptionContext): string | undefined {
+  const details = unique([
+    context.benefitPhrase ? `${context.benefitPhrase} 효능` : undefined,
+    context.ingredientPhrase ? `${context.ingredientPhrase} 성분/기술` : undefined,
+    context.reviewPhrase ? `${context.reviewPhrase} 리뷰 표현` : undefined
+  ].filter((value): value is string => Boolean(value)));
+  const phrase = formatDescriptionList(details, "ko-KR", 4);
+  return phrase ? `주요 선택 기준은 ${phrase}입니다` : undefined;
+}
+
+function createKoreanWebPageAnswerCoverageDescription(product: PdpProductSignal, context: DescriptionContext): string | undefined {
+  const intents = selectWebPageAnswerIntents(product, context, "ko-KR");
+  const phrase = formatDescriptionList(intents, "ko-KR", 6);
+  const section = selectKoreanAnswerCoverageSection(product, context);
+  return phrase ? `${section}은 ${phrase}에 관한 궁금증을 짧은 답변으로 다룹니다` : undefined;
+}
+
+function createJapaneseWebPageCoverageLead(product: PdpProductSignal, productName: string, context: DescriptionContext): string {
+  const primaryFacts = formatDescriptionList(selectWebPagePrimaryProductFacts(product, context, "ja-JP"), "ja-JP", 3);
+  return primaryFacts
+    ? `${productName}の商品ページは、${context.targetCustomer}が${context.productType}を比較するときに、${primaryFacts}などの商品情報を先に確認できるように紹介する商品ページです`
+    : `${productName}の商品ページは、${context.targetCustomer}が${context.productType}を比較するときに必要な商品情報を先に見られるように紹介する商品ページです`;
+}
+
+function createJapaneseWebPageCoverageScopeDescription(product: PdpProductSignal, context: DescriptionContext): string | undefined {
+  const coverage = formatDescriptionList(selectWebPageCoverageTopics(product, context, "ja-JP"), "ja-JP", 8);
+  return coverage ? `比較時には${coverage}も続けて見られます` : undefined;
+}
+
+function createJapaneseWebPageDecisionDescription(context: DescriptionContext): string | undefined {
+  const details = unique([
+    context.benefitPhrase ? `${context.benefitPhrase}のベネフィット` : undefined,
+    context.ingredientPhrase ? `${context.ingredientPhrase}の成分/技術` : undefined,
+    context.reviewPhrase ? `${context.reviewPhrase}のレビュー表現` : undefined
+  ].filter((value): value is string => Boolean(value)));
+  const phrase = formatDescriptionList(details, "ja-JP", 4);
+  return phrase ? `主な選択基準は${phrase}です` : undefined;
+}
+
+function createJapaneseWebPageAnswerCoverageDescription(product: PdpProductSignal, context: DescriptionContext): string | undefined {
+  const intents = selectWebPageAnswerIntents(product, context, "ja-JP");
+  const phrase = formatDescriptionList(intents, "ja-JP", 6);
+  const section = selectJapaneseAnswerCoverageSection(product, context);
+  return phrase ? `${section}は、${phrase}に関する疑問に短く答えます` : undefined;
+}
+
+function createEnglishWebPageCoverageLead(product: PdpProductSignal, productName: string, context: DescriptionContext): string {
+  const primaryFacts = formatDescriptionList(selectWebPagePrimaryProductFacts(product, context, "en-US"), "en-US", 3);
+  return primaryFacts
+    ? `This ${productName} product page introduces and summarizes specific product facts about the ${lowercaseEnglishProductType(context.productType)} for ${context.targetCustomer}, starting with product information such as ${primaryFacts}`
+    : `This ${productName} product page introduces and summarizes specific product facts about the ${lowercaseEnglishProductType(context.productType)} for ${context.targetCustomer}`;
+}
+
+function createEnglishWebPageCoverageScopeDescription(product: PdpProductSignal, context: DescriptionContext): string | undefined {
+  const coverage = formatDescriptionList(selectWebPageCoverageTopics(product, context, "en-US"), "en-US", 8);
+  return coverage ? `For comparison, the page also extends into ${coverage}` : undefined;
+}
+
+function createEnglishWebPageAnswerCoverageDescription(product: PdpProductSignal, context: DescriptionContext): string | undefined {
+  const intentPhrase = formatDescriptionList(selectEnglishAnswerCoverageIntentObjects(product, context), "en-US", 6);
+  if (!intentPhrase) {
+    return undefined;
+  }
+  const subjects = selectEnglishAnswerCoverageSubjects(product, context);
+  const subjectPhrase = formatDescriptionList(subjects, "en-US", 4) ?? "page-level decision context";
+  const verb = subjects.length === 1 && !isEnglishPluralSubject(subjectPhrase) ? "addresses" : "address";
+  return `${subjectPhrase} ${verb} ${intentPhrase}`;
+}
+
+function createEnglishWebPageFactDescription(fact: string): string {
+  const cleanFact = normalizePublicFactText(truncateAtCompleteSentence(fact, 260));
+  return `It also includes page-level product facts such as ${formatEnglishFactComplement(cleanFact)}`;
+}
+
+function selectKoreanAnswerCoverageSection(product: PdpProductSignal, context: DescriptionContext): string {
+  const hasFaq = product.faq.length > 0;
+  const hasHowTo = Boolean(context.usage);
+  if (hasFaq && hasHowTo) {
+    return "FAQ와 사용법 영역";
+  }
+  if (hasFaq) {
+    return "FAQ 영역";
+  }
+  if (hasHowTo) {
+    return "페이지 본문과 사용법 영역";
+  }
+  return "페이지 본문";
+}
+
+function selectJapaneseAnswerCoverageSection(product: PdpProductSignal, context: DescriptionContext): string {
+  const hasFaq = product.faq.length > 0;
+  const hasHowTo = Boolean(context.usage);
+  if (hasFaq && hasHowTo) {
+    return "FAQと使い方エリア";
+  }
+  if (hasFaq) {
+    return "FAQエリア";
+  }
+  if (hasHowTo) {
+    return "ページ本文と使い方エリア";
+  }
+  return "ページ本文";
+}
+
+function selectEnglishAnswerCoverageSubjects(product: PdpProductSignal, context: DescriptionContext): string[] {
+  return unique([
+    product.faq.length > 0 ? "FAQ entries" : undefined,
+    context.usage ? "HowTo steps" : undefined,
+    product.options.length > 0 ? "variant details" : undefined,
+    context.reportedDetail ? "reported-result details" : undefined,
+    product.faq.length === 0 && !context.usage && product.options.length === 0 && !context.reportedDetail ? "page-level decision context" : undefined
+  ].filter((value): value is string => Boolean(value)));
+}
+
+function selectEnglishAnswerCoverageIntentObjects(product: PdpProductSignal, context: DescriptionContext): string[] {
+  return unique([
+    context.benefitPhrase ? "benefit comparisons" : undefined,
+    context.ingredientPhrase ? "ingredient and technology questions" : undefined,
+    context.usage ? "routine-use decisions" : undefined,
+    context.reviewPhrase ? "use-feel and review interpretation" : undefined,
+    product.options.length > 0 ? "variant selection" : undefined,
+    context.reportedDetail ? "reported-result interpretation" : undefined
+  ].filter((value): value is string => Boolean(value)));
+}
+
+function isEnglishPluralSubject(value: string): boolean {
+  return /\b(?:entries|steps|details|results|questions)\b/i.test(value) || /\band\b/i.test(value);
+}
+
+function selectWebPageCoverageTopics(product: PdpProductSignal, context: DescriptionContext, locale: PdpGeoLocale): string[] {
+  if (locale === "ko-KR") {
+    return unique([
+      context.benefitPhrase ? "효능" : undefined,
+      context.ingredientPhrase ? "성분/기술" : undefined,
+      context.usage ? "사용법" : undefined,
+      context.reviewPhrase ? "리뷰 표현" : undefined,
+      product.faq.length > 0 ? "FAQ" : undefined,
+      context.usage ? "HowTo" : undefined,
+      product.options.length > 0 ? "옵션/용량" : undefined,
+      product.price ? "가격/구매 정보" : undefined,
+      context.reportedDetail ? "측정/평가 수치" : undefined
+    ].filter((value): value is string => Boolean(value)));
+  }
+
+  if (locale === "ja-JP") {
+    return unique([
+      context.benefitPhrase ? "ベネフィット" : undefined,
+      context.ingredientPhrase ? "成分/技術" : undefined,
+      context.usage ? "使い方" : undefined,
+      context.reviewPhrase ? "レビュー表現" : undefined,
+      product.faq.length > 0 ? "FAQ" : undefined,
+      context.usage ? "HowTo" : undefined,
+      product.options.length > 0 ? "バリエーション/容量" : undefined,
+      product.price ? "価格/購入情報" : undefined,
+      context.reportedDetail ? "測定/評価数値" : undefined
+    ].filter((value): value is string => Boolean(value)));
+  }
+
+  return unique([
+    context.benefitPhrase ? "benefit details" : undefined,
+    context.ingredientPhrase ? "ingredient and technology details" : undefined,
+    context.usage ? "usage guidance" : undefined,
+    context.reviewPhrase ? "customer review language" : undefined,
+    product.faq.length > 0 ? "FAQ answers" : undefined,
+    context.usage ? "HowTo steps" : undefined,
+    product.options.length > 0 ? "variant or size details" : undefined,
+    product.price ? "offer details" : undefined,
+    context.reportedDetail ? "reported results" : undefined
+  ].filter((value): value is string => Boolean(value)));
+}
+
+function selectWebPagePrimaryProductFacts(product: PdpProductSignal, context: DescriptionContext, locale: PdpGeoLocale): string[] {
+  if (locale === "ko-KR") {
+    return unique([
+      context.benefitPhrase ? `${context.benefitPhrase} 효능` : undefined,
+      context.ingredientPhrase ? `${context.ingredientPhrase} 성분/기술` : undefined,
+      context.usage ? "사용 루틴" : undefined,
+      context.reviewPhrase ? `${context.reviewPhrase} 리뷰 표현` : undefined,
+      product.options.length > 0 ? "옵션/용량" : undefined,
+      context.reportedDetail ? "측정/평가 결과" : undefined
+    ].filter((value): value is string => Boolean(value)));
+  }
+
+  if (locale === "ja-JP") {
+    return unique([
+      context.benefitPhrase ? `${context.benefitPhrase}のベネフィット` : undefined,
+      context.ingredientPhrase ? `${context.ingredientPhrase}の成分/技術` : undefined,
+      context.usage ? "使用ルーティン" : undefined,
+      context.reviewPhrase ? `${context.reviewPhrase}のレビュー表現` : undefined,
+      product.options.length > 0 ? "バリエーション/容量" : undefined,
+      context.reportedDetail ? "測定/評価結果" : undefined
+    ].filter((value): value is string => Boolean(value)));
+  }
+
+  return unique([
+    context.benefitPhrase ? `${context.benefitPhrase} benefits` : undefined,
+    context.ingredientPhrase ? `${context.ingredientPhrase} ingredients or technologies` : undefined,
+    context.usage ? "routine use" : undefined,
+    context.reviewPhrase ? `${context.reviewPhrase} review language` : undefined,
+    product.options.length > 0 ? "variant or size details" : undefined,
+    context.reportedDetail ? "reported results" : undefined
+  ].filter((value): value is string => Boolean(value)));
+}
+
+function selectWebPageAnswerIntents(product: PdpProductSignal, context: DescriptionContext, locale: PdpGeoLocale): string[] {
+  if (locale === "ko-KR") {
+    return unique([
+      context.benefitPhrase ? "효능 비교" : undefined,
+      context.ingredientPhrase ? "성분/기술 이해" : undefined,
+      context.usage ? "사용 순서" : undefined,
+      context.reviewPhrase ? "사용감 판단" : undefined,
+      product.options.length > 0 ? "옵션 선택" : undefined,
+      context.reportedDetail ? "수치 결과 해석" : undefined
+    ].filter((value): value is string => Boolean(value)));
+  }
+
+  if (locale === "ja-JP") {
+    return unique([
+      context.benefitPhrase ? "ベネフィット比較" : undefined,
+      context.ingredientPhrase ? "成分/技術の理解" : undefined,
+      context.usage ? "使用順序" : undefined,
+      context.reviewPhrase ? "使用感判断" : undefined,
+      product.options.length > 0 ? "バリエーション選択" : undefined,
+      context.reportedDetail ? "数値結果の解釈" : undefined
+    ].filter((value): value is string => Boolean(value)));
+  }
+
+  return unique([
+    context.benefitPhrase ? "benefit comparison" : undefined,
+    context.ingredientPhrase ? "ingredient or technology context" : undefined,
+    context.usage ? "routine use" : undefined,
+    context.reviewPhrase ? "use-feel and review interpretation" : undefined,
+    product.options.length > 0 ? "variant selection" : undefined,
+    context.reportedDetail ? "reported-result interpretation" : undefined
+  ].filter((value): value is string => Boolean(value)));
 }
 
 interface DescriptionContext {
@@ -285,6 +596,8 @@ interface DescriptionContext {
   representativeReviewPhrase?: string;
   sourceBackedSentences: string[];
   sourceFactSentences: string[];
+  benefitFaqSentence?: string;
+  ingredientFaqSentence?: string;
   pageFactPhrase?: string;
   reportedDetail?: string;
 }
@@ -311,6 +624,9 @@ function createDescriptionContext(
   const sourceBackedSentences = selectOptimizedSourceBackedClaimSentences(product, locale, 5);
   const sourceFactSentences = selectSourceBackedClaimSentences(product, 5);
   const reportedDetails = selectReportedDetails(product, 2);
+  const sourceFaq = selectSourceFaqForPublicUse(product.faq, locale, productName);
+  const benefitFaqSentence = selectFaqSentenceForDescription(sourceFaq, locale, ["benefit", "suitability"], 220);
+  const ingredientFaqSentence = selectFaqSentenceForDescription(sourceFaq, locale, ["ingredient"], 240);
   const pageFactPhrase = first(sourceFactSentences) ?? first(sourceBackedSentences);
 
   return {
@@ -328,9 +644,82 @@ function createDescriptionContext(
     representativeReviewPhrase: formatDescriptionList(representativeReviews, locale, 2),
     sourceBackedSentences,
     sourceFactSentences,
+    benefitFaqSentence,
+    ingredientFaqSentence,
     pageFactPhrase,
     reportedDetail: first(reportedDetails) ?? (product.description && benefits.length === 0 ? normalizePublicEvidenceText(product.description, locale) : undefined)
   };
+}
+
+function selectFaqSentenceForDescription(
+  faq: PdpGeoFaqItem[],
+  locale: PdpGeoLocale,
+  intents: Array<"benefit" | "ingredient" | "usage" | "review" | "suitability" | "evidence">,
+  limit: number
+): string | undefined {
+  for (const item of faq) {
+    const itemIntents = classifySourceFaqIntent(item);
+    if (!intents.some((intent) => itemIntents.includes(intent))) {
+      continue;
+    }
+    const sentence = first(splitEvidenceIntoSentenceCandidates(item.answer)
+      .map((value) => normalizePublicFactText(value))
+      .map((value) => trimTrailingSentencePunctuation(value))
+      .filter((value) => value.length >= 18 && value.length <= limit)
+      .filter((value) => !isLowQualityPublicEvidenceText(value))
+      .filter((value) => !isKoreanMetaNarrationText(value) && !isEnglishMetaNarrationText(value)));
+    if (sentence) {
+      return locale === "ko-KR" ? sentence : trimTrailingSentencePunctuation(sentence);
+    }
+  }
+  return undefined;
+}
+
+function createKoreanProductLeadDescription(productName: string, context: DescriptionContext, fallbackBenefit: string): string {
+  const faqLead = createKoreanLeadFromBenefitFaq(productName, context);
+  if (faqLead) {
+    return faqLead;
+  }
+  const careFocus = formatKoreanCareFocus(context.benefitPhrase ?? fallbackBenefit);
+  return `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(careFocus)} 돕는 ${context.productType}입니다`;
+}
+
+function createKoreanLeadFromBenefitFaq(productName: string, context: DescriptionContext): string | undefined {
+  const sentence = cleanSignal(context.benefitFaqSentence ?? "");
+  if (!sentence || !/[가-힣]/.test(sentence) || hasKoreanSurfaceQualityIssue(sentence)) {
+    return undefined;
+  }
+  const effectiveMatch = sentence.match(/^(.{4,120}?)(?:에|에\s+특히)?\s*효과적입니다$/);
+  if (effectiveMatch?.[1]) {
+    return `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(cleanSignal(effectiveMatch[1]))} 케어하는 ${context.productType}입니다`;
+  }
+  const suitableMatch = sentence.match(/^(.{4,120}?)(?:에게|에)\s*(?:적합|추천)/);
+  if (suitableMatch?.[1] && context.benefitPhrase) {
+    return `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(formatKoreanCareFocus(context.benefitPhrase))} 돕는 ${context.productType}입니다`;
+  }
+  return `${appendKoreanTopicParticle(productName)} ${trimTrailingSentencePunctuation(sentence)}`;
+}
+
+function createKoreanProductIngredientDescription(context: DescriptionContext): string | undefined {
+  if (!context.ingredientPhrase && !context.ingredientFaqSentence) {
+    return undefined;
+  }
+  const careFocus = context.benefitPhrase ? formatKoreanCareFocus(context.benefitPhrase) : undefined;
+  if (context.ingredientPhrase) {
+    return careFocus
+      ? `${context.ingredientPhrase} 등 핵심 성분/기술이 ${appendKoreanObjectParticle(careFocus)} 뒷받침합니다`
+      : `${context.ingredientPhrase} 등 핵심 성분/기술이 포뮬러의 특징을 이룹니다`;
+  }
+  return context.ingredientFaqSentence ? ensureKoreanSentence(context.ingredientFaqSentence) : undefined;
+}
+
+function formatKoreanCareFocus(value: string): string {
+  const items = cleanSignal(value)
+    .split(/\s*,\s*/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => /(?:케어|개선|강화|진정|세정|컨트롤|리프팅)$/.test(item) ? item : `${item} 케어`);
+  return formatKoreanListForSentence(unique(items).join(", "));
 }
 
 function createProductIngredientDescription(locale: PdpGeoLocale, context: DescriptionContext): string | undefined {
@@ -357,7 +746,7 @@ function createProductIngredientDescription(locale: PdpGeoLocale, context: Descr
     case "en-US":
     default:
       if (!context.ingredientPhrase && context.ingredientDetail) {
-        return `Formula details include ${lowercaseFirst(normalizeFormulaDetailText(context.ingredientDetail))}`;
+        return `The formula includes ${formatEnglishFactComplement(normalizeFormulaDetailText(context.ingredientDetail))}`;
       }
       return context.ingredientDetail
         ? `The formula highlights ${context.ingredientPhrase}; the active-ingredient story focuses on ${context.ingredientDetail}`
@@ -371,12 +760,13 @@ function createProductUsageDescription(locale: PdpGeoLocale, usage?: string): st
     return undefined;
   }
 
-  if (locale === "ko-KR" && isKoreanCompleteSentence(usageContext)) {
-    return `사용법은 ${usageContext}`;
+  if (locale === "ko-KR") {
+    const cleanUsage = trimTrailingSentencePunctuation(usageContext);
+    return isKoreanCompleteSentence(cleanUsage) ? cleanUsage : `${cleanUsage} 사용합니다`;
   }
 
   return fallback(locale, {
-    "ko-KR": `사용법은 ${appendKoreanInstrumentParticle(usageContext)} 요약됩니다`,
+    "ko-KR": `${trimTrailingSentencePunctuation(usageContext)} 사용합니다`,
     "ja-JP": `使い方は${usageContext}として整理できます`,
     "en-US": usageContext,
     "en-GB": usageContext
@@ -392,13 +782,13 @@ function createProductEvidenceDescription(locale: PdpGeoLocale, evidence: string
     const topics = formatDescriptionList(extractEvidenceTopics(cleanEvidence), locale, 3);
     switch (locale) {
       case "ko-KR":
-        return topics ? `확인된 ${context} 결과는 ${topics} 근거를 보강합니다` : `확인된 결과는 ${context} 기반입니다`;
+        return topics ? `${context} 결과는 ${topics} 효과를 뒷받침합니다` : `${context} 결과를 바탕으로 한 상품 정보입니다`;
       case "ja-JP":
         return topics ? `確認できる${context}の結果は${topics}の根拠を補足します` : `確認できる結果は${context}に基づきます`;
       case "en-GB":
       case "en-US":
       default:
-        return topics ? `Reported ${context} evidence covers ${topics}` : `Reported results come from ${indefiniteArticle(context)} ${context}`;
+        return topics ? `In ${indefiniteArticle(context)} ${context}, the product showed ${topics}` : `The product has reported results from ${indefiniteArticle(context)} ${context}`;
     }
   }
 
@@ -407,14 +797,14 @@ function createProductEvidenceDescription(locale: PdpGeoLocale, evidence: string
     const evidenceSentence = metricFact ? createKoreanEvidenceFactSentence(metricFact) : createKoreanEvidenceContentSentence(cleanEvidence);
     return isKoreanCompleteSentence(evidenceSentence)
       ? evidenceSentence
-      : `상품 정보는 ${evidenceSentence}를 주요 내용으로 다룹니다`;
+      : `${evidenceSentence}를 참고할 수 있습니다`;
   }
 
   return fallback(locale, {
-    "ko-KR": `확인된 상품 정보는 ${cleanEvidence}입니다`,
+    "ko-KR": `${cleanEvidence}를 바탕으로 한 상품 정보입니다`,
     "ja-JP": `確認できる商品情報は${cleanEvidence}です`,
-    "en-US": `Source-backed product evidence covers ${cleanEvidence}`,
-    "en-GB": `Source-backed product evidence covers ${cleanEvidence}`
+    "en-US": `The product is described with ${formatEnglishFactComplement(cleanEvidence)}`,
+    "en-GB": `The product is described with ${formatEnglishFactComplement(cleanEvidence)}`
   });
 }
 
@@ -425,16 +815,21 @@ function createWebPageEvidenceDescription(locale: PdpGeoLocale, evidence: string
     const metricFact = createEvidenceMetricFact(evidence, locale);
     const evidenceSentence = metricFact ? createKoreanEvidenceFactSentence(metricFact) : createKoreanEvidenceContentSentence(cleanEvidence);
     return topics
-      ? `페이지에는 ${topics}에 관한 확인 근거가 포함됩니다`
-      : isKoreanCompleteSentence(evidenceSentence)
-      ? evidenceSentence
-      : `상품 정보는 ${evidenceSentence}를 주요 내용으로 다룹니다`;
+      ? `측정/평가 정보에서는 ${topics} 관련 결과를 함께 참고할 수 있습니다`
+      : createKoreanWebPageEvidenceDescription(evidenceSentence);
+  }
+  if (locale === "ja-JP") {
+    const metricFact = createEvidenceMetricFact(evidence, locale);
+    const evidenceSentence = metricFact ? createJapaneseWebPageEvidenceDescription(metricFact) : createJapaneseWebPageEvidenceDescription(cleanEvidence);
+    return topics
+      ? `測定/評価情報では${topics}に関する結果も扱います`
+      : evidenceSentence;
   }
   return fallback(locale, {
     "ko-KR": `확인된 결과/정보로 ${cleanEvidence}를 참고할 수 있습니다`,
-    "ja-JP": topics ? `ページでは${topics}に関する確認根拠も確認できます` : `確認できる結果・情報として${cleanEvidence}を参照できます`,
-    "en-US": topics ? `The page also includes product-detail evidence about ${topics}` : `Reported page evidence includes ${cleanEvidence}`,
-    "en-GB": topics ? `The page also includes product-detail evidence about ${topics}` : `Reported page evidence includes ${cleanEvidence}`
+    "ja-JP": topics ? `測定/評価情報では${topics}に関する結果も扱います` : createJapaneseWebPageEvidenceDescription(cleanEvidence),
+    "en-US": topics ? `This product page covers reported results for ${topics}` : `This product page covers ${formatEnglishFactComplement(cleanEvidence)}`,
+    "en-GB": topics ? `This product page covers reported results for ${topics}` : `This product page covers ${formatEnglishFactComplement(cleanEvidence)}`
   });
 }
 
@@ -491,16 +886,16 @@ function createEvidenceMetricFact(evidence: string | undefined, locale: PdpGeoLo
   if (metricClauses.length === 0) {
     const topics = formatDescriptionList(extractEvidenceTopics(cleanEvidence), locale, 3);
     return topics ? fallback(locale, {
-      "ko-KR": `확인 근거: ${topics}`,
+      "ko-KR": `관련 케어 주제는 ${topics}입니다`,
       "ja-JP": `確認根拠: ${topics}`,
-      "en-US": `Evidence topics: ${topics}`,
-      "en-GB": `Evidence topics: ${topics}`
+      "en-US": `Care topics: ${topics}`,
+      "en-GB": `Care topics: ${topics}`
     }) : cleanEvidence;
   }
 
   const metrics = formatDescriptionList(metricClauses, locale, 3);
   return fallback(locale, {
-    "ko-KR": `확인 지표: ${metrics}`,
+    "ko-KR": `시험/평가 결과로 ${metrics}가 보고되었습니다`,
     "ja-JP": `確認指標: ${metrics}`,
     "en-US": `Consumer assessment: ${metrics}`,
     "en-GB": `Consumer assessment: ${metrics}`
@@ -512,7 +907,7 @@ function isFormattedEvidenceSummary(value: string): boolean {
 }
 
 function isStructuredMetricSummary(value: string): boolean {
-  return /^(?:Reported result|Consumer assessment|확인 지표|확인 근거|측정 결과|試験結果|確認指標|確認根拠):\s+/i.test(value);
+  return /^(?:Reported result|Consumer assessment|확인 지표|확인 근거|측정 결과|평가 지표|試験結果|確認指標|確認根拠):\s+/i.test(value);
 }
 
 function extractEvidenceMetricClauses(evidence: string): string[] {
@@ -767,7 +1162,7 @@ function formatReportedEvidenceDetail(evidence: string, locale: PdpGeoLocale): s
     if (koreanMetricClauses.length > 0) {
       const metrics = koreanMetricClauses.join("; ");
       const context = extractKoreanEvidenceAssessmentContext(evidence);
-      return context ? `${context} 기준 확인 지표: ${metrics}` : `확인 지표: ${metrics}`;
+      return context ? `${context} 기준 평가 지표: ${metrics}` : `평가 지표: ${metrics}`;
     }
   }
 
@@ -782,7 +1177,7 @@ function formatReportedEvidenceDetail(evidence: string, locale: PdpGeoLocale): s
 
   if (!context) {
     return fallback(locale, {
-      "ko-KR": `확인 지표: ${metrics}`,
+      "ko-KR": `평가 지표: ${metrics}`,
       "ja-JP": `確認指標: ${metrics}`,
       "en-US": `Consumer assessment: ${metrics}`,
       "en-GB": `Consumer assessment: ${metrics}`
@@ -790,7 +1185,7 @@ function formatReportedEvidenceDetail(evidence: string, locale: PdpGeoLocale): s
   }
 
   return fallback(locale, {
-    "ko-KR": `${context} 기준 확인 지표: ${metrics}`,
+    "ko-KR": `${context} 기준 평가 지표: ${metrics}`,
     "ja-JP": `${context}に基づく確認指標: ${metrics}`,
     "en-US": `In ${context}, ${metrics}`,
     "en-GB": `In ${context}, ${metrics}`
@@ -823,7 +1218,7 @@ function formatKoreanMultiMetricEvidenceDetail(evidence: string): string | undef
     sentences.push(`세정 시험 정보는 ${cleansingMetrics.join(", ")}${context ? ` (${context})` : ""}로 표시됩니다`);
   }
   if (bubbleSize) {
-    sentences.push(`포밍 클렌저 버블 평균 사이즈는 ${bubbleSize}로 제시됩니다`);
+    sentences.push(`포밍 클렌저 버블 평균 사이즈는 ${bubbleSize}로 확인됩니다`);
   }
   if (ceramideMetrics.length >= 3) {
     sentences.push(`피부 각질층 세라마이드 함량 분석은 사용 직후 ${ceramideMetrics[0]}, 사용 2주 후 ${ceramideMetrics[1]}, 사용 4주 후 ${ceramideMetrics[2]}로 표시됩니다${/in\s*vitro/i.test(text) ? " (in vitro 시험 결과)" : ""}`);
@@ -887,10 +1282,10 @@ function removeEvidenceFootnoteMarkers(value: string): string {
 function createWebPageFactDescription(locale: PdpGeoLocale, fact: string): string {
   const cleanFact = normalizePublicFactText(truncateAtCompleteSentence(fact, 260));
   return fallback(locale, {
-    "ko-KR": `확인 근거에는 ${cleanFact} 내용이 포함됩니다`,
-    "ja-JP": `商品詳細の根拠として${cleanFact}を確認できます`,
-    "en-US": `The page states that ${lowercaseFirst(cleanFact)}`,
-    "en-GB": `The page states that ${lowercaseFirst(cleanFact)}`
+    "ko-KR": `${cleanFact}를 함께 참고할 수 있습니다`,
+    "ja-JP": `ページ本文では${cleanFact}も扱います`,
+    "en-US": `This product page covers ${formatEnglishFactComplement(cleanFact)}`,
+    "en-GB": `This product page covers ${formatEnglishFactComplement(cleanFact)}`
   });
 }
 
@@ -898,11 +1293,36 @@ function createWebPageUsageDescription(locale: PdpGeoLocale, usage: string): str
   const normalizedUsage = formatUsageForProductDescription(usage, locale) ?? normalizeUsageInstruction(usage);
   const cleanUsage = trimTrailingSentencePunctuation(truncate(normalizedUsage, 180));
   return fallback(locale, {
-    "ko-KR": `사용법은 ${cleanUsage} 루틴을 안내합니다`,
-    "ja-JP": `使い方では${cleanUsage}のルーティンを案内します`,
-    "en-US": `Usage guidance covers ${cleanUsage}`,
-    "en-GB": `Usage guidance covers ${cleanUsage}`
+    "ko-KR": isKoreanCompleteSentence(cleanUsage) ? `사용법 영역에서는 ${cleanUsage}` : `사용법 영역에서는 ${cleanUsage} 사용법을 다룹니다`,
+    "ja-JP": `使い方エリアでは${cleanUsage}のルーティンを扱います`,
+    "en-US": `This product page covers routine use, including ${formatEnglishUsagePagePhrase(cleanUsage)}`,
+    "en-GB": `This product page covers routine use, including ${formatEnglishUsagePagePhrase(cleanUsage)}`
   });
+}
+
+function createKoreanWebPageEvidenceDescription(evidenceSentence: string): string {
+  const evidencePhrase = trimTrailingSentencePunctuation(evidenceSentence)
+    .replace(/(?:가\s*)?확인됩니다$/u, "")
+    .replace(/(?:가\s*)?보고되었습니다$/u, "")
+    .replace(/입니다$/u, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return evidencePhrase
+    ? `측정/평가 정보에서는 ${evidencePhrase}를 참고할 수 있습니다`
+    : "측정/평가 정보에서는 페이지에 공개된 결과를 참고할 수 있습니다";
+}
+
+function createJapaneseWebPageEvidenceDescription(evidenceSentence: string): string {
+  const evidencePhrase = trimTrailingSentencePunctuation(evidenceSentence)
+    .replace(/(?:確認\s*指標|確認\s*根拠|測定\s*結果|評価\s*指標)\s*:\s*/gi, " ")
+    .replace(/(?:を)?確認できます$/u, "")
+    .replace(/(?:を)?参照できます$/u, "")
+    .replace(/です$/u, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return evidencePhrase
+    ? `測定/評価情報では${evidencePhrase}を扱います`
+    : "測定/評価情報ではページ上の公開結果を扱います";
 }
 
 function createKoreanIngredientDetailDescription(ingredientPhrase: string, ingredientDetail: string): string {
@@ -917,7 +1337,7 @@ function createLocalizedReviewDescription(locale: PdpGeoLocale, context: Descrip
     switch (locale) {
       case "ko-KR":
         return context.reviewPhrase
-          ? `고객 리뷰에서는 ${context.reviewPhrase} 같은 표현이 확인되어 사용감과 케어 체감을 보완합니다`
+          ? `리뷰에서는 ${context.reviewPhrase} 같은 사용감 표현이 반복됩니다`
           : `대표 고객 리뷰에서는 ${context.representativeReviewPhrase} 같은 사용감 표현이 확인됩니다`;
       case "ja-JP":
         return `代表的なレビューでは${context.representativeReviewPhrase}のように語られ${context.reviewPhrase ? `、${context.reviewPhrase}などの反復表現も確認できます` : ""}`;
@@ -933,7 +1353,7 @@ function createLocalizedReviewDescription(locale: PdpGeoLocale, context: Descrip
   }
 
   return fallback(locale, {
-    "ko-KR": `고객 리뷰에서는 ${context.reviewPhrase} 같은 표현이 확인되어 사용감과 케어 체감을 보완합니다`,
+    "ko-KR": `리뷰에서는 ${context.reviewPhrase} 같은 사용감 표현이 반복됩니다`,
     "ja-JP": `レビューでは${context.reviewPhrase}などの表現が見られ、使用感と期待できるケア文脈を補足します`,
     "en-US": `Customer reviews mention ${context.reviewPhrase}, which supports the product's texture, moisture, firmness, and visible skin-care context`,
     "en-GB": `Customer reviews mention ${context.reviewPhrase}, which supports the product's texture, moisture, firmness, and visible skin-care context`
@@ -1023,6 +1443,11 @@ function localizeProductTypeForLocale(productType: string, locale: PdpGeoLocale)
 
 function inferTargetCustomer(product: PdpProductSignal, locale: PdpGeoLocale): string {
   const text = [product.category, product.description, ...product.benefits, ...product.sourceTexts].filter(Boolean).join(" ");
+  const evidenceBackedTarget = inferEvidenceBackedTargetCustomer(product, locale);
+  if (evidenceBackedTarget) {
+    return evidenceBackedTarget;
+  }
+
   const recommendedSkinType = inferRecommendedSkinType(product, locale);
 
   if (recommendedSkinType) {
@@ -1070,9 +1495,143 @@ function inferTargetCustomer(product: PdpProductSignal, locale: PdpGeoLocale): s
   return fallback(locale, {
     "ko-KR": "상품의 핵심 효능과 사용법을 빠르게 확인하려는 고객",
     "ja-JP": "商品の主な特徴と使い方を知りたいお客様",
-    "en-US": "customers comparing the product's key benefits and usage context",
-    "en-GB": "customers comparing the product's key benefits and usage context"
+    "en-US": "customers comparing the product's key benefits and routine fit",
+    "en-GB": "customers comparing the product's key benefits and routine fit"
   });
+}
+
+function inferEvidenceBackedTargetCustomer(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
+  const text = allProductEvidenceText(product);
+  if (!hasVisibleAgingTargetConcern(text)) {
+    return undefined;
+  }
+  const ageSample = extractTargetAudienceAgeSample(text, locale);
+  const concernTarget = inferConcernBasedTargetCustomer(text, locale);
+
+  if (!ageSample && !concernTarget) {
+    return undefined;
+  }
+
+  if (locale === "ko-KR") {
+    if (ageSample && concernTarget) {
+      return `${concernTarget} ${ageSample}`;
+    }
+    if (ageSample) {
+      return ageSample;
+    }
+    return concernTarget ? `${concernTarget} 고객` : undefined;
+  }
+
+  if (locale === "ja-JP") {
+    if (ageSample && concernTarget) {
+      return `${concernTarget}で、${ageSample}`;
+    }
+    return ageSample ?? concernTarget;
+  }
+
+  if (ageSample && concernTarget) {
+    return `${concernTarget}, especially ${ageSample} reflected in the cited test population`;
+  }
+  return ageSample ?? concernTarget;
+}
+
+function hasVisibleAgingTargetConcern(value: string): boolean {
+  return /(?:노화|안티에이징|주름|팔자|미간|이마|목\s*주름|탄력|리프팅|피부\s*밀도|aging|anti[-\s]?aging|wrinkles?|fine\s*lines?|firm|elastic|lifting|resilien|density)/i.test(cleanSignal(value));
+}
+
+function isSpecificTargetCustomer(value: string | undefined, locale: PdpGeoLocale): boolean {
+  const text = cleanSignal(value ?? "");
+  if (!text) {
+    return false;
+  }
+  const genericTargets: Record<PdpGeoLocale, RegExp> = {
+    "ko-KR": /상품의\s*핵심\s*효능|사용법을\s*빠르게\s*확인/,
+    "ja-JP": /商品の主な特徴/,
+    "en-US": /key benefits and routine fit|product's key benefits/i,
+    "en-GB": /key benefits and routine fit|product's key benefits/i
+  };
+  return !genericTargets[locale].test(text);
+}
+
+function extractTargetAudienceAgeSample(value: string, locale: PdpGeoLocale): string | undefined {
+  const text = cleanSignal(value);
+  const koreanAgeRange = text.match(/(?:만\s*)?(\d{2})\s*[~\-–—]\s*(\d{2})\s*세(?:의)?\s*(?:성인\s*)?(여성|남성|남녀|사용자|참여자|대상자|고객)?(?:\s*\d+\s*명)?/);
+  if (koreanAgeRange?.[1] && koreanAgeRange[2]) {
+    const range = `${koreanAgeRange[1]}~${koreanAgeRange[2]}세`;
+    const audience = normalizeKoreanAudienceLabel(koreanAgeRange[3]);
+    if (locale === "ko-KR") {
+      return `${range} ${audience} 고객`;
+    }
+    if (locale === "ja-JP") {
+      return `${range}の${audience === "여성" ? "女性" : audience === "남성" ? "男性" : "対象者"}`;
+    }
+    return `${audience === "여성" ? "women" : audience === "남성" ? "men" : "participants"} aged ${koreanAgeRange[1]}-${koreanAgeRange[2]}`;
+  }
+
+  const englishAgeRange = text.match(/\b(?:women|men|participants|subjects|users)?\s*(?:aged|ages?)\s*(\d{2})\s*(?:to|[-–—])\s*(\d{2})\b|\b(\d{2})\s*(?:to|[-–—])\s*(\d{2})\s*(?:year[-\s]?old|yo)\s*(women|men|participants|subjects|users)?\b/i);
+  const start = englishAgeRange?.[1] ?? englishAgeRange?.[3];
+  const end = englishAgeRange?.[2] ?? englishAgeRange?.[4];
+  const audience = normalizeEnglishAudienceLabel(englishAgeRange?.[0] ?? englishAgeRange?.[5]);
+  if (!start || !end) {
+    return undefined;
+  }
+  if (locale === "ko-KR") {
+    return `${start}~${end}세 ${audience === "women" ? "여성" : audience === "men" ? "남성" : "대상자"} 고객`;
+  }
+  if (locale === "ja-JP") {
+    return `${start}~${end}歳の${audience === "women" ? "女性" : audience === "men" ? "男性" : "対象者"}`;
+  }
+  return `${audience} aged ${start}-${end}`;
+}
+
+function normalizeKoreanAudienceLabel(value: string | undefined): string {
+  if (/남성/.test(value ?? "")) {
+    return "남성";
+  }
+  if (/남녀|사용자|참여자|대상자|고객/.test(value ?? "")) {
+    return "대상자";
+  }
+  return "여성";
+}
+
+function normalizeEnglishAudienceLabel(value: string | undefined): "women" | "men" | "participants" {
+  const text = value ?? "";
+  if (/men\b/i.test(text) && !/women/i.test(text)) {
+    return "men";
+  }
+  if (/women/i.test(text)) {
+    return "women";
+  }
+  return "participants";
+}
+
+function inferConcernBasedTargetCustomer(value: string, locale: PdpGeoLocale): string | undefined {
+  const text = cleanSignal(value);
+  if (hasVisibleAgingTargetConcern(text)) {
+    return fallback(locale, {
+      "ko-KR": "탄력 저하와 주름 등 노화 징후가 고민인",
+      "ja-JP": "ハリ低下やシワなどのエイジングサインが気になるお客様",
+      "en-US": "customers comparing visible-aging, firmness, and wrinkle care",
+      "en-GB": "customers comparing visible-ageing, firmness, and wrinkle care"
+    });
+  }
+  if (/(?:장벽|피부\s*장벽|건조|수분|보습|barrier|dryness|dry\s*skin|hydration|moisture)/i.test(text)) {
+    return fallback(locale, {
+      "ko-KR": "건조함과 피부 장벽 약화가 고민인",
+      "ja-JP": "乾燥や肌バリアの低下が気になるお客様",
+      "en-US": "customers concerned with dryness and skin-barrier support",
+      "en-GB": "customers concerned with dryness and skin-barrier support"
+    });
+  }
+  if (/(?:민감|저자극|sensitive|irritation|hypoallergenic)/i.test(text)) {
+    return fallback(locale, {
+      "ko-KR": "민감 피부 루틴을 찾는",
+      "ja-JP": "敏感肌向けのルーティンを探すお客様",
+      "en-US": "customers looking for a sensitive-skin routine",
+      "en-GB": "customers looking for a sensitive-skin routine"
+    });
+  }
+  return undefined;
 }
 
 function inferRecommendedSkinType(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
@@ -1154,8 +1713,36 @@ function selectPublicBenefitSignals(product: PdpProductSignal, locale: PdpGeoLoc
     .map((value) => localizePublicBenefitSignal(value, locale))
     .filter((value): value is string => Boolean(value))
     .filter((value) => !isProductEntityOnlySignal(value, product))
+    .filter((value) => !isLowQualityBenefitSignal(value))
+    .filter((value) => isBenefitCompatibleWithProduct(value, product))
     .filter(isUsefulPublicListValue))
     .slice(0, 10);
+}
+
+function isLowQualityBenefitSignal(value: string): boolean {
+  const text = cleanSignal(value);
+  if (!text) {
+    return true;
+  }
+  if (/[가-힣]/.test(text) && text.length > 48) {
+    return true;
+  }
+  return /(?:성분은|성분이|설계되었습니다|자칫|함유되어|동일합니다|고객님|리뉴얼|어떤\s*성분|무엇인가요|효과\s*\*|REJUVENATING|CRÈME|AGREED)/i.test(text);
+}
+
+function isBenefitCompatibleWithProduct(value: string, product: PdpProductSignal): boolean {
+  const benefit = cleanSignal(value);
+  const productContext = cleanSignal([
+    product.name,
+    product.originalName,
+    product.category,
+    inferProductType(product)
+  ].filter(Boolean).join(" "));
+  const isCleanserProduct = /(?:클렌|세안|폼|워시|cleanser|cleansing|foam|wash)/i.test(productContext);
+  if (/(?:저자극\s*세안|세정력|초미세먼지\s*세정|모공\s*속\s*노폐물\s*세정|마이크로\s*버블)/.test(benefit) && !isCleanserProduct) {
+    return false;
+  }
+  return true;
 }
 
 function isProductEntityOnlySignal(value: string, product: PdpProductSignal): boolean {
@@ -1173,9 +1760,13 @@ function signalEntityKey(value: string): string {
 }
 
 function selectBenefitSignals(product: PdpProductSignal): string[] {
+  const faqBenefitText = product.faq
+    .filter((item) => classifySourceFaqIntent(item).some((intent) => intent === "benefit" || intent === "suitability" || intent === "evidence"))
+    .flatMap((item) => [item.question, item.answer]);
   return unique([
     ...(product.semanticFacts?.benefits ?? []).flatMap(extractBenefitSignalCandidates),
     ...(product.semanticFacts?.effects ?? []).flatMap(extractBenefitSignalCandidates),
+    ...faqBenefitText.flatMap(extractBenefitSignalCandidates),
     ...product.benefits.flatMap(extractBenefitSignalCandidates),
     ...product.effects.flatMap(extractBenefitSignalCandidates),
     ...[product.description].filter((value): value is string => Boolean(value)).flatMap(extractBenefitSignalCandidates),
@@ -1184,14 +1775,26 @@ function selectBenefitSignals(product: PdpProductSignal): string[] {
 }
 
 function selectKeyIngredients(product: PdpProductSignal, limit: number): string[] {
+  const faqEvidence = product.faq.flatMap((item) => [item.question, item.answer]);
+  const ingredientEvidenceTexts = [
+    ...product.ingredients,
+    ...(product.semanticFacts?.ingredients ?? []),
+    ...faqEvidence,
+    ...product.sourceTexts.slice(0, 80)
+  ];
   const semanticIngredients = (product.semanticFacts?.ingredients ?? [])
     .flatMap(splitIngredientSignal)
     .map(normalizeIngredientSignal)
     .filter((value): value is string => Boolean(value));
-  const haystack = [
-    ...product.ingredients
-  ].join(" ");
+  const haystack = ingredientEvidenceTexts.join(" ");
+  const evidenceIngredientSubjects = ingredientEvidenceTexts
+    .flatMap(extractIngredientSubjectCandidates)
+    .map(normalizeIngredientSignal)
+    .filter((value): value is string => Boolean(value));
   const detected = [
+    /진세노믹스|ginsenomics/i.test(haystack) ? "진세노믹스" : undefined,
+    /진생\s*펩타이드|진생펩타이드|ginseng peptide/i.test(haystack) ? "진생펩타이드" : undefined,
+    /진생\s*레티놀|진생레티놀|ginseng retinol/i.test(haystack) ? "진생레티놀" : undefined,
     /500[-\s]?hour(?:\s+aged)?\s+ginseng/i.test(haystack) ? "500-hour aged ginseng" : undefined,
     /korean herb extract/i.test(haystack) ? "Korean herb extract" : undefined,
     /korean ginseng actives|ginsenomics/i.test(haystack) ? "Korean Ginseng Actives (Ginsenomics)" : undefined,
@@ -1221,6 +1824,7 @@ function selectKeyIngredients(product: PdpProductSignal, limit: number): string[
 
   return dedupeIngredientSignals([
     ...semanticIngredients,
+    ...evidenceIngredientSubjects,
     ...detected,
     ...normalizedFromIngredients,
     ...(semanticIngredients.length === 0 ? normalizedFromSourceTexts : [])
@@ -1229,21 +1833,73 @@ function selectKeyIngredients(product: PdpProductSignal, limit: number): string[
     .slice(0, limit);
 }
 
+function extractIngredientSubjectCandidates(value: string): string[] {
+  const text = cleanSignal(value);
+  if (!text || isLowQualityIngredientEvidenceText(text)) {
+    return [];
+  }
+  const candidates: string[] = [];
+  const subjectPattern = /(?:^|[.!?。！？]\s*|[,，]\s*)([가-힣A-Za-z0-9™®+\-/\s]{2,48}?)(?:은|는|is|are)\s+[^.!?。！？]{0,160}?(?:성분|기술|포뮬러|복합체|펩타이드|비타민|추출|사포닌|콜라겐|항산화|탄력|케어|ingredient|technology|formula|complex|peptide|vitamin|extract|active|antioxidant)/giu;
+  for (const match of text.matchAll(subjectPattern)) {
+    candidates.push(...splitIngredientSubjectCandidate(match[1] ?? ""));
+  }
+  return unique(candidates.map(cleanIngredientSubjectCandidate).filter((item): item is string => Boolean(item)));
+}
+
+function splitIngredientSubjectCandidate(value: string): string[] {
+  return cleanSignal(value)
+    .replace(/^(?:그리고|또한|특히|세\s*가지|핵심|주요|성분|기술|포뮬러|ingredients?|technolog(?:y|ies)|formula|include|includes|including|feature|features|highlight|highlights|구성|포함|으로|로|은|는|:)\s*/i, "")
+    .split(/\s*(?:,|，|\/|\+|및|와|과|and)\s*/i)
+    .map(cleanIngredientSubjectCandidate)
+    .filter((item): item is string => Boolean(item));
+}
+
+function cleanIngredientSubjectCandidate(value: string): string | undefined {
+  const text = cleanSignal(value)
+    .replace(/^(?:그리고|또한|특히|핵심|주요)\s+/i, "")
+    .replace(/(?:성분|기술|포뮬러|ingredients?|technolog(?:y|ies)|formula)\s*(?:으로|로|은|는|:)?$/i, "")
+    .replace(/^(?:include|includes|including|feature|features|highlight|highlights|구성|포함)\s*/i, "")
+    .replace(/\s*(?:에는|은|는|이|가|을|를|에)$/u, "")
+    .trim();
+  if (!text || text.length < 2 || text.length > 48 || isIngredientSectionLabel(text) || isLowQualityIngredientEvidenceText(text)) {
+    return undefined;
+  }
+  if (/^(?:네|예|yes|no|성분|기술|포뮬러|핵심|주요|세\s*가지|제품|상품)$/i.test(text)) {
+    return undefined;
+  }
+  if (/^(?:helping|supporting|improving|addressing|visibly|helps?|supports?|improves?|addresses?)\b/i.test(text)) {
+    return undefined;
+  }
+  if (/(?:유지하|돕|케어|효능|효과|개선|느낌|사용감)$/.test(text) && !hasSpecificIngredientNameAnchor(text)) {
+    return undefined;
+  }
+  if (/(?:^|[\s,])(?:캡슐|쿨링|효|주)$/.test(text) || /(?:쿨링\s*효|쿨링을\s*주|크림에\s*함유된\s*캡슐)/.test(text)) {
+    return undefined;
+  }
+  return text;
+}
+
 function isGenericSourceIngredientSignal(value: string): boolean {
   const text = cleanSignal(value);
-  if (!text || text.length > 80 || /[.。！？?]/.test(text) || isIngredientSectionLabel(text)) {
+  if (!text || text.length > 80 || /[.。！？?]/.test(text) || isIngredientSectionLabel(text) || isLowQualityIngredientEvidenceText(text)) {
     return false;
   }
   if (/\b(?:oil|sebum)\s+(?:control|balance|care)|(?:control|balance)\s+(?:oil|sebum)\b/i.test(text)) {
     return false;
   }
   return /\b(?:ingredient|formula|technology|complex|blend|extract|acid|peptide|capsule|ferment|filtrate|root|leaf|seed|flower|fruit|ceramide|hyaluronic|retinol|niacinamide|zinc|panthenol|betaine|[\p{L}-]+\s+oil)\b/iu.test(text)
-    || /(?:성분|원료|기술|포뮬러|복합체|추출물|오일|펩타이드|캡슐|발효|세라마이드|히알루론산|레티놀|나이아신아마이드|징크)/i.test(text);
+    || /(?:성분|원료|기술|포뮬러|복합체|추출물|오일|펩타이드|캡슐|발효|유도체|세라마이드|히알루론산|레티놀|나이아신아마이드|징크)/i.test(text);
 }
 
 function isUsefulKeyIngredientSignal(value: string, product: PdpProductSignal): boolean {
   const text = cleanSignal(value);
-  if (!text || isProductEntityOnlySignal(text, product) || isIngredientSectionLabel(text)) {
+  if (!text || isProductEntityOnlySignal(text, product) || isIngredientSectionLabel(text) || isLowQualityIngredientEvidenceText(text)) {
+    return false;
+  }
+  if (isGenericMarketingIngredientToken(text)) {
+    return false;
+  }
+  if (isProductOrAudienceIngredientNoise(text, product)) {
     return false;
   }
   const normalized = signalEntityKey(text);
@@ -1256,6 +1912,48 @@ function isUsefulKeyIngredientSignal(value: string, product: PdpProductSignal): 
   return true;
 }
 
+function isGenericMarketingIngredientToken(value: string): boolean {
+  const text = cleanSignal(value);
+  if (/^(?:care|new|best|no\.?\s*1|premium|anti[-\s]?aging|product|formula|technology)$/i.test(text)) {
+    return true;
+  }
+  if (/^(?:자생력|고밀도|피부|보습막|영양감|산뜻한|리치한|탄력|주름|수분감|피부결|장벽|방어력|효능|효과|케어)$/i.test(text)) {
+    return true;
+  }
+  return /^[A-Z]{3,12}$/.test(text) && !hasSpecificIngredientNameAnchor(text);
+}
+
+function isProductOrAudienceIngredientNoise(value: string, product: PdpProductSignal): boolean {
+  const text = cleanSignal(value);
+  const normalized = signalEntityKey(text);
+  const hasIngredientAnchor = hasSpecificIngredientNameAnchor(text);
+  const productEntityContainsValue = [
+    product.name,
+    product.originalName
+  ].filter((item): item is string => Boolean(item)).some((item) => {
+    const key = signalEntityKey(item);
+    return normalized.length >= 2 && key.includes(normalized);
+  });
+  if (productEntityContainsValue && !hasIngredientAnchor) {
+    return true;
+  }
+  if (hasProductTypeToken(text) && !hasIngredientAnchor) {
+    return true;
+  }
+  if (text.split(/\s+/).length >= 5 && !hasIngredientAnchor) {
+    return true;
+  }
+  return /(?:고객|분|피부\s*타입|타입\s*전용|전용|제품|상품)$/i.test(text) && !hasIngredientAnchor;
+}
+
+function hasSpecificIngredientNameAnchor(value: string): boolean {
+  return /(?:성분|원료|기술|복합체|추출|오일|펩타이드|비타민|유도체|발효|사포닌|콜라겐|세라마이드|히알루론산|하이알루론산|레티놀|나이아신아마이드|징크|판테놀|베타인|프로바이오틱스|ingredient|formula|technology|complex|extract|oil|peptide|vitamin|derivative|ferment|saponin|collagen|ceramide|hyaluronic|retinol|niacinamide|zinc|panthenol|betaine|probiotics?|ginseng|panax)/i.test(cleanSignal(value));
+}
+
+function hasProductTypeToken(value: string): boolean {
+  return /(?:크림|세럼|토너|로션|앰플|에센스|클렌저|클렌징|폼|마스크)(?:$|[\s\]\),.이가은는을를에와과])|\b(?:cream|serum|toner|lotion|ampoule|essence|cleanser|cleansing|foam|mask)\b/i.test(cleanSignal(value));
+}
+
 function isIngredientSectionLabel(value: string): boolean {
   return /^(?:ingredients?|ingredient list|key ingredients|full ingredients|core ingredients?|active ingredients?|benefits?|effects?|usage|how to use|directions?|전성분|주요 성분|핵심 성분|효능|사용법|추천 피부 타입|全成分)$/i.test(cleanSignal(value));
 }
@@ -1266,7 +1964,7 @@ function dedupeIngredientSignals(values: string[]): string[] {
   const hasDenseCeramideCapsule = uniqueValues.some((value) => /고밀도\s*세라마이드\s*캡슐/i.test(value));
   const hasCompressedHyaluronic = uniqueValues.some((value) => /압축\s*히알루론산/i.test(value));
   const hasSpecificGinseng = uniqueValues.some((value) =>
-    /500[-\s]?hour|korean herb extract|korean ginseng actives|ginsenomics|ginseng peptide|panax ginseng/i.test(value)
+    /500[-\s]?hour|korean herb extract|korean ginseng actives|ginsenomics|ginseng peptide|panax ginseng|진세노믹스|진생\s*펩타이드|진생\s*레티놀/i.test(value)
   );
 
   return uniqueValues.filter((value) => {
@@ -1465,7 +2163,7 @@ function selectPublicReviewKeywords(product: PdpProductSignal, locale: PdpGeoLoc
 }
 
 function normalizeReviewKeyword(value: string): string | undefined {
-  const normalized = cleanSignal(value).replace(/\.$/, "");
+  const normalized = normalizePublicReviewKeywordSurface(cleanSignal(value).replace(/\.$/, ""));
   if (!normalized) {
     return undefined;
   }
@@ -1488,9 +2186,9 @@ function normalizeReviewKeyword(value: string): string | undefined {
 }
 
 function localizePublicReviewKeyword(value: string, locale: PdpGeoLocale): string | undefined {
-  const normalized = cleanSignal(value)
+  const normalized = normalizePublicReviewKeywordSurface(cleanSignal(value)
     .replace(/[,.]$/g, "")
-    .trim();
+    .trim());
   if (!normalized || hasTruncationMarker(normalized) || isQuestionLikeText(normalized) || isBrokenMarketingFragment(normalized)) {
     return undefined;
   }
@@ -1531,6 +2229,20 @@ function localizePublicReviewKeyword(value: string, locale: PdpGeoLocale): strin
   }
 
   return normalized;
+}
+
+function normalizePublicReviewKeywordSurface(value: string): string {
+  let text = cleanSignal(value)
+    .replace(/\s*같은\s*표현.*$/u, "")
+    .replace(/\s*review\s+language.*$/iu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (/[가-힣]/.test(text) && !/[A-Za-z]/.test(text)) {
+    text = text.replace(/\s*(?:을|를|이|가|은|는|으로|로)$/u, "");
+  }
+
+  return text.trim();
 }
 
 function normalizePublicReviewBody(value: string, locale: PdpGeoLocale): string {
@@ -1983,10 +2695,10 @@ function createOcrFaqBlendContexts(product: PdpProductSignal, locale: PdpGeoLoca
 
     return {
       benefit: ingredientTopic
-        ? `${ingredientTopic} ${benefitPhrase} 같은 확인 키워드와 연결되어 제품 선택 이유를 구체화합니다${detailSummary ? `; ${detailSummary}` : ""}`
+        ? `${ingredientTopic} ${appendKoreanObjectParticle(benefitPhrase)} 뒷받침합니다${detailSummary ? `. ${detailSummary}` : ""}`
         : `${benefitPhrase} 정보는 ${targetCustomer}이 ${productTypeObject} 비교할 때 확인할 핵심 선택 기준입니다`,
       ingredient: ingredientPhrase
-        ? `성분 설명은 ${ingredientPhrase}와 ${benefitPhrase}의 연결을 중심으로 ${productType} 선택 기준을 구체화합니다${detailSummary ? `; ${detailSummary}` : ""}`
+        ? `${ingredientPhrase}는 ${benefitPhrase}와 연결되어 ${productType} 선택 기준이 됩니다${detailSummary ? `. ${detailSummary}` : ""}`
         : undefined,
       usage: ingredientPhrase
         ? `사용 루틴 답변은 ${ingredientPhrase} 기반의 ${benefitPhrase} 케어와 사용 후 체감 맥락을 함께 설명합니다`
@@ -2009,12 +2721,12 @@ function createOcrFaqBlendContexts(product: PdpProductSignal, locale: PdpGeoLoca
   const usageOutcome = outcomes ?? "source-backed formula and use-feel";
   return {
     benefit: contextTopics
-      ? `Product evidence connects ${contextTopics} with ${benefitOutcome} without extending beyond the source evidence`
-      : `Product evidence supports ${benefitOutcome} without extending beyond the source evidence`,
+      ? `${contextTopics} connects with ${benefitOutcome} in the product's supported care story`
+      : `The product's supported care story focuses on ${benefitOutcome}`,
     ingredient: detail
-      ? `Source evidence describes ${contextTopics ?? "the highlighted formula elements"} as ${normalizeIngredientRolePhrase(detail)}`
-      : contextTopics ? `The highlighted formula elements, ${contextTopics}, are tied to ${outcomes ?? "the product's supported benefits"} in the product evidence` : undefined,
-    usage: contextTopics ? `Usage guidance reflects ${contextTopics} through ${usageOutcome} cues shown in the product evidence` : undefined
+      ? `${contextTopics ?? "The highlighted formula elements"} are described as ${normalizeIngredientRolePhrase(detail)}`
+      : contextTopics ? `The highlighted formula elements, ${contextTopics}, support ${outcomes ?? "the product's care benefits"}` : undefined,
+    usage: contextTopics ? `${contextTopics} helps frame routine use with ${usageOutcome} cues` : undefined
   };
 }
 
@@ -2081,7 +2793,13 @@ function normalizeKoreanOcrSemanticDetail(value: string | undefined): string | u
     .replace(/[☑□■●◆]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  if (!text || text.length < 8 || text.length > 120 || isKoreanOcrTimingOnlyTopic(text) || isNonCitationEvidenceArtifact(text)) {
+  if (!text
+    || text.length < 8
+    || text.length > 120
+    || isKoreanOcrTimingOnlyTopic(text)
+    || isNonCitationEvidenceArtifact(text)
+    || isHardEvidenceSignal(text)
+    || hasFaqCitationNoise(text)) {
     return undefined;
   }
   const outcomes = unique(extractCanonicalBenefitTerms(text)
@@ -2089,9 +2807,9 @@ function normalizeKoreanOcrSemanticDetail(value: string | undefined): string | u
     .filter((term): term is string => Boolean(term)));
   const outcomePhrase = formatDescriptionList(outcomes, "ko-KR", 3);
   if (outcomePhrase) {
-    return `${outcomePhrase} 관련 설명을 성분 역할과 효능 문맥으로 정리합니다`;
+    return `${outcomePhrase} 케어와 연결됩니다`;
   }
-  return `${truncate(text, 90)} 정보를 성분 역할과 효능 문맥으로 정리합니다`;
+  return undefined;
 }
 
 function normalizeIngredientRolePhrase(value: string): string {
@@ -2256,7 +2974,7 @@ function createKoreanComparisonIntentSentence(productType: string, outcomePhrase
 }
 
 function createKoreanReviewUseFeelSentence(productType: string, reviewPhrase: string, outcomePhrase: string): string {
-  return `고객 리뷰의 ${reviewPhrase} 표현은 ${productType}의 사용감, 만족도, ${outcomePhrase} 체감 맥락을 보완합니다`;
+  return `고객 리뷰의 ${reviewPhrase} 표현은 ${productType}의 사용감, 만족도, ${outcomePhrase} 체감을 판단할 때 참고할 수 있습니다`;
 }
 
 function createKoreanUsageBenefitSentence(usage: string, outcomePhrase: string, ingredient?: string): string {
@@ -2292,10 +3010,10 @@ function createKoreanConcernRoutineSentence(productType: string, targetCustomer:
 function createEnglishGeoClaimSentence(ingredientPhrase: string, outcomePhrase: string, productType: string, variant = 0): string {
   const lowerProductType = lowercaseEnglishProductType(productType);
   const variants: [string, string, string, string, string] = [
-    `${ingredientPhrase} is presented with ${outcomePhrase} for ${lowerProductType} shoppers comparing formula and usage context`,
+    `${ingredientPhrase} works with ${outcomePhrase} for ${lowerProductType} shoppers comparing formula and routine fit`,
     `The ${lowerProductType} connects ${ingredientPhrase} with ${outcomePhrase} and daily-use cues`,
     `${ingredientPhrase} and ${outcomePhrase} give the ${lowerProductType} a clear formula-and-benefit context`,
-    `For ${outcomePhrase}, the ${lowerProductType} highlights ${ingredientPhrase} alongside source-backed benefit details`,
+    `For ${outcomePhrase}, the ${lowerProductType} highlights ${ingredientPhrase} alongside supported benefit details`,
     `${ingredientPhrase} appears in the ${lowerProductType} story for ${outcomePhrase} and routine selection`
   ];
   return variants[Math.abs(variant) % variants.length] ?? variants[0];
@@ -2306,7 +3024,7 @@ function sentenceVariantIndex(value: string): number {
 }
 
 function createEnglishIngredientBenefitSentence(ingredientPhrase: string, outcomePhrase: string, targetCustomer: string): string {
-  return `${ingredientPhrase} helps ${targetCustomer} understand the formula behind ${outcomePhrase} care and everyday use context`;
+  return `${ingredientPhrase} helps ${targetCustomer} understand the formula behind ${outcomePhrase} care and everyday routine use`;
 }
 
 function createEnglishComparisonIntentSentence(productType: string, outcomePhrase: string, targetCustomer: string): string {
@@ -2600,7 +3318,23 @@ function isReportedEvidenceCandidate(value: string): boolean {
   if (isNonCitationEvidenceArtifact(value)) {
     return false;
   }
+  if (isCommerceMetricArtifact(value)) {
+    return false;
+  }
+  if (!hasQuantifiedReportedSignal(value)) {
+    return false;
+  }
   return /%|\d+(?:\.\d+)?\s*배|weeks?|days?|hours?|clinical|instrumental|study|users?|women|men|subjects?|participants?|agreed|showed|after\s+\d|self-assess|rating|reviews?|임상|인체\s*적용|자가\s*평가|참여자|대상|사용자|테스트|시험|결과|사용\s*(?:직후|전|\d+(?:\.\d+)?\s*(?:시간|일|주)\s*후)|\d+(?:\.\d+)?\s*(?:시간|일|주)\s*(?:후|동안)/i.test(value);
+}
+
+function hasQuantifiedReportedSignal(value: string): boolean {
+  return /%|\d+(?:\.\d+)?\s*배|\b\d+(?:\.\d+)?\s*(?:weeks?|days?|hours?|users?|women|men|subjects?|participants?|reviews?|ratings?)\b|평점\s*\d|리뷰\s*\d|\d+(?:\.\d+)?\s*(?:명|회|주|일|시간)|사용\s*(?:직후|전|\d+(?:\.\d+)?\s*(?:시간|일|주)\s*후)/i.test(value);
+}
+
+function isCommerceMetricArtifact(value: string): boolean {
+  const text = cleanSignal(value);
+  return /(?:공유|쿠폰|적립|배송|구매|장바구니|할인|할인가|판매가|가격|정가|원\b|₩|KRW|coupon|reward|shipping|cart|price|sale)/i.test(text)
+    && /(?:%|\d{2,})/.test(text);
 }
 
 function normalizeAgreedAssessmentDetail(text: string): string | undefined {
@@ -2738,7 +3472,8 @@ function localizePublicBenefitSignal(value: string, locale: PdpGeoLocale): strin
       [/elasticity|elastic|firmness|firming|firm|탄력/i, "탄력"],
       [/plumpness|plump/i, "탄탄한 피부"],
       [/skin barrier|barrier support|피부\s*장벽|장벽/i, "피부 장벽"],
-      [/hydration|hydrate|moisture|moisturizing|moisturising|보습|수분감|수분/i, "수분감"],
+      [/보습\s*케어|고보습|보습/i, "보습 케어"],
+      [/hydration|hydrate|moisture|moisturizing|moisturising|수분감|수분/i, "수분감"],
       [/low[-\s]?irritation|gentle|mild|마찰\s*자극|저자극|자극/i, "저자극 세안"],
       [/fine\s*dust|ultra[-\s]?fine\s*dust|pollution|초미세먼지/i, "초미세먼지 세정"],
       [/pore\s*(?:waste|impurit|cleansing)|모공\s*속\s*노폐물|노폐물/i, "모공 속 노폐물 세정"],
@@ -3004,6 +3739,15 @@ function inferProductType(product: PdpProductSignal): string | undefined {
 
 function productTypeFromName(value: string): string | undefined {
   const name = cleanSignal(value);
+  if (/클렌징|클렌저|세안|폼/.test(name)) {
+    return "Cleanser";
+  }
+  if (/세럼|앰플|에센스/.test(name)) {
+    return "Serum";
+  }
+  if (/크림|크리미/.test(name)) {
+    return "Cream";
+  }
   if (/cleansing\s+foam|foam\s+cleanser|cleanser|cleaning\s+foam/i.test(name)) {
     return "Cleanser";
   }
@@ -3038,7 +3782,7 @@ function normalizeIngredientSignal(value: string): string | undefined {
   if (!text || text.length < 3) {
     return undefined;
   }
-  if (isNonCitationEvidenceArtifact(text)) {
+  if (isNonCitationEvidenceArtifact(text) || isLowQualityIngredientEvidenceText(text)) {
     return undefined;
   }
   if (/^(ingredients?|ingredient list|key ingredients|full ingredients|전성분|全成分)$/i.test(text)) {
@@ -3055,6 +3799,15 @@ function normalizeIngredientSignal(value: string): string | undefined {
   }
   if (/korean ginseng actives|ginsenomics/i.test(text)) {
     return "Korean Ginseng Actives (Ginsenomics)";
+  }
+  if (/진세노믹스|ginsenomics/i.test(text)) {
+    return "진세노믹스";
+  }
+  if (/진생\s*펩타이드|진생펩타이드|ginseng peptide/i.test(text)) {
+    return "진생펩타이드";
+  }
+  if (/진생\s*레티놀|진생레티놀|ginseng retinol/i.test(text)) {
+    return "진생레티놀";
   }
   const explicitTechnologyPhrase = normalizeExplicitIngredientTechnologyPhrase(text);
   if (explicitTechnologyPhrase) {
@@ -3129,6 +3882,9 @@ function isUsefulBenefitSignal(value: string): boolean {
     return false;
   }
   if (/^(reviews?|ratings?|usage|use|ingredients?|effects?|benefits?|positive notes?|key benefit|key benefits)$/i.test(normalized)) {
+    return false;
+  }
+  if (/(?:효과\s*\*|REJUVENATING|CRÈME|AGREED|자가\s*평가|소비자\s*평가|인체\s*적용|시험|테스트|%|\d+(?:\.\d+)?\s*(?:명|주|일|시간))/i.test(normalized)) {
     return false;
   }
   return true;
@@ -3222,6 +3978,33 @@ function cleanSignal(value: string): string {
   return value.replace(/\s+/g, " ").replace(/\s+([,.])/g, "$1").trim();
 }
 
+function allProductEvidenceText(product: PdpProductSignal): string {
+  return [
+    product.name,
+    product.originalName,
+    product.description,
+    product.brand,
+    product.category,
+    product.price?.raw,
+    ...product.options,
+    ...product.benefits,
+    ...product.effects,
+    ...product.ingredients,
+    ...product.usage,
+    ...product.metrics,
+    ...product.faq.flatMap((item) => [item.question, item.answer]),
+    ...product.reviews.items.map((item) => item.body),
+    ...product.reviews.keywords,
+    ...product.sourceTexts,
+    ...(product.semanticFacts?.ingredients ?? []),
+    ...(product.semanticFacts?.benefits ?? []),
+    ...(product.semanticFacts?.effects ?? []),
+    ...(product.semanticFacts?.skinTypes ?? []),
+    ...(product.semanticFacts?.usageSteps ?? []),
+    ...(product.semanticFacts?.evidenceSentences ?? [])
+  ].filter((value): value is string => Boolean(value)).map(cleanSignal).join(" ");
+}
+
 function formatClaimSentences(values: Array<string | undefined>, locale: PdpGeoLocale): string | undefined {
   const sentences = values
     .map((value) => formatClaimSentence(value, locale))
@@ -3248,7 +4031,7 @@ function isQuestionLikeText(value: string): boolean {
 
 function isBrokenMarketingFragment(value: string): boolean {
   const text = value.trim();
-  if (/(리뉴얼 전 제품|고객님들이 만족하셨던 속성|속성\s*\(|property value)/i.test(text)) {
+  if (/(property value|Evidence signal|Review signals|technology signals|main benefit signal)/i.test(text)) {
     return true;
   }
   const openParens = (text.match(/\(/g) ?? []).length;
@@ -3261,7 +4044,7 @@ function isBrokenMarketingFragment(value: string): boolean {
 
 function isUsefulPublicListValue(value: string): boolean {
   const text = cleanSignal(value);
-  if (!text || text.length > 280 || hasTruncationMarker(text) || isQuestionLikeText(text) || isBrokenMarketingFragment(text) || isNonCitationEvidenceArtifact(text)) {
+  if (!text || text.length > 280 || hasTruncationMarker(text) || isQuestionLikeText(text) || isBrokenMarketingFragment(text) || isNonCitationEvidenceArtifact(text) || isLowQualityPublicEvidenceText(text)) {
     return false;
   }
   if (/^(review|reviews|rating|ratings|star|stars|ingredient|ingredients|effect|benefit|search intent context|review comfort context)$/i.test(text)) {
@@ -3271,6 +4054,81 @@ function isUsefulPublicListValue(value: string): boolean {
     return false;
   }
   return true;
+}
+
+function isLowQualityIngredientEvidenceText(value: string): boolean {
+  const text = cleanSignal(value);
+  if (!text) {
+    return true;
+  }
+  if (isLegalDisclosureText(text) || isCommercePolicyText(text)) {
+    return true;
+  }
+  return /(?:성분\s*정보가\s*충분하지|ingredient\s+information\s+is\s+not\s+sufficient|no\s+ingredient\s+evidence)/i.test(text);
+}
+
+function isLowQualityPublicEvidenceText(value: string): boolean {
+  const text = cleanSignal(value);
+  if (!text) {
+    return true;
+  }
+  if (hasKoreanSurfaceQualityIssue(text) || hasEnglishSurfaceQualityIssue(text)) {
+    return true;
+  }
+  if (isLegalDisclosureText(text)) {
+    return true;
+  }
+  return isCommercePolicyText(text) && !hasCareOrFormulaSignal(text);
+}
+
+function isLegalDisclosureText(value: string): boolean {
+  const text = cleanSignal(value);
+  return /(?:화장품법|법령|고시|기재\s*[ㆍ·]?\s*표시|표시하여야|전성분[^.!?。！？\n]{0,40}(?:법|고시)|all\s+ingredients\s+required\s+by\s+law|statutory\s+ingredient|legal\s+disclosure|regulatory\s+disclosure|regulation\s+requires)/i.test(text);
+}
+
+function isCommercePolicyText(value: string): boolean {
+  return /(?:배송|반품|교환|환불|쿠폰|할인|적립|혜택\s*적용가|구매\s*혜택|고객센터|판매자|배송비|무료배송|shipping|returns?|refund|exchange|coupon|discount|reward|points?|customer\s+service|seller)/i.test(cleanSignal(value));
+}
+
+function hasCareOrFormulaSignal(value: string): boolean {
+  return /(?:보습|수분|진정|탄력|장벽|광채|영양|피부결|주름|성분|기술|포뮬러|제형|텍스처|사용감|hydration|moisture|soothing|firming|barrier|radiance|wrinkle|ingredient|formula|technology|texture|finish)/i.test(value);
+}
+
+function hasKoreanSurfaceQualityIssue(value: string): boolean {
+  const text = cleanSignal(value);
+  return /제품로|(?:합니다|줍니다|입니다)입니다|(?:세요|주세요)입니다|으로으로|로로|사용감\s+사용감|[가-힣]{2,}(?:을|를|이|가|은|는|으로|로)(?:가|이)\b/.test(text)
+    || isKoreanMetaNarrationText(text)
+    || isKoreanInternalGenerationFrame(text);
+}
+
+function isKoreanMetaNarrationText(value: string): boolean {
+  const text = cleanSignal(value);
+  if (!/[가-힣]/.test(text)) {
+    return false;
+  }
+  const sourceSubject = "(?:상품|제품|페이지|상품\\s*상세|상품\\s*정보|제품\\s*정보|제품\\s*자료|확인(?:된)?\\s*(?:근거|정보|결과)|근거|내용|자료|성분\\s*영역|효능\\s*정보|리뷰\\s*(?:기반\\s*)?표현)";
+  const reportingPredicate = "(?:정리|요약|제시|설명|노출|포함|구성)";
+  return new RegExp(`${sourceSubject}.{0,28}(?:은|는|에는|에서는|으로는|로|를|을)?[^.!?。！？\\n]{0,48}${reportingPredicate}(?:하|되|됩|합니다|됩니다)`).test(text);
+}
+
+function isKoreanInternalGenerationFrame(value: string): boolean {
+  return /(?:성분\s*역할|효능\s*문맥|핵심\s*케어\s*근거|효능어|성분어|사용감어|탐색\s*문맥)/.test(cleanSignal(value));
+}
+
+function hasEnglishSurfaceQualityIssue(value: string): boolean {
+  const text = cleanSignal(value);
+  return isEnglishMetaNarrationText(text)
+    || /\b(?:Evidence signal|Review signals|technology signals|main benefit signal|ingredient signal|product discovery context|comparison intent|comparison-led|use-feel language|benefit language|ingredient terms|benefit terms)\b/i.test(text);
+}
+
+function isEnglishMetaNarrationText(value: string): boolean {
+  const text = cleanSignal(value);
+  if (!/[A-Za-z]/.test(text)) {
+    return false;
+  }
+  const sourceSubject = "(?:source-backed\\s+)?(?:product\\s+)?(?:evidence|source\\s+evidence|source\\s+material|product-detail\\s+evidence|product\\s+detail\\s+context|usage\\s+guidance|texture\\s+context|routine\\s+context|reported\\s+benefit\\s+cues)";
+  const reportingPredicate = "(?:reports?|includes?|adds?|organizes?|organises?|presents?|summari[sz]es?|covers?|supports?|reflects?|states?|can\\s+be\\s+compared|is\\s+described|is\\s+framed)";
+  return new RegExp(`\\b${sourceSubject}\\b[^.!?\\n]{0,56}\\b${reportingPredicate}\\b`, "i").test(text);
 }
 
 function dedupePublicListValues(values: string[]): string[] {
@@ -3288,7 +4146,7 @@ function dedupePublicListValues(values: string[]): string[] {
 }
 
 function publicListDedupeKey(value: string): string {
-  const key = value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const key = normalizePublicReviewKeywordSurface(value).toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
   if (/\b(?:hydration|hydrate|moisture|moisturizing|moisturising|moist|보습|수분감|うるおい|保湿)\b/.test(key)) {
     return "hydration";
   }
@@ -3352,21 +4210,20 @@ function createQuickFacts(
   guidance: GeoOptimizationGuidance
 ): string {
   const claimSentences = selectOptimizedSourceBackedClaimSentences(product, locale, 7);
-  const expressionPhrases = selectGroundedExpressionPhrases(product, locale, 7);
+  const expressionPhrases = selectQuickFactExpressionPhrases(product, locale, 4);
   const reportedDetail = guidance.useEvidenceBackedClaims ? selectEvidenceSignal(product, locale) : undefined;
   const publicReportedDetail = reportedDetail && isHardEvidenceSignal(reportedDetail) ? reportedDetail : undefined;
-  const reportedMetricFact = createEvidenceMetricFact(publicReportedDetail, locale);
-  const ingredientEffectDetail = locale === "ko-KR"
-    ? claimSentences[1] ?? claimSentences[0]
-    : claimSentences[0];
-  const searchContext = expressionPhrases.slice(0, locale === "ko-KR" ? 5 : 4);
+  const reportedMetricFact = guidance.useEvidenceBackedClaims
+    ? createStructuredClinicalEvidenceSummary(product, locale) ?? createEvidenceMetricFact(publicReportedDetail, locale)
+    : undefined;
+  const ingredientEffectDetail = createIngredientEffectDetailProperty(product, locale, claimSentences[0]);
   const facts = [
-    quickFactSentence(locale, "Target", inferTargetCustomer(product, locale)),
+    quickFactSentence(locale, "Target", createTargetCustomerProperty(product, locale)),
     quickFactSentence(locale, "Recommended skin type", inferRecommendedSkinType(product, locale)),
     quickFactSentence(locale, "Key benefit", selectPublicPrimaryBenefit(product, locale, localizedTerms)),
     quickFactSentence(locale, "Key ingredients", selectKeyIngredients(product, 5).join(", ")),
     quickFactSentence(locale, "Ingredient/effect detail", formatClaimSentence(ingredientEffectDetail, locale)),
-    quickFactSentence(locale, "Search context", formatExpressionPhrases(searchContext, locale)),
+    quickFactSentence(locale, "Search context", formatExpressionPhrases(expressionPhrases, locale)),
     quickFactSentence(locale, "Customer reviews", selectPublicReviewKeywords(product, locale).slice(0, 4).join(", ")),
     quickFactSentence(locale, "Reported details", reportedMetricFact)
   ].filter((value): value is string => Boolean(value));
@@ -3379,14 +4236,53 @@ function createQuickFacts(
   });
 }
 
+function selectQuickFactExpressionPhrases(product: PdpProductSignal, locale: PdpGeoLocale, limit: number): string[] {
+  return selectGroundedExpressionPhrases(product, locale, limit + 4)
+    .map((value) => normalizePublicReviewKeywordSurface(value))
+    .filter((value) => value.length <= 90)
+    .filter((value) => !/[A-Z]{4,}.*[A-Z]{4,}/.test(value))
+    .filter((value) => !/(?:REJUVENATING|CRÈME|AGREED|자가\s*평가|소비자\s*평가|인체\s*적용|시험|테스트|%|\d+(?:\.\d+)?\s*(?:명|주|일|시간))/i.test(value))
+    .filter((value) => !/(?:리뷰\s*표현|review\s+language|확인\s*지표|확인\s*근거)/i.test(value))
+    .filter(isUsefulPublicListValue)
+    .slice(0, limit);
+}
+
 function createBenefitsSection(product: PdpProductSignal, locale: PdpGeoLocale, guidance: GeoOptimizationGuidance): string {
-  const values = createOptimizedBenefitBullets(product, locale, guidance).slice(0, 8);
+  const optimizedValues = createOptimizedBenefitBullets(product, locale, guidance)
+    .filter(isPublicBenefitSectionBullet)
+    .slice(0, 8);
+  const values = optimizedValues.length > 0
+    ? optimizedValues
+    : createPublicBenefitSectionBullets(product, locale, guidance).filter(isPublicBenefitSectionBullet).slice(0, 8);
   return values.length > 0 ? values.map((value) => `- ${value}`).join("\n") : fallback(locale, {
     "ko-KR": "상품 JSON에서 확인된 효능/혜택 정보가 충분하지 않습니다.",
     "ja-JP": "商品JSONから確認できるベネフィット情報が十分ではありません。",
     "en-US": "The product JSON does not include enough benefit details.",
     "en-GB": "The product JSON does not include enough benefit details."
   });
+}
+
+function createPublicBenefitSectionBullets(product: PdpProductSignal, locale: PdpGeoLocale, guidance: GeoOptimizationGuidance): string[] {
+  const benefits = selectPublicBenefitSignals(product, locale).slice(0, 5);
+  const ingredients = formatDescriptionList(selectKeyIngredients(product, 3), locale, 3);
+  const targetCustomer = guidance.useTargetCustomerContext ? createTargetCustomerProperty(product, locale) : undefined;
+  const productType = localizeProductTypeForLocale(sanitizeCategory(product.category) ?? inferProductType(product) ?? "product", locale);
+
+  return unique(benefits.map((benefit, index) => {
+    if (locale === "ko-KR") {
+      const target = targetCustomer && index === 0 ? `${targetCustomer}이 ${appendKoreanObjectParticle(productType)} 선택할 때 ` : "";
+      const ingredient = ingredients && index <= 1 ? ` ${formatKoreanIngredientTopicPhrase(ingredients)} 해당 효능의 성분 맥락을 보완합니다` : "";
+      return `${benefit}: ${target}${appendKoreanObjectParticle(benefit)} 확인할 수 있는 핵심 효능입니다.${ingredient}`;
+    }
+    if (locale === "ja-JP") {
+      const target = targetCustomer && index === 0 ? `${targetCustomer}が比較しやすい` : "";
+      const ingredient = ingredients && index <= 1 ? ` ${ingredients}の成分文脈とつながります。` : "";
+      return `${benefit}: ${target}主なベネフィットです。${ingredient}`;
+    }
+    const target = targetCustomer && index === 0 ? ` for ${targetCustomer}` : "";
+    const ingredient = ingredients && index <= 1 ? ` Key ingredients include ${ingredients}.` : "";
+    return `${capitalizeFirst(benefit)}: a source-backed benefit${target}.${ingredient}`;
+  }));
 }
 
 function createOptimizedBenefitBullets(product: PdpProductSignal, locale: PdpGeoLocale, guidance: GeoOptimizationGuidance): string[] {
@@ -3453,9 +4349,6 @@ function createKoreanOptimizedBenefitBullets(product: PdpProductSignal, guidance
     const reviewSentence = reviewPhrase && index % 3 === 1
       ? `리뷰 표현인 ${reviewPhrase}는 ${benefit}의 사용감 맥락을 보완합니다`
       : undefined;
-    const usageSentence = usage && index % 3 === 2
-      ? `${formatUsageForProductDescription(usage, locale) ?? normalizeUsageInstruction(usage)} 사용 루틴은 ${benefit} 케어 흐름을 뒷받침합니다`
-      : undefined;
     const expressionSentence = index === 0 ? first(expressionPhrases) : undefined;
     const ocrSignal = ocrBenefitContexts.length > 0 ? ocrBenefitContexts[index % ocrBenefitContexts.length] : undefined;
 
@@ -3463,7 +4356,6 @@ function createKoreanOptimizedBenefitBullets(product: PdpProductSignal, guidance
       `${benefit}: ${contextSentence}`,
       ingredientSentence,
       reviewSentence,
-      usageSentence,
       expressionSentence,
       ocrSignal
     ]);
@@ -3472,15 +4364,26 @@ function createKoreanOptimizedBenefitBullets(product: PdpProductSignal, guidance
   return unique(baseBullets).slice(0, 8);
 }
 
+function isPublicBenefitSectionBullet(value: string): boolean {
+  const text = stripPublicListMarker(cleanSignal(value));
+  if (!text || isLowQualityPublicEvidenceText(text) || hasFaqCitationNoise(text)) {
+    return false;
+  }
+  return !(/(?:\d+(?:\.\d+)?\s*%|\d+(?:\.\d+)?\s*배)/.test(text)
+    && /(?:임상|인체\s*적용|자가\s*평가|소비자\s*평가|시험|테스트|결과|clinical|study|self[-\s]?assessment|instrumental|participants?|subjects?|women|men|users?)/i.test(text));
+}
+
 function createIngredientsSection(product: PdpProductSignal, locale: PdpGeoLocale): string {
   const ingredients = selectKeyIngredients(product, 8);
   const ingredientDetails = selectIngredientDetails(product, ingredients, 3);
-  const fullIngredients = selectFullIngredientStatements(product, 2);
+  const fullIngredients = selectPublicFullIngredientStatements(product, locale, 1);
   const values = unique([
     ...ingredients,
     ...ingredientDetails,
-    ...fullIngredients.map((value) => formatFullIngredientStatement(value, locale))
-  ]).slice(0, 12);
+    ...fullIngredients
+  ])
+    .filter(isPublicIngredientSectionLine)
+    .slice(0, 12);
 
   return values.length > 0 ? values.map((value) => `- ${value}`).join("\n") : fallback(locale, {
     "ko-KR": "상품 JSON에서 확인된 성분 정보가 충분하지 않습니다.",
@@ -3488,6 +4391,42 @@ function createIngredientsSection(product: PdpProductSignal, locale: PdpGeoLocal
     "en-US": "The product JSON does not include enough ingredient details.",
     "en-GB": "The product JSON does not include enough ingredient details."
   });
+}
+
+function selectPublicFullIngredientStatements(product: PdpProductSignal, locale: PdpGeoLocale, limit: number): string[] {
+  return selectFullIngredientStatements(product, limit)
+    .map((value) => formatFullIngredientStatement(value, locale))
+    .filter(isPublicIngredientSectionLine)
+    .slice(0, limit);
+}
+
+function isPublicIngredientSectionLine(value: string): boolean {
+  const text = stripPublicListMarker(cleanSignal(value));
+  if (!text || isLowQualityPublicEvidenceText(text) || hasFaqCitationNoise(text)) {
+    return false;
+  }
+  const isFullIngredientStatement = /^(?:전성분|全成分|full ingredients?|ingredients?)\s*:/i.test(text);
+  if (isFullIngredientStatement) {
+    return text.length <= 900 && text.split(",").length <= 45;
+  }
+  if (text.length > 220 || text.split(",").length > 8) {
+    return false;
+  }
+  if (/\b(?:customer reviews?|review-backed|review language|routine|usage guidance|how to use|apply|morning|night|search intent|comparison cues|reported details)\b/i.test(text)) {
+    return false;
+  }
+  if (/(?:리뷰|후기|사용감\s*표현|루틴|사용법)/i.test(text) && !/(?:성분|기술|포뮬러|추출|펩타이드|레티놀|세라마이드|히알루론산|나이아신아마이드|징크|판테놀|베타인|ingredient|formula|technology|extract|peptide|retinol|ceramide|hyaluronic)/i.test(text)) {
+    return false;
+  }
+  return true;
+}
+
+function stripPublicListMarker(value: string): string {
+  return value
+    .replace(/^\s*[-*]\s*/, "")
+    .replace(/^\s*\d+[.)]\s*/, "")
+    .replace(/^\s*(?:Q|A)[.:]\s*/i, "")
+    .trim();
 }
 
 function createOptimizedUsageSteps(
@@ -3641,10 +4580,18 @@ function ensureFaq(
   const evidence = selectEvidenceSignal(product, locale);
   const reviewSignals = hasPublicReviewEvidence(product, locale) ? selectPublicReviewKeywords(product, locale).slice(0, 3).join(", ") : "";
   const sourceFaqIntents = product.faq.flatMap(classifySourceFaqIntent);
+  const sourceFaq = selectSourceFaqForPublicUse(product.faq, locale, productName);
+  const sourcePublicIntentSet = new Set(sourceFaq.flatMap(classifySourceFaqIntent));
   const ocrFaqContexts = createOcrFaqBlendContexts(product, locale);
+  const recommendedSkinType = inferRecommendedSkinType(product, locale);
+  const inferredTargetCustomer = inferTargetCustomer(product, locale);
+  const hasSpecificTargetCustomer = isSpecificTargetCustomer(inferredTargetCustomer, locale);
+  const textureFinish = selectTextureFinishSignal(product, locale);
+  const routineSynergy = selectRoutineSynergySignal(product, locale);
+  const variantComparison = selectVariantComparisonSignal(product, locale);
   const faq: PdpGeoFaqItem[] = [];
 
-  if (benefit) {
+  if (benefit && !sourcePublicIntentSet.has("benefit")) {
     faq.push({
       question: fallback(locale, {
         "ko-KR": `${appendKoreanTopicParticle(productName)} 어떤 피부 고민과 효능에 적합한가요?`,
@@ -3655,7 +4602,7 @@ function ensureFaq(
       answer: createBenefitFaqAnswer(product, locale, productName, benefit, ingredient, undefined, guidance, ocrFaqContexts.benefit)
     });
   }
-  if (ingredient) {
+  if (ingredient && !sourcePublicIntentSet.has("ingredient")) {
     faq.push({
       question: fallback(locale, {
         "ko-KR": `${productName}에서 강조되는 성분/기술은 무엇인가요?`,
@@ -3666,7 +4613,7 @@ function ensureFaq(
       answer: createIngredientFaqAnswer(locale, productName, ingredient, benefit, ocrFaqContexts.ingredient)
     });
   }
-  if (optimizedUsage) {
+  if (optimizedUsage && !sourcePublicIntentSet.has("usage")) {
     faq.push({
       question: fallback(locale, {
         "ko-KR": `${appendKoreanTopicParticle(productName)} 어떻게 사용하나요?`,
@@ -3677,7 +4624,7 @@ function ensureFaq(
       answer: createUsageFaqAnswer(locale, productName, optimizedUsage, benefit, ingredient, undefined, ocrFaqContexts.usage)
     });
   }
-  if ((guidance.useReviewIntentFaq || reviewSignals) && reviewSignals) {
+  if ((guidance.useReviewIntentFaq || reviewSignals) && reviewSignals && !sourcePublicIntentSet.has("review")) {
     faq.push({
       question: fallback(locale, {
         "ko-KR": `고객 리뷰는 ${productName}의 어떤 사용감을 강조하나요?`,
@@ -3688,7 +4635,7 @@ function ensureFaq(
       answer: createReviewIntentFaqAnswer(locale, productName, reviewSignals, benefit, undefined)
     });
   }
-  if (sourceFaqIntents.includes("suitability") && benefit) {
+  if ((sourceFaqIntents.includes("suitability") || recommendedSkinType || hasSpecificTargetCustomer) && benefit) {
     faq.push({
       question: fallback(locale, {
         "ko-KR": `${appendKoreanTopicParticle(productName)} 어떤 고객에게 추천할 수 있나요?`,
@@ -3707,17 +4654,479 @@ function ensureFaq(
       )
     });
   }
-  if (guidance.useEvidenceBackedClaims && (evidence || reviewSignals)) {
+  if (textureFinish) {
+    faq.push({
+      question: fallback(locale, {
+        "ko-KR": `${productName}의 제형이나 사용감은 어떤가요?`,
+        "ja-JP": `${productName}のテクスチャーや使用感はどのようなものですか？`,
+        "en-US": `What is the texture or finish of ${productName}?`,
+        "en-GB": `What is the texture or finish of ${productName}?`
+      }),
+      answer: createTextureFaqAnswer(locale, productName, textureFinish, benefit, reviewSignals)
+    });
+  }
+  if (routineSynergy) {
+    faq.push({
+      question: fallback(locale, {
+        "ko-KR": `${appendKoreanTopicParticle(productName)} 어떤 루틴에서 함께 쓰기 좋나요?`,
+        "ja-JP": `${productName}はどのようなルーティンで使えますか？`,
+        "en-US": `How can ${productName} fit into a skincare routine?`,
+        "en-GB": `How can ${productName} fit into a skincare routine?`
+      }),
+      answer: createRoutineSynergyFaqAnswer(locale, productName, routineSynergy, optimizedUsage, ingredient)
+    });
+  }
+  if (variantComparison) {
+    faq.push({
+      question: fallback(locale, {
+        "ko-KR": `${productName} 선택 시 어떤 버전이나 옵션을 비교하면 좋나요?`,
+        "ja-JP": `${productName}を選ぶとき、どのバージョンやオプションを比べるとよいですか？`,
+        "en-US": `Which version or option should shoppers compare for ${productName}?`,
+        "en-GB": `Which version or option should shoppers compare for ${productName}?`
+      }),
+      answer: createVariantComparisonFaqAnswer(locale, productName, variantComparison)
+    });
+  }
+  if (guidance.useEvidenceBackedClaims && (evidence || reviewSignals) && !sourcePublicIntentSet.has("evidence") && hasExternalAuthorityEvidenceSignal(product, evidence)) {
     faq.push({
       question: createEvidenceFaqQuestion(locale, productName, evidence),
       answer: createEvidenceFaqAnswer(locale, evidence, reviewSignals)
     });
   }
 
-  return uniqueFaq(faq)
-    .map((item) => normalizeGeneratedFaqItem(item, locale))
-    .filter((item): item is PdpGeoFaqItem => Boolean(item))
-    .slice(0, guidance.useAnswerReadyFaq ? 5 : 4);
+  const faqLimit = resolveFaqIntentCoverageLimit({
+    product,
+    sourceFaq,
+    sourceFaqIntents,
+    hasBenefit: Boolean(benefit),
+    hasIngredient: Boolean(ingredient),
+    hasUsage: Boolean(optimizedUsage),
+    hasReview: Boolean(reviewSignals),
+    hasEvidence: Boolean(evidence),
+    hasTexture: Boolean(textureFinish),
+    hasRoutineSynergy: Boolean(routineSynergy),
+    hasVariantComparison: Boolean(variantComparison),
+    useAnswerReadyFaq: guidance.useAnswerReadyFaq
+  });
+
+  return rankFaqCandidatesForCitation(
+    [
+      ...sourceFaq.map((item) => ({ item, sourceBacked: true })),
+      ...faq.map((item) => ({ item, sourceBacked: false }))
+    ],
+    product,
+    locale,
+    productName,
+    faqLimit
+  );
+}
+
+function resolveFaqIntentCoverageLimit(input: {
+  product: PdpProductSignal;
+  sourceFaq: PdpGeoFaqItem[];
+  sourceFaqIntents: Array<"benefit" | "ingredient" | "usage" | "review" | "suitability" | "evidence">;
+  hasBenefit: boolean;
+  hasIngredient: boolean;
+  hasUsage: boolean;
+  hasReview: boolean;
+  hasEvidence: boolean;
+  hasTexture: boolean;
+  hasRoutineSynergy: boolean;
+  hasVariantComparison: boolean;
+  useAnswerReadyFaq: boolean;
+}): number {
+  const evidenceText = allProductEvidenceText(input.product);
+  const hasClinicalOrMetric = input.hasEvidence
+    || /%|\d+(?:\.\d+)?\s*배|임상|인체\s*적용|자가\s*평가|clinical|study|participants?|subjects?|users?/i.test(evidenceText);
+  const hasSensitiveSkin = /민감|저자극|sensitive|hypoallergenic|dermatolog/i.test(evidenceText);
+  const hasRenewal = /리뉴얼|단종|대체|renewal|discontinued|replacement/i.test(evidenceText);
+  const hasGift = /선물|기프트|gift|present/i.test(evidenceText);
+  const sourceIntentCoverage = new Set(input.sourceFaqIntents).size;
+  const coverageCount = [
+    input.hasBenefit,
+    input.hasIngredient,
+    input.hasUsage,
+    input.hasReview,
+    input.sourceFaqIntents.includes("suitability") || hasSensitiveSkin,
+    hasClinicalOrMetric,
+    input.hasTexture,
+    input.hasRoutineSynergy,
+    input.hasVariantComparison,
+    hasRenewal,
+    hasGift
+  ].filter(Boolean).length;
+
+  if (coverageCount >= 8 || input.sourceFaq.length >= 8 || sourceIntentCoverage >= 5) {
+    return 12;
+  }
+  if (coverageCount >= 5 || input.sourceFaq.length >= 6 || sourceIntentCoverage >= 4) {
+    return 10;
+  }
+  return 6;
+}
+
+function rankFaqCandidatesForCitation(
+  candidates: Array<{ item: PdpGeoFaqItem; sourceBacked: boolean }>,
+  product: PdpProductSignal,
+  locale: PdpGeoLocale,
+  productName: string,
+  limit: number
+): PdpGeoFaqItem[] {
+  const normalized = candidates
+    .map((candidate, index) => {
+      const item = normalizeGeneratedFaqItem(candidate.item, locale);
+      if (!item
+        || isLowQualityFaqItem(item)
+        || hasProductSpecificFaqQualityIssue(item, product)
+        || !isFaqQuestionAnswerAligned(item, product, locale, candidate.sourceBacked)) {
+        return undefined;
+      }
+      return {
+        item,
+        sourceBacked: candidate.sourceBacked,
+        index,
+        score: scoreFaqCandidateForCitation(item, product, locale, productName, candidate.sourceBacked)
+      };
+    })
+    .filter((value): value is { item: PdpGeoFaqItem; sourceBacked: boolean; index: number; score: number } => Boolean(value))
+    .sort((a, b) => b.score - a.score || a.index - b.index);
+
+  const seen = new Set<string>();
+  const results: PdpGeoFaqItem[] = [];
+  for (const candidate of normalized) {
+    const key = normalizeFaqQuestionKey(candidate.item.question);
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    results.push(candidate.item);
+    if (results.length >= limit) {
+      break;
+    }
+  }
+
+  return results;
+}
+
+function isLowQualityFaqItem(item: PdpGeoFaqItem): boolean {
+  const combined = `${item.question} ${item.answer}`;
+  return isLowQualityPublicEvidenceText(combined)
+    || hasFaqCitationNoise(combined)
+    || item.answer.length < 12
+    || item.answer.length > 620
+    || isQuestionLikeText(item.answer)
+    || isBrokenMarketingFragment(item.answer);
+}
+
+function hasProductSpecificFaqQualityIssue(item: PdpGeoFaqItem, product: PdpProductSignal): boolean {
+  const combined = cleanSignal(`${item.question} ${item.answer}`);
+  if (/입니다는|습니다는|자생력이를|결과\s+결과/.test(combined)) {
+    return true;
+  }
+  const productContext = cleanSignal([
+    product.name,
+    product.originalName,
+    product.category,
+    inferProductType(product)
+  ].filter(Boolean).join(" "));
+  const isCleanserProduct = /(?:클렌|세안|폼|워시|cleanser|cleansing|foam|wash)/i.test(productContext);
+  return /(?:저자극\s*세안|세정력|초미세먼지\s*세정|모공\s*속\s*노폐물\s*세정|마이크로\s*버블)/.test(combined) && !isCleanserProduct;
+}
+
+function isFaqQuestionAnswerAligned(
+  item: PdpGeoFaqItem,
+  product: PdpProductSignal,
+  locale: PdpGeoLocale,
+  sourceBacked: boolean
+): boolean {
+  const question = cleanSignal(item.question);
+  const answer = cleanSignal(item.answer);
+  const combined = `${question} ${answer}`;
+  if (hasFaqCitationNoise(combined)) {
+    return false;
+  }
+
+  if (/(?:정보는\s*어떤\s*근거|어떤\s*근거로\s*확인|what\s+evidence\s+supports|which\s+evidence\s+supports)/i.test(question)) {
+    return hasExternalAuthorityEvidenceSignal(product, answer);
+  }
+
+  if (/(?:어떤\s*고객|누구에게|추천|who\s+is|best\s+suited|suitable\s+for|recommend)/i.test(question)) {
+    const targetAnswer = /(?:고객|피부|여성|남성|연령|대상|고민|주름|탄력|노화|건조|민감|장벽|수분|customers?|women|men|aged|participants?|skin|concern|wrinkles?|firm|aging|ageing|dry|sensitive|barrier|hydration)/i.test(answer);
+    if (!targetAnswer) {
+      return false;
+    }
+  }
+
+  if (/(?:성분|기술|ingredient|technology|formula)/i.test(question)
+    && /(?:상품\s*상세\s*테스트|확인\s*지표[^.!?。！？]{0,80}성분\s*설명|성분\s*설명입니다)/i.test(answer)) {
+    return false;
+  }
+
+  if (!sourceBacked && locale === "ko-KR" && /(?:확인\s*키워드|선택\s*이유를\s*구체화|체감\s*맥락을\s*보완)/.test(answer)) {
+    return false;
+  }
+
+  return true;
+}
+
+function hasFaqCitationNoise(value: string | undefined): boolean {
+  const text = cleanSignal(value ?? "");
+  if (!text) {
+    return false;
+  }
+  return /(?:NEW\s*\||\|\s*(?:자음생|cream|serum|Sulwhasoo)|\bSulwhasoo\b|상품\s*상세\s*테스트|확인\s*키워드|결과\s*성분\s*설명입니다|성분\s*설명입니다|확인\s*근거를\s*정리|확인\s*근거에는|정보를\s*정리합니다)/i.test(text);
+}
+
+function hasExternalAuthorityEvidenceSignal(product: PdpProductSignal, evidence: string | undefined): boolean {
+  const text = cleanSignal([
+    evidence,
+    product.description,
+    ...product.metrics,
+    ...product.sourceTexts,
+    ...(product.semanticFacts?.evidenceSentences ?? [])
+  ].filter(Boolean).join(" "));
+  if (!text || isCommerceMetricArtifact(text)) {
+    return false;
+  }
+  return /(?:https?:\/\/(?:doi\.org|pubmed\.ncbi\.nlm\.nih\.gov|clinicaltrials\.gov|www\.ncbi\.nlm\.nih\.gov)|\bdoi\s*[:/]|PMID|PubMed|ClinicalTrials\.gov|논문|학술지|저널|학술\s*자료|연구\s*논문|기사|보도자료|전문지|journal|peer[-\s]?reviewed|published\s+(?:study|paper|article)|research\s+(?:paper|article)|news\s+article|press\s+release)/i.test(text);
+}
+
+function scoreFaqCandidateForCitation(
+  item: PdpGeoFaqItem,
+  product: PdpProductSignal,
+  locale: PdpGeoLocale,
+  productName: string,
+  sourceBacked: boolean
+): number {
+  const combined = cleanSignal(`${item.question} ${item.answer}`);
+  let score = sourceBacked ? 28 : 0;
+  if (containsEntityToken(combined, productName) || product.brand && containsEntityToken(combined, product.brand)) {
+    score += 8;
+  }
+  if (item.answer.length >= 40 && item.answer.length <= 360) {
+    score += 6;
+  }
+  if (item.answer.length < 32) {
+    score -= 18;
+  }
+  if (/[0-9０-９]/.test(item.answer)) {
+    score += 4;
+  }
+  if (/(?:\d+(?:\.\d+)?\s*%|\d+\s*(?:시간|일|주|명|회|hours?|days?|weeks?|participants?))/.test(item.answer)) {
+    score += 12;
+  }
+  if (/(?:성분|기술|포뮬러|ingredient|formula|technology|complex|peptide|extract|vitamin|ceramide|hyaluronic)/i.test(combined)) {
+    score += 5;
+  }
+  if (/(?:효능|케어|보습|수분|탄력|주름|피부결|진정|benefit|hydration|firming|wrinkle|texture|soothing)/i.test(combined)) {
+    score += 5;
+  }
+  if (/(?:사용|루틴|아침|저녁|단계|apply|use|routine|morning|night)/i.test(combined)) {
+    score += 4;
+  }
+  if (/(?:리뷰|고객|후기|review|customer|rating)/i.test(combined)) {
+    score += 3;
+  }
+  if (/(?:옵션|용량|가격|버전|option|size|price|variant|version)/i.test(combined)) {
+    score += 3;
+  }
+  if (isLowQualityIngredientEvidenceText(combined)) {
+    score -= 60;
+  }
+  if (isCommercePolicyText(combined) && !hasCareOrFormulaSignal(combined)) {
+    score -= 40;
+  }
+  if (locale === "ko-KR" && isKoreanMetaNarrationText(combined)) {
+    score -= sourceBacked ? 3 : 10;
+  }
+  if ((locale === "en-US" || locale === "en-GB") && isEnglishMetaNarrationText(combined)) {
+    score -= sourceBacked ? 6 : 14;
+  }
+  if (hasKoreanSurfaceQualityIssue(combined) || hasEnglishSurfaceQualityIssue(combined)) {
+    score -= 40;
+  }
+  return score;
+}
+
+function normalizeFaqQuestionKey(question: string): string {
+  return cleanSignal(question)
+    .toLocaleLowerCase()
+    .replace(/[?？!.。！？]/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function selectSourceFaqForPublicUse(faq: PdpGeoFaqItem[], locale: PdpGeoLocale, productName: string): PdpGeoFaqItem[] {
+  return faq.flatMap((item) => {
+    const question = normalizePublicFactText(item.question);
+    const answer = normalizePublicFactText(item.answer);
+    if (!question || !answer || !isUsefulSourceFaqQuestion(question, answer, locale, productName) || !isUsefulSourceFaqAnswer(answer, locale)) {
+      return [];
+    }
+    return [{ question, answer: locale === "ko-KR" ? answer : trimTrailingSentencePunctuation(answer) }];
+  }).slice(0, 12);
+}
+
+function isUsefulSourceFaqQuestion(value: string, answer: string, locale: PdpGeoLocale, productName: string): boolean {
+  const text = cleanSignal(value);
+  if (text.length < 6 || text.length > 180 || isSectionHeadingFaqQuestion(text) || isBrokenMarketingFragment(text)) {
+    return false;
+  }
+  const productSpecific = containsEntityToken(`${text} ${answer}`, productName);
+  if ((locale === "en-US" || locale === "en-GB") && !productSpecific && text.length < 28 && answer.length < 80) {
+    return false;
+  }
+  return !/(?:GEO|RAG|schema optimization|citation-ready|field contract|OCR|image caption)/i.test(text);
+}
+
+function isUsefulSourceFaqAnswer(value: string, _locale: PdpGeoLocale): boolean {
+  const text = cleanSignal(value);
+  if (text.length < 12 || text.length > 520 || isQuestionLikeText(text) || isBrokenMarketingFragment(text) || isNonCitationEvidenceArtifact(text) || isLowQualityPublicEvidenceText(text)) {
+    return false;
+  }
+  return !/(?:GEO|RAG|schema optimization|citation-ready|field contract|OCR|image caption|product shot|pack shot)/i.test(text);
+}
+
+function createTextureFaqAnswer(
+  locale: PdpGeoLocale,
+  productName: string,
+  textureFinish: string,
+  benefit: string | undefined,
+  reviewSignals: string
+): string {
+  if (locale === "ko-KR") {
+    const texturePhrase = /(?:사용감|마무리|제형|텍스처)$/u.test(textureFinish)
+      ? textureFinish
+      : `${textureFinish} 사용감`;
+    return compactSentence([
+      `${appendKoreanTopicParticle(productName)} ${texturePhrase}이 강조된 제품입니다`,
+      benefit ? `${appendKoreanObjectParticle(benefit)} 함께 고려할 수 있습니다` : undefined,
+      reviewSignals ? `고객 리뷰에서는 ${reviewSignals} 같은 표현도 확인됩니다` : undefined
+    ]);
+  }
+  return compactSentence([
+    `${productName} has a ${textureFinish} texture or finish`,
+    benefit ? `${capitalizeFirst(benefit)} is the main benefit to compare with that texture` : undefined,
+    reviewSignals ? `Customer reviews also mention ${reviewSignals}` : undefined
+  ]);
+}
+
+function createRoutineSynergyFaqAnswer(
+  locale: PdpGeoLocale,
+  productName: string,
+  routineSynergy: string,
+  optimizedUsage: string | undefined,
+  ingredient: string | undefined
+): string {
+  if (locale === "ko-KR") {
+    return compactSentence([
+      `${appendKoreanTopicParticle(productName)} ${routineSynergy}`,
+      optimizedUsage ? `사용법은 ${trimTrailingSentencePunctuation(optimizedUsage)}입니다` : undefined,
+      ingredient ? `${ingredient} 성분/기술 맥락과 함께 루틴 선택 기준을 제공합니다` : undefined
+    ]);
+  }
+  return compactSentence([
+    `${productName} fits ${routineSynergy}`,
+    optimizedUsage ? createEnglishUsageActionSentence(optimizedUsage) : undefined,
+    ingredient ? `${ingredient} ${englishSubjectVerb(ingredient, "helps", "help")} shoppers compare the formula within the routine` : undefined
+  ]);
+}
+
+function createVariantComparisonFaqAnswer(locale: PdpGeoLocale, productName: string, variantComparison: string): string {
+  if (locale === "ko-KR") {
+    return `${appendKoreanTopicParticle(productName)} ${variantComparison} 기준으로 비교하면 됩니다. 옵션명, 용량, 제형, 가격 정보가 함께 제공될 때 현재 페이지의 상품 정보를 기준으로 선택할 수 있습니다.`;
+  }
+  return `${productName} can be compared by ${variantComparison}. When option name, size, texture, and price are available, those details help shoppers choose the matching variant.`;
+}
+
+function selectTextureFinishSignal(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
+  const text = allProductEvidenceText(product);
+  const reviewKeywords = selectPublicReviewKeywords(product, locale).join(" ");
+  const combined = `${text} ${reviewKeywords}`;
+  const koSignals = [
+    /산뜻(?:한)?\s*고밀도\s*텍스처/.test(combined) ? "산뜻한 고밀도 텍스처" : undefined,
+    /리치(?:한)?\s*(?:제형|텍스처|사용감|크림감)/.test(combined) ? "리치한 제형" : undefined,
+    /쫀쫀(?:한)?\s*(?:제형|텍스처|사용감)/.test(combined) ? "쫀쫀한 사용감" : undefined,
+    /촉촉(?:한)?\s*(?:사용감|마무리|제형|텍스처)/.test(combined) ? "촉촉한 사용감" : undefined,
+    /부드러(?:운|움)\s*(?:사용감|마무리|제형|텍스처)/.test(combined) ? "부드러운 사용감" : undefined,
+    /흡수감/.test(combined) ? "흡수감" : undefined,
+    /끈적임\s*없|non[-\s]?sticky/i.test(combined) ? "끈적임이 적은 마무리" : undefined
+  ].filter((value): value is string => Boolean(value));
+  if (locale === "ko-KR" && koSignals.length > 0) {
+    return formatDescriptionList(unique(koSignals), locale, 3);
+  }
+
+  const enSignals = [
+    /rich\s+(?:texture|cream|finish)/i.test(combined) ? "rich texture" : undefined,
+    /lightweight|light\s+texture/i.test(combined) ? "lightweight texture" : undefined,
+    /non[-\s]?sticky/i.test(combined) ? "non-sticky finish" : undefined,
+    /smooth(?:ing)?\s+(?:texture|finish|feel)/i.test(combined) ? "smooth finish" : undefined,
+    /absorbs?\s+(?:quickly|well)|absorption/i.test(combined) ? "comfortable absorption" : undefined,
+    /moist(?:urizing|urising)?\s+(?:finish|feel)|hydrating\s+(?:finish|feel)/i.test(combined) ? "moisturizing feel" : undefined
+  ].filter((value): value is string => Boolean(value));
+  return enSignals.length > 0 ? formatDescriptionList(unique(enSignals), locale, 3) : undefined;
+}
+
+function selectRoutineSynergySignal(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
+  const text = allProductEvidenceText(product);
+  if (locale === "ko-KR") {
+    if (/(?:세럼|앰플|에센스|토너|크림|스킨케어)\s*(?:후|다음|전|함께|단계|루틴)|(?:함께|같이)\s*(?:사용|레이어링)/.test(text)) {
+      return "세럼, 앰플, 에센스 등 스킨케어 루틴 단계와 함께 사용할 수 있습니다";
+    }
+    if (/(?:아침|저녁|매일|데일리|밤)\s*(?:사용|루틴|케어)/.test(text)) {
+      return "아침 또는 저녁 스킨케어 루틴에서 사용할 수 있습니다";
+    }
+    return undefined;
+  }
+  if (/\b(?:serum|ampoule|essence|toner|cream|skincare)\b.{0,40}\b(?:after|before|with|routine|layer|step)\b|\b(?:after|before|with)\b.{0,40}\b(?:serum|ampoule|essence|toner)\b/i.test(text)) {
+    return "a serum, essence, toner, or skincare layering routine";
+  }
+  if (/\b(?:morning|night|daily|evening)\b.{0,40}\b(?:use|routine|care)\b/i.test(text)) {
+    return "a morning or evening skincare routine";
+  }
+  return undefined;
+}
+
+function selectVariantComparisonSignal(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
+  const text = allProductEvidenceText(product);
+  const optionSummary = summarizeVariantOptions(product, locale);
+  if (optionSummary) {
+    return optionSummary;
+  }
+  if (/(?:차이|비교|버전|옵션|제형|용량|difference|compare|version|variant|option|texture|size)/i.test(text) && product.options.length > 1) {
+    return fallback(locale, {
+      "ko-KR": "옵션명, 용량, 가격",
+      "ja-JP": "オプション名、容量、価格",
+      "en-US": "option name, size, and price",
+      "en-GB": "option name, size, and price"
+    });
+  }
+  return undefined;
+}
+
+function summarizeVariantOptions(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
+  const variants = unique(product.options.flatMap((option) => {
+    const text = cleanSignal(option).replace(/\[[^\]]{1,36}\]/g, (match) => `${match.replace(/[\[\]]/g, "")} `);
+    const size = text.match(/\b\d+(?:\.\d+)?\s*(?:ml|mL|g|oz|fl\.?\s*oz|매|개|입)\b/i)?.[0];
+    if (!size) {
+      return [];
+    }
+    const qualifier = first([
+      option.match(/\[([^\]]{1,36})\]/)?.[1],
+      text.slice(0, text.indexOf(size)).replace(product.name, "").replace(product.originalName ?? "", "").trim()
+    ].map((value) => cleanSignal(value ?? "")).filter((value) => value && !sameEntityToken(value, product.name)));
+    return [cleanSignal([qualifier, size].filter(Boolean).join(" "))];
+  })).slice(0, 3);
+  if (variants.length < 2) {
+    return undefined;
+  }
+  const variantPhrase = formatDescriptionList(variants, locale, 3);
+  if (!variantPhrase) {
+    return undefined;
+  }
+  return locale === "ko-KR"
+    ? `${variantPhrase} 옵션의 용량, 가격, 버전명`
+    : `${variantPhrase} option size, price, and version name`;
 }
 
 function createBenefitFaqAnswer(
@@ -3800,7 +5209,7 @@ function createReviewIntentFaqAnswer(
   if (locale === "ko-KR") {
     return compactSentence([
       `고객 리뷰에서는 ${reviewSignals} 같은 표현이 반복되어 ${productName}의 사용감을 판단하는 데 도움이 됩니다`,
-      benefit ? `${benefit} 케어 관점에서 리뷰 언어는 제품 효능의 체감 맥락을 보완합니다` : undefined,
+      benefit ? `${appendKoreanObjectParticle(benefit)} 기대하는 고객은 리뷰의 사용감과 만족도 표현을 함께 참고할 수 있습니다` : undefined,
       evidence ? localizedEvidenceContext(locale, evidence) : undefined
     ]);
   }
@@ -3824,15 +5233,16 @@ function createSuitabilityFaqAnswer(
   benefit: string,
   ingredient: string | undefined,
   evidence: string | undefined,
-  ocrContext?: string
+  _ocrContext?: string
 ): string {
   if (locale === "ko-KR") {
     const targetClause = formatKoreanFaqTargetClause(product);
+    const benefitPhrase = formatKoreanFaqBenefitPhrase(product, locale, benefit);
+    const productType = formatKoreanFaqProductType(product);
     return compactSentence(dedupeGeneratedSentenceParts([
-      `${appendKoreanTopicParticle(productName)} ${targetClause ? `${targetClause} ` : ""}${appendKoreanObjectParticle(benefit)} 중심으로 비교하기 좋은 제품입니다`,
-      localizedSuitabilityBenefitContext(product, locale, benefit, ingredient),
-      evidence ? localizedEvidenceContext(locale, evidence) : undefined,
-      ocrContext
+      `${appendKoreanTopicParticle(productName)} ${targetClause ? `${targetClause} ` : ""}${appendKoreanObjectParticle(benefitPhrase)} 비교할 때 선택하기 좋은 ${productType}입니다`,
+      localizedSuitabilityBenefitContext(product, locale, benefitPhrase, ingredient),
+      evidence ? localizedSuitabilityEvidenceContext(product, locale, evidence) : undefined
     ]));
   }
 
@@ -3844,8 +5254,7 @@ function createSuitabilityFaqAnswer(
       "en-GB": `${productName} is framed for ${inferTargetCustomer(product, locale)}`
     }),
     localizedSuitabilityBenefitContext(product, locale, benefit, ingredient),
-    evidence ? localizedEvidenceContext(locale, evidence) : undefined,
-    ocrContext
+    evidence ? localizedSuitabilityEvidenceContext(product, locale, evidence) : undefined
   ]));
 }
 
@@ -3860,9 +5269,9 @@ function localizedSuitabilityBenefitContext(
   if (locale === "ko-KR") {
     if (ingredient) {
       const ingredientTopic = formatKoreanIngredientTopicPhrase(ingredient);
-      return `${ingredientTopic} ${benefitPhrase} 케어를 뒷받침해 추천 이유를 구체화합니다`;
+      return `${ingredientTopic} ${appendKoreanObjectParticle(benefitPhrase)} 뒷받침합니다`;
     }
-    return `${appendKoreanTopicParticle(benefitPhrase)} 추천 기준이 됩니다`;
+    return `${appendKoreanTopicParticle(benefitPhrase)} 제품 선택 기준이 됩니다`;
   }
 
   if (locale === "ja-JP") {
@@ -3872,8 +5281,41 @@ function localizedSuitabilityBenefitContext(
   }
 
   return ingredient
-    ? `${ingredient} connects with reported benefit cues such as ${benefitPhrase}, making the suitability reason more specific`
-    : `${capitalizeFirst(benefitPhrase)} is the benefit cue used to explain suitability`;
+    ? `${ingredient} supports ${benefitPhrase} for shoppers comparing that concern`
+    : `${capitalizeFirst(benefitPhrase)} explains the product's suitability`;
+}
+
+function localizedSuitabilityEvidenceContext(product: PdpProductSignal, locale: PdpGeoLocale, evidence: string): string | undefined {
+  if (!evidence || hasFaqCitationNoise(evidence)) {
+    return undefined;
+  }
+
+  if (locale === "ko-KR") {
+    const structuredClinicalSummary = createStructuredClinicalEvidenceSummary(product, locale);
+    if (structuredClinicalSummary) {
+      return structuredClinicalSummary;
+    }
+    const sample = extractTargetAudienceAgeSample(allProductEvidenceText(product), locale);
+    const metricFact = createEvidenceMetricFact(evidence, locale);
+    const metricBody = metricFact
+      ? trimTrailingSentencePunctuation(metricFact).replace(/^(?:확인\s*지표|확인\s*근거|측정\s*결과)\s*:\s*/i, "").trim()
+      : undefined;
+    if (metricBody && hasQuantifiedReportedSignal(metricBody) && !hasFaqCitationNoise(metricBody)) {
+      return sample
+        ? `${sample.replace(/\s*고객$/u, "")} 대상 시험/평가에서 ${metricBody}가 제시되어 효능 판단을 보완합니다`
+        : `${metricBody} 결과를 함께 참고할 수 있습니다`;
+    }
+    const cleanEvidence = trimTrailingSentencePunctuation(truncateAtCompleteSentence(normalizeEvidenceText(evidence), 180));
+    return cleanEvidence && !hasFaqCitationNoise(cleanEvidence) ? ensureKoreanSentence(createKoreanEvidenceContentSentence(cleanEvidence)) : undefined;
+  }
+
+  const cleanEvidence = normalizeEvidenceText(truncateAtCompleteSentence(evidence, 220));
+  return cleanEvidence && !hasFaqCitationNoise(cleanEvidence) ? createEnglishEvidenceReport(cleanEvidence) : undefined;
+}
+
+function isFaqSafeOcrContext(value: string | undefined): value is string {
+  const text = cleanSignal(value ?? "");
+  return Boolean(text) && !hasFaqCitationNoise(text) && !isKoreanMetaNarrationText(text) && !isEnglishMetaNarrationText(text);
 }
 
 function dedupeGeneratedSentenceParts(parts: Array<string | undefined>): Array<string | undefined> {
@@ -3906,20 +5348,20 @@ function createEvidenceFaqQuestion(locale: PdpGeoLocale, productName: string, ev
 
   if (locale === "ko-KR") {
     return hasHardEvidence
-      ? `${productName} 정보는 어떤 근거로 확인할 수 있나요?`
+      ? `${productName}와 연결된 외부 연구나 기사 근거는 무엇인가요?`
       : `${productName}의 성분, 효능, 사용감은 어떤 정보로 정리되나요?`;
   }
 
   return fallback(locale, {
     "ko-KR": `${productName}의 성분, 효능, 사용감은 어떤 정보로 정리되나요?`,
     "ja-JP": hasHardEvidence
-      ? `${productName}の情報はどの根拠で確認できますか？`
+      ? `${productName}に関連する外部研究・記事の根拠は何ですか？`
       : `${productName}の成分、ベネフィット、使用感はどの情報で整理されていますか？`,
     "en-US": hasHardEvidence
-      ? `What evidence supports the details about ${productName}?`
+      ? `Which external research or article evidence supports ${productName}?`
       : `Which product details describe the ingredients, benefits, and use feel of ${productName}?`,
     "en-GB": hasHardEvidence
-      ? `What evidence supports the details about ${productName}?`
+      ? `Which external research or article evidence supports ${productName}?`
       : `Which product details describe the ingredients, benefits, and use feel of ${productName}?`
   });
 }
@@ -3932,12 +5374,12 @@ function createEvidenceFaqAnswer(locale: PdpGeoLocale, evidence: string | undefi
       : evidence ? createKoreanEvidenceContentSentence(trimTrailingSentencePunctuation(truncateAtCompleteSentence(evidence, 260))) : undefined;
     const evidenceDetail = evidenceSentence
       ? isHardEvidenceSignal(evidence)
-        ? `제품의 확인 근거는 다음처럼 정리됩니다. ${ensureKoreanSentence(evidenceSentence)}`
-        : `성분/효능 근거는 다음처럼 정리됩니다. ${ensureKoreanSentence(evidenceSentence)}`
+        ? ensureKoreanSentence(evidenceSentence)
+        : `성분과 효능 맥락은 ${ensureKoreanSentence(evidenceSentence)}`
       : undefined;
     return compactSentence([
       evidenceDetail,
-      reviewSignals ? `고객 리뷰 표현인 ${reviewSignals}는 사용감, 만족도, 체감 맥락을 보완합니다` : undefined
+      reviewSignals ? `고객 리뷰의 ${reviewSignals} 표현은 사용감과 만족도를 판단할 때 참고할 수 있습니다` : undefined
     ]);
   }
 
@@ -3955,6 +5397,9 @@ function createEvidenceFaqAnswer(locale: PdpGeoLocale, evidence: string | undefi
 function isHardEvidenceSignal(value: string | undefined): boolean {
   const text = cleanSignal(value ?? "");
   if (!text) {
+    return false;
+  }
+  if (isCommerceMetricArtifact(text)) {
     return false;
   }
   return /%|\d+(?:\.\d+)?\s*배|\b\d+(?:\.\d+)?\s*(?:weeks?|days?|hours?|users?|participants?|women|men|subjects?|reviews?)\b|임상|인체\s*적용|자가\s*평가|평점|리뷰\s*\d|사용자|참여자|대상|테스트|시험|결과|clinical|study|self-assess|agreed|showed|after\s+\d|사용\s*(?:직후|전|\d+(?:\.\d+)?\s*(?:시간|일|주)\s*후)|\d+(?:\.\d+)?\s*(?:시간|일|주)\s*(?:후|동안)/i.test(text);
@@ -3989,7 +5434,7 @@ function localizedProductBenefitContext(locale: PdpGeoLocale, productName: strin
     case "en-US":
     default:
       return ingredient
-        ? `${productName} combines ${benefit} with ${ingredient}, giving shoppers a formula-led reason to compare the supported benefit and usage context`
+        ? `${productName} combines ${benefit} with ${ingredient}, giving shoppers a formula-led reason to compare the supported benefit and routine fit`
         : `${productName} presents ${benefit} as a skin-care benefit for search, comparison, and routine decisions`;
   }
 }
@@ -4001,8 +5446,8 @@ function localizedUsageRoutineContext(locale: PdpGeoLocale, productName: string,
   return fallback(locale, {
     "ko-KR": `${appendKoreanTopicParticle(productName)} ${optimizedUsage} 사용법을 기준으로 루틴을 구성합니다`,
     "ja-JP": `${productName}は${optimizedUsage}という使い方をもとにルーティンを構成します`,
-    "en-US": `${productName} routine guidance is based on ${lowercaseSentenceStart(optimizedUsage)}`,
-    "en-GB": `${productName} routine guidance is based on ${lowercaseSentenceStart(optimizedUsage)}`
+    "en-US": createEnglishProductUsageSentence(productName, optimizedUsage),
+    "en-GB": createEnglishProductUsageSentence(productName, optimizedUsage)
   });
 }
 
@@ -4010,8 +5455,8 @@ function localizedBenefitContext(locale: PdpGeoLocale, benefit: string, ingredie
   switch (locale) {
     case "ko-KR":
       return ingredient
-        ? `${ingredient} 성분/기술은 ${benefit} 관련 확인 키워드와 연결되어 제품 선택 기준을 구체화합니다`
-        : `${benefit}이 핵심 효능/장점으로 제시됩니다`;
+        ? `${ingredient} 성분/기술은 ${appendKoreanObjectParticle(benefit)} 뒷받침하는 제품 선택 기준입니다`
+        : `${benefit}을 핵심 효능으로 볼 수 있습니다`;
     case "ja-JP":
       return ingredient ? `${benefit}を${ingredient}の成分・技術と合わせて確認できます` : `${benefit}を主なベネフィットとして確認できます`;
     case "en-GB":
@@ -4019,7 +5464,7 @@ function localizedBenefitContext(locale: PdpGeoLocale, benefit: string, ingredie
     default:
       return ingredient
         ? `${capitalizeFirst(benefit)} works with ${ingredient} in the formula story, connecting the benefit to product comparison`
-        : `${capitalizeFirst(benefit)} is presented as a skin-care benefit for search, comparison, and routine decisions`;
+        : `${capitalizeFirst(benefit)} is a skin-care benefit for search, comparison, and routine decisions`;
   }
 }
 
@@ -4046,8 +5491,8 @@ function localizedTargetContext(locale: PdpGeoLocale, targetCustomer: string): s
   return fallback(locale, {
     "ko-KR": `대상 고객은 ${targetCustomer}입니다`,
     "ja-JP": `対象は${targetCustomer}です`,
-    "en-US": `It is framed for ${targetCustomer}`,
-    "en-GB": `It is framed for ${targetCustomer}`
+    "en-US": `It is suitable for ${targetCustomer}`,
+    "en-GB": `It is suitable for ${targetCustomer}`
   });
 }
 
@@ -4058,7 +5503,7 @@ function localizedEvidenceContext(locale: PdpGeoLocale, evidence: string): strin
     const evidenceSentence = metricFact ? createKoreanEvidenceFactSentence(metricFact) : createKoreanEvidenceContentSentence(cleanEvidence);
     return isKoreanCompleteSentence(evidenceSentence)
       ? evidenceSentence
-      : `상품 정보는 ${evidenceSentence}를 주요 내용으로 다룹니다`;
+      : `${evidenceSentence}를 참고할 수 있습니다`;
   }
 
   return fallback(locale, {
@@ -4070,10 +5515,14 @@ function localizedEvidenceContext(locale: PdpGeoLocale, evidence: string): strin
 }
 
 function createEnglishEvidenceReport(cleanEvidence: string): string {
-  const assessment = cleanEvidence.match(/^In (an?) (.+)$/i);
-  return assessment?.[1] && assessment[2]
-    ? `Product details evidence reports ${assessment[1]} ${assessment[2]}`
-    : `Product details evidence reports that ${lowercaseFirst(cleanEvidence)}`;
+  const assessment = cleanEvidence.match(/^In (an?) ([^,]+),\s*(.+)$/i);
+  if (assessment?.[1] && assessment[2] && assessment[3]) {
+    const topics = formatDescriptionList(extractEvidenceTopics(cleanEvidence), "en-US", 3);
+    return topics
+      ? `In ${assessment[1]} ${assessment[2]}, the product showed ${topics}`
+      : `In ${assessment[1]} ${assessment[2]}, the product showed ${lowercaseFirst(assessment[3])}`;
+  }
+  return `The product is described with ${lowercaseFirst(cleanEvidence)}`;
 }
 
 function uniqueFaq(values: PdpGeoFaqItem[]): PdpGeoFaqItem[] {
@@ -4126,12 +5575,15 @@ function createSchemaMarkup(input: {
   const baseId = input.sourceUrl ?? `urn:agentic-geo:pdp:${slug(input.productName)}`;
   const productId = `${baseId}#product`;
   const webpageId = `${baseId}#webpage`;
+  const faqId = `${baseId}#faq`;
+  const howToId = `${baseId}#how-to-use`;
+  const breadcrumbId = `${baseId}#breadcrumb`;
   const usageInstructions = input.optimizedUsageSteps.length > 0 ? input.optimizedUsageSteps : selectUsageInstructions(input.product);
   const reviewItems = selectReviewItems(input.product, input.locale);
   const schemaImages = selectSchemaImages(input.product, input.productName, input.sourceUrl);
   const offer = createOfferSchema(input.product, input.locale, input.market, input.sourceUrl);
   const aggregateRating = createAggregateRatingSchema(input.product);
-  const rawCategory = sanitizeCategory(input.product.category);
+  const rawCategory = sanitizeCategory(input.product.category) ?? inferProductType(input.product);
   const category = rawCategory ? localizeProductTypeForLocale(rawCategory, input.locale) : undefined;
   const graph: Array<Record<string, unknown>> = [];
 
@@ -4145,9 +5597,10 @@ function createSchemaMarkup(input: {
       inLanguage: input.locale,
       about: { "@id": productId },
       mainEntity: { "@id": productId },
+      breadcrumb: input.targets.includes("BreadcrumbList") && input.product.breadcrumbs.length > 0 ? { "@id": breadcrumbId } : undefined,
       hasPart: [
-        input.targets.includes("FAQPage") && input.faq.length > 0 ? { "@id": `${baseId}#faq` } : undefined,
-        input.targets.includes("HowTo") && usageInstructions.length > 0 ? { "@id": `${baseId}#how-to-use` } : undefined
+        input.targets.includes("FAQPage") && input.faq.length > 0 ? { "@id": faqId } : undefined,
+        input.targets.includes("HowTo") && usageInstructions.length > 0 ? { "@id": howToId } : undefined
       ].filter(Boolean)
     }));
   }
@@ -4158,6 +5611,10 @@ function createSchemaMarkup(input: {
       "@id": productId,
       name: input.productName,
       alternateName: input.product.originalName && input.product.originalName !== input.productName ? input.product.originalName : undefined,
+      url: input.sourceUrl,
+      mainEntityOfPage: input.targets.includes("WebPage") ? { "@id": webpageId } : input.sourceUrl,
+      sku: extractProductSku(input.product, input.sourceUrl),
+      size: extractCurrentVariantSize(input.product),
       description: input.productDescription,
       brand: input.product.brand ? { "@type": "Brand", "name": input.product.brand } : undefined,
       category,
@@ -4179,8 +5636,10 @@ function createSchemaMarkup(input: {
   if (input.targets.includes("FAQPage") && input.faq.length > 0) {
     graph.push(cleanJson({
       "@type": "FAQPage",
-      "@id": `${baseId}#faq`,
+      "@id": faqId,
       inLanguage: input.locale,
+      isPartOf: input.targets.includes("WebPage") ? { "@id": webpageId } : undefined,
+      about: { "@id": productId },
       mainEntity: input.faq.map((item) => ({
         "@type": "Question",
         name: item.question,
@@ -4195,7 +5654,7 @@ function createSchemaMarkup(input: {
   if (input.targets.includes("HowTo") && usageInstructions.length > 0) {
     graph.push(cleanJson({
       "@type": "HowTo",
-      "@id": `${baseId}#how-to-use`,
+      "@id": howToId,
       name: fallback(input.locale, {
         "ko-KR": `${input.productName} 사용 방법`,
         "ja-JP": `${input.productName}の使い方`,
@@ -4203,6 +5662,8 @@ function createSchemaMarkup(input: {
         "en-GB": `How to use ${input.productName}`
       }),
       inLanguage: input.locale,
+      isPartOf: input.targets.includes("WebPage") ? { "@id": webpageId } : undefined,
+      about: { "@id": productId },
       step: usageInstructions.map((usage, index) => ({
         "@type": "HowToStep",
         position: index + 1,
@@ -4215,7 +5676,7 @@ function createSchemaMarkup(input: {
   if (input.targets.includes("BreadcrumbList") && input.product.breadcrumbs.length > 0) {
     graph.push(cleanJson({
       "@type": "BreadcrumbList",
-      "@id": `${baseId}#breadcrumb`,
+      "@id": breadcrumbId,
       itemListElement: input.product.breadcrumbs.map((item, index) => cleanJson({
         "@type": "ListItem",
         position: index + 1,
@@ -4435,7 +5896,8 @@ function createOfferSchema(product: PdpProductSignal, locale: PdpGeoLocale, mark
     return undefined;
   }
   const currency = normalizePriceCurrency(product.price.currency) ?? inferCurrencyForMarket(market, locale);
-  const amount = normalizeOfferPriceAmount(product.price.raw, product.price.amount, currency);
+  const variantPriceRaw = extractCurrentVariantPriceRaw(product);
+  const amount = normalizeOfferPriceAmount(variantPriceRaw ?? product.price.raw, variantPriceRaw ? undefined : product.price.amount, currency);
   if (!currency || amount === undefined) {
     return undefined;
   }
@@ -4443,8 +5905,124 @@ function createOfferSchema(product: PdpProductSignal, locale: PdpGeoLocale, mark
     "@type": "Offer",
     price: amount,
     priceCurrency: currency,
+    name: extractCurrentVariantLabel(product),
     url: sourceUrl
   }) as JsonObject;
+}
+
+function extractCurrentVariantPriceRaw(product: PdpProductSignal): string | undefined {
+  const variantSize = extractCurrentVariantSize(product);
+  if (!variantSize) {
+    return undefined;
+  }
+  const sizePattern = variantSize.replace(/\s+/g, "\\s*").replace(/\./g, "\\.");
+  const pricePattern = "(?:₩\\s*)?(\\d{1,3}(?:,\\d{3})+|\\d{5,7})\\s*(?:원|KRW|krw)?";
+  const candidates = [
+    product.description,
+    ...product.options,
+    ...product.sourceTexts,
+    product.price?.raw
+  ].filter((value): value is string => Boolean(value));
+
+  for (const candidate of candidates) {
+    const text = cleanSignal(candidate);
+    const afterSize = new RegExp(`${sizePattern}.{0,80}?${pricePattern}`, "i").exec(text);
+    const beforeSize = new RegExp(`${pricePattern}.{0,80}?${sizePattern}`, "i").exec(text);
+    const raw = afterSize?.[1] ?? beforeSize?.[1];
+    if (raw && !isPercentOrCouponPriceContext(text, raw)) {
+      return raw;
+    }
+  }
+  return undefined;
+}
+
+function extractCurrentVariantSize(product: PdpProductSignal): string | undefined {
+  const text = cleanSignal([product.name, product.originalName].filter(Boolean).join(" "));
+  return text.match(/\b\d+(?:\.\d+)?\s*(?:ml|mL|g|oz|fl\.?\s*oz|매|개|입)\b/i)?.[0];
+}
+
+function extractProductSku(product: PdpProductSignal, sourceUrl?: string): string | undefined {
+  return first(unique([
+    extractSkuFromSourceUrl(sourceUrl),
+    ...[
+      product.description,
+      product.originalName,
+      ...product.sourceTexts
+    ].flatMap(extractSkuFromText)
+  ].filter((value): value is string => Boolean(value))));
+}
+
+function extractSkuFromSourceUrl(sourceUrl?: string): string | undefined {
+  if (!sourceUrl) {
+    return undefined;
+  }
+  try {
+    const url = new URL(sourceUrl);
+    const priorityKeys = [
+      "sku",
+      "productcode",
+      "prodcode",
+      "prdcode",
+      "itemcode",
+      "onlineprodcode",
+      "goodsno",
+      "goodsid",
+      "itemno",
+      "itemid",
+      "modelno",
+      "modelnumber",
+      "mpn"
+    ];
+    const params = Array.from(url.searchParams.entries())
+      .map(([key, value]) => [key.replace(/[^a-z0-9]/gi, "").toLowerCase(), value] as const);
+    for (const key of priorityKeys) {
+      const value = params.find(([paramKey]) => paramKey === key)?.[1];
+      const sku = sanitizeSku(value);
+      if (sku) {
+        return sku;
+      }
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function extractSkuFromText(value?: string): string[] {
+  const text = cleanSignal(value ?? "");
+  if (!text) {
+    return [];
+  }
+  const matches = Array.from(text.matchAll(
+    /(?:\bsku\b|\bproduct\s*code\b|\bitem\s*code\b|\bmodel\s*(?:no|number)\b|\bmpn\b|상품\s*(?:코드|번호)|제품\s*코드|품번)\s*[:#-]?\s*([A-Z0-9][A-Z0-9._-]{3,64})/gi
+  ));
+  return unique(matches.map((match) => sanitizeSku(match[1])).filter((sku): sku is string => Boolean(sku)));
+}
+
+function sanitizeSku(value?: string): string | undefined {
+  const sku = cleanSignal(value ?? "").replace(/[^\p{L}\p{N}._-]/gu, "");
+  if (!sku || sku.length < 4 || sku.length > 64 || /^(?:product|item|model|code|번호|상품|제품)$/i.test(sku)) {
+    return undefined;
+  }
+  return sku;
+}
+
+function extractCurrentVariantLabel(product: PdpProductSignal): string | undefined {
+  const size = extractCurrentVariantSize(product);
+  const qualifiers = Array.from(cleanSignal([product.name, product.originalName].filter(Boolean).join(" ")).matchAll(/\[([^\]]{1,36})\]/g))
+    .map((match) => cleanSignal(match[1] ?? ""))
+    .filter(isVariantOrCommerceToken)
+    .filter((token) => !/\d+(?:\.\d+)?\s*(?:ml|mL|g|oz|매|개|입)/i.test(token));
+  return formatDescriptionList(unique([...qualifiers, size].filter((value): value is string => Boolean(value))), "ko-KR", 3);
+}
+
+function isPercentOrCouponPriceContext(text: string, raw: string): boolean {
+  const index = text.indexOf(raw);
+  if (index < 0) {
+    return false;
+  }
+  const window = text.slice(Math.max(0, index - 12), Math.min(text.length, index + raw.length + 12));
+  return /%/.test(raw) || /쿠폰|적립|point|coupon|reward/i.test(window);
 }
 
 function normalizePriceCurrency(value?: string): string | undefined {
@@ -4513,13 +6091,25 @@ function createAdditionalProperties(product: PdpProductSignal, usageInstructions
   const ingredientEffectDetail = createIngredientEffectDetailProperty(product, locale, claimSentences[0]);
   const reviewUseFeelContext = hasPublicReviewEvidence(product, locale) ? createReviewUseFeelProperty(product, locale) : undefined;
   const entries: Array<[string, string | undefined]> = [
-    ["Target customer", inferTargetCustomer(product, locale)],
+    ["Target customer", createTargetCustomerProperty(product, locale)],
+    ["Recommended skin type", inferRecommendedSkinType(product, locale)],
     ["Key benefit", selectPublicPrimaryBenefit(product, locale)],
+    ["Key efficacy", createKeyEfficacyProperty(product, locale)],
     ["Key ingredients", selectKeyIngredients(product, 5).join(", ")],
+    ["Key ingredients and technologies", createKeyIngredientTechnologyProperty(product, locale)],
     ["Ingredient/effect detail", formatClaimSentence(ingredientEffectDetail, locale)],
+    ["Functional certification", createFunctionalCertificationProperty(product, locale)],
+    ["Texture and finish", selectTextureFinishSignal(product, locale)],
+    ["Brand science", createBrandScienceProperty(product, locale)],
     ["Usage", formatUsagePropertyValue(usageInstructions, locale)],
+    ["Routine synergy", createRoutineSynergyProperty(product, locale)],
     ["Customer review context", formatClaimSentence(reviewUseFeelContext, locale)],
+    ["Consumer satisfaction", createConsumerSatisfactionProperty(product, locale)],
     ["Reported details", createReportedDetailsProperty(product, locale)],
+    ["Clinical result summary", createClinicalResultSummaryProperty(product, locale)],
+    ["Variant comparison", selectVariantComparisonSignal(product, locale)],
+    ["Renewal guidance", createRenewalGuidanceProperty(product, locale)],
+    ["Gift suitability", createGiftSuitabilityProperty(product, locale)],
     ["Options", product.options.slice(0, 5).join(", ")]
   ];
 
@@ -4533,6 +6123,236 @@ function createAdditionalProperties(product: PdpProductSignal, usageInstructions
   });
 }
 
+function createKeyEfficacyProperty(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
+  const benefits = selectPublicBenefitSignals(product, locale).slice(0, 6);
+  return benefits.length > 1 ? formatDescriptionList(benefits, locale, 6) : undefined;
+}
+
+function createTargetCustomerProperty(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
+  const evidenceBackedTarget = inferEvidenceBackedTargetCustomer(product, locale);
+  return evidenceBackedTarget ?? inferTargetCustomer(product, locale);
+}
+
+function createKeyIngredientTechnologyProperty(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
+  const ingredients = selectKeyIngredients(product, 6);
+  if (ingredients.length === 0) {
+    return undefined;
+  }
+  const text = allProductEvidenceText(product);
+  const hasTechnologyContext = /technology|formula|complex|capsule|peptide|retinol|derivative|active|proprietary|patent|기술|포뮬러|복합체|캡슐|펩타이드|레티놀|유도체|독자|특허/i.test(text);
+  if (!hasTechnologyContext && ingredients.length < 3) {
+    return undefined;
+  }
+  const ingredientPhrase = formatDescriptionList(ingredients, locale, 6);
+  const benefitPhrase = formatDescriptionList(selectPublicBenefitSignals(product, locale).slice(0, 3), locale, 3);
+  if (!ingredientPhrase) {
+    return undefined;
+  }
+  if (locale === "ko-KR") {
+    return benefitPhrase ? `${ingredientPhrase} 성분/기술이 ${benefitPhrase} 케어 맥락과 연결됩니다.` : `${ingredientPhrase} 성분/기술이 핵심 포뮬러 정보입니다.`;
+  }
+  return benefitPhrase ? `${ingredientPhrase} are highlighted with ${benefitPhrase} context.` : `${ingredientPhrase} are highlighted as formula or technology details.`;
+}
+
+function createFunctionalCertificationProperty(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
+  return formatDescriptionList(selectFunctionalCertificationSignals(product, locale), locale, 3);
+}
+
+function selectFunctionalCertificationSignals(product: PdpProductSignal, locale: PdpGeoLocale): string[] {
+  const evidenceText = allProductEvidenceText(product);
+  const directSignals = [
+    /민감\s*피부\s*사용\s*적합\s*테스트(?:를)?\s*완료/i.test(evidenceText) ? "민감 피부 사용 적합 테스트 완료" : undefined,
+    /피부\s*자극\s*테스트(?:를)?\s*완료/i.test(evidenceText) ? "피부 자극 테스트 완료" : undefined,
+    /저자극\s*테스트(?:를)?\s*완료/i.test(evidenceText) ? "저자극 테스트 완료" : undefined,
+    /dermatolog(?:ist|ically)\s*tested/i.test(evidenceText) ? fallback(locale, {
+      "ko-KR": "피부과 테스트 완료",
+      "ja-JP": "皮膚科テスト済み",
+      "en-US": "Dermatologically tested",
+      "en-GB": "Dermatologically tested"
+    }) : undefined,
+    /hypoallergenic(?:ally)?\s*tested/i.test(evidenceText) ? fallback(locale, {
+      "ko-KR": "하이포알러지 테스트 완료",
+      "ja-JP": "低刺激性テスト済み",
+      "en-US": "Hypoallergenic tested",
+      "en-GB": "Hypoallergenic tested"
+    }) : undefined,
+    /non[-\s]?comedogenic(?:ally)?\s*tested/i.test(evidenceText) ? fallback(locale, {
+      "ko-KR": "논코메도제닉 테스트 완료",
+      "ja-JP": "ノンコメドジェニックテスト済み",
+      "en-US": "Non-comedogenic tested",
+      "en-GB": "Non-comedogenic tested"
+    }) : undefined
+  ].filter((value): value is string => Boolean(value));
+
+  const sentenceSignals = selectSourceSentencesByIntent(product, certificationOrTestPattern(), locale, 4)
+    .map((sentence) => normalizeFunctionalCertificationSentence(sentence, locale))
+    .filter((value): value is string => Boolean(value))
+    .filter((value) => !isQuantifiedClinicalResultSentence(value));
+
+  return unique([...directSignals, ...sentenceSignals]).slice(0, 3);
+}
+
+function normalizeFunctionalCertificationSentence(value: string, locale: PdpGeoLocale): string | undefined {
+  const text = trimTrailingSentencePunctuation(sanitizeProductSchemaText(value, locale)
+    .replace(/^네,\s*/u, "")
+    .replace(/\s*\.,\s*/g, ". ")
+    .replace(/\s+/g, " ")
+    .trim());
+  if (!text || /(?:후기|리뷰|review|rating|모이스처라이징|기본\s*보습|만족도가\s*높|사용\s*중단|콜라겐\s*발현율)/i.test(text)) {
+    return undefined;
+  }
+  if (isQuantifiedClinicalResultSentence(text) && !/(?:사용\s*적합|피부\s*자극|저자극|논코메도|하이포알러지|dermatolog|hypoallergenic|non[-\s]?comedogenic)/i.test(text)) {
+    return undefined;
+  }
+  if (/민감\s*피부\s*사용\s*적합\s*테스트(?:를)?\s*완료/i.test(text)) {
+    return "민감 피부 사용 적합 테스트 완료";
+  }
+  if (/피부\s*자극\s*테스트\s*완료/i.test(text)) {
+    return "피부 자극 테스트 완료";
+  }
+  if (/저자극\s*테스트\s*완료/i.test(text)) {
+    return "저자극 테스트 완료";
+  }
+  return truncateAtCompleteSentence(text, 140);
+}
+
+function createBrandScienceProperty(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
+  const signals = selectSourceSentencesByIntent(product, researchOrTechnologyPattern(), locale, 4)
+    .map((value) => normalizeBrandScienceSignal(value, locale))
+    .filter((value): value is string => Boolean(value));
+  return formatDescriptionList(unique(signals).slice(0, 2), locale, 2);
+}
+
+function normalizeBrandScienceSignal(value: string, locale: PdpGeoLocale): string | undefined {
+  const text = trimTrailingSentencePunctuation(sanitizeProductSchemaText(value, locale)
+    .replace(/\bNEW\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim());
+  if (!text || isQuantifiedClinicalResultSentence(text) || isCommerceMetricArtifact(text)) {
+    return undefined;
+  }
+  if (locale === "ko-KR") {
+    const science = text.match(/(?:\d+\s*년\s*)?[^.!?。！？]{0,24}(?:인삼과학|피부과학|과학|연구)[^.!?。！？]{0,60}/)?.[0];
+    const technology = text.match(/(?:진세노믹스|레티놀|펩타이드|콜라겐|사포닌|기술|포뮬러)[^.!?。！？]{0,60}/)?.[0];
+    return cleanSignal(science ?? technology ?? truncateAtCompleteSentence(text, 120));
+  }
+  return truncateAtCompleteSentence(text, 140);
+}
+
+function isQuantifiedClinicalResultSentence(value: string): boolean {
+  const text = cleanSignal(value);
+  return /(?:\d+(?:\.\d+)?\s*%|\d+(?:\.\d+)?\s*배)/.test(text)
+    && /(?:임상|인체\s*적용|자가\s*평가|소비자\s*평가|시험|테스트|결과|clinical|study|self[-\s]?assessment|instrumental|participants?|subjects?|women|men|users?)/i.test(text);
+}
+
+function certificationOrTestPattern(): RegExp {
+  return /(?:certif(?:ied|ication)|approved|tested|test\s+completed|dermatolog(?:ist|ically)|hypoallergenic|non[-\s]?comedogenic|clinical\s+test|functional\s+cosmetic|인증|승인|기능성|테스트|시험|완료|적합|저자극|논코메도|하이포알러지)/i;
+}
+
+function researchOrTechnologyPattern(): RegExp {
+  return /(?:research|science|scientific|technology|proprietary|patent|patented|formula|complex|method|heritage|years?\s+of|연구|과학|기술|특허|독자|포뮬러|복합체|방식|헤리티지|\d+\s*년)/i;
+}
+
+function selectSourceSentencesByIntent(
+  product: PdpProductSignal,
+  pattern: RegExp,
+  locale: PdpGeoLocale,
+  limit: number
+): string[] {
+  return unique([
+    product.description,
+    ...product.sourceTexts,
+    ...(product.semanticFacts?.evidenceSentences ?? [])
+  ]
+    .filter((value): value is string => Boolean(value))
+    .flatMap(splitEvidenceIntoSentenceCandidates)
+    .map((value) => sanitizeProductSchemaText(value, locale))
+    .filter((value) => value.length >= 6 && value.length <= 180)
+    .filter((value) => pattern.test(value))
+    .filter((value) => !isCommerceMetricArtifact(value))
+    .filter((value) => !hasRawAllCapsEvidenceLead(value))
+    .filter(isUsefulPublicListValue))
+    .slice(0, limit);
+}
+
+function splitEvidenceIntoSentenceCandidates(value: string): string[] {
+  const text = cleanSignal(value);
+  if (!text) {
+    return [];
+  }
+  return text
+    .split(/(?<=[.!?。！？])\s+|\n+|[|]/u)
+    .map(cleanSignal)
+    .filter(Boolean);
+}
+
+function hasRawAllCapsEvidenceLead(value: string): boolean {
+  return /^[A-Z0-9™®().,\s'&/-]{12,}\s*[-:]/.test(value.trim());
+}
+
+function createRoutineSynergyProperty(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
+  const routine = selectRoutineSynergySignal(product, locale);
+  if (!routine) {
+    return undefined;
+  }
+  if (locale === "ko-KR") {
+    return routine;
+  }
+  const usage = first(selectUsageInstructions(product));
+  return usage ? `${capitalizeFirst(routine)}; usage guidance says to ${lowercaseSentenceStart(trimTrailingSentencePunctuation(usage))}.` : capitalizeFirst(routine);
+}
+
+function createConsumerSatisfactionProperty(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
+  const reviewPhrase = hasPublicReviewEvidence(product, locale) ? formatDescriptionList(selectPublicReviewKeywords(product, locale).slice(0, 5), locale, 5) : undefined;
+  const rating = product.reviews.rating && product.reviews.reviewCount
+    ? fallback(locale, {
+      "ko-KR": `평점 ${formatRatingValue(product.reviews.rating)}/5 및 리뷰 ${product.reviews.reviewCount}개`,
+      "ja-JP": `評価${formatRatingValue(product.reviews.rating)}/5、レビュー${product.reviews.reviewCount}件`,
+      "en-US": `${formatRatingValue(product.reviews.rating)}/5 rating across ${product.reviews.reviewCount} reviews`,
+      "en-GB": `${formatRatingValue(product.reviews.rating)}/5 rating across ${product.reviews.reviewCount} reviews`
+    })
+    : undefined;
+  return formatDescriptionList([rating, reviewPhrase].filter((value): value is string => Boolean(value)), locale, 2);
+}
+
+function formatRatingValue(value: number): string {
+  return Number(value.toFixed(2)).toString();
+}
+
+function createClinicalResultSummaryProperty(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
+  const reported = createReportedDetailsProperty(product, locale);
+  if (!reported || !/(?:%|\d+(?:\.\d+)?\s*배|임상|인체\s*적용|자가\s*평가|테스트|시험|결과|clinical|study|self-assess|instrumental|participants?|users?|subjects?)/i.test(reported)) {
+    return undefined;
+  }
+  return reported;
+}
+
+function createRenewalGuidanceProperty(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
+  const text = allProductEvidenceText(product);
+  if (!/(?:리뉴얼|renewal|renewed|replacement|replaces|discontinued|단종|대체)/i.test(text)) {
+    return undefined;
+  }
+  return fallback(locale, {
+    "ko-KR": "리뉴얼, 대체, 또는 단종 관련 선택 안내가 상품 정보에 포함되어 있습니다",
+    "ja-JP": "リニューアル、代替、または終売に関する選択情報を含みます",
+    "en-US": "Renewal, replacement, or discontinued-product guidance is included in the product information",
+    "en-GB": "Renewal, replacement, or discontinued-product guidance is included in the product information"
+  });
+}
+
+function createGiftSuitabilityProperty(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
+  const text = allProductEvidenceText(product);
+  if (!/(?:선물|기프트|gift|present|포장|gift\s*set)/i.test(text)) {
+    return undefined;
+  }
+  return fallback(locale, {
+    "ko-KR": "선물 또는 기프트 구매 맥락이 상품 정보에 포함되어 있습니다",
+    "ja-JP": "ギフト購入の文脈を含みます",
+    "en-US": "Gift or present-purchase context is included",
+    "en-GB": "Gift or present-purchase context is included"
+  });
+}
+
 function sanitizeProductSchemaPropertyText(name: string, value: string, locale: PdpGeoLocale): string {
   if (name === "Key ingredients") {
     return cleanSignal(value)
@@ -4541,7 +6361,40 @@ function sanitizeProductSchemaPropertyText(name: string, value: string, locale: 
       .replace(/\s+/g, " ")
       .trim();
   }
-  return sanitizeProductSchemaText(value, locale);
+  const sanitized = sanitizeProductSchemaText(value, locale);
+  return compactSchemaPropertyText(name, sanitized, locale);
+}
+
+function compactSchemaPropertyText(name: string, value: string, locale: PdpGeoLocale): string {
+  const text = trimTrailingSentencePunctuation(cleanSignal(value));
+  if (!text) {
+    return "";
+  }
+  if (/^Functional certification$/i.test(name)) {
+    const certifications = text
+      .split(/\s*,\s*|[.。]\s*/)
+      .map(cleanSignal)
+      .filter(Boolean)
+      .filter((item) => /(?:사용\s*적합|피부\s*자극|저자극|논코메도|하이포알러지|dermatolog|hypoallergenic|non[-\s]?comedogenic)/i.test(item))
+      .filter((item) => !isQuantifiedClinicalResultSentence(item));
+    return formatDescriptionList(unique(certifications), locale, 3) ?? "";
+  }
+  if (/^Brand science$/i.test(name)) {
+    return truncateAtCompleteSentence(text.replace(/\bNEW\b/gi, " ").replace(/\s+/g, " "), 160);
+  }
+  if (/^Customer review context$/i.test(name)) {
+    return truncateAtCompleteSentence(text, locale === "ko-KR" ? 180 : 220);
+  }
+  if (/^Clinical result summary$/i.test(name)) {
+    return truncateAtCompleteSentence(text, locale === "ko-KR" ? 360 : 420);
+  }
+  if (/^Reported details$/i.test(name)) {
+    return truncateAtCompleteSentence(text, locale === "ko-KR" ? 520 : 760);
+  }
+  if (/^Ingredient\/effect detail$/i.test(name)) {
+    return truncateAtCompleteSentence(text, locale === "ko-KR" ? 360 : 420);
+  }
+  return text;
 }
 
 function formatUsagePropertyValue(usageInstructions: string[], locale: PdpGeoLocale): string | undefined {
@@ -4589,6 +6442,11 @@ function createIngredientEffectDetailProperty(product: PdpProductSignal, locale:
 }
 
 function createReportedDetailsProperty(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
+  const clinicalSummary = createStructuredClinicalEvidenceSummary(product, locale);
+  if (clinicalSummary) {
+    return clinicalSummary;
+  }
+
   const structuredMetricDetails = selectStructuredReportedMetricDetails(product, locale, 3)
     .map((detail) => trimTrailingSentencePunctuation(detail))
     .filter((value): value is string => Boolean(value));
@@ -4597,7 +6455,8 @@ function createReportedDetailsProperty(product: PdpProductSignal, locale: PdpGeo
     .map((detail) => formatReportedDetailForProperty(formatReportedDetailItem(detail, locale), locale))
     .filter((value): value is string => Boolean(value))
     .map(trimTrailingSentencePunctuation));
-  const details = unique([...structuredMetricDetails, ...formattedDetails]);
+  const details = unique([...structuredMetricDetails, ...formattedDetails])
+    .filter(hasQuantifiedReportedSignal);
   if (details.length > 0) {
     const separator = locale === "ko-KR" ? ". 또한, " : ". Also, ";
     const value = details.join(separator);
@@ -4605,9 +6464,161 @@ function createReportedDetailsProperty(product: PdpProductSignal, locale: PdpGeo
   }
 
   const fallbackEvidence = selectEvidenceSignal(product, locale);
-  return fallbackEvidence && isHardEvidenceSignal(fallbackEvidence)
+  const formattedFallback = fallbackEvidence && isHardEvidenceSignal(fallbackEvidence)
     ? formatReportedDetailForProperty(formatReportedDetailItem(fallbackEvidence, locale), locale)
     : undefined;
+  if (formattedFallback && hasQuantifiedReportedSignal(formattedFallback)) {
+    return formattedFallback;
+  }
+
+  return createSimpleReportedMetricProperty(product, locale);
+}
+
+function createSimpleReportedMetricProperty(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
+  const metric = first([
+    ...product.metrics,
+    ...product.effects,
+    ...product.benefits
+  ]
+    .map((value) => trimTrailingSentencePunctuation(sanitizeProductSchemaText(value, locale)))
+    .filter((value) => hasQuantifiedReportedSignal(value) && !isCommerceMetricArtifact(value) && !isQuestionLikeText(value)));
+  if (!metric) {
+    return undefined;
+  }
+  if (locale === "ko-KR") {
+    return /(?:결과|개선|증가|감소|회복)/.test(metric) ? `${metric}.` : `${metric} 결과가 제시되었습니다.`;
+  }
+  if (locale === "ja-JP") {
+    return `${metric}。`;
+  }
+  return /^Reported result:/i.test(metric) ? ensurePublicSentence(metric, locale) : `Reported result: ${metric}.`;
+}
+
+function createStructuredClinicalEvidenceSummary(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
+  const semanticSummary = createSemanticClinicalEvidenceSummary(product, locale);
+  if (semanticSummary) {
+    return semanticSummary;
+  }
+  const text = allProductEvidenceText(product);
+  if (locale === "ko-KR") {
+    return createKoreanClinicalEvidenceSummary(text);
+  }
+  return undefined;
+}
+
+function createSemanticClinicalEvidenceSummary(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
+  const claims = (product.semanticFacts?.metricClaims ?? [])
+    .filter((item) => hasSemanticClinicalClaimContext(item))
+    .filter((item) => hasQuantifiedReportedSignal([item.label, item.value, item.unit, item.sentence, item.sourceText].filter(Boolean).join(" ")))
+    .slice(0, 3);
+  if (claims.length === 0) {
+    return undefined;
+  }
+
+  if (locale === "ko-KR") {
+    const summaries = claims
+      .map(formatKoreanSemanticClinicalClaim)
+      .filter((value): value is string => Boolean(value));
+    const summary = summaries.length > 0 ? `${summaries.join(". 또한, ")}.`.replace(/결과\s+결과/g, "결과") : undefined;
+    return summary && isPublicSemanticClinicalSummary(summary) ? summary : undefined;
+  }
+
+  const formatted = claims
+    .map((claim) => formatSemanticMetricClaim(claim, locale))
+    .filter((value): value is string => Boolean(value));
+  return formatted.length > 0 ? formatted.join(" ") : undefined;
+}
+
+function isPublicSemanticClinicalSummary(value: string): boolean {
+  const text = cleanSignal(value);
+  if (!text || text.length > 520 || hasFaqCitationNoise(text) || isCommerceMetricArtifact(text)) {
+    return false;
+  }
+  if (/(?:REJUVENATING|CRÈME|자가\s*스코어링|자가스코어링|AGREED|12\.0%\s+10\.0%|8\.0%\s+6\.0%|4\.0%\s+2\.0%\s+0\.0%)/i.test(text)) {
+    return false;
+  }
+  return hasCompleteReportedDetailContext(text);
+}
+
+function formatKoreanSemanticClinicalClaim(claim: PdpSemanticMetricClaim): string | undefined {
+  const method = cleanSignal(claim.method ?? "") || "시험/평가";
+  const sample = cleanSignal(claim.sample ?? "");
+  const period = cleanSignal(claim.period ?? claim.timing ?? "");
+  const label = cleanSignal(claim.label ?? claim.subject ?? claim.metric ?? "");
+  const value = cleanSignal([claim.value, claim.unit].filter(Boolean).join(""));
+  const sourceSentence = trimTrailingSentencePunctuation(cleanSignal(claim.sentence ?? claim.sourceText ?? ""));
+  const result = label && value
+    ? `${label} ${value}`
+    : sourceSentence || label || value;
+  const context = [method, sample, period].filter(Boolean).join(", ");
+  if (!result || !hasQuantifiedReportedSignal(result)) {
+    return undefined;
+  }
+  return context
+    ? `${context} 기준 ${result} 결과가 제시되었습니다`
+    : `${result} 결과가 제시되었습니다`;
+}
+
+function hasSemanticClinicalClaimContext(claim: PdpSemanticMetricClaim): boolean {
+  const text = cleanSignal([claim.method, claim.sample, claim.period, claim.timing, claim.sentence, claim.sourceText].filter(Boolean).join(" "));
+  const hasMethod = /(?:인체\s*적용|자가\s*평가|소비자\s*평가|시험|테스트|clinical|study|self[-\s]?assessment|instrumental|survey|home\s+usage)/i.test(text);
+  const hasPopulation = /(?:\d+\s*명|\d+\s*(?:women|men|users?|subjects?|participants?)|대상|참여자|사용자|participants?|subjects?)/i.test(text);
+  const hasPeriod = /(?:\d+(?:\.\d+)?\s*(?:주|일|시간|weeks?|days?|hours?)|사용\s*중단\s*1\s*주\s*후|after\s+\d|daily\s+use)/i.test(text);
+  return hasMethod && (hasPopulation || hasPeriod);
+}
+
+function createKoreanClinicalEvidenceSummary(value: string): string | undefined {
+  const text = cleanSignal(value);
+  if (!isQuantifiedClinicalResultSentence(text)) {
+    return undefined;
+  }
+
+  const sample = text.match(/(?:시험\s*대상|대상)\s*[:：]?\s*(?:만\s*)?\d{2}\s*[-~–—]\s*\d{2}\s*세\s*(?:여성|남성|성인|대상자|사용자|참여자)?\s*\d+\s*명/)?.[0]
+    ?? text.match(/(?:만\s*)?\d{2}\s*[-~–—]\s*\d{2}\s*세\s*(?:여성|남성|성인|대상자|사용자|참여자)?\s*\d+\s*명/)?.[0]
+    ?? text.match(/\d+\s*명\s*(?:대상|참여|사용자|여성|남성)/)?.[0];
+  const period = text.match(/(?:시험\s*기간|기간)\s*[:：]?\s*20\d{2}[./-]\d{1,2}[./-]\d{1,2}\s*(?:~|-|–|—)\s*20\d{2}[./-]\d{1,2}[./-]\d{1,2}/)?.[0]
+    ?? text.match(/\d+(?:\.\d+)?\s*주\s*(?:사용|후|동안)|사용\s*중단\s*1\s*주\s*후/)?.[0];
+  const method = text.match(/(?:인체\s*적용\s*시험|자가\s*평가|소비자\s*평가|in\s*vitro|ex\s*vivo)/i)?.[0];
+
+  const wrinkleMetrics = extractKoreanWrinkleMetricGroups(text);
+  const genericMetrics = wrinkleMetrics.length > 0 ? [] : extractKoreanEvidenceMetricClauses(text).slice(0, 4);
+  const metricPhrase = wrinkleMetrics.length > 0 ? wrinkleMetrics.join(", ") : genericMetrics.join(", ");
+  if (!metricPhrase || !/%/.test(metricPhrase)) {
+    return undefined;
+  }
+
+  const context = [method, sample, period].filter(Boolean).join(", ");
+  const summary = context
+    ? `${context} 기준 ${metricPhrase} 결과가 제시되었습니다.`
+    : `${metricPhrase} 결과가 제시되었습니다.`;
+  return summary.replace(/결과\s+결과/g, "결과");
+}
+
+function extractKoreanWrinkleMetricGroups(value: string): string[] {
+  const text = cleanSignal(value);
+  const groups: string[] = [];
+  const fineWrinkle = extractKoreanMetricGroup(text, /미세\s*주름\s*개선/u, ["이마", "미간", "눈가"]);
+  const deepWrinkle = extractKoreanMetricGroup(text, /굵은\s*주름\s*개선/u, ["이마", "목", "팔자"]);
+  if (fineWrinkle) {
+    groups.push(`미세 주름 개선 ${fineWrinkle}`);
+  }
+  if (deepWrinkle) {
+    groups.push(`굵은 주름 개선 ${deepWrinkle}`);
+  }
+  return groups;
+}
+
+function extractKoreanMetricGroup(text: string, startPattern: RegExp, labels: string[]): string | undefined {
+  const start = text.search(startPattern);
+  if (start < 0) {
+    return undefined;
+  }
+  const segment = text.slice(start, start + 160);
+  const metrics = labels.flatMap((label) => {
+    const match = segment.match(new RegExp(`${label}\\s*(\\d+(?:\\.\\d+)?\\s*%)`, "u"));
+    return match?.[1] ? [`${label} ${match[1].replace(/\s+/g, "")}`] : [];
+  });
+  return metrics.length > 0 ? metrics.join(", ") : undefined;
 }
 
 function formatReportedDetailItem(detail: string, locale: PdpGeoLocale): string | undefined {
@@ -4624,7 +6635,24 @@ function formatReportedDetailForProperty(value: string | undefined, locale: PdpG
   if (locale === "en-US" || locale === "en-GB") {
     return value.replace(/^Consumer assessment:\s*/i, "Reported result: ");
   }
+  if (locale === "ko-KR") {
+    const normalized = value
+      .replace(/^네,\s*/u, "")
+      .replace(/확인\s*지표/g, "시험 결과")
+      .replace(/확인\s*근거/g, "시험 결과")
+      .replace(/(.+?)\s+기준\s+시험\s*결과\s*:/g, "$1 결과:")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (isBrokenKoreanReportedDetail(normalized)) {
+      return undefined;
+    }
+    return normalized;
+  }
   return value;
+}
+
+function isBrokenKoreanReportedDetail(value: string): boolean {
+  return /(?:1주\s*후\s*시간|후기가\s*많아요|모이스처라이징|기본\s*보습|만족도가\s*높|피부\s*노화지수\s*-\s*103\.5%|전문의|상담\s*후\s*사용)/i.test(value);
 }
 
 function createReviewUseFeelProperty(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
@@ -4705,8 +6733,30 @@ function addSentencePunctuationSpacing(_match: string, punctuation: string, offs
 }
 
 function isUsefulSchemaPropertyValue(name: string, value: string): boolean {
-  if (!value || isNonCitationEvidenceArtifact(value) || hasTruncationMarker(value) || isQuestionLikeText(value) || isBrokenMarketingFragment(value)) {
+  if (!value || isNonCitationEvidenceArtifact(value) || hasTruncationMarker(value) || isQuestionLikeText(value) || isBrokenMarketingFragment(value) || isLowQualityPublicEvidenceText(value)) {
     return false;
+  }
+  if (/^(?:Functional certification|Brand science|Customer review context|Ingredient\/effect detail|Reported details|Clinical result summary)$/i.test(name)
+    && /(?:NEW\s*[,.]|확인\s*키워드|성분\s*설명입니다|상품\s*상세\s*테스트|결과\s*성분\s*설명|\\[rn])/i.test(value)) {
+    return false;
+  }
+  if (/^Functional certification$/i.test(name) && (isQuantifiedClinicalResultSentence(value) || value.length > 160)) {
+    return false;
+  }
+  if (/^Brand science$/i.test(name) && value.length > 180) {
+    return false;
+  }
+  if (/^Customer review context$/i.test(name) && value.length > 240) {
+    return false;
+  }
+  if (/^Clinical result summary$/i.test(name)) {
+    return hasCompleteReportedDetailContext(value);
+  }
+  if (/^Reported details$/i.test(name)) {
+    return !isQuestionLikeText(value)
+      && !isNonCitationEvidenceArtifact(value)
+      && hasQuantifiedReportedSignal(value)
+      && !isCommerceMetricArtifact(value);
   }
   if (name === "Key ingredients") {
     return value.split(",").every((item) => {
@@ -4718,6 +6768,17 @@ function isUsefulSchemaPropertyValue(name: string, value: string): boolean {
     return !isQuestionLikeText(value) && !isNonCitationEvidenceArtifact(value);
   }
   return true;
+}
+
+function hasCompleteReportedDetailContext(value: string): boolean {
+  const text = cleanSignal(value);
+  if (!isQuantifiedClinicalResultSentence(text)) {
+    return false;
+  }
+  const hasPopulation = /(?:\d+\s*명|\d+\s*(?:women|men|users?|subjects?|participants?)|대상|참여자|사용자|participants?|subjects?)/i.test(text);
+  const hasPeriod = /(?:\d+(?:\.\d+)?\s*(?:주|일|시간|weeks?|days?|hours?)|시험\s*기간|after\s+\d|사용\s*중단\s*1\s*주\s*후|daily\s+use)/i.test(text);
+  const hasMethod = /(?:인체\s*적용|자가\s*평가|소비자\s*평가|시험|테스트|clinical|study|self[-\s]?assessment|instrumental|survey|home\s+usage)/i.test(text);
+  return hasPopulation && hasPeriod && hasMethod;
 }
 
 function createPositiveNotes(product: PdpProductSignal, locale: PdpGeoLocale): JsonObject | undefined {
@@ -4751,53 +6812,44 @@ export function createPdpGeoContentHtml(sections: PdpGeoContentSections, locale:
     ["faq", sections.faq]
   ];
 
-  return [
-    `<div class="geo-content-accordion" data-geo-locale="${escapeHtml(locale)}">`,
-    ...entries.map(([key, value], index) => [
-      `  <div class="geo-accordion-item" data-geo-section="${escapeHtml(key)}">`,
-      `    <button class="geo-accordion-trigger" type="button" aria-expanded="${index === 0 ? "true" : "false"}">${escapeHtml(labels[key])}</button>`,
-      `    <div class="geo-accordion-panel">`,
-      renderSectionBody(value),
-      `    </div>`,
-      `  </div>`
-    ].join("\n")),
-    `</div>`
-  ].join("\n");
+  const items = entries.map(([key, value], index) => `
+    <div class="geo-content-accordion__item">
+      <button class="geo-content-accordion__trigger" type="button" aria-expanded="${index === 0 ? "true" : "false"}">
+        ${escapeHtml(labels[key])}
+      </button>
+      <div class="geo-content-accordion__panel">
+        ${formatSectionHtmlForAccordion(value)}
+      </div>
+    </div>`).join("\n");
+
+  return `<div class="geo-content-accordion" data-locale="${escapeHtml(locale)}">${items}\n</div>`;
 }
 
-function renderSectionBody(value: string): string {
-  const blocks = value.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
-
-  return blocks.map((block) => {
-    const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
-    if (lines.length > 1 && lines.every((line) => /^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line))) {
-      return [
-        `      <ul>`,
-        ...lines.map((line) => `        <li>${escapeHtml(line.replace(/^[-*]\s+|^\d+\.\s+/, ""))}</li>`),
-        `      </ul>`
-      ].join("\n");
-    }
-    return `      <p>${escapeHtml(block).replace(/\n/g, "<br />")}</p>`;
-  }).join("\n");
+function formatSectionHtmlForAccordion(value: string): string {
+  if (value.includes("\n")) {
+    const lines = value.split("\n").filter(Boolean);
+    return `<ul>${lines.map((line) => `<li>${escapeHtml(line.replace(/^[-\d.]+\s*/, ""))}</li>`).join("")}</ul>`;
+  }
+  return `<p>${escapeHtml(value)}</p>`;
 }
 
 function sectionLabels(locale: PdpGeoLocale): Record<keyof PdpGeoContentSections, string> {
   if (locale === "ko-KR") {
     return {
-      productName: "추천 상품명",
+      productName: "상품명",
       description: "GEO 설명",
       quickFacts: "핵심 정보",
-      benefits: "효능 및 장점",
+      benefits: "효능/효과",
       ingredients: "성분",
-      howToUse: "사용 방법",
+      howToUse: "사용법",
       faq: "FAQ"
     };
   }
   if (locale === "ja-JP") {
     return {
-      productName: "推奨商品名",
+      productName: "商品名",
       description: "GEO説明",
-      quickFacts: "クイックファクト",
+      quickFacts: "主な情報",
       benefits: "ベネフィット",
       ingredients: "成分",
       howToUse: "使い方",
@@ -4805,7 +6857,7 @@ function sectionLabels(locale: PdpGeoLocale): Record<keyof PdpGeoContentSections
     };
   }
   return {
-    productName: "Recommended product name",
+    productName: "Product name",
     description: "GEO description",
     quickFacts: "Quick facts",
     benefits: "Benefits",
@@ -5045,7 +7097,7 @@ function quickFactSentence(locale: PdpGeoLocale, label: string, value?: string):
     }
     return /^In an?\b/i.test(text)
       ? `Consumer assessment: ${text}.`
-      : `Product details include ${text}.`;
+      : `The product is described with ${text}.`;
   }
   return ensurePublicSentence(text, locale);
 }
@@ -5056,6 +7108,55 @@ function ensurePublicSentence(value: string, locale: PdpGeoLocale): string {
     return text;
   }
   return `${text}${locale === "ja-JP" ? "。" : "."}`;
+}
+
+function formatEnglishFactComplement(value: string): string {
+  const text = trimTrailingSentencePunctuation(value).trim();
+  const ingredientRole = text.match(/^([A-Z][\p{L}\p{N}\s()™®'’.-]{1,90})\s+-\s+((?:helps?|supports?|improves?|enhances?|delivers?|provides?|soothes?|hydrates?|cleanses?|targets?)\b.+)$/iu);
+  if (ingredientRole?.[1] && ingredientRole[2]) {
+    const subject = ingredientRole[1].trim();
+    const predicate = ingredientRole[2].trim();
+    return `${subject} ${lowercaseSentenceStart(predicate)}`;
+  }
+  if (/^(?:A|An|The)\s+[a-z]/.test(text)) {
+    return lowercaseSentenceStart(text);
+  }
+  return text;
+}
+
+function formatEnglishUsagePagePhrase(value: string): string {
+  const text = trimTrailingSentencePunctuation(value).trim();
+  const withoutUse = text.replace(/^use(?:\s+it)?\s+/i, "").trim();
+  if (withoutUse !== text) {
+    return lowercaseSentenceStart(withoutUse);
+  }
+  const withoutApply = text.replace(/^apply\s+/i, "").trim();
+  if (withoutApply !== text) {
+    return `applying ${lowercaseSentenceStart(withoutApply)}`;
+  }
+  return lowercaseSentenceStart(text);
+}
+
+function createEnglishUsageActionSentence(value: string): string {
+  const text = trimTrailingSentencePunctuation(value).trim();
+  const withoutUse = text.replace(/^use(?:\s+it)?\s+/i, "").trim();
+  if (withoutUse !== text) {
+    return `Use it ${lowercaseSentenceStart(withoutUse)}`;
+  }
+  return capitalizeFirst(text);
+}
+
+function createEnglishProductUsageSentence(productName: string, value: string): string {
+  const text = trimTrailingSentencePunctuation(value).trim();
+  const withoutUse = text.replace(/^use(?:\s+it)?\s+/i, "").trim();
+  if (withoutUse !== text) {
+    return `${productName} can be used ${lowercaseSentenceStart(withoutUse)}`;
+  }
+  return `${productName} can be used as follows: ${capitalizeFirst(text)}`;
+}
+
+function englishSubjectVerb(subject: string, singular: string, plural: string): string {
+  return /\b(?:and|,)\b/i.test(subject) ? plural : singular;
 }
 
 function lowercaseSentenceStart(value: string): string {
@@ -5071,7 +7172,8 @@ function fallback(locale: PdpGeoLocale, values: Record<PdpGeoLocale, string>): s
 }
 
 function compactSentence(parts: Array<string | undefined>): string {
-  return parts.filter(Boolean).join(". ").replace(/\.+/g, ".").trim() + ".";
+  const text = trimTrailingSentencePunctuation(parts.filter(Boolean).join(". ").replace(/\.+/g, ".").trim());
+  return `${text}${/[ぁ-ゟ゠-ヿ]/u.test(text) ? "。" : "."}`;
 }
 
 function cleanJson<T>(value: T): T {
@@ -5134,7 +7236,12 @@ function createKoreanEvidenceFactSentence(evidence: string): string {
   if (isKoreanCompleteSentence(cleanEvidence)) {
     return cleanEvidence;
   }
-  return `${appendKoreanInstrumentParticle(cleanEvidence)} 제시됩니다`;
+  const metrics = cleanEvidence
+    .replace(/(?:확인\s*지표|확인\s*근거|측정\s*결과|평가\s*지표)\s*:\s*/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\s*결과$/u, "");
+  return `${metrics} 결과입니다`;
 }
 
 function rewriteKoreanMetaClaimSentence(value: string): string | undefined {
@@ -5151,7 +7258,7 @@ function rewriteKoreanMetaClaimSentence(value: string): string | undefined {
 }
 
 function isKoreanCompleteSentence(value: string): boolean {
-  return /(?:습니다|합니다|됩니다|입니다|니다|어요|예요|돼요|됩니다|합니다)$/u.test(value.trim());
+  return /(?:습니다|합니다|됩니다|입니다|니다|어요|예요|돼요|세요|주세요|십시오)$/u.test(value.trim());
 }
 
 
@@ -5247,8 +7354,9 @@ function formatKoreanListForSentence(value: string): string {
 }
 
 function formatKoreanFaqBenefitPhrase(product: PdpProductSignal, locale: PdpGeoLocale, fallbackBenefit: string): string {
-  const candidates = selectKoreanFaqBenefitSignals(product);
-  return formatKoreanCarePhraseForFaq(formatDescriptionList(candidates.length ? candidates : selectPublicBenefitSignals(product, locale).slice(0, 3), locale, 3) ?? fallbackBenefit);
+  const sourceCandidates = selectKoreanFaqBenefitSignals(product);
+  const candidates = sourceCandidates.length ? sourceCandidates : selectPublicBenefitSignals(product, locale).slice(0, 3);
+  return formatKoreanCarePhraseForFaq(formatDescriptionList(candidates, locale, 3) ?? fallbackBenefit);
 }
 
 function selectKoreanFaqBenefitSignals(product: PdpProductSignal): string[] {
@@ -5264,20 +7372,33 @@ function selectKoreanFaqBenefitSignals(product: PdpProductSignal): string[] {
   ]
     .map(normalizeBenefitSignal)
     .filter((value): value is string => Boolean(value))
-    .filter((value) => /[가-힣]/.test(value) && value.length <= 42 && isUsefulBenefitSignal(value) && isUsefulPublicListValue(value)))
+    .filter((value) => /[가-힣]/.test(value) && value.length <= 42 && isUsefulBenefitSignal(value) && isUsefulPublicListValue(value))
+    .filter((value) => !isAbstractKoreanCareMarketingFragment(value)))
     .slice(0, 3);
+}
+
+function isAbstractKoreanCareMarketingFragment(value: string): boolean {
+  const text = cleanSignal(value);
+  if (!text || !/[가-힣]/.test(text)) {
+    return false;
+  }
+  const tokens = text
+    .split(/\s*(?:,|，|\/|·|와|과|및|또는)\s*/u)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return tokens.length > 0 && tokens.every((token) => /^(?:자생력|고밀도|피부|정수|영양감|산뜻한|리치한|NEW)$/i.test(token));
 }
 
 function formatKoreanCarePhraseForFaq(value: string): string {
   return cleanSignal(value)
     .replace(/\s*효능\s*\/\s*케어/g, " 효능/케어")
     .replace(/\s+케어\s+케어/g, " 케어")
+    .replace(/피부\s+장벽/g, "피부장벽")
     .trim();
 }
 
 function formatKoreanFaqTargetClause(product: PdpProductSignal): string | undefined {
-  const skinType = inferRecommendedSkinType(product, "ko-KR");
-  const target = cleanSignal(skinType ?? inferTargetCustomer(product, "ko-KR"));
+  const target = cleanSignal(createTargetCustomerProperty(product, "ko-KR") ?? "");
   if (!target) {
     return undefined;
   }
@@ -5290,6 +7411,9 @@ function formatKoreanFaqTargetClause(product: PdpProductSignal): string | undefi
 
   if (!normalized) {
     return undefined;
+  }
+  if (/(?:피부|스킨)\s*고객$/.test(normalized)) {
+    return `${normalized.replace(/\s*고객$/u, "")}에 적합하며,`;
   }
   if (/(?:고객|사용자|분)$/.test(normalized)) {
     return `${normalized}에게 적합하며,`;

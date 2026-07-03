@@ -36,6 +36,7 @@ interface ModelBackedProductNormalizerConfig {
 
 const defaultMaxRagDocuments = 8;
 const defaultMaxSourceCharacters = 35_000;
+const PRODUCT_NORMALIZATION_TIMEOUT_MS = 300_000;
 
 export async function normalizePdpProductWithAgent(
   request: PdpGeoProductNormalizationRequest,
@@ -134,7 +135,7 @@ export class ModelBackedProductNormalizer implements PdpGeoProductNormalizer {
     }
 
     const prompt = createProductNormalizationPrompt(request, this.config.maxSourceCharacters);
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetchWithTimeout("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.config.apiKey}`,
@@ -145,7 +146,7 @@ export class ModelBackedProductNormalizer implements PdpGeoProductNormalizer {
         instructions: prompt.system,
         input: prompt.user
       })
-    });
+    }, PRODUCT_NORMALIZATION_TIMEOUT_MS, "OpenAI product normalization");
 
     if (!response.ok) {
       throw new Error(`OpenAI product normalization failed: ${response.status}`);
@@ -165,7 +166,7 @@ export class ModelBackedProductNormalizer implements PdpGeoProductNormalizer {
     }
 
     const prompt = createProductNormalizationPrompt(request, this.config.maxSourceCharacters);
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${this.config.model}:generateContent`, {
+    const response = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${this.config.model}:generateContent`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -175,7 +176,7 @@ export class ModelBackedProductNormalizer implements PdpGeoProductNormalizer {
         systemInstruction: { parts: [{ text: prompt.system }] },
         contents: [{ role: "user", parts: [{ text: prompt.user }] }]
       })
-    });
+    }, PRODUCT_NORMALIZATION_TIMEOUT_MS, "Gemini product normalization");
 
     if (!response.ok) {
       throw new Error(`Gemini product normalization failed: ${response.status}`);
@@ -201,7 +202,7 @@ export class ModelBackedProductNormalizer implements PdpGeoProductNormalizer {
     const endpoint = this.config.endpoint.replace(/\/$/, "");
     const url = `${endpoint}/openai/deployments/${this.config.deployment}/chat/completions?api-version=${apiVersion}`;
     const prompt = createProductNormalizationPrompt(request, this.config.maxSourceCharacters);
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -214,7 +215,7 @@ export class ModelBackedProductNormalizer implements PdpGeoProductNormalizer {
         ],
         ...temperatureBody(this.config.temperature)
       })
-    });
+    }, PRODUCT_NORMALIZATION_TIMEOUT_MS, "Azure product normalization");
 
     if (!response.ok) {
       throw new Error(`Azure product normalization failed: ${response.status}`);
@@ -268,6 +269,9 @@ function createProductNormalizationPrompt(request: PdpGeoProductNormalizationReq
       "Prefer complete source-backed sentences over isolated tokens. Keep ingredient, benefit, effect, usage, FAQ, review, metric, and sourceTexts fields separated.",
       "Route fields by evidence role before returning ProductSignal: usage must be actionable customer directions, ingredients must be ingredient/formula/full-INCI evidence, benefits/effects must be outcomes or supported results, reviews must be customer language, and metrics must be measured or countable evidence.",
       "Do not put a product-result sentence, clinical metric, review summary, or ingredient explanation into usage just because it mentions timing or the current product.",
+      "Normalize product identity into a representative product entity and a SKU/variant layer: preserve source-backed bracketed names, small-size labels, volume, option names, and SKU names in originalName/options/sourceTexts; keep the main product name concise when the source clearly separates brand, representative product, and variant.",
+      "For prices, preserve the price that is closest to the current SKU/volume/option evidence. Do not mix a full-size offer price into a small-size SKU when the source contains a nearer option-specific price.",
+      "For FAQ, keep complete source-backed question/answer pairs across benefit, ingredient/technology, usage, review, suitability, evidence, variant comparison, routine synergy, renewal, and purchase context when those intents appear in the raw PDP.",
       "Use RAG policy to resolve overlaps: commerce UI, coupon, delivery, exchange, refund, return, legal, and page chrome text must not become product benefits.",
       "If the bootstrap value is safer or better supported than your inferred value, return the bootstrap value or omit the field.",
       "Keep arrays concise and deduplicated. Keep product facts close to source wording."
@@ -711,4 +715,45 @@ function uniqueBy<T>(items: T[], getKey: (item: T) => string): T[] {
     result.push(item);
   }
   return result;
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, label: string): Promise<Response> {
+  const { signal, cancel } = createTimeoutSignal(timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...init,
+      signal
+    });
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s.`);
+    }
+    throw error;
+  } finally {
+    cancel();
+  }
+}
+
+function createTimeoutSignal(timeoutMs: number): { signal: AbortSignal; cancel: () => void } {
+  if (typeof AbortSignal.timeout === "function") {
+    return {
+      signal: AbortSignal.timeout(timeoutMs),
+      cancel: () => {}
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    cancel: () => clearTimeout(timeout)
+  };
+}
+
+function isAbortError(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "name" in error
+    && (error as { name?: unknown }).name === "AbortError";
 }

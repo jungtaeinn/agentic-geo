@@ -29,7 +29,7 @@ interface ModelBackedKeywordNormalizerConfig {
   temperature?: number;
 }
 
-const CHAT_COMPLETIONS_TIMEOUT_MS = 60_000;
+const CHAT_COMPLETIONS_TIMEOUT_MS = 300_000;
 const defaultConfidenceThreshold = 0.78;
 const defaultMaxKeywords = 16;
 
@@ -132,7 +132,7 @@ export class ModelBackedKeywordNormalizer implements PdpGeoKeywordNormalizer {
     }
 
     const prompt = createKeywordNormalizationPrompt(request);
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetchWithTimeout("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.config.apiKey}`,
@@ -143,7 +143,7 @@ export class ModelBackedKeywordNormalizer implements PdpGeoKeywordNormalizer {
         instructions: prompt.system,
         input: prompt.user
       })
-    });
+    }, CHAT_COMPLETIONS_TIMEOUT_MS, "OpenAI keyword normalization");
 
     if (!response.ok) {
       throw new Error(`OpenAI keyword normalization failed: ${response.status}`);
@@ -163,7 +163,7 @@ export class ModelBackedKeywordNormalizer implements PdpGeoKeywordNormalizer {
     }
 
     const prompt = createKeywordNormalizationPrompt(request);
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${this.config.model}:generateContent`, {
+    const response = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${this.config.model}:generateContent`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -173,7 +173,7 @@ export class ModelBackedKeywordNormalizer implements PdpGeoKeywordNormalizer {
         systemInstruction: { parts: [{ text: prompt.system }] },
         contents: [{ role: "user", parts: [{ text: prompt.user }] }]
       })
-    });
+    }, CHAT_COMPLETIONS_TIMEOUT_MS, "Gemini keyword normalization");
 
     if (!response.ok) {
       throw new Error(`Gemini keyword normalization failed: ${response.status}`);

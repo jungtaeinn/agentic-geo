@@ -56,6 +56,7 @@ type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
 const defaultMaxRagDocuments = 8;
 const defaultMaxSourceCharacters = 35_000;
+const PRODUCT_PROFILE_NORMALIZATION_TIMEOUT_MS = 300_000;
 
 export async function normalizeExtractorProductProfileWithAgent(
   request: ProductExtractorProductNormalizationRequest,
@@ -154,7 +155,7 @@ export class ModelBackedProductProfileNormalizer implements ProductExtractorProd
     }
 
     const prompt = createProductProfileNormalizationPrompt(request, this.config.maxSourceCharacters);
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetchWithTimeout("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.config.apiKey}`,
@@ -165,7 +166,7 @@ export class ModelBackedProductProfileNormalizer implements ProductExtractorProd
         instructions: prompt.system,
         input: prompt.user
       })
-    });
+    }, PRODUCT_PROFILE_NORMALIZATION_TIMEOUT_MS, "OpenAI product profile normalization");
 
     if (!response.ok) {
       throw new Error(`OpenAI product profile normalization failed: ${response.status}`);
@@ -185,7 +186,7 @@ export class ModelBackedProductProfileNormalizer implements ProductExtractorProd
     }
 
     const prompt = createProductProfileNormalizationPrompt(request, this.config.maxSourceCharacters);
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${this.config.model}:generateContent`, {
+    const response = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${this.config.model}:generateContent`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -195,7 +196,7 @@ export class ModelBackedProductProfileNormalizer implements ProductExtractorProd
         systemInstruction: { parts: [{ text: prompt.system }] },
         contents: [{ role: "user", parts: [{ text: prompt.user }] }]
       })
-    });
+    }, PRODUCT_PROFILE_NORMALIZATION_TIMEOUT_MS, "Gemini product profile normalization");
 
     if (!response.ok) {
       throw new Error(`Gemini product profile normalization failed: ${response.status}`);
@@ -221,7 +222,7 @@ export class ModelBackedProductProfileNormalizer implements ProductExtractorProd
     const endpoint = this.config.endpoint.replace(/\/$/, "");
     const url = `${endpoint}/openai/deployments/${this.config.deployment}/chat/completions?api-version=${apiVersion}`;
     const prompt = createProductProfileNormalizationPrompt(request, this.config.maxSourceCharacters);
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -234,7 +235,7 @@ export class ModelBackedProductProfileNormalizer implements ProductExtractorProd
         ],
         ...temperatureBody(this.config.temperature)
       })
-    });
+    }, PRODUCT_PROFILE_NORMALIZATION_TIMEOUT_MS, "Azure product profile normalization");
 
     if (!response.ok) {
       throw new Error(`Azure product profile normalization failed: ${response.status}`);
@@ -287,6 +288,7 @@ function createProductProfileNormalizationPrompt(
       "Return strict JSON only: {\"product\":{},\"warnings\":[]}.",
       "Infer ProductProfile fields from raw source data, bootstrap ProductProfile, and RAG policy documents.",
       "Your job is source-backed field routing, not public copywriting.",
+      "Keep brand as a separate ProductProfile.brand field when source data identifies a maker/brand; do not merge SKU option labels into brand.",
       "Use source product data only. Do not invent claims, ingredients, effects, prices, reviews, metrics, awards, or certifications.",
       "Prefer complete source-backed sentences over isolated tokens. Keep benefit, effect, ingredient, usage, FAQ, metric, option, and image fields separated.",
       "Use RAG policy to resolve overlaps: commerce UI, coupon, delivery, exchange, refund, return, legal, and page chrome text must not become product evidence.",
@@ -347,6 +349,7 @@ function applyProductProfileNormalization(
   };
 
   applyStringField(next, "name", incoming.name, sourceCorpus, changedFields, warnings);
+  applyStringField(next, "brand", incoming.brand, sourceCorpus, changedFields, warnings);
   applyStringField(next, "description", incoming.description, sourceCorpus, changedFields, warnings);
   applyStringField(next, "price", incoming.price, sourceCorpus, changedFields, warnings);
   applyStringField(next, "currency", incoming.currency, sourceCorpus, changedFields, warnings);
@@ -401,7 +404,7 @@ function applyProductProfileNormalization(
   };
 }
 
-function applyStringField<T extends keyof Pick<ProductProfile, "name" | "description" | "price" | "currency">>(
+function applyStringField<T extends keyof Pick<ProductProfile, "name" | "brand" | "description" | "price" | "currency">>(
   product: ProductProfile,
   field: T,
   value: unknown,
@@ -526,6 +529,7 @@ function createSourceCorpus(rawSource: unknown, bootstrapProduct: ProductProfile
   return unique([
     ...flattenTextValues(rawSource),
     bootstrapProduct.name,
+    bootstrapProduct.brand,
     bootstrapProduct.price,
     bootstrapProduct.currency,
     bootstrapProduct.description,
@@ -685,4 +689,45 @@ function uniqueBy<T>(items: T[], getKey: (item: T) => string): T[] {
     result.push(item);
   }
   return result;
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, label: string): Promise<Response> {
+  const { signal, cancel } = createTimeoutSignal(timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...init,
+      signal
+    });
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s.`);
+    }
+    throw error;
+  } finally {
+    cancel();
+  }
+}
+
+function createTimeoutSignal(timeoutMs: number): { signal: AbortSignal; cancel: () => void } {
+  if (typeof AbortSignal.timeout === "function") {
+    return {
+      signal: AbortSignal.timeout(timeoutMs),
+      cancel: () => {}
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    cancel: () => clearTimeout(timeout)
+  };
+}
+
+function isAbortError(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "name" in error
+    && (error as { name?: unknown }).name === "AbortError";
 }

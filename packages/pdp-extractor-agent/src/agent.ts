@@ -231,6 +231,11 @@ export async function extractProductFromHtml(
   const selectedName = selectProductName($, source, productNode, clientStateData);
   const name = selectedName?.value ?? "Untitled product";
   evidence.push({ field: "product.name", source: selectedName?.source ?? "dom", value: name });
+  const selectedBrand = selectProductBrand($, productNode, clientStateData, name);
+  const brand = selectedBrand?.value;
+  if (brand) {
+    evidence.push({ field: "product.brand", source: selectedBrand?.source ?? "dom", value: brand });
+  }
   const embeddedProductTextBlocks = extractEmbeddedProductTextBlocks($, source, name);
 
   removePageChrome($);
@@ -279,6 +284,7 @@ export async function extractProductFromHtml(
   const faq = extractFaq($, faqNode);
   let productBase: ProductProfile = {
     name,
+    brand,
     price,
     currency,
     description,
@@ -437,6 +443,7 @@ async function extractProductFromApiPayload(
   ];
   let product: ProductProfile = {
     name: stringValue(productSource.name) ?? stringValue(productSource.productName) ?? stringValue(productSource.title) ?? "Untitled product",
+    brand: productBrandFromValue(productSource.brand) ?? productBrandFromValue(productSource.vendor) ?? productBrandFromValue(productSource.manufacturer) ?? productBrandFromValue(productSource.maker),
     price: stringValue(productSource.price) ?? stringValue(firstVariant?.price) ?? stringValue(firstObject(productSource.offers)?.price),
     currency: stringValue(productSource.currency) ?? stringValue(firstObject(productSource.offers)?.priceCurrency),
     description,
@@ -644,6 +651,7 @@ interface ClientStateProductData {
   images: string[];
   options: string[];
   name?: string;
+  brand?: string;
   description?: string;
   price?: string;
   currency?: string;
@@ -1039,6 +1047,166 @@ function selectProductName(
   return best;
 }
 
+function selectProductBrand(
+  $: ReturnType<typeof load>,
+  productNode: Record<string, unknown> | undefined,
+  clientStateData: ClientStateProductData,
+  productName: string
+): ProductTextCandidate | undefined {
+  const domBrand = selectDomBrandCandidate($, productName);
+  const candidates: ProductTextCandidate[] = [
+    { value: productBrandFromValue(productNode?.brand), source: "jsonLd", priority: 94 },
+    { value: clientStateData.brand, source: "dom", priority: 90 },
+    { value: meta($, "product:brand"), source: "meta", priority: 88 },
+    { value: meta($, "brand"), source: "meta", priority: 84 },
+    { value: meta($, "og:brand"), source: "meta", priority: 82 },
+    domBrand ? { value: domBrand, source: "dom", priority: 80 } : { value: undefined, source: "dom", priority: 0 },
+    { value: bracketBrandCandidateFromProductName(productName), source: "dom", priority: 62 }
+  ];
+  let best: ProductTextCandidate | undefined;
+  let bestScore = Number.NEGATIVE_INFINITY;
+
+  for (const candidate of candidates) {
+    const value = cleanBrandCandidate(candidate.value, productName);
+    if (!value || !isLikelyBrandName(value, productName)) {
+      continue;
+    }
+
+    const score = candidate.priority + scoreBrandCandidate(value, productName);
+    if (score > bestScore) {
+      best = { ...candidate, value };
+      bestScore = score;
+    }
+  }
+
+  return best;
+}
+
+function productBrandFromValue(value: unknown): string | undefined {
+  const direct = stringValue(value);
+  if (direct) {
+    return direct;
+  }
+  if (Array.isArray(value)) {
+    return firstDefined(value.map(productBrandFromValue));
+  }
+  if (isRecord(value)) {
+    return firstDefined([
+      stringValue(value.name),
+      stringValue(value.brandName),
+      stringValue(value.brandNm),
+      stringValue(value.title),
+      stringValue(value.label)
+    ]);
+  }
+  return undefined;
+}
+
+function selectDomBrandCandidate($: ReturnType<typeof load>, productName: string): string | undefined {
+  const candidates = [
+    ...$("a[href*='brand'], a[href*='Brand'], a[href*='brands'], [class*='brand'], [class*='Brand'], [data-brand], [data-brand-name]")
+      .toArray()
+      .flatMap((node) => [
+        cleanText($(node).text()),
+        cleanText($(node).attr("data-brand") ?? ""),
+        cleanText($(node).attr("data-brand-name") ?? ""),
+        cleanText($(node).attr("aria-label") ?? "")
+      ]),
+    ...$("script[type='application/ld+json']").toArray().flatMap((node) => {
+      const parsed = parseJsonText($(node).text());
+      return parsed === undefined ? [] : [productBrandFromValue(readNestedBrandValue(parsed))];
+    })
+  ].filter((value): value is string => Boolean(value));
+
+  return candidates
+    .map((value) => cleanBrandCandidate(value, productName))
+    .filter((value): value is string => value !== undefined && isLikelyBrandName(value, productName))
+    .sort((a, b) => scoreBrandCandidate(b, productName) - scoreBrandCandidate(a, productName))[0];
+}
+
+function readNestedBrandValue(value: unknown, depth = 0): unknown {
+  if (depth > 4 || !isRecord(value) && !Array.isArray(value)) {
+    return undefined;
+  }
+  if (Array.isArray(value)) {
+    for (const child of value) {
+      const found = readNestedBrandValue(child, depth + 1);
+      if (found !== undefined) {
+        return found;
+      }
+    }
+    return undefined;
+  }
+  if (value.brand !== undefined) {
+    return value.brand;
+  }
+  for (const child of Object.values(value)) {
+    const found = readNestedBrandValue(child, depth + 1);
+    if (found !== undefined) {
+      return found;
+    }
+  }
+  return undefined;
+}
+
+function bracketBrandCandidateFromProductName(productName: string): string | undefined {
+  const tokens = Array.from(cleanText(productName).matchAll(/\[([^\]]{1,36})\]/g))
+    .map((match) => cleanText(match[1] ?? ""))
+    .filter(Boolean);
+  if (tokens.length < 2) {
+    return undefined;
+  }
+  const candidate = tokens[0];
+  return candidate && !isSkuOrCommerceQualifier(candidate) ? candidate : undefined;
+}
+
+function cleanBrandCandidate(value: string | undefined, productName: string): string | undefined {
+  const text = cleanText(value ?? "")
+    .replace(/\s+\|\s+.*$/, "")
+    .replace(/\s+[–—-]\s+.*$/, "")
+    .replace(/^brand\s*[:：]\s*/i, "")
+    .trim();
+  if (!text || text.length > 60 || normalizeFingerprint(text) === normalizeFingerprint(productName)) {
+    return undefined;
+  }
+  return text;
+}
+
+function isLikelyBrandName(value: string, productName: string): boolean {
+  const text = cleanText(value);
+  if (text.length < 2 || text.length > 60 || isNonProductCommerceText(text) || isReviewEvidenceText(text) || isSkuOrCommerceQualifier(text)) {
+    return false;
+  }
+  const normalized = normalizeFingerprint(text);
+  if (!normalized || normalized === normalizeFingerprint(productName)) {
+    return false;
+  }
+  if (/^(?:brand|brands?|manufacturer|maker|vendor|seller|store|shop|category|home|product|상품|브랜드|제조사|판매자)$/i.test(text)) {
+    return false;
+  }
+  return true;
+}
+
+function isSkuOrCommerceQualifier(value: string): boolean {
+  return /\d+(?:\.\d+)?\s*(?:ml|mL|g|oz|fl\.?\s*oz|매|개|입)|%|\+|[₩$€£¥]|(?:^|[\s-])(?:set|kit|bundle|refill|mini|trial|sample|gift|limited|special|online|exclusive|new|best|sale|coupon|discount)(?:$|[\s-])|(?:소용량|대용량|리필|기획|세트|증정|한정|온라인|단독|할인|쿠폰)/i.test(cleanText(value));
+}
+
+function scoreBrandCandidate(value: string, productName: string): number {
+  const normalized = normalizeFingerprint(value);
+  const normalizedName = normalizeFingerprint(productName);
+  let score = 0;
+  if (normalizedName.includes(normalized)) {
+    score += 16;
+  }
+  if (/^[\p{L}\p{N}\s&'.-]+$/u.test(value)) {
+    score += 4;
+  }
+  if (value.length <= 24) {
+    score += 3;
+  }
+  return score;
+}
+
 function productNameCandidateFromHandle(
   handle: string | undefined,
   candidates: ProductTextCandidate[]
@@ -1308,6 +1476,7 @@ function extractClientStateProductData($: ReturnType<typeof load>, source: strin
     images: scopedImages.length > 0 ? scopedImages : unique(productRecords.flatMap((record) => readClientStateImages(record, source))),
     options: (scopedOptions.length > 0 ? scopedOptions : unique(productRecords.flatMap(readClientStateOptions)).filter(isProductOptionText)).slice(0, 12),
     name: firstStringFromRecords(scopedProductRecords, ["onlineProdName", "productName", "prodName", "name", "title"], isLikelyProductName),
+    brand: firstBrandFromRecords(scopedProductRecords) ?? firstBrandFromRecords(productRecords),
     description: firstStringFromRecords(scopedProductRecords, ["linePromoDesc", "description", "desc", "summary", "shortDescription"], (text) =>
       text.length >= 20 && hasProductCareSignal(text) && !isReviewEvidenceText(text)
     ),
@@ -1603,6 +1772,24 @@ function firstStringFromRecords(
   }
 
   return undefined;
+}
+
+function firstBrandFromRecords(records: Array<Record<string, unknown>>): string | undefined {
+  for (const record of records) {
+    const candidate = firstDefined([
+      productBrandFromValue(firstKnownValue(record, ["brand", "brandName", "brandNm", "brndName", "brndNm"])),
+      productBrandFromValue(firstKnownValue(record, ["manufacturer", "manufacturerName", "maker", "vendor"]))
+    ]);
+    if (candidate && isLikelyBrandName(candidate, firstStringFromRecords([record], ["onlineProdName", "productName", "prodName", "name", "title"]) ?? "")) {
+      return cleanText(candidate);
+    }
+  }
+
+  return undefined;
+}
+
+function firstDefined<T>(values: Array<T | undefined>): T | undefined {
+  return values.find((value): value is T => value !== undefined);
 }
 
 function isLikelyProductName(text: string): boolean {
@@ -4342,6 +4529,7 @@ function createGeoProductRawData(
   const ocrSentenceSignals = createSentenceSignalBuckets(productOcrEvidence.flatMap((item) => item.sentenceInsights));
   const productTexts = [
     product.name,
+    product.brand,
     product.price,
     product.description,
     ...product.benefits,
@@ -4407,6 +4595,7 @@ function createGeoProductRawData(
 
   return {
     name: product.name,
+    brand: product.brand,
     price: product.price
       ? {
           raw: product.price,

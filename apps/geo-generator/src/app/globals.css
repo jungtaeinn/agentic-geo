@@ -2726,6 +2726,11 @@ button:disabled {
 }
 
 .settingsActions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 64px;
   min-height: 32px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -2736,12 +2741,34 @@ button:disabled {
   font-weight: 650;
   line-height: 1;
   white-space: nowrap;
+  transition: transform 120ms ease, border-color 160ms ease, background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.settingsActions button:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+.settingsActions button svg {
+  flex: 0 0 auto;
 }
 
 .settingsActions button.primary {
   border-color: rgba(244, 242, 238, 0.18);
   background: #f4f2ee;
   color: #1e1e1e;
+}
+
+.settingsActions button.confirmed {
+  border-color: rgba(106, 220, 145, 0.62);
+  background: rgba(106, 220, 145, 0.16);
+  color: #eafff0;
+  box-shadow: 0 0 0 3px rgba(106, 220, 145, 0.12);
+}
+
+.settingsActions button.primary.confirmed {
+  border-color: rgba(106, 220, 145, 0.72);
+  background: #bdf4cd;
+  color: #102719;
 }
 
 .settingsActions button:disabled {
