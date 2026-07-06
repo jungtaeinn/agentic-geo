@@ -7825,8 +7825,8 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
   const breadcrumbCount = Math.max(countSchemaItems(breadcrumbNode?.["itemListElement"]), diagnostics.normalizedProduct.breadcrumbs.length);
   const additionalPropertyCount = countSchemaItems(productNode?.["additionalProperty"]);
   const positiveNotesCount = countSchemaItems(productNode?.["positiveNotes"]);
-  const validationWarnings = diagnostics.validationWarnings.length;
   const validationRepairs = diagnostics.validationRepairs?.length ?? 0;
+  const validationWarnings = Math.max(0, diagnostics.validationWarnings.length - validationRepairs);
   const validationDetailLines = collectValidationDetailLines(diagnostics, copy);
   const validationImprovementDirections = collectValidationImprovementLines(diagnostics, copy);
   const artifactHits = collectPublicArtifactHits(publicText, faqQuestions, language);
@@ -7844,6 +7844,8 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
   const hasClaimMetrics = /(?:\+\d+(?:\.\d+)?%|\b\d{2,3}%\b)/.test(publicText);
   const hasStudySample = /\b\d{2,4}\s+(?:women|men|participants|subjects|users|respondents|people)\b/i.test(publicText)
     || /(?:^|[^\d])\d{2,4}\s*(?:명|인|참여자|대상|사용자|응답자|여성|남성)(?=$|[^\p{L}\p{N}])/u.test(publicText);
+  const hasSampleScopeDisclosure = hasReportedSampleScopeDisclosure(publicText);
+  const hasSampleScope = hasStudySample || hasSampleScopeDisclosure;
   const hasTimeScope = /\b(?:after\s+)?\d+\s*(?:day|days|week|weeks|hour|hours)\b/i.test(publicText)
     || /\b\d+(?:\.\d+)?\s*(?:시간|일|주)\s*(?:후|동안|뒤)?\b/.test(publicText)
     || /(?:사용|도포|세정)\s*(?:직후|전|\d+(?:\.\d+)?\s*(?:시간|일|주)\s*후)/.test(publicText)
@@ -7887,7 +7889,7 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
     + Math.min(10, diagnostics.evidence.length)
     + Math.min(8, diagnostics.selectedRagChunks.length)
     + (hasClaimMetrics ? 8 : 0)
-    + (hasStudySample ? 8 : 0)
+    + (hasStudySample ? 8 : hasSampleScopeDisclosure ? 4 : 0)
     + (hasTimeScope ? 5 : 0)
     + (hasReportedDetails ? 4 : 0)
     + (evidenceBackedUsage ? 6 : 0)
@@ -7914,7 +7916,7 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
   const eeatEvidence = uniqueQualityItems([
     copy.eeatEvidenceCount(diagnostics.evidence.length, diagnostics.selectedRagChunks.length),
     hasClaimMetrics ? copy.eeatMetricEvidence : copy.eeatMetricMissingEvidence,
-    hasStudySample || hasTimeScope ? copy.eeatStudyEvidence(hasStudySample, hasTimeScope) : copy.eeatStudyMissingEvidence,
+    hasSampleScope || hasTimeScope ? copy.eeatStudyEvidence(hasSampleScope, hasTimeScope) : copy.eeatStudyMissingEvidence,
     evidenceBackedUsage ? copy.eeatRagEvidence : undefined,
     validationWarnings > 0 ? copy.warningEvidence(validationWarnings) : copy.cleanValidationEvidence
   ]);
@@ -7937,7 +7939,7 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
   ], copy.cepFallbackImprovement);
   const eeatImprovements = ensureQualityItems([
     ...metricIssues,
-    !hasStudySample ? copy.eeatSampleImprovement : undefined,
+    !hasSampleScope ? copy.eeatSampleImprovement : undefined,
     !hasTimeScope ? copy.eeatTimeImprovement : undefined,
     !evidenceBackedUsage ? copy.eeatRagImprovement : undefined,
     validationWarnings > 0 ? copy.validationImprovement(validationWarnings) : undefined,
@@ -8131,7 +8133,7 @@ function getGeoQualityCopy(language: UiLanguage) {
       eeatEvidenceCount: (evidence: number, chunks: number) => `근거 ${evidence}개와 RAG chunk ${chunks}개를 사용`,
       eeatMetricEvidence: "퍼센트/개선율 등 수치 클레임을 포함",
       eeatMetricMissingEvidence: "수치 클레임이 부족하거나 명확하지 않음",
-      eeatStudyEvidence: (sample: boolean, time: boolean) => `근거 조건 확인: 표본 ${sample ? "있음" : "없음"}, 기간 ${time ? "있음" : "없음"}`,
+      eeatStudyEvidence: (sample: boolean, time: boolean) => `근거 조건 확인: 표본/대상 범위 ${sample ? "명시" : "없음"}, 기간 ${time ? "있음" : "없음"}`,
       eeatStudyMissingEvidence: "표본 수 또는 사용 기간 근거가 부족함",
       eeatRagEvidence: "evidence-backed claims 원칙의 RAG 근거를 사용",
       missingProductSchema: "Product 스키마가 없으면 상품 엔티티를 우선 보강하세요.",
@@ -8152,7 +8154,7 @@ function getGeoQualityCopy(language: UiLanguage) {
       cepChoiceImprovement: "피부 타입, 고민, 사용 목적 같은 고객 선택 기준을 명시하세요.",
       cepIngredientImprovement: "성분 근거가 부족하므로 원문 성분/활성 성분 신호를 보강하세요.",
       cepBenefitImprovement: "효능/효과 신호가 부족하므로 결과 중심 benefit을 보강하세요.",
-      eeatSampleImprovement: "수치 클레임에는 표본 수나 조사 대상을 함께 남기세요.",
+      eeatSampleImprovement: "수치 클레임에는 표본 수나 조사 대상을 함께 남기고, 원문에 없으면 미공개 범위를 명시하세요.",
       eeatTimeImprovement: "수치 클레임에는 사용 기간이나 측정 시점을 함께 남기세요.",
       eeatRagImprovement: "근거 기반 클레임 RAG가 선택되도록 evidence-backed claims 신호를 보강하세요.",
       geoFallbackImprovement: "현재 스키마 구조를 유지하되 FAQ/HowTo 문구가 사용자 질문형으로 유지되는지 회귀 검증하세요.",
@@ -8210,7 +8212,7 @@ function getGeoQualityCopy(language: UiLanguage) {
     eeatEvidenceCount: (evidence: number, chunks: number) => `${evidence} evidence item${evidence === 1 ? "" : "s"} and ${chunks} RAG chunk${chunks === 1 ? "" : "s"} used`,
     eeatMetricEvidence: "Includes numeric claims such as percentages or improvement rates",
     eeatMetricMissingEvidence: "Numeric claims are missing or unclear",
-    eeatStudyEvidence: (sample: boolean, time: boolean) => `Evidence conditions: sample ${sample ? "present" : "missing"}, time period ${time ? "present" : "missing"}`,
+    eeatStudyEvidence: (sample: boolean, time: boolean) => `Evidence conditions: sample/audience scope ${sample ? "stated" : "missing"}, time period ${time ? "present" : "missing"}`,
     eeatStudyMissingEvidence: "Sample size or usage period evidence is weak",
     eeatRagEvidence: "Uses RAG evidence for the evidence-backed claims principle",
     missingProductSchema: "Add Product schema first when the product entity is missing.",
@@ -8231,7 +8233,7 @@ function getGeoQualityCopy(language: UiLanguage) {
     cepChoiceImprovement: "Make customer selection criteria such as skin type, concern, or usage purpose explicit.",
     cepIngredientImprovement: "Strengthen source ingredient or active-ingredient signals.",
     cepBenefitImprovement: "Strengthen result-oriented benefit/effect signals.",
-    eeatSampleImprovement: "Keep sample size or study audience next to numeric claims.",
+    eeatSampleImprovement: "Keep sample size or study audience next to numeric claims; state the undisclosed scope when the source omits it.",
     eeatTimeImprovement: "Keep usage period or measurement timing next to numeric claims.",
     eeatRagImprovement: "Strengthen evidence-backed claims signals so RAG selects the right proof.",
     geoFallbackImprovement: "Keep the current schema shape and regression-check FAQ/HowTo wording as user-question oriented.",
@@ -8399,6 +8401,11 @@ function collectMetricIntegrityIssues(publicText: string, language: UiLanguage):
     ...splitMetrics.map((value) => copy.metricSplitIssue(value)),
     ...lowAgreementMetrics.map((value) => copy.lowAgreementIssue(value))
   ]);
+}
+
+function hasReportedSampleScopeDisclosure(publicText: string): boolean {
+  return /(?:시험\s*대상|조사\s*대상|표본|대상자|sample|test\s+audience|study\s+audience|participants?|subjects?).{0,48}(?:확인되지|확인\s*불가|미공개|명시되지|not\s+disclosed|not\s+stated|not\s+specified)/i.test(publicText)
+    || /(?:원문|공개\s*범위|public\s+source).{0,64}(?:시험\s*대상|조사\s*대상|표본|sample|audience).{0,48}(?:확인되지|확인\s*불가|미공개|명시되지|not\s+disclosed|not\s+stated|not\s+specified)/i.test(publicText);
 }
 
 function hasIngredientBenefitChoiceBridge(text: string): boolean {

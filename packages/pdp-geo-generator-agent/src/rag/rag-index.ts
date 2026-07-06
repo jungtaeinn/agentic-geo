@@ -190,6 +190,216 @@ export const pdpGeoRagIndex: PdpGeoRagDocumentIndexEntry[] = [
     ]
   },
   {
+    document: pdpGeoGeneratorRagManifest.brandBestPractices.sulwhasoo,
+    version: "v1",
+    kind: "best-practice",
+    sourceRole: "policy",
+    checkedAt: "2026-07-06",
+    intents: ["faq", "howTo", "claims", "review", "customer", "evidence", "schema"],
+    fieldTargets: ["WebPage.description", "Product.description", "FAQPage.mainEntity", "HowTo.step", "PDP.content", "diagnostics", "Product.additionalProperty", "Product.positiveNotes"],
+    priority: 0.91,
+    sections: [
+      {
+        heading: "Brand-Specific Best Practice Overlay",
+        intents: ["customer", "claims", "evidence", "faq", "howTo"],
+        fieldTargets: ["Product.description", "WebPage.description", "PDP.content", "FAQPage.mainEntity", "HowTo.step", "diagnostics"],
+        priority: 0.96
+      },
+      {
+        heading: "RAG Corpus Orchestration",
+        intents: ["retrieval", "general"],
+        fieldTargets: ["retrieval", "diagnostics"],
+        priority: 0.9
+      },
+      {
+        heading: "Public Wording Guardrails",
+        intents: ["claims", "evidence"],
+        fieldTargets: ["Product.description", "WebPage.description", "PDP.content"],
+        priority: 0.92
+      },
+      {
+        heading: "Entity and Intent Rules",
+        intents: ["faq", "howTo", "schema"],
+        fieldTargets: ["FAQPage.mainEntity", "HowTo.step", "Product.description", "WebPage.description"],
+        priority: 0.94
+      },
+      {
+        heading: "Cross-Product Benchmarking Guidance",
+        intents: ["review", "customer", "claims"],
+        fieldTargets: ["PDP.content", "Product.description", "WebPage.description", "diagnostics"],
+        priority: 0.88
+      }
+    ]
+  },
+  {
+    document: pdpGeoGeneratorRagManifest.brandBestPractices.aestura,
+    version: "v1",
+    kind: "best-practice",
+    sourceRole: "policy",
+    checkedAt: "2026-07-06",
+    intents: ["faq", "howTo", "claims", "review", "customer", "evidence", "schema"],
+    fieldTargets: ["WebPage.description", "Product.description", "FAQPage.mainEntity", "HowTo.step", "PDP.content", "diagnostics", "Product.additionalProperty", "Product.positiveNotes"],
+    priority: 0.91,
+    sections: [
+      {
+        heading: "Brand-Specific Best Practice Overlay",
+        intents: ["customer", "claims", "evidence", "faq", "howTo"],
+        fieldTargets: ["Product.description", "WebPage.description", "PDP.content", "FAQPage.mainEntity", "HowTo.step", "diagnostics"],
+        priority: 0.96
+      },
+      {
+        heading: "RAG Corpus Orchestration",
+        intents: ["retrieval", "general"],
+        fieldTargets: ["retrieval", "diagnostics"],
+        priority: 0.9
+      },
+      {
+        heading: "Public Wording Guardrails",
+        intents: ["claims", "evidence"],
+        fieldTargets: ["Product.description", "WebPage.description", "PDP.content"],
+        priority: 0.92
+      },
+      {
+        heading: "Entity and Intent Rules",
+        intents: ["faq", "howTo", "schema"],
+        fieldTargets: ["FAQPage.mainEntity", "HowTo.step", "Product.description", "WebPage.description"],
+        priority: 0.94
+      },
+      {
+        heading: "Cross-Product Benchmarking Guidance",
+        intents: ["review", "customer", "claims"],
+        fieldTargets: ["PDP.content", "Product.description", "WebPage.description", "diagnostics"],
+        priority: 0.88
+      }
+    ]
+  },
+  {
+    document: pdpGeoGeneratorRagManifest.brandIdentities.sulwhasoo,
+    version: "v1",
+    kind: "custom",
+    sourceRole: "custom",
+    checkedAt: "2026-07-06",
+    intents: ["customer", "claims", "evidence", "schema", "faq", "howTo", "review", "locale"],
+    fieldTargets: ["Product.description", "WebPage.description", "Product.additionalProperty", "Product.positiveNotes", "FAQPage.mainEntity", "HowTo.step", "PDP.content", "diagnostics"],
+    priority: 0.8,
+    sections: [
+      {
+        heading: "Brand Evidence Scope and RAG Use",
+        intents: ["evidence", "retrieval", "schema"],
+        fieldTargets: ["diagnostics", "retrieval", "Product.description", "WebPage.description"],
+        priority: 0.9
+      },
+      {
+        heading: "Official Site-Derived Brand Identity Analysis",
+        intents: ["customer", "claims", "evidence", "schema", "faq", "locale"],
+        fieldTargets: ["Product.description", "WebPage.description", "FAQPage.mainEntity", "PDP.content", "diagnostics"],
+        priority: 0.97
+      },
+      {
+        heading: "Identity Pillars",
+        intents: ["customer", "claims", "evidence"],
+        fieldTargets: ["Product.description", "WebPage.description", "Product.additionalProperty", "PDP.content"],
+        priority: 0.92
+      },
+      {
+        heading: "GEO Projection Rules",
+        intents: ["schema", "faq", "howTo", "review", "claims"],
+        fieldTargets: ["Product.description", "WebPage.description", "Product.additionalProperty", "Product.positiveNotes", "FAQPage.mainEntity", "HowTo.step"],
+        priority: 0.94
+      },
+      {
+        heading: "CEP and Customer Intent",
+        intents: ["customer", "faq", "review"],
+        fieldTargets: ["FAQPage.mainEntity", "Product.description", "WebPage.description", "PDP.content"],
+        priority: 0.9
+      },
+      {
+        heading: "Tone and Locale Guidance",
+        intents: ["locale", "customer", "claims"],
+        fieldTargets: ["PDP.content", "Product.description", "WebPage.description", "FAQPage.mainEntity"],
+        priority: 0.86
+      },
+      {
+        heading: "Claim Safety",
+        intents: ["claims", "evidence"],
+        fieldTargets: ["Product.description", "Product.positiveNotes", "Product.additionalProperty", "diagnostics"],
+        priority: 0.94
+      },
+      {
+        heading: "Research Papers and Official Articles",
+        intents: ["evidence", "claims", "schema", "faq", "customer"],
+        fieldTargets: ["diagnostics", "Product.description", "WebPage.description", "Product.additionalProperty", "FAQPage.mainEntity"],
+        priority: 0.96
+      }
+    ]
+  },
+  {
+    document: pdpGeoGeneratorRagManifest.brandIdentities.aestura,
+    version: "v1",
+    kind: "custom",
+    sourceRole: "custom",
+    checkedAt: "2026-07-06",
+    intents: ["customer", "claims", "evidence", "schema", "faq", "howTo", "review", "locale"],
+    fieldTargets: ["Product.description", "WebPage.description", "Product.additionalProperty", "Product.positiveNotes", "FAQPage.mainEntity", "HowTo.step", "PDP.content", "diagnostics"],
+    priority: 0.8,
+    sections: [
+      {
+        heading: "Brand Evidence Scope and RAG Use",
+        intents: ["evidence", "retrieval", "schema"],
+        fieldTargets: ["diagnostics", "retrieval", "Product.description", "WebPage.description"],
+        priority: 0.9
+      },
+      {
+        heading: "Official Site-Derived Brand Identity Analysis",
+        intents: ["customer", "claims", "evidence", "schema", "faq", "locale"],
+        fieldTargets: ["Product.description", "WebPage.description", "FAQPage.mainEntity", "PDP.content", "diagnostics"],
+        priority: 0.97
+      },
+      {
+        heading: "Market Source Prioritization and GEO Citation Strategy",
+        intents: ["locale", "evidence", "schema", "claims", "faq"],
+        fieldTargets: ["Product.description", "WebPage.description", "FAQPage.mainEntity", "PDP.content", "diagnostics", "Product.additionalProperty"],
+        priority: 0.98
+      },
+      {
+        heading: "Identity Pillars",
+        intents: ["customer", "claims", "evidence"],
+        fieldTargets: ["Product.description", "WebPage.description", "Product.additionalProperty", "PDP.content"],
+        priority: 0.92
+      },
+      {
+        heading: "GEO Projection Rules",
+        intents: ["schema", "faq", "howTo", "review", "claims"],
+        fieldTargets: ["Product.description", "WebPage.description", "Product.additionalProperty", "Product.positiveNotes", "FAQPage.mainEntity", "HowTo.step"],
+        priority: 0.94
+      },
+      {
+        heading: "CEP and Customer Intent",
+        intents: ["customer", "faq", "review"],
+        fieldTargets: ["FAQPage.mainEntity", "Product.description", "WebPage.description", "PDP.content"],
+        priority: 0.9
+      },
+      {
+        heading: "Tone and Locale Guidance",
+        intents: ["locale", "customer", "claims"],
+        fieldTargets: ["PDP.content", "Product.description", "WebPage.description", "FAQPage.mainEntity"],
+        priority: 0.86
+      },
+      {
+        heading: "Claim Safety",
+        intents: ["claims", "evidence"],
+        fieldTargets: ["Product.description", "Product.positiveNotes", "Product.additionalProperty", "diagnostics"],
+        priority: 0.94
+      },
+      {
+        heading: "Research Papers and Official Articles",
+        intents: ["evidence", "claims", "schema", "faq", "customer"],
+        fieldTargets: ["diagnostics", "Product.description", "WebPage.description", "Product.additionalProperty", "FAQPage.mainEntity"],
+        priority: 0.96
+      }
+    ]
+  },
+  {
     document: pdpGeoGeneratorRagManifest.documents.geoResearch,
     version: "v1",
     kind: "geo-research",
@@ -261,6 +471,54 @@ export const pdpGeoRagIndex: PdpGeoRagDocumentIndexEntry[] = [
     sections: []
   },
   {
+    document: pdpGeoGeneratorRagManifest.brandLocaleExpressionGuidelines.sulwhasoo,
+    version: "v1",
+    kind: "locale",
+    sourceRole: "policy",
+    checkedAt: "2026-07-06",
+    intents: ["locale", "claims", "customer"],
+    fieldTargets: ["Product.description", "WebPage.description", "PDP.content", "FAQPage.mainEntity", "HowTo.step"],
+    priority: 0.8,
+    sections: [
+      {
+        heading: "Brand-Specific Locale Overlay",
+        intents: ["locale", "claims", "customer"],
+        fieldTargets: ["Product.description", "WebPage.description", "PDP.content", "FAQPage.mainEntity"],
+        priority: 0.94
+      },
+      {
+        heading: "Base Locale Expression Model",
+        intents: ["locale", "claims"],
+        fieldTargets: ["Product.description", "WebPage.description", "PDP.content", "FAQPage.mainEntity", "HowTo.step"],
+        priority: 0.82
+      }
+    ]
+  },
+  {
+    document: pdpGeoGeneratorRagManifest.brandLocaleExpressionGuidelines.aestura,
+    version: "v1",
+    kind: "locale",
+    sourceRole: "policy",
+    checkedAt: "2026-07-06",
+    intents: ["locale", "claims", "customer"],
+    fieldTargets: ["Product.description", "WebPage.description", "PDP.content", "FAQPage.mainEntity", "HowTo.step"],
+    priority: 0.8,
+    sections: [
+      {
+        heading: "Brand-Specific Locale Overlay",
+        intents: ["locale", "claims", "customer"],
+        fieldTargets: ["Product.description", "WebPage.description", "PDP.content", "FAQPage.mainEntity"],
+        priority: 0.94
+      },
+      {
+        heading: "Base Locale Expression Model",
+        intents: ["locale", "claims"],
+        fieldTargets: ["Product.description", "WebPage.description", "PDP.content", "FAQPage.mainEntity", "HowTo.step"],
+        priority: 0.82
+      }
+    ]
+  },
+  {
     document: pdpGeoGeneratorRagManifest.documents.localeTerminologyMap,
     version: "v1",
     kind: "terminology",
@@ -269,6 +527,28 @@ export const pdpGeoRagIndex: PdpGeoRagDocumentIndexEntry[] = [
     intents: ["locale"],
     fieldTargets: ["Product.description", "WebPage.description", "PDP.content"],
     priority: 0.76,
+    sections: []
+  },
+  {
+    document: pdpGeoGeneratorRagManifest.brandLocaleTerminologyMaps.sulwhasoo,
+    version: "v1",
+    kind: "terminology",
+    sourceRole: "locale-map",
+    checkedAt: "2026-07-06",
+    intents: ["locale", "claims", "customer"],
+    fieldTargets: ["Product.description", "WebPage.description", "PDP.content", "FAQPage.mainEntity"],
+    priority: 0.78,
+    sections: []
+  },
+  {
+    document: pdpGeoGeneratorRagManifest.brandLocaleTerminologyMaps.aestura,
+    version: "v1",
+    kind: "terminology",
+    sourceRole: "locale-map",
+    checkedAt: "2026-07-06",
+    intents: ["locale", "claims", "customer"],
+    fieldTargets: ["Product.description", "WebPage.description", "PDP.content", "FAQPage.mainEntity"],
+    priority: 0.78,
     sections: []
   }
 ];

@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
-import { extname, join, resolve } from "node:path";
+import { dirname, extname, join, relative, resolve } from "node:path";
 import {
   defaultPdpGeoGeneratorRagProfile,
   type PdpGeoGeneratorRagDocument,
@@ -21,6 +21,7 @@ export interface StoredPdpGeoGeneratorRagProfile extends Omit<PdpGeoGeneratorRag
 }
 
 const ragDirectory = resolveDefaultRagDirectory();
+const brandDirectoryName = "brands";
 const customDirectoryName = "custom";
 const allowedRagFileExtensions = new Set([".md", ".txt", ".json", ".csv"]);
 
@@ -32,6 +33,7 @@ export async function readPdpGeoGeneratorRagProfile(directory = ragDirectory): P
   );
   const documents = [
     ...await Promise.all(defaultPdpGeoGeneratorRagProfile.documents.map((document) => readManagedDocument(directory, document))),
+    ...await readBrandDocuments(directory),
     ...await readCustomDocuments(directory)
   ];
   const updatedAt = documents
@@ -66,10 +68,11 @@ export async function writePdpGeoGeneratorRagProfile(
 
   for (const defaultDocument of defaultPdpGeoGeneratorRagProfile.documents) {
     const document = incomingDocuments.get(defaultDocument.name) ?? defaultDocument;
-    await writeFile(join(directory, defaultDocument.name), ensureTrailingNewline(document.content), "utf8");
+    await writeManagedRagFile(directory, defaultDocument.name, document.content);
   }
 
-  await writeCustomDocuments(directory, (profile.documents ?? []).filter((document) => !isManagedDocumentName(document.name)));
+  await writeBrandDocuments(directory, (profile.documents ?? []).filter((document) => isBrandDocumentName(document.name)));
+  await writeCustomDocuments(directory, (profile.documents ?? []).filter((document) => !isManagedDocumentName(document.name) && !isBrandDocumentName(document.name)));
 
   return readPdpGeoGeneratorRagProfile(directory);
 }
@@ -92,6 +95,29 @@ async function readManagedDocument(directory: string, document: PdpGeoGeneratorR
     path: document.name,
     ...metadata
   };
+}
+
+async function readBrandDocuments(directory: string): Promise<StoredPdpGeoGeneratorRagDocument[]> {
+  const brandDirectory = join(directory, brandDirectoryName);
+  const paths = await readRagFilePaths(brandDirectory);
+  const documents = await Promise.all(
+    paths.map(async (path): Promise<StoredPdpGeoGeneratorRagDocument> => {
+      const relativePath = toRagRelativePath(join(brandDirectoryName, relative(brandDirectory, path)));
+      const content = await readTextFile(path, "");
+      const metadata = await fileMetadata(path, content);
+
+      return {
+        name: relativePath,
+        version: extractVersion(relativePath),
+        content,
+        managed: true,
+        path: relativePath,
+        ...metadata
+      };
+    })
+  );
+
+  return documents.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 async function readCustomDocuments(directory: string): Promise<StoredPdpGeoGeneratorRagDocument[]> {
@@ -119,6 +145,18 @@ async function readCustomDocuments(directory: string): Promise<StoredPdpGeoGener
   return documents.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+async function writeBrandDocuments(
+  directory: string,
+  documents: Array<Pick<PdpGeoGeneratorRagDocument, "name" | "content"> & Partial<Pick<PdpGeoGeneratorRagDocument, "version">>>
+) {
+  for (const document of documents) {
+    const name = safeBrandDocumentName(document.name, document.version);
+    if (name) {
+      await writeManagedRagFile(directory, name, document.content);
+    }
+  }
+}
+
 async function writeCustomDocuments(
   directory: string,
   documents: Array<Pick<PdpGeoGeneratorRagDocument, "name" | "content"> & Partial<Pick<PdpGeoGeneratorRagDocument, "version">>>
@@ -141,6 +179,12 @@ async function writeCustomDocuments(
   );
 }
 
+async function writeManagedRagFile(directory: string, name: string, content: string) {
+  const path = join(directory, name);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, ensureTrailingNewline(content), "utf8");
+}
+
 async function clearCustomDocuments(directory: string) {
   const customDirectory = join(directory, customDirectoryName);
   const existingNames = await readdir(customDirectory).catch(() => []);
@@ -149,6 +193,19 @@ async function clearCustomDocuments(directory: string) {
       .filter((name) => allowedRagFileExtensions.has(extname(name).toLowerCase()))
       .map((name) => unlink(join(customDirectory, name)).catch(() => undefined))
   );
+}
+
+async function readRagFilePaths(directory: string): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+  const paths = await Promise.all(entries.map(async (entry) => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      return readRagFilePaths(path);
+    }
+    return allowedRagFileExtensions.has(extname(entry.name).toLowerCase()) ? [path] : [];
+  }));
+
+  return paths.flat().sort((a, b) => a.localeCompare(b));
 }
 
 async function readTextFile(path: string, fallback: string): Promise<string> {
@@ -162,6 +219,31 @@ async function fileMetadata(path: string, content: string): Promise<Pick<StoredP
     size: Buffer.byteLength(content),
     updatedAt: fileStat?.mtime.toISOString()
   };
+}
+
+function safeBrandDocumentName(name: string, version = "v1"): string | undefined {
+  const normalized = toRagRelativePath(name).replace(/^\/+/, "");
+  if (!normalized.startsWith(`${brandDirectoryName}/`)) {
+    return undefined;
+  }
+
+  const parts = normalized.split("/").filter(Boolean);
+  if (parts.length < 3 || parts.some((part) => part === "." || part === "..")) {
+    return undefined;
+  }
+
+  const folders = parts.slice(0, -1).map(safeRagPathSegment).filter(Boolean);
+  const fileName = safeRagFileName(parts.at(-1) ?? "brand-identity.md", version);
+
+  return join(...folders, fileName);
+}
+
+function safeRagPathSegment(name: string): string {
+  return name
+    .normalize("NFKC")
+    .replace(/[^\p{L}\p{N}._-]+/gu, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
 }
 
 function safeRagFileName(name: string, version = "v1"): string {
@@ -179,6 +261,14 @@ function safeRagFileName(name: string, version = "v1"): string {
 
 function isManagedDocumentName(name: string): boolean {
   return defaultPdpGeoGeneratorRagProfile.documents.some((document) => document.name === name);
+}
+
+function isBrandDocumentName(name: string): boolean {
+  return toRagRelativePath(name).startsWith(`${brandDirectoryName}/`);
+}
+
+function toRagRelativePath(name: string): string {
+  return name.replace(/\\/g, "/");
 }
 
 function extractVersion(name: string): string {

@@ -25,9 +25,23 @@ describe("readPdpGeoGeneratorRagProfile", () => {
       pdpGeoGeneratorRagManifest.documents.geoResearch,
       pdpGeoGeneratorRagManifest.documents.officialAiSearchPlatformDocs,
       pdpGeoGeneratorRagManifest.documents.localeExpressionGuidelines,
-      pdpGeoGeneratorRagManifest.documents.localeTerminologyMap
+      pdpGeoGeneratorRagManifest.documents.localeTerminologyMap,
+      pdpGeoGeneratorRagManifest.brandIdentities.sulwhasoo,
+      pdpGeoGeneratorRagManifest.brandIdentities.aestura,
+      pdpGeoGeneratorRagManifest.brandBestPractices.sulwhasoo,
+      pdpGeoGeneratorRagManifest.brandBestPractices.aestura,
+      pdpGeoGeneratorRagManifest.brandLocaleExpressionGuidelines.sulwhasoo,
+      pdpGeoGeneratorRagManifest.brandLocaleExpressionGuidelines.aestura,
+      pdpGeoGeneratorRagManifest.brandLocaleTerminologyMaps.sulwhasoo,
+      pdpGeoGeneratorRagManifest.brandLocaleTerminologyMaps.aestura
     ]));
     expect(pdpGeoRagIndex.some((entry) => entry.document === pdpGeoGeneratorRagManifest.documents.schemaOrgProduct)).toBe(true);
+    expect(pdpGeoRagIndex.some((entry) => entry.document === pdpGeoGeneratorRagManifest.brandBestPractices.sulwhasoo && entry.kind === "best-practice")).toBe(true);
+    expect(pdpGeoRagIndex.some((entry) => entry.document === pdpGeoGeneratorRagManifest.brandBestPractices.aestura && entry.kind === "best-practice")).toBe(true);
+    expect(pdpGeoRagIndex.some((entry) => entry.document === pdpGeoGeneratorRagManifest.brandLocaleExpressionGuidelines.sulwhasoo && entry.kind === "locale")).toBe(true);
+    expect(pdpGeoRagIndex.some((entry) => entry.document === pdpGeoGeneratorRagManifest.brandLocaleExpressionGuidelines.aestura && entry.kind === "locale")).toBe(true);
+    expect(pdpGeoRagIndex.some((entry) => entry.document === pdpGeoGeneratorRagManifest.brandLocaleTerminologyMaps.sulwhasoo && entry.kind === "terminology")).toBe(true);
+    expect(pdpGeoRagIndex.some((entry) => entry.document === pdpGeoGeneratorRagManifest.brandLocaleTerminologyMaps.aestura && entry.kind === "terminology")).toBe(true);
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.bestPractice)?.content)
       .toContain("RAG Corpus Orchestration");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.bestPractice)?.content)
@@ -56,6 +70,128 @@ describe("readPdpGeoGeneratorRagProfile", () => {
       .toContain("Research-Backed GEO Principles");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.geoResearch)?.content)
       .toContain("evidence-role classification and source-grounded regeneration");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandIdentities.sulwhasoo)?.content)
+      .toContain("Ginseng Science and Skin Longevity");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandIdentities.aestura)?.content)
+      .toContain("Dermocosmetic and Sensitive Skin Expertise");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandIdentities.sulwhasoo)?.content)
+      .toContain("Research Papers and Official Articles");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandIdentities.aestura)?.content)
+      .toContain("PubMed ID: 40099382");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandBestPractices.sulwhasoo)?.content)
+      .toContain("Sulwhasoo Best Practice v1");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandBestPractices.aestura)?.content)
+      .toContain("AESTURA Best Practice v1");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandLocaleExpressionGuidelines.sulwhasoo)?.content)
+      .toContain("Sulwhasoo Locale Expression Guidelines v1");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandLocaleExpressionGuidelines.aestura)?.content)
+      .toContain("AESTURA Locale Expression Guidelines v1");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandLocaleTerminologyMaps.sulwhasoo)?.content)
+      .toContain("korean-ginseng-science");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandLocaleTerminologyMaps.aestura)?.content)
+      .toContain("dermocosmetic-barrier");
+  });
+
+  it("loads nested brand RAG documents as retrievable managed chunks", async () => {
+    const profile = await readPdpGeoGeneratorRagProfile();
+    const product = {
+      name: "Concentrated Ginseng Rejuvenating Serum",
+      brand: "Sulwhasoo",
+      category: "Skincare Serum",
+      benefits: ["firmness", "radiance"],
+      effects: [],
+      ingredients: ["Korean Ginseng"],
+      usage: ["Apply after toner."],
+      metrics: [],
+      faq: [],
+      reviews: {
+        keywords: ["nourishing texture"],
+        items: []
+      },
+      images: [],
+      options: [],
+      breadcrumbs: [],
+      sourceTexts: []
+    };
+    const chunks = await new LocalVersionedRagRetriever().retrieve({
+      query: createPdpGeoRagQuery(product, "en-US", "US"),
+      product,
+      locale: "en-US",
+      market: "US",
+      documents: profile.documents
+        .filter((document) => document.name === pdpGeoGeneratorRagManifest.brandIdentities.sulwhasoo)
+        .map((document) => ({
+          name: document.name,
+          version: document.version,
+          content: document.content
+        })),
+      settings: resolvePdpGeoRagSettings({
+        maxChunks: 50,
+        scoreThreshold: 0
+      })
+    });
+
+    expect(chunks.some((chunk) => chunk.source === pdpGeoGeneratorRagManifest.brandIdentities.sulwhasoo)).toBe(true);
+    expect(chunks.find((chunk) => chunk.title === "GEO Projection Rules")?.fieldTargets)
+      .toEqual(expect.arrayContaining(["Product.description", "FAQPage.mainEntity", "HowTo.step"]));
+    expect(chunks.find((chunk) => chunk.title === "Identity Pillars")?.intents)
+      .toEqual(expect.arrayContaining(["customer", "claims", "evidence"]));
+    expect(chunks.find((chunk) => chunk.title === "Research Papers and Official Articles")?.fieldTargets)
+      .toEqual(expect.arrayContaining(["diagnostics", "WebPage.description", "FAQPage.mainEntity"]));
+
+    const bestPracticeChunks = await new LocalVersionedRagRetriever().retrieve({
+      query: createPdpGeoRagQuery(product, "en-US", "US"),
+      product,
+      locale: "en-US",
+      market: "US",
+      documents: profile.documents
+        .filter((document) => document.name === pdpGeoGeneratorRagManifest.brandBestPractices.sulwhasoo)
+        .map((document) => ({
+          name: document.name,
+          version: document.version,
+          content: document.content
+        })),
+      settings: resolvePdpGeoRagSettings({
+        maxChunks: 50,
+        scoreThreshold: 0
+      })
+    });
+
+    expect(bestPracticeChunks.some((chunk) => chunk.source === pdpGeoGeneratorRagManifest.brandBestPractices.sulwhasoo)).toBe(true);
+    expect(bestPracticeChunks.find((chunk) => chunk.title === "Brand-Specific Best Practice Overlay")?.kind)
+      .toBe("best-practice");
+    expect(bestPracticeChunks.find((chunk) => chunk.title === "Brand-Specific Best Practice Overlay")?.fieldTargets)
+      .toEqual(expect.arrayContaining(["Product.description", "FAQPage.mainEntity", "HowTo.step"]));
+
+    const localeChunks = await new LocalVersionedRagRetriever().retrieve({
+      query: createPdpGeoRagQuery(product, "en-US", "US"),
+      product,
+      locale: "en-US",
+      market: "US",
+      documents: profile.documents
+        .filter((document) => document.name === pdpGeoGeneratorRagManifest.brandLocaleExpressionGuidelines.sulwhasoo)
+        .map((document) => ({
+          name: document.name,
+          version: document.version,
+          content: document.content
+        })),
+      settings: resolvePdpGeoRagSettings({
+        maxChunks: 50,
+        scoreThreshold: 0
+      })
+    });
+
+    expect(localeChunks.some((chunk) => chunk.source === pdpGeoGeneratorRagManifest.brandLocaleExpressionGuidelines.sulwhasoo)).toBe(true);
+    expect(localeChunks.find((chunk) => chunk.title === "Brand-Specific Locale Overlay")?.kind)
+      .toBe("locale");
+
+    const terminologyDocument = profile.documents.find(
+      (document) => document.name === pdpGeoGeneratorRagManifest.brandLocaleTerminologyMaps.sulwhasoo
+    );
+    expect(() => JSON.parse(terminologyDocument?.content ?? "")).not.toThrow();
+    expect(JSON.parse(terminologyDocument?.content ?? "{}").concepts.some((concept: { concept: string }) =>
+      concept.concept === "korean-ginseng-science"
+    )).toBe(true);
   });
 
   it("builds retrieval queries for review-led FAQ intent and public wording constraints", () => {

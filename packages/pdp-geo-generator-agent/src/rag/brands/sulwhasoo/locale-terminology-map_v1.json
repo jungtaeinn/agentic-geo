@@ -1,0 +1,106 @@
+{
+  "concepts": [
+    {
+      "concept": "hydration",
+      "category": "benefit",
+      "preferred": {
+        "ko-KR": ["보습", "수분감"],
+        "ja-JP": ["保湿", "うるおい"],
+        "en-US": ["hydration", "moisture"],
+        "en-GB": ["hydration", "moisturising"]
+      },
+      "avoid": {
+        "ko-KR": ["치료"],
+        "ja-JP": ["治療"],
+        "en-US": ["cure"],
+        "en-GB": ["cure"]
+      },
+      "notes": "Use cosmetic benefit wording, not medical treatment wording."
+    },
+    {
+      "concept": "brightening",
+      "category": "benefit",
+      "preferred": {
+        "ko-KR": ["화사함", "맑은 피부톤"],
+        "ja-JP": ["明るい印象", "透明感"],
+        "en-US": ["brightening", "even-looking tone"],
+        "en-GB": ["brightening", "even-looking tone"]
+      },
+      "avoid": {
+        "ko-KR": ["미백 치료"],
+        "ja-JP": ["漂白"],
+        "en-US": ["whitening"],
+        "en-GB": ["whitening"]
+      },
+      "notes": "Prefer appearance-oriented tone wording in global English."
+    },
+    {
+      "concept": "firming",
+      "category": "benefit",
+      "preferred": {
+        "ko-KR": ["탄력", "탄탄한 피부"],
+        "ja-JP": ["ハリ", "弾力感"],
+        "en-US": ["firming", "elasticity"],
+        "en-GB": ["firming", "elasticity"]
+      },
+      "avoid": {
+        "ko-KR": ["리프팅 수술 효과"],
+        "ja-JP": ["手術級"],
+        "en-US": ["surgical lift"],
+        "en-GB": ["surgical lift"]
+      },
+      "notes": "Keep firming claims cosmetic and evidence-backed."
+    },
+    {
+      "concept": "skin-barrier",
+      "category": "benefit",
+      "preferred": {
+        "ko-KR": ["피부 장벽", "장벽 케어"],
+        "ja-JP": ["バリア機能", "肌のバリア"],
+        "en-US": ["skin barrier", "barrier support"],
+        "en-GB": ["skin barrier", "barrier support"]
+      },
+      "avoid": {
+        "ko-KR": ["질환 개선"],
+        "ja-JP": ["疾患改善"],
+        "en-US": ["eczema treatment"],
+        "en-GB": ["eczema treatment"]
+      },
+      "notes": "Do not imply disease treatment."
+    },
+    {
+      "concept": "korean-ginseng-science",
+      "category": "ingredient-technology",
+      "preferred": {
+        "ko-KR": ["인삼 과학", "진세노믹스", "인삼 유래 성분"],
+        "ja-JP": ["高麗人参サイエンス", "高麗人参由来成分"],
+        "en-US": ["Korean ginseng science", "ginseng-derived actives"],
+        "en-GB": ["Korean ginseng science", "ginseng-derived actives"]
+      },
+      "avoid": {
+        "ko-KR": ["한방 치료", "만병통치"],
+        "ja-JP": ["漢方治療", "万能薬"],
+        "en-US": ["herbal cure", "miracle cure"],
+        "en-GB": ["herbal cure", "miracle cure"]
+      },
+      "notes": "Use only when Sulwhasoo product evidence supports ginseng, ginsenomics, or related formulation context."
+    },
+    {
+      "concept": "premium-ritual",
+      "category": "customer-language",
+      "preferred": {
+        "ko-KR": ["스킨케어 리추얼", "고급스러운 사용감", "정교한 루틴"],
+        "ja-JP": ["スキンケアリチュアル", "上質な使い心地"],
+        "en-US": ["refined skincare ritual", "premium sensorial routine"],
+        "en-GB": ["refined skincare ritual", "premium sensorial routine"]
+      },
+      "avoid": {
+        "ko-KR": ["사치품 과장", "왕실 치료"],
+        "ja-JP": ["贅沢すぎる誇張", "王室治療"],
+        "en-US": ["luxury cure", "royal treatment"],
+        "en-GB": ["luxury cure", "royal treatment"]
+      },
+      "notes": "Keep ritual wording elegant and product-grounded, not decorative filler."
+    }
+  ]
+}

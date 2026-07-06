@@ -140,6 +140,18 @@ src/rag/
   official-ai-search-platform-docs_v1.md
   locale-expression-guidelines_v1.md
   locale-terminology-map_v1.json
+  brands/
+    sulwhasoo/
+      brand-identity_v1.md
+      best-practice_v1.md
+      locale-expression-guidelines_v1.md
+      locale-terminology-map_v1.json
+    aestura/
+      brand-identity_v1.md
+      best-practice_v1.md
+      locale-expression-guidelines_v1.md
+      locale-terminology-map_v1.json
+  custom/
   manifest.ts
   profile.ts
 ```
@@ -157,6 +169,12 @@ src/rag/
 | `official-ai-search-platform-docs_v1.md` | OpenAI, Google Search Central, Gemini, Perplexity 등 공식 문서 기반 retrieval/structured data 기준 |
 | `locale-expression-guidelines_v1.md` | locale별 표현 톤과 금지/권장 표현 |
 | `locale-terminology-map_v1.json` | 시장별 용어 치환/회피 map |
+| `brands/{brand}/brand-identity_v1.md` | 브랜드별 아이덴티티, 톤, 고객 진입 맥락, claim safety, GEO field projection 기준 |
+| `brands/{brand}/best-practice_v1.md` | 기본 best-practice를 기반으로 한 브랜드별 GEO 생성 품질 기준 |
+| `brands/{brand}/locale-expression-guidelines_v1.md` | 기본 locale 표현 가이드를 기반으로 한 브랜드별 언어/톤 기준 |
+| `brands/{brand}/locale-terminology-map_v1.json` | 기본 terminology map을 기반으로 한 브랜드별 선호/회피 용어 map |
+
+브랜드 문서는 상품 브랜드와 매칭될 때만 생성 RAG 후보에 포함됩니다. 예를 들어 에스트라 상품 요청에는 `brands/aestura/brand-identity_v1.md`, `brands/aestura/best-practice_v1.md`, `brands/aestura/locale-expression-guidelines_v1.md`, `brands/aestura/locale-terminology-map_v1.json`만 포함되고, 설화수 문서는 제외됩니다. 브랜드별 best-practice, locale expression guide, terminology map이 있으면 기본 문서는 제외하고 해당 브랜드 문서를 우선 사용합니다. 브랜드를 식별할 수 없거나 해당 브랜드별 문서가 없으면 기본 `best-practice_v1.md`, `locale-expression-guidelines_v1.md`, `locale-terminology-map_v1.json`을 fallback으로 사용하고, `brands/` 하위 문서는 제외합니다.
 
 `rag-index.ts`는 단순한 파일 목록이 아니라 RAG 문서의 source of truth입니다. 각 문서와 주요 섹션에 다음 metadata를 붙입니다.
 

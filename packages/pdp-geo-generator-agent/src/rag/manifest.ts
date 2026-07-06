@@ -11,5 +11,21 @@ export const pdpGeoGeneratorRagManifest = {
     officialAiSearchPlatformDocs: "official-ai-search-platform-docs_v1.md",
     localeExpressionGuidelines: "locale-expression-guidelines_v1.md",
     localeTerminologyMap: "locale-terminology-map_v1.json"
+  },
+  brandIdentities: {
+    sulwhasoo: "brands/sulwhasoo/brand-identity_v1.md",
+    aestura: "brands/aestura/brand-identity_v1.md"
+  },
+  brandBestPractices: {
+    sulwhasoo: "brands/sulwhasoo/best-practice_v1.md",
+    aestura: "brands/aestura/best-practice_v1.md"
+  },
+  brandLocaleExpressionGuidelines: {
+    sulwhasoo: "brands/sulwhasoo/locale-expression-guidelines_v1.md",
+    aestura: "brands/aestura/locale-expression-guidelines_v1.md"
+  },
+  brandLocaleTerminologyMaps: {
+    sulwhasoo: "brands/sulwhasoo/locale-terminology-map_v1.json",
+    aestura: "brands/aestura/locale-terminology-map_v1.json"
   }
 } as const;

@@ -101,20 +101,21 @@ export async function generatePdpGeo(
 
   process.start("normalize", "상품 JSON 구조를 자동 추론하고 fieldMapping을 적용합니다.");
   const profile = await readPdpGeoGeneratorRagProfile();
+  const profileDocuments = profile.documents.map((document) => ({
+    name: document.name,
+    content: document.content,
+    version: document.version
+  }));
   let normalized = normalizePdpProduct(parsed.product, {
     hints: parsed.hints,
     fieldMapping: parsed.fieldMapping,
     sourceUrl: parsed.source?.url
   });
-  const productNormalizationRagDocuments = mergeRagDocuments([
-    ...profile.documents.map((document) => ({
-      name: document.name,
-      content: document.content,
-      version: document.version
-    })),
+  const productNormalizationRagDocuments = mergeRagDocuments(scopeBrandRagDocuments([
+    ...profileDocuments,
     ...(options.ragDocuments ?? []),
     ...(parsed.rag?.documents ?? [])
-  ]);
+  ], normalized.product, parsed.hints));
   if (shouldReportProductNormalizationCall(options)) {
     process.start("normalize", `${runtimeProviderLabel(options.productNormalization?.provider ?? options.provider)} product signal normalization 모델을 호출합니다.`);
   }
@@ -169,15 +170,11 @@ export async function generatePdpGeo(
     ...options.rag,
     ...parsed.rag,
     analysisPrompt: parsed.rag?.analysisPrompt ?? options.analysisPrompt ?? profile.analysisPrompt,
-    documents: [
-      ...profile.documents.map((document) => ({
-        name: document.name,
-        content: document.content,
-        version: document.version
-      })),
+    documents: scopeBrandRagDocuments([
+      ...profileDocuments,
       ...(options.ragDocuments ?? []),
       ...(parsed.rag?.documents ?? [])
-    ]
+    ], normalized.product, parsed.hints)
   });
   const ragDocuments = mergeRagDocuments([
     {
@@ -240,10 +237,22 @@ export async function generatePdpGeo(
     customRetriever: options.customRetriever,
     urlResolver: options.customUrlResolver
   });
-  const retrieved = mergeRetrievedRagChunks([
+  const brandIdentityCoverageChunks = await retrieveBrandIdentityCoverageRagChunks({
+    existingChunks: preliminarySelectedRagChunks,
+    product: normalized.product,
+    locale: normalized.locale,
+    market: normalized.market,
+    documents: ragDocuments,
+    settings: ragSettings,
+    apiKey: options.apiKey,
+    customRetriever: options.customRetriever,
+    urlResolver: options.customUrlResolver
+  });
+  const retrieved = markBrandIdentityCoverageRagChunks(mergeRetrievedRagChunks([
     ...primaryRetrieved,
-    ...strategicCoverageChunks
-  ]);
+    ...strategicCoverageChunks,
+    ...brandIdentityCoverageChunks
+  ]), normalized.product);
   process.done(
     "retrieve",
     queryPlan.mode === "agentic-subquery-planning"
@@ -461,9 +470,9 @@ function mergeRetrievedRagChunks(chunks: PdpGeoRetrievedChunk[]): PdpGeoRetrieve
 
 const strategicRagKinds = new Set(["geo-research", "cep", "eeat"]);
 const coverageRagKindOrder: PdpGeoRetrievedChunk["kind"][] = [
+  "best-practice",
   "schema",
   "official-docs",
-  "best-practice",
   "locale",
   "terminology",
   "geo-research",
@@ -522,6 +531,34 @@ const strategicCoverageDocuments = [
   }
 ] as const;
 
+function resolveStrategicCoverageDocument(
+  entry: (typeof strategicCoverageDocuments)[number],
+  documents: Array<{ name: string; content: string; version?: string }>
+): { name: string; content: string; version?: string } | undefined {
+  const exactDocument = documents.find((candidate) => normalizeRagPath(candidate.name) === entry.document);
+  if (exactDocument) {
+    return exactDocument;
+  }
+  if (entry.document !== pdpGeoGeneratorRagManifest.documents.bestPractice) {
+    const replacementDocuments = brandScopedReplacementDocumentNames(entry.document);
+    return documents.find((candidate) => replacementDocuments.includes(normalizeRagPath(candidate.name)));
+  }
+  return documents.find((candidate) => brandScopedReplacementDocumentNames(entry.document).includes(normalizeRagPath(candidate.name)));
+}
+
+function brandScopedReplacementDocumentNames(defaultDocumentName: string): string[] {
+  if (defaultDocumentName === pdpGeoGeneratorRagManifest.documents.bestPractice) {
+    return Object.values(pdpGeoGeneratorRagManifest.brandBestPractices);
+  }
+  if (defaultDocumentName === pdpGeoGeneratorRagManifest.documents.localeExpressionGuidelines) {
+    return Object.values(pdpGeoGeneratorRagManifest.brandLocaleExpressionGuidelines);
+  }
+  if (defaultDocumentName === pdpGeoGeneratorRagManifest.documents.localeTerminologyMap) {
+    return Object.values(pdpGeoGeneratorRagManifest.brandLocaleTerminologyMaps);
+  }
+  return [];
+}
+
 function createRetrievalCandidateSettings<T extends { maxChunks?: number }>(settings: T): T {
   return {
     ...settings,
@@ -548,7 +585,7 @@ async function retrieveStrategicCoverageRagChunks(input: {
   }
 
   const chunks = await Promise.all(missingDocuments.map(async (entry) => {
-    const document = input.documents.find((candidate) => candidate.name === entry.document);
+    const document = resolveStrategicCoverageDocument(entry, input.documents);
     if (!document) {
       return [];
     }
@@ -581,6 +618,7 @@ async function retrieveStrategicCoverageRagChunks(input: {
     );
     return retrieved.map((chunk) => ({
       ...chunk,
+      kind: entry.kind,
       metadata: {
         ...chunk.metadata,
         queryPlanTarget: "strategicCoverage",
@@ -590,6 +628,91 @@ async function retrieveStrategicCoverageRagChunks(input: {
   }));
 
   return chunks.flat();
+}
+
+async function retrieveBrandIdentityCoverageRagChunks(input: {
+  existingChunks: PdpGeoRetrievedChunk[];
+  product: PdpProductSignal;
+  locale: PdpGeoLocale;
+  market?: string;
+  documents: Array<{ name: string; content: string; version?: string }>;
+  settings: ReturnType<typeof resolvePdpGeoRagSettings>;
+  apiKey?: PdpGeoGeneratorOptions["apiKey"];
+  customRetriever?: PdpGeoGeneratorOptions["customRetriever"];
+  urlResolver?: PdpGeoGeneratorOptions["customUrlResolver"];
+}): Promise<PdpGeoRetrievedChunk[]> {
+  const documentName = inferBrandIdentityDocument(input.product);
+  if (!documentName || input.existingChunks.some((chunk) => chunk.source === documentName)) {
+    return [];
+  }
+
+  const document = input.documents.find((candidate) => candidate.name === documentName);
+  if (!document) {
+    return [];
+  }
+
+  const retrieved = await retrievePdpGeoRagChunks(
+    {
+      query: [
+        "Target brand identity, E-E-A-T source map, official articles, research papers, brand tone, customer entry points, and claim safety for PDP GEO generation.",
+        `Product: ${input.product.name}.`,
+        input.product.brand ? `Brand: ${input.product.brand}.` : undefined,
+        input.product.category ? `Category: ${input.product.category}.` : undefined,
+        input.product.benefits.length > 0 ? `Benefits: ${input.product.benefits.slice(0, 4).join(", ")}.` : undefined,
+        input.product.ingredients.length > 0 ? `Ingredients: ${input.product.ingredients.slice(0, 4).join(", ")}.` : undefined,
+        input.product.reviews.keywords.length > 0 ? `Review keywords: ${input.product.reviews.keywords.slice(0, 4).join(", ")}.` : undefined
+      ].filter(Boolean).join(" "),
+      product: input.product,
+      locale: input.locale,
+      market: input.market,
+      documents: [document],
+      settings: {
+        ...input.settings,
+        maxChunks: 3,
+        scoreThreshold: 0
+      }
+    },
+    {
+      apiKey: input.apiKey,
+      customRetriever: input.customRetriever,
+      urlResolver: input.urlResolver
+    }
+  );
+
+  return retrieved.map((chunk) => ({
+    ...chunk,
+    metadata: {
+      ...chunk.metadata,
+      queryPlanTarget: "brandIdentityCoverage",
+      queryPlanReason: "Ensure the matched target-brand identity document is available to generation without adding other brand identity documents."
+    },
+    score: Math.max(chunk.score, 0.93)
+  }));
+}
+
+function markBrandIdentityCoverageRagChunks(
+  chunks: PdpGeoRetrievedChunk[],
+  product: PdpProductSignal
+): PdpGeoRetrievedChunk[] {
+  const documentName = inferBrandIdentityDocument(product);
+  if (!documentName) {
+    return chunks;
+  }
+
+  return chunks.map((chunk) => {
+    if (chunk.source !== documentName) {
+      return chunk;
+    }
+    return {
+      ...chunk,
+      metadata: {
+        ...chunk.metadata,
+        queryPlanTarget: "brandIdentityCoverage",
+        queryPlanReason: chunk.metadata.queryPlanReason ?? "Ensure the matched target-brand identity document is available to generation without adding other brand identity documents."
+      },
+      score: Math.max(chunk.score, 0.93)
+    };
+  });
 }
 
 function hydrateSelectedRagDocuments(
@@ -641,9 +764,16 @@ function selectFinalRagChunks(chunks: PdpGeoRetrievedChunk[], maxChunks: number)
   const sorted = chunks.slice().sort((a, b) => b.score - a.score);
   const selected: PdpGeoRetrievedChunk[] = [];
   const selectedKeys = new Set<string>();
+  const protectedChunks = selectProtectedRagCoverageChunks(sorted);
+  const effectiveLimit = limit + protectedChunks.length;
+
+  for (const chunk of protectedChunks) {
+    selected.push(chunk);
+    selectedKeys.add(ragChunkKey(chunk));
+  }
 
   for (const kind of coverageRagKindOrder) {
-    if (selected.length >= limit) {
+    if (selected.length >= effectiveLimit) {
       break;
     }
     const candidate = sorted.find((chunk) => chunk.kind === kind && !selectedKeys.has(ragChunkKey(chunk)));
@@ -654,7 +784,7 @@ function selectFinalRagChunks(chunks: PdpGeoRetrievedChunk[], maxChunks: number)
     selectedKeys.add(ragChunkKey(candidate));
   }
 
-  while (selected.length < limit) {
+  while (selected.length < effectiveLimit) {
     const candidate = selectNextDiverseRagChunk(sorted, selected, selectedKeys);
     if (!candidate) {
       break;
@@ -664,6 +794,21 @@ function selectFinalRagChunks(chunks: PdpGeoRetrievedChunk[], maxChunks: number)
   }
 
   return selected.sort((a, b) => b.score - a.score);
+}
+
+function selectProtectedRagCoverageChunks(chunks: PdpGeoRetrievedChunk[]): PdpGeoRetrievedChunk[] {
+  const selected: PdpGeoRetrievedChunk[] = [];
+  const selectedSources = new Set<string>();
+
+  for (const chunk of chunks) {
+    if (chunk.metadata.queryPlanTarget !== "brandIdentityCoverage" || selectedSources.has(chunk.source)) {
+      continue;
+    }
+    selected.push(chunk);
+    selectedSources.add(chunk.source);
+  }
+
+  return selected;
 }
 
 function selectNextDiverseRagChunk(
@@ -1043,4 +1188,91 @@ function mergeRagDocuments(documents: Array<{ name: string; content: string; ver
     map.set(document.name, document);
   }
   return Array.from(map.values());
+}
+
+type BrandRagSlug = keyof typeof pdpGeoGeneratorRagManifest.brandIdentities;
+
+interface BrandRagScope {
+  slug?: BrandRagSlug;
+  identityDocument?: string;
+  bestPracticeDocument?: string;
+  localeExpressionGuidelinesDocument?: string;
+  localeTerminologyMapDocument?: string;
+}
+
+function scopeBrandRagDocuments(
+  documents: Array<{ name: string; content: string; version?: string }>,
+  product: PdpProductSignal,
+  hints?: { brand?: string }
+): Array<{ name: string; content: string; version?: string }> {
+  const scope = inferBrandRagScope(product, hints);
+  const defaultReplacements = new Map<string, string | undefined>([
+    [pdpGeoGeneratorRagManifest.documents.bestPractice, scope.bestPracticeDocument],
+    [pdpGeoGeneratorRagManifest.documents.localeExpressionGuidelines, scope.localeExpressionGuidelinesDocument],
+    [pdpGeoGeneratorRagManifest.documents.localeTerminologyMap, scope.localeTerminologyMapDocument]
+  ]);
+  const documentNames = new Set(documents.map((document) => normalizeRagPath(document.name)));
+
+  return documents.filter((document) => {
+    const name = normalizeRagPath(document.name);
+    if (isBrandScopedDocument(name)) {
+      return Boolean(scope.slug && brandScopedDocumentSlug(name) === scope.slug);
+    }
+    const replacementDocument = defaultReplacements.get(name);
+    if (replacementDocument && documentNames.has(replacementDocument)) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function inferBrandIdentityDocument(product: PdpProductSignal, hints?: { brand?: string }): string | undefined {
+  return inferBrandRagScope(product, hints).identityDocument;
+}
+
+function inferBrandRagScope(product: PdpProductSignal, hints?: { brand?: string }): BrandRagScope {
+  const signal = normalizeBrandIdentitySignal([
+    hints?.brand,
+    product.brand,
+    product.name
+  ].filter(Boolean).join(" "));
+
+  const slug = inferBrandRagSlug(signal);
+  if (!slug) {
+    return {};
+  }
+
+  return {
+    slug,
+    identityDocument: pdpGeoGeneratorRagManifest.brandIdentities[slug],
+    bestPracticeDocument: pdpGeoGeneratorRagManifest.brandBestPractices[slug],
+    localeExpressionGuidelinesDocument: pdpGeoGeneratorRagManifest.brandLocaleExpressionGuidelines[slug],
+    localeTerminologyMapDocument: pdpGeoGeneratorRagManifest.brandLocaleTerminologyMaps[slug]
+  };
+}
+
+function inferBrandRagSlug(signal: string): BrandRagSlug | undefined {
+  if (/(sulwhasoo|설화수)/.test(signal)) {
+    return "sulwhasoo";
+  }
+  if (/(aestura|에스트라|아에스트라)/.test(signal)) {
+    return "aestura";
+  }
+  return undefined;
+}
+
+function isBrandScopedDocument(name: string): boolean {
+  return normalizeRagPath(name).startsWith("brands/");
+}
+
+function brandScopedDocumentSlug(name: string): string | undefined {
+  return normalizeRagPath(name).match(/^brands\/([^/]+)\//)?.[1];
+}
+
+function normalizeRagPath(name: string): string {
+  return name.replace(/\\/g, "/");
+}
+
+function normalizeBrandIdentitySignal(value: string): string {
+  return value.toLowerCase().normalize("NFKC").replace(/\s+/g, "");
 }

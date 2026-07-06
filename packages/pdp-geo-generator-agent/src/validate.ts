@@ -266,6 +266,7 @@ function repairGraphNode(
       }
       const repairedQuestion = repairGeneratedText(name, locale, "FAQPage.mainEntity.name", warnings, repairs);
       const repairedAnswer = repairGeneratedText(answer, locale, "FAQPage.mainEntity.acceptedAnswer.text", warnings, repairs);
+      const fieldContractAnswer = repairFaqAnswerFieldContract(repairedQuestion, repairedAnswer, locale, warnings, repairs);
       if (isSectionHeadingFaqQuestion(repairedQuestion)) {
         addRepair(warnings, repairs, {
           field: "FAQPage.mainEntity",
@@ -278,7 +279,7 @@ function repairGraphNode(
         }, "Section-heading FAQ item was removed during final sentence QA.");
         return [];
       }
-      const aligned = repairFaqQuestionAnswerAlignment(repairedQuestion, repairedAnswer, locale, warnings, repairs);
+      const aligned = repairFaqQuestionAnswerAlignment(repairedQuestion, fieldContractAnswer, locale, warnings, repairs);
 
       return [{
         "@type": "Question",
@@ -293,6 +294,7 @@ function repairGraphNode(
 
   if (node["@type"] === "HowTo" && Array.isArray(node.step)) {
     let nextPosition = 1;
+    const seenStepKeys = new Set<string>();
     node.step = node.step.filter(isRecord).flatMap((item) => {
       const text = stringValue(item.text);
       if (!text) {
@@ -320,6 +322,22 @@ function repairGraphNode(
         }, "HowTo step was removed because it was not actionable usage content.");
         return [];
       }
+      const stepKey = howToStepDedupeKey(repairedText);
+      if (stepKey && seenStepKeys.has(stepKey)) {
+        addRepair(warnings, repairs, {
+          field: "HowTo.step.text",
+          source: "field-contract-validator",
+          issue: "HowTo.step duplicated the same actionable usage direction with different surface wording.",
+          action: "Removed the duplicate HowTo step so usage directions remain concise and non-repetitive.",
+          before: toJsonValue(item),
+          after: null,
+          evidence: ["HowTo.step", "actionable usage dedupe"]
+        }, "Duplicate HowTo usage step was removed during field contract validation.");
+        return [];
+      }
+      if (stepKey) {
+        seenStepKeys.add(stepKey);
+      }
       return [{
         "@type": "HowToStep",
         position: nextPosition++,
@@ -331,6 +349,13 @@ function repairGraphNode(
 
   if (node["@type"] === "Product") {
     repairProductTrustFields(node, locale, warnings, repairs);
+    if (typeof node.description === "string") {
+      node.description = repairProductDescriptionFieldContract(node.description, locale, warnings, repairs);
+    }
+  }
+
+  if (node["@type"] === "WebPage" && typeof node.description === "string") {
+    node.description = repairWebPageDescriptionFieldContract(node.description, locale, warnings, repairs);
   }
 
   if (node["@type"] === "BreadcrumbList") {
@@ -339,6 +364,399 @@ function repairGraphNode(
 
   const repaired = repairSchemaTextFields(node, locale, warnings, repairs);
   return cleanJson(pruneInvalidSchemaText(repaired, locale, warnings, repairs));
+}
+
+function repairProductDescriptionFieldContract(
+  value: string,
+  locale: PdpGeoLocale,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[]
+): string {
+  const sentences = splitPublicSentences(value);
+  if (sentences.length === 0) {
+    return value;
+  }
+  let changed = false;
+  const kept = sentences.flatMap((sentence) => {
+    const repaired = repairProductDescriptionUsageStepSentence(sentence);
+    if (repaired !== sentence) {
+      changed = true;
+      return repaired ? [repaired] : [];
+    }
+    return [sentence];
+  });
+  if (!changed || kept.length === 0) {
+    return value;
+  }
+  const next = kept.join(" ").replace(/\s+/g, " ").trim();
+  addRepair(warnings, repairs, {
+    field: "Product.description",
+    source: "field-contract-validator",
+    issue: "Product.description mixed product identity, ingredient, benefit, or metric evidence with concrete usage directions.",
+    action: "Removed concrete usage directions from Product.description while keeping product, ingredient, benefit, and metric evidence available for Product schema.",
+    before: value,
+    after: next,
+    evidence: ["Product.description", "HowTo/Usage field evidence contract", locale]
+  }, "Product.description usage directions were moved out of the product entity description.");
+  return next;
+}
+
+function repairProductDescriptionUsageStepSentence(value: string): string {
+  const text = value.trim();
+  if (!/[가-힣]/.test(text) || !hasActionableApplicationVerb(text)) {
+    return value;
+  }
+  const withoutUsageClause = text
+    .replace(/(?:,\s*)?(?:사용\s*시|사용할\s*때|사용\s*방법은|사용법은)\s+[^.!?。！？]*(?:닦아냅니다|닦아내는\s*방식입니다|흡수시킵니다|흡수시켜\s*줍니다|바릅니다|펴\s*바릅니다|펴\s*발라\s*줍니다|도포합니다|사용합니다)[.!?。！？]?$/u, "")
+    .replace(/(?:,\s*)?(?:화장솜|손바닥|손에|적당량|얼굴\s*전체|피부결)[^.!?。！？]*(?:닦아냅니다|닦아내는\s*방식입니다|흡수시킵니다|흡수시켜\s*줍니다|바릅니다|펴\s*바릅니다|펴\s*발라\s*줍니다|도포합니다|사용합니다)[.!?。！？]?$/u, "")
+    .replace(/(?:제시|확인|보고)되며$/u, (match) => match.replace(/되며$/u, "됩니다"))
+    .replace(/(?:제공|개선|회복)되며$/u, (match) => match.replace(/되며$/u, "됩니다"))
+    .replace(/며$/u, "습니다")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (withoutUsageClause === text) {
+    return value;
+  }
+  const repaired = withoutUsageClause.replace(/[.。]+$/g, "").trim();
+  if (!repaired || hasActionableApplicationVerb(repaired)) {
+    return "";
+  }
+  return `${repaired}.`;
+}
+
+function repairWebPageDescriptionFieldContract(
+  value: string,
+  locale: PdpGeoLocale,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[]
+): string {
+  const sentences = splitPublicSentences(value);
+  if (sentences.length === 0) {
+    return value;
+  }
+  let changed = false;
+  const benefitContext = extractKoreanWebPageBenefitContext(value);
+  const kept = sentences.flatMap((sentence) => {
+    const targetActorRepaired = repairKoreanSkinTypeActorOpening(sentence);
+    if (targetActorRepaired !== sentence) {
+      changed = true;
+      return targetActorRepaired ? [targetActorRepaired] : [];
+    }
+    const faqHowToRepaired = repairMixedFaqHowToUsageSentence(sentence);
+    if (faqHowToRepaired !== sentence) {
+      changed = true;
+      return faqHowToRepaired ? [faqHowToRepaired] : [];
+    }
+    const redundantNavigationRepaired = repairRedundantKoreanFaqHowToNavigationSentence(sentence);
+    if (redundantNavigationRepaired !== sentence) {
+      changed = true;
+      return redundantNavigationRepaired ? [redundantNavigationRepaired] : [];
+    }
+    if (isKoreanWebPageQuestionNavigationSentence(sentence)) {
+      changed = true;
+      return [];
+    }
+    if (isRedundantKoreanFaqHowToNavigationSentence(sentence)) {
+      changed = true;
+      return [];
+    }
+    const patentTechnologyRepaired = repairKoreanWebPagePatentTechnologySentence(sentence, benefitContext);
+    if (patentTechnologyRepaired !== sentence) {
+      changed = true;
+      return patentTechnologyRepaired ? [patentTechnologyRepaired] : [];
+    }
+    const factNavigationRepaired = repairKoreanWebPageFactNavigationSentence(sentence);
+    if (factNavigationRepaired !== sentence) {
+      changed = true;
+      return factNavigationRepaired ? [factNavigationRepaired] : [];
+    }
+    const mixedIngredientMetricRepaired = repairKoreanWebPageMixedIngredientMetricEvidenceSentence(sentence);
+    if (mixedIngredientMetricRepaired) {
+      changed = true;
+      return mixedIngredientMetricRepaired;
+    }
+    if (isMisroutedWebPageUsageTechnologySentence(sentence)) {
+      changed = true;
+      return [];
+    }
+    const repaired = repairIngredientTechnologyUsageCoverageBlendSentence(sentence);
+    if (repaired !== sentence) {
+      changed = true;
+    }
+    return [repaired];
+  });
+  if (!changed || kept.length === 0) {
+    return value;
+  }
+
+  const next = kept.join(" ").replace(/\s+/g, " ").trim();
+  addRepair(warnings, repairs, {
+    field: "WebPage.description",
+    source: "field-contract-validator",
+    issue: "WebPage.description contained awkward target-customer grammar, mixed page coverage, or over-merged ingredient/metric evidence.",
+    action: "Rewrote awkward target-customer openings and separated misrouted usage, FAQ, ingredient, and metric wording so WebPage.description keeps page-level product evidence citation-ready.",
+    before: value,
+    after: next,
+    evidence: ["WebPage.description", "HowTo/Usage field evidence contract", locale]
+  }, "WebPage.description usage/technology routing was repaired.");
+  return next;
+}
+
+function repairKoreanSkinTypeActorOpening(value: string): string {
+  const text = value.trim();
+  if (!/[가-힣]/.test(text) || !/상품\s*페이지/.test(text)) {
+    return value;
+  }
+  const skinTypeActor = text.match(/^(.*?상품\s*페이지)(?:는|에서는)\s+((?:민감|건조|건성|지성|복합성|트러블|여드름|수부지|악건성|장벽\s*약한|민감\s*건조)\s*피부(?:\s*(?:또는|혹은|및|과|와)\s*(?:민감|건조|건성|지성|복합성|트러블|여드름|수부지|악건성|장벽\s*약한|민감\s*건조)\s*피부)*)\s*(?:이|가)\s+([^.!?。！？]{2,120}?)(?:을|를)?\s*(?:비교|선택|참고|확인|살펴|고려)할\s*때[^.!?。！？]{0,80}?(?:참고할\s*수\s*있는\s*)?([^.!?。！？]{2,80}?)\s*정보를\s*(?:다룹니다|안내합니다|설명합니다|확인할\s*수\s*있습니다)[.!?。！？]?$/u);
+  if (!skinTypeActor) {
+    return value;
+  }
+  const pageSubject = normalizeKoreanRepairPhrase(skinTypeActor[1] ?? "");
+  const skinTypes = normalizeKoreanRepairPhrase(skinTypeActor[2] ?? "");
+  const comparisonContext = stripTrailingKoreanObjectParticle(normalizeKoreanRepairPhrase(skinTypeActor[3] ?? ""));
+  const productInfo = stripTrailingKoreanObjectParticle(normalizeKoreanRepairPhrase(skinTypeActor[4] ?? "")
+    .replace(/^참고할\s*수\s*있는\s*/u, "")
+    .replace(/(?:상품|제품)?\s*정보$/u, ""));
+  if (!pageSubject || !skinTypes || !comparisonContext) {
+    return value;
+  }
+  const productObject = appendKoreanObjectParticle(ensureKoreanProductIntroNoun(productInfo || "제품"));
+  return `${pageSubject}에서는 ${skinTypes} 고객에게 ${comparisonContext}에 효과적인 ${productObject} 추천합니다.`;
+}
+
+function ensureKoreanProductIntroNoun(value: string): string {
+  const text = normalizeKoreanRepairPhrase(value)
+    .replace(/\s*정보$/u, "")
+    .trim();
+  if (!text) {
+    return "제품";
+  }
+  return /(?:상품|제품)$/u.test(text) ? text : `${text} 상품`;
+}
+
+function normalizeKoreanRepairPhrase(value: string): string {
+  return value
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.])/g, "$1")
+    .replace(/[.。！？!?]+$/g, "")
+    .trim();
+}
+
+function repairMixedFaqHowToUsageSentence(value: string): string {
+  if (!isMixedFaqHowToUsageSentence(value)) {
+    return value;
+  }
+  return "";
+}
+
+function isMixedFaqHowToUsageSentence(value: string): boolean {
+  const text = value.trim();
+  if (!/[가-힣]/.test(text) || !/(?:FAQ\s*(?:와|및|\/|과)\s*HowTo|HowTo\s*(?:와|및|\/|과)\s*FAQ)/i.test(text)) {
+    return false;
+  }
+  return /(?:손바닥|적당량|얼굴\s*전체|피부결|펴\s*바른|펴\s*발라|흡수|두드려|도포|바르는\s*방법|사용\s*방법|사용법)[^.!?。！？]{0,120}(?:이유|동일\s*여부|차이|문의|질문|FAQ|캡슐|워터)/i.test(text)
+    || /(?:방법|사용법)(?:과|와)[^.!?。！？]{0,120}(?:이유|동일\s*여부|차이|FAQ|캡슐|워터)/i.test(text);
+}
+
+function isRedundantKoreanFaqHowToNavigationSentence(value: string): boolean {
+  const text = value.trim();
+  if (!/[가-힣]/.test(text) || !/(?:FAQ|HowTo|사용법\s*영역|FAQ\s*영역)/i.test(text)) {
+    return false;
+  }
+  return /(?:FAQ|HowTo|사용법\s*영역|FAQ\s*영역)[^.!?。！？]{0,180}(?:확인할\s*수\s*있습니다|확인합니다|다룹니다|답변으로\s*다룹니다|살펴볼\s*수\s*있습니다|이어(?:서)?\s*살펴볼\s*수\s*있습니다|(?:함께\s*)?제공됩니다)/i.test(text)
+    || /비교\s*과정에서는[^.!?。！？]{0,160}(?:FAQ|HowTo|사용법)[^.!?。！？]{0,120}(?:살펴볼\s*수\s*있습니다|확인할\s*수\s*있습니다)/i.test(text);
+}
+
+function repairRedundantKoreanFaqHowToNavigationSentence(value: string): string {
+  if (!isRedundantKoreanFaqHowToNavigationSentence(value)) {
+    return value;
+  }
+  const text = value.trim();
+  const withoutNavigationTail = text
+    .replace(/,\s*(?:(?:구매\s*정보|가격|혜택)(?:와|과)\s*)?(?:FAQ|HowTo)(?:와|과|및|\/)?(?:\s*HowTo|\s*FAQ)?(?:가|도)?\s*(?:함께\s*)?(?:제공됩니다|확인할\s*수\s*있습니다|확인합니다|다룹니다|살펴볼\s*수\s*있습니다)[.!?。！？]?$/iu, "")
+    .replace(/,\s*(?:구매\s*정보|가격|혜택)(?:와|과)\s*(?:FAQ|HowTo)[^.!?。！？]{0,80}(?:제공됩니다|확인할\s*수\s*있습니다)[.!?。！？]?$/iu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (withoutNavigationTail === text || !withoutNavigationTail || /(?:FAQ|HowTo|사용법\s*영역|FAQ\s*영역)/i.test(withoutNavigationTail)) {
+    return "";
+  }
+
+  const base = withoutNavigationTail.replace(/[.。！？!?]+$/g, "").trim();
+  if (!base) {
+    return "";
+  }
+  if (/(?:결과|수치|근거)$/u.test(base)) {
+    return `${base}를 제시합니다.`;
+  }
+  return `${base}.`;
+}
+
+function isKoreanWebPageQuestionNavigationSentence(value: string): boolean {
+  const text = value.trim();
+  if (!/[가-힣]/.test(text)) {
+    return false;
+  }
+  return /(?:질문|문의|궁금증)(?:도)?\s*(?:함께\s*)?(?:다룹니다|제공됩니다|확인할\s*수\s*있습니다)[.!?。！？]?$/u.test(text)
+    && /(?:이유|동일|관련|차이|캡슐|워터|크림|FAQ|HowTo)/i.test(text);
+}
+
+function repairKoreanWebPagePatentTechnologySentence(value: string, benefitContext?: string): string {
+  const text = value.trim();
+  if (!/[가-힣]/.test(text) || !/특허\s*출원\s*번호/.test(text) || !/(?:핵심\s*)?(?:기술|성분\/기술|포뮬러)/.test(text)) {
+    return value;
+  }
+
+  const phrase = normalizeKoreanIngredientMetricEvidencePhrase(text
+    .replace(/^(?:핵심\s*)?(?:기술|성분\/기술|포뮬러)(?:은|는)\s*/u, "")
+    .replace(/\s*(?:이며|이고|,)?\s*특허\s*출원\s*번호(?:는|:)?\s*[A-Z]{1,4}\d[\d-]*.*$/iu, "")
+    .replace(/\s+/g, " ")
+    .trim());
+  if (!phrase) {
+    return "";
+  }
+  if (benefitContext) {
+    return `${appendKoreanObjectParticle(benefitContext)} 뒷받침하는 핵심 성분/기술은 ${phrase}입니다.`;
+  }
+  return `핵심 성분/기술은 ${phrase}입니다.`;
+}
+
+function extractKoreanWebPageBenefitContext(value: string): string | undefined {
+  for (const sentence of splitPublicSentences(value)) {
+    const text = normalizeKoreanRepairPhrase(sentence);
+    const objectMatch = text.match(/고객에게\s+(.{2,100}?)(?:을|를)\s+(?:내세우는|돕는|제공하는|지원하는|케어하는|위한)\s+/u);
+    if (objectMatch?.[1]) {
+      return normalizeKoreanBenefitContextPhrase(objectMatch[1]);
+    }
+    const effectiveMatch = text.match(/고객에게\s+(.{2,100}?)에\s+효과적인\s+/u);
+    if (effectiveMatch?.[1]) {
+      return normalizeKoreanBenefitContextPhrase(effectiveMatch[1]);
+    }
+  }
+  return undefined;
+}
+
+function normalizeKoreanBenefitContextPhrase(value: string): string | undefined {
+  const phrase = normalizeKoreanRepairPhrase(value)
+    .replace(/\s*(?:상품|제품|토너|크림|세럼|로션)$/u, "")
+    .trim();
+  return phrase.length >= 2 ? phrase : undefined;
+}
+
+function repairKoreanWebPageFactNavigationSentence(value: string): string {
+  const text = value.trim();
+  if (!/[가-힣]/.test(text)) {
+    return value;
+  }
+
+  const formulaMatch = text.match(/^(.{2,260}?)를\s*중심으로\s*(?:포뮬러|성분\/기술|성분|기술)\s*특징을\s*(?:살펴볼|확인할)\s*수\s*있습니다[.!?。！？]?$/u);
+  if (formulaMatch?.[1]) {
+    const phrase = normalizeKoreanRepairPhrase(formulaMatch[1])
+      .replace(/\s*성분\/기술$/u, "")
+      .trim();
+    return phrase ? `핵심 성분/기술은 ${phrase}입니다.` : "";
+  }
+
+  const evidenceMatch = text.match(/^측정\/평가\s*(?:정보|결과)에서는\s+(.{2,260}?)(?:를|을)?\s*(?:함께\s*)?(?:참고|확인)할\s*수\s*있습니다[.!?。！？]?$/u);
+  if (evidenceMatch?.[1]) {
+    const phrase = normalizeKoreanRepairPhrase(evidenceMatch[1])
+      .replace(/\s*관련\s*결과$/u, " 관련 결과")
+      .trim();
+    return phrase ? `${appendKoreanSubjectParticle(phrase)} 제시됩니다.` : "";
+  }
+
+  return value;
+}
+
+function repairKoreanWebPageMixedIngredientMetricEvidenceSentence(value: string): string[] | undefined {
+  const text = value.trim();
+  if (!isKoreanWebPageMixedIngredientMetricEvidenceSentence(text)) {
+    return undefined;
+  }
+
+  const withoutAwkwardPredicate = text
+    .replace(/[.!?。！？]+$/u, "")
+    .replace(/\s*(?:선택의\s*)?(?:핵심\s*)?근거(?:로를|로|를)?\s*(?:제공합니다|제시합니다|됩니다)$/u, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const split = withoutAwkwardPredicate.match(/^(.{2,260}?(?:구성|포뮬러|워터|캡슐|지방산|콜레스테롤|세라마이드))과\s+(.{2,320})$/u);
+  if (!split?.[1] || !split[2]) {
+    const base = stripTrailingKoreanSubjectParticle(withoutAwkwardPredicate);
+    return base ? [`${appendKoreanSubjectParticle(base)} 제시됩니다.`] : undefined;
+  }
+
+  const ingredientPhrase = normalizeKoreanIngredientMetricEvidencePhrase(split[1]);
+  const metricPhrase = stripTrailingKoreanSubjectParticle(normalizeKoreanMetricEvidencePhrase(split[2]));
+  const repaired: string[] = [];
+  if (ingredientPhrase) {
+    repaired.push(`핵심 성분/기술은 ${ingredientPhrase}입니다.`);
+  }
+  if (metricPhrase) {
+    repaired.push(`${appendKoreanSubjectParticle(metricPhrase)} 제시됩니다.`);
+  }
+  return repaired.length > 0 ? repaired : undefined;
+}
+
+function isKoreanWebPageMixedIngredientMetricEvidenceSentence(value: string): boolean {
+  const text = value.trim();
+  if (!/[가-힣]/.test(text) || !hasIngredientTechnologyCoverageText(text) || !/%/.test(text)) {
+    return false;
+  }
+  return /(?:선택의\s*)?(?:핵심\s*)?근거(?:로를|로|를)?\s*(?:제공합니다|제시합니다|됩니다)[.!?。！？]?$/u.test(text)
+    || /근거로를\s*제공합니다[.!?。！？]?$/u.test(text);
+}
+
+function normalizeKoreanIngredientMetricEvidencePhrase(value: string): string {
+  return normalizeKoreanRepairPhrase(value)
+    .replace(/\s*\/\s*/g, "·")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeKoreanMetricEvidencePhrase(value: string): string {
+  return repairKoreanScientificTestWording(normalizeKoreanRepairPhrase(value))
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function splitPublicSentences(value: string): string[] {
+  return value
+    .split(/(?<=[.!?。！？])\s+/u)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
+function isMisroutedWebPageUsageTechnologySentence(value: string): boolean {
+  const text = value.trim();
+  if (!/(?:사용법\s*영역|HowTo|how\s*to\s*use|usage\s+(?:area|section|guidance|steps?))/i.test(text)) {
+    return false;
+  }
+  return isIngredientTechnologyUsageLeak(text);
+}
+
+function repairIngredientTechnologyUsageCoverageBlendSentence(value: string): string {
+  if (!isIngredientTechnologyUsageCoverageBlendSentence(value)) {
+    return value;
+  }
+  const repaired = value
+    .replace(/,\s*(?:사용법|사용\s*방법)(?:을|를)?\s*(확인(?:하고|할 수 있습니다|할 수 있고|합니다)?|비교(?:하고|할 수 있습니다)?|살펴(?:볼 수 있습니다|보고)?)/g, " 등 성분/기술 정보를 $1")
+    .replace(/\s+/g, " ")
+    .trim();
+  const base = repaired.replace(/[.。]+$/g, "").trim();
+  return `${base}.`;
+}
+
+function isIngredientTechnologyUsageCoverageBlendSentence(value: string): boolean {
+  const text = value.trim();
+  if (!/(?:사용법|사용\s*방법|HowTo|how\s*to\s*use|usage\s+guidance|directions?)/i.test(text) || !hasIngredientTechnologyCoverageText(text)) {
+    return false;
+  }
+  return /(?:성분|기술|포뮬러|복합체|캡슐|세라마이드|콜레스테롤|지방산|PHA|formula|technology|complex|capsule|ceramide)[^.!?。！？]{0,160},\s*(?:사용법|사용\s*방법|HowTo|how\s*to\s*use|usage\s+guidance|directions?)(?:을|를)?\s*(?:확인|비교|살펴|다루|안내|제공|check|compare|review|cover|include)/i.test(text)
+    || /(?:고객|사용자|customers?|users?)[^.!?。！？]{0,40}(?:은|는)?[^.!?。！？]{0,180}(?:성분|기술|포뮬러|복합체|캡슐|세라마이드|콜레스테롤|지방산|PHA|formula|technology|complex|capsule|ceramide)[^.!?。！？]{0,120}(?:사용법|사용\s*방법|HowTo|how\s*to\s*use|usage\s+guidance|directions?)(?:을|를)?\s*(?:확인|비교|살펴|check|compare|review)/i.test(text);
+}
+
+function hasIngredientTechnologyCoverageText(value: string): boolean {
+  return /(?:성분|기술|포뮬러|복합체|캡슐|세라마이드|콜레스테롤|지방산|히알루론산|레티놀|나이아신아마이드|펩타이드|PHA|formula|technology|complex|capsule|ceramide|hyaluronic|retinol|niacinamide|peptide)/i.test(value);
 }
 
 function repairProductTrustFields(
@@ -813,6 +1231,9 @@ function isActionableUsageText(value: string): boolean {
   if (isSensoryOnlyUsageText(text)) {
     return false;
   }
+  if (isIngredientTechnologyUsageLeak(text)) {
+    return false;
+  }
   return hasUsageActionVerb(text);
 }
 
@@ -863,7 +1284,22 @@ function hasUsageActionVerb(value: string): boolean {
 
 function hasKoreanInstructionVerb(value: string): boolean {
   const text = value.trim();
-  return /(?:적당량|손에|물과\s*함께|거품\s*내|거품내|얼굴에|문지르|미온수|헹구|화장솜|덜어|펴\s*바르|펴\s*바릅|펴\s*발라|바르(?:고|며|듯|세요|십시오|기|면|는|도록)|바릅|바른\s*후|발라(?:주|주세요|줍니다|서|가며)|마사지(?:하듯|하[고여]|한\s*후|해|하세요|하며)|흡수(?:시켜|시키|될\s*때까지|되도록|해\s*주세요|시킵)|마무리(?:해|하세요|합니다|하십시오)|도포(?:해|하세요|합니다|하십시오|한\s*(?:뒤|후))|사용\s*(?:해|하세요|합니다|하십시오|한다|하시|할\s*때)|(?:샤워|세안|토너|스킨케어|아침|저녁|매일|데일리)[^.!?。！？\n]{0,40}사용(?:합니다|하세요|해\s*주세요|해|$))/.test(text);
+  return /(?:적당량|손에|물과\s*함께|거품\s*내|거품내|얼굴에|문지르|미온수|헹구|화장솜|덜어|펴\s*바르|펴\s*바릅|펴\s*발라|바르(?:고|며|듯|세요|십시오|기|면|는|도록)|바릅|바른\s*후|발라(?:주|주세요|줍니다|서|가며)|마사지(?:하듯|하[고여]|한\s*후|해|하세요|하며)|흡수(?:시켜|시키|될\s*때까지|되도록|해\s*주세요|시킵)|마무리(?:해|하세요|합니다|하십시오)|도포(?:해|하세요|합니다|하십시오|한\s*(?:뒤|후))|사용\s*(?:해|하세요|합니다|하십시오|한다|하시)|(?:샤워|세안|토너|스킨케어|아침|저녁|매일|데일리)[^.!?。！？\n]{0,40}사용(?:합니다|하세요|해\s*주세요|해|$))/.test(text);
+}
+
+function isIngredientTechnologyUsageLeak(value: string): boolean {
+  const text = stripListMarker(value).trim();
+  const hasFormulaOrTechnology = /(?:성분|기술|포뮬러|복합체|캡슐|세라마이드|히알루론산|레티놀|나이아신아마이드|펩타이드|formula|technology|complex|capsule|ceramide|hyaluronic|retinol|niacinamide|peptide)/i.test(text);
+  const hasInstructionCue = /(?:사용\s*방법|사용법|\bhow\s+to\s+use\b|\bdirections?\b|적당량|손에|얼굴에|피부결|펴\s*바르|발라|흡수|도포|massage|apply|dispense|pat|press|spread|smooth|rinse|lather)/i.test(text);
+  const hasOnlyDescriptiveUse = /(?:사용할\s*때마다|사용\s*시|when\s+used|with\s+each\s+use)/i.test(text) && !hasInstructionCue;
+  const hasReportingFrame = /(?:적용|설계|제공|도출|방출|설명|특징|구성|함유|담(?:긴|은)|녹지\s*않|patent|proprietary|designed|delivers?|provides?|contains?|features?)/i.test(text);
+  return hasFormulaOrTechnology && (hasOnlyDescriptiveUse || hasReportingFrame) && !hasActionableApplicationVerb(text);
+}
+
+function hasActionableApplicationVerb(value: string): boolean {
+  const text = stripListMarker(value).trim();
+  return /\b(?:apply|dispense|massage|lather|rinse|pat|press|spread|smooth|warm|pump)\b|なじませ|塗布/i.test(text)
+    || /(?:적당량|손에|물과\s*함께|거품\s*내|거품내|얼굴에|문지르|미온수|헹구|화장솜|덜어|펴\s*바르|펴\s*바릅|펴\s*발라|바르(?:고|며|듯|세요|십시오|기|면|는|도록)|바릅|바른\s*후|발라(?:주|주세요|줍니다|서|가며)|마사지(?:하듯|하[고여]|한\s*후|해|하세요|하며)|흡수(?:시켜|시키|될\s*때까지|되도록|해\s*주세요|시킵)|마무리(?:해|하세요|합니다|하십시오)|도포(?:해|하세요|합니다|하십시오|한\s*(?:뒤|후)))/.test(text);
 }
 
 function isIngredientEvidenceText(value: string): boolean {
@@ -918,6 +1354,144 @@ function repairFaqSectionText(
   }
 
   return next;
+}
+
+function repairFaqAnswerFieldContract(
+  question: string,
+  answer: string,
+  locale: PdpGeoLocale,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[]
+): string {
+  if (locale !== "ko-KR") {
+    return answer;
+  }
+
+  let next = answer;
+
+  const repairedComparison = repairKoreanComparisonFaqAnswer(question, next);
+  if (repairedComparison !== next) {
+    addRepair(warnings, repairs, {
+      field: "FAQPage.mainEntity.acceptedAnswer.text",
+      source: "field-contract-validator",
+      issue: "FAQ comparison answer mixed the direct same/different answer with patent identifiers or overlong formula-technology details.",
+      action: "Rewrote the FAQ answer so the comparison result is answered first and supporting capsule evidence remains concise.",
+      before: next,
+      after: repairedComparison,
+      evidence: ["FAQPage.mainEntity.name", "FAQPage.mainEntity.acceptedAnswer.text", "answer-ready FAQ contract"]
+    }, "FAQ comparison answer was repaired to keep the answer direct and source-scoped.");
+    next = repairedComparison;
+  }
+
+  const repairedBenefit = repairKoreanBenefitFaqReportStyleAnswer(question, next);
+  if (repairedBenefit !== next) {
+    addRepair(warnings, repairs, {
+      field: "FAQPage.mainEntity.acceptedAnswer.text",
+      source: "field-contract-validator",
+      issue: "FAQ suitability or benefit answer used report-style metric wording instead of customer-facing effect wording.",
+      action: "Rewrote the numeric result clause as a direct effect statement while preserving the source-backed value.",
+      before: next,
+      after: repairedBenefit,
+      evidence: ["FAQPage.mainEntity.name", "FAQPage.mainEntity.acceptedAnswer.text", "benefit FAQ answer contract"]
+    }, "FAQ benefit answer was repaired so metric evidence reads as a direct customer-facing effect.");
+    next = repairedBenefit;
+  }
+
+  return next;
+}
+
+function repairKoreanComparisonFaqAnswer(question: string, answer: string): string {
+  if (!isKoreanComparisonQuestion(question) || !isOvermixedKoreanComparisonFaqAnswer(answer)) {
+    return answer;
+  }
+
+  const target = extractKoreanComparisonQuestionTarget(question) ?? "비교 대상 캡슐";
+  const productName = extractKoreanFaqProductNameFromAnswer(answer);
+  const productSubject = productName ? `${productName}의 캡슐` : "이 토너의 캡슐";
+  const capsuleDescription = extractKoreanCapsuleDescription(answer);
+  const supportSentence = capsuleDescription
+    ? `${productSubject}은 ${capsuleDescription}로 설명됩니다.`
+    : `${productSubject} 정보는 상품 상세의 캡슐 설명을 기준으로 확인됩니다.`;
+
+  if (isKoreanUncertainComparisonAnswer(answer)) {
+    return `공개된 상품 정보만으로는 ${target}과 동일하다고 단정하기 어렵습니다. ${supportSentence}`;
+  }
+  if (isKoreanAffirmativeComparisonAnswer(answer)) {
+    const capsuleClause = capsuleDescription ? `${capsuleDescription}로 ` : "";
+    return `${productSubject}은 ${target}과 ${capsuleClause}동일하다고 설명됩니다.`;
+  }
+
+  return answer;
+}
+
+function isKoreanComparisonQuestion(question: string): boolean {
+  return /(?:동일|같은|같나요|같습니까|차이|다른|비교)/u.test(question);
+}
+
+function isOvermixedKoreanComparisonFaqAnswer(answer: string): boolean {
+  const text = answer.trim();
+  return /특허\s*출원|특허출원번호|특허\s*성분|KR\d|포뮬러\s*기술|기술과\s*특허/u.test(text)
+    && /(?:동일|같은|단정|캡슐)/u.test(text);
+}
+
+function isKoreanUncertainComparisonAnswer(answer: string): boolean {
+  return /(?:동일하다고\s*)?(?:단정하기는?\s*어렵|단정할\s*근거|확인(?:되지는|되지)\s*않|확인하기\s*어렵|어렵고)/u.test(answer);
+}
+
+function isKoreanAffirmativeComparisonAnswer(answer: string): boolean {
+  return /(?:동일합니다|동일하다고\s*설명|동일한\s*캡슐|같은\s*캡슐|같습니다)/u.test(answer)
+    && !isKoreanUncertainComparisonAnswer(answer);
+}
+
+function extractKoreanComparisonQuestionTarget(question: string): string | undefined {
+  const contained = question.match(/^(.+?)에\s*함유된\s*캡슐/u);
+  if (contained?.[1]) {
+    return `${normalizeKoreanRepairPhrase(contained[1])} 캡슐`;
+  }
+  const beforeSame = question.match(/^(.+?)(?:과|와)\s*(?:동일|같은|차이)/u);
+  if (beforeSame?.[1]) {
+    return normalizeKoreanRepairPhrase(beforeSame[1])
+      .replace(/\s*캡슐$/u, " 캡슐")
+      .trim();
+  }
+  return undefined;
+}
+
+function extractKoreanFaqProductNameFromAnswer(answer: string): string | undefined {
+  const possessive = answer.match(/((?:에스트라\s*)?[가-힣A-Za-z0-9·\s]+?(?:토너|크림|세럼|로션|앰플|에센스))(?:의|은|는)\s*캡슐/u);
+  return possessive?.[1] ? normalizeKoreanRepairPhrase(possessive[1]) : undefined;
+}
+
+function extractKoreanCapsuleDescription(answer: string): string | undefined {
+  const capsule = answer.match(/((?:PHA\s*워터에\s*띄워진\s*)?(?:아토베리어365\s*)?고밀도\s*세라마이드\s*캡슐|아토베리어365\s*세라마이드\s*캡슐)/iu)?.[1];
+  if (!capsule) {
+    return undefined;
+  }
+  return normalizeKoreanRepairPhrase(capsule)
+    .replace(/\s*특허\s*출원\s*포뮬러$/u, "")
+    .replace(/\s*특허\s*성분$/u, "")
+    .trim();
+}
+
+function repairKoreanBenefitFaqReportStyleAnswer(question: string, answer: string): string {
+  if (!isKoreanBenefitOrSuitabilityFaqQuestion(question) || !hasKoreanReportStyleMetricFaqAnswer(answer)) {
+    return answer;
+  }
+
+  return answer
+    .replace(
+      /((?:(?:사용|도포|적용)\s*(?:직후|후|전후)?|\d+(?:\.\d+)?\s*(?:시간|일|주|개월)\s*후|\d+(?:\.\d+)?\s*(?:배|%))[^.。！？]{0,90}?(?:증가|개선|회복|감소|완화|지속|상승|향상)(?:된|한)?)\s*결과가\s*제시됩니다/gu,
+      (_match, claim: string) => `${normalizeKoreanRepairPhrase(claim)} 효과가 있습니다`
+    );
+}
+
+function isKoreanBenefitOrSuitabilityFaqQuestion(question: string): boolean {
+  return /[가-힣]/.test(question)
+    && (classifyKoreanQuestionIntent(question) === "benefit" || /어떤\s*고객|누구(?:에게)?|피부\s*타입|피부타입|권장/u.test(question));
+}
+
+function hasKoreanReportStyleMetricFaqAnswer(answer: string): boolean {
+  return /(?:(?:사용|도포|적용)\s*(?:직후|후|전후)?|\d+(?:\.\d+)?\s*(?:시간|일|주|개월)\s*후|\d+(?:\.\d+)?\s*(?:배|%))[^.。！？]{0,90}?(?:증가|개선|회복|감소|완화|지속|상승|향상)(?:된|한)?\s*결과가\s*제시됩니다/u.test(answer);
 }
 
 function repairFaqQuestionAnswerAlignment(
@@ -1182,6 +1756,7 @@ function repairGeneratedText(
       next = stripTrailingKoreanObjectParticle(next);
     }
     next = repairKoreanAwkwardSpacing(next);
+    next = repairKoreanScientificTestWording(next);
   }
   if (locale === "en-US" || locale === "en-GB") {
     next = repairEnglishSentenceQuality(next);
@@ -1209,19 +1784,44 @@ function repairGeneratedText(
 }
 
 function repairHowToStepUsageText(value: string): string {
-  let next = stripLeadingUsageStepMarkers(stripLeadingUsageMeasurementLabels(value));
+  let next = stripLeadingKoreanUsageParticle(stripLeadingUsageStepMarkers(stripLeadingUsageMeasurementLabels(value)));
   const cueIndex = usageRepairCueIndex(next);
   if (cueIndex > 0 && shouldRepairUsageFromCue(next.slice(0, cueIndex))) {
     next = next.slice(cueIndex).trim();
   }
 
-  return stripLeadingUsageStepMarkers(next
+  return stripLeadingKoreanUsageParticle(stripLeadingUsageStepMarkers(next
     .replace(/^\d+[.)]?\s+/, "")
     .replace(/^(?:[\p{L}\p{N}™®().,'\s-]{0,100})?(?:사용\s*방법|사용법)\s*\d*[:.]?\s*/iu, "")
     .replace(/^(?:[\p{L}\p{N}™®().,'\s-]{0,100})?(?:how\s*to\s*use|directions?)\s*\d*[:.]?\s*/iu, "")
     .replace(usageMeasurementLeadPattern(), "")
     .replace(/\s+/g, " ")
-    .trim());
+    .trim()));
+}
+
+function stripLeadingKoreanUsageParticle(value: string): string {
+  return value
+    .trim()
+    .replace(/^(?:은|는|이|가|을|를|의)\s+(?=(?:화장솜|손바닥|손에|적당량|얼굴|피부|피부결|토너|제품|내용물|양손|물과|미온수))/u, "")
+    .trim();
+}
+
+function howToStepDedupeKey(value: string): string {
+  return usagePropertyStepKey(normalizeHowToStepSurfaceForDedupe(value));
+}
+
+function normalizeHowToStepSurfaceForDedupe(value: string): string {
+  return stripLeadingKoreanUsageParticle(value)
+    .replace(/닦아내는\s*방식입니다$/u, "닦아냅니다")
+    .replace(/닦아내는\s*방법입니다$/u, "닦아냅니다")
+    .replace(/흡수시키는\s*방식입니다$/u, "흡수시켜 줍니다")
+    .replace(/흡수시키는\s*방법입니다$/u, "흡수시켜 줍니다")
+    .replace(/바르는\s*방식입니다$/u, "바릅니다")
+    .replace(/바르는\s*방법입니다$/u, "바릅니다")
+    .replace(/사용하는\s*방식입니다$/u, "사용합니다")
+    .replace(/사용하는\s*방법입니다$/u, "사용합니다")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function repairUsagePropertyValue(value: string, locale: PdpGeoLocale): string {
@@ -1463,6 +2063,10 @@ function repairKoreanReviewQuoteFragments(value: string): string {
 
 function repairKoreanSentenceQuality(value: string): string {
   return repairKoreanMetaNarrationFrames(value)
+    .replace(/설명된다\s+사용법을\s+다룹니다/g, "설명됩니다")
+    .replace(/설명됩니다\s+사용법을\s+다룹니다/g, "설명됩니다")
+    .replace(/제시된다\s+사용법을\s+다룹니다/g, "제시됩니다")
+    .replace(/제시됩니다\s+사용법을\s+다룹니다/g, "제시됩니다")
     .replace(/제품로/g, "제품으로")
     .replace(/(?:합니다|줍니다|입니다)입니다/g, (match) => match.replace(/입니다$/, ""))
     .replace(/(?:하세요|주세요)입니다/g, (match) => match.replace(/입니다$/, ""))
@@ -1601,8 +2205,18 @@ function repairKoreanAwkwardSpacing(value: string): string {
     .replace(/합니다합니다/g, "합니다")
     .replace(/합니다입니다/g, "합니다")
     .replace(/됩니다입니다/g, "됩니다")
+    .replace(/민감피부/g, "민감 피부")
+    .replace(/건조피부/g, "건조 피부")
     .replace(/\s+([,.)\]}>])/g, "$1")
     .replace(/([([{<])\s+/g, "$1");
+}
+
+function repairKoreanScientificTestWording(value: string): string {
+  return value.replace(/([가-힣0-9\s]{2,120}?)\s+([A-Za-z][A-Za-z\s-]{1,40})\s*테스트\s*결과\s*(\d+(?:\.\d+)?\s*%)/gu, (_match, subject: string, method: string, metric: string) => {
+    const cleanSubject = subject.replace(/\s+/g, " ").trim();
+    const cleanMethod = method.replace(/\s+/g, " ").trim();
+    return cleanSubject && cleanMethod ? `${cleanMethod} 테스트에서 ${cleanSubject} ${metric}` : `${cleanMethod || "테스트"} 결과 ${metric}`;
+  });
 }
 
 function removeTruncatedFragments(value: string): string {
@@ -1684,6 +2298,10 @@ function isShortKoreanLabelValue(path: string, value: string): boolean {
 
 function stripTrailingKoreanObjectParticle(value: string): string {
   return value.replace(/([가-힣]{1,40})(?:을|를)(?=$|[,.)\]\s])/g, "$1");
+}
+
+function stripTrailingKoreanSubjectParticle(value: string): string {
+  return value.replace(/([가-힣]{1,40})(?:이|가)(?=$|[,.)\]\s])/g, "$1");
 }
 
 function isDanglingFragment(value: string): boolean {
@@ -1887,6 +2505,10 @@ function appendKoreanTopicParticle(value: string): string {
 
 function appendKoreanObjectParticle(value: string): string {
   return `${value}${hasKoreanBatchim(value) ? "을" : "를"}`;
+}
+
+function appendKoreanSubjectParticle(value: string): string {
+  return `${value}${hasKoreanBatchim(value) ? "이" : "가"}`;
 }
 
 function hasKoreanBatchim(value: string): boolean {
