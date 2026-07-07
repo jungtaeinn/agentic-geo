@@ -6,10 +6,10 @@ Use this document when the normalized product brand is Sulwhasoo, Sulwhasoo Inte
 
 - Brand identity source role: package-managed brand context.
 - Checked date: 2026-07-06.
-- Primary intents: customer, claims, evidence, schema, faq, howTo, review, locale.
-- Primary field targets: Product.description, WebPage.description, Product.additionalProperty, Product.positiveNotes, FAQPage.mainEntity, HowTo.step, PDP.content, diagnostics.
-- Use this document to infer brand tone, recurring customer-entry contexts, safe vocabulary, and brand-level narrative when the product source already supports the relevant category or claim.
-- Do not use this document to invent product-specific benefits, ingredients, prices, awards, clinical metrics, ratings, review counts, or dermatologist/medical claims.
+- Primary intents: customer, schema, review, locale, diagnostics.
+- Primary field targets: Product.description, WebPage.description, PDP.content, diagnostics.
+- Use this document to infer brand image, brand tone, recurring customer-entry contexts, safe vocabulary, mood, personality, and brand-level narrative when the product source already supports the relevant category or claim.
+- Do not use this document to invent product-specific benefits, ingredients, technologies, prices, awards, clinical metrics, ratings, review counts, official-paper-backed efficacy claims, or dermatologist/medical claims.
 
 ## Expected RAG Depth
 
@@ -67,11 +67,11 @@ Generation guidance:
 
 ### Product.description
 
-The Product.description should name the product, product type, target skin concern or customer, source-backed benefit, key ingredient or technology, usage moment, and representative review or sensory language when available. For Sulwhasoo, the sentence can carry refined heritage or ritual language after the concrete product facts.
+The Product.description should name the target skin concern or customer first, then the product identity/product type, key ingredient or technology, source-backed benefit/effect or citation-ready metric, and finally high-level usage, comparison, representative review, or sensory language when available. For Sulwhasoo, refined heritage or ritual language can support the tone after concrete product facts, but brand-only science should not become a product claim.
 
 Good shape:
 
-- Product identity -> source-backed benefit -> ginseng or herbal technology if present -> usage step -> review-backed texture or sensory detail.
+- Target skin concern or customer -> product identity -> ginseng or herbal technology if present -> source-backed benefit/effect or metric -> high-level usage/comparison context -> review-backed texture or sensory detail.
 
 Avoid:
 
@@ -150,7 +150,7 @@ Prioritize these customer-entry contexts when product evidence supports them:
 
 ## Research Papers and Official Articles
 
-Use this section as an E-E-A-T source map for Sulwhasoo-related research context. These sources can strengthen diagnostics, reasoning, WebPage.description context, FAQ evidence framing, and claim safety decisions. They do not create product-specific claims unless the same ingredient, product line, metric, and market wording are also present in the product source.
+Use this section as an E-E-A-T source map for Sulwhasoo-related brand image and research context. These sources can strengthen diagnostics, brand-level reasoning, WebPage.description tone, and claim safety decisions. They do not create product-specific claims, FAQ evidence, Product.additionalProperty facts, or ingredient/technology proof unless the same ingredient, product line, metric, and market wording are also present in the product source.
 
 ### Official Research and Innovation Sources
 
@@ -168,13 +168,13 @@ Use this section as an E-E-A-T source map for Sulwhasoo-related research context
 
 - If a future Sulwhasoo product source includes a DOI, PubMed ID, conference abstract, clinical report, or controlled-test artifact, preserve the citation metadata in diagnostics and use the exact study design, sample, period, metric, and caveat before writing public claims.
 - Do not convert official R&I or symposium article language into peer-reviewed paper claims unless a peer-reviewed publication is supplied.
-- Public copy may say "Sulwhasoo's ginseng research" or "Amorepacific research context" when source-supported, but should not say "clinically proven", "Johns Hopkins proven", or "published research shows" unless the source artifact directly supports that phrase.
+- Public copy may use brand-image wording such as "Sulwhasoo's ginseng heritage" or "ginseng research-inspired brand context" when product context supports ginseng positioning, but should not say "clinically proven", "Johns Hopkins proven", "published research shows", or use an official article/paper as product proof unless the product source artifact directly supports that phrase.
 
 ### E-E-A-T Application
 
 - Experience: connect research context to routine, texture, ritual, and review-backed customer experience only when product/review evidence exists.
-- Expertise: use official R&I details to explain Ginsenomics, Korean ginseng actives, JAUM, extraction, or skin longevity in concise customer language.
-- Authoritativeness: use Amorepacific/Sulwhasoo official articles as brand-owned authority signals in diagnostics and page-level context.
+- Expertise: use official R&I details as brand-level science image and vocabulary. Explain Ginsenomics, Korean ginseng actives, JAUM, extraction, or skin longevity as product facts only when the product source itself names them.
+- Authoritativeness: use Amorepacific/Sulwhasoo official articles as brand-owned authority signals in diagnostics and brand-level page context, not as direct product claim proof.
 - Trust: keep exact metric/caveat boundaries and avoid moving ingredient research from one line to unrelated products.
 
 ## Source Notes

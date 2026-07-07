@@ -44,11 +44,11 @@ Use E-E-A-T as a trust-first quality lens for generated PDP schema and HTML cont
 
 - Preserve concrete customer-use context when present: routine step, timing, texture, fragrance/scent impression, absorption, finish, comfort, skin/hair type, repeat purchase intent, gifting, and comparison language.
 - Rewrite review language into representative summaries. Do not invent first-person reviews, named customers, star ratings, or review counts.
-- Use reviews to shape FAQ questions and PDP benefit phrasing when repeated review keywords support the intent.
+- Use positive or neutral reviews to shape PDP benefit phrasing, review summaries, review-derived recommendation context, and reusable review-intent FAQ when repeated review keywords support the intent; exclude negative review complaints, ratings, and raw reviewer snippets.
 
 ### 4.2 PDP Field Mapping
 
-- `FAQPage.mainEntity`: prioritize questions that connect product facts with real customer concerns or review language.
+- `FAQPage.mainEntity`: prioritize questions that connect product facts with real customer concerns, such as benefits, ingredients, usage, suitability, comparisons, and supported metrics.
 - `HowTo.step`: preserve actual routine order, amount, timing, and warnings when the source provides them.
 - `Product.positiveNotes`: use review-backed positive points only when they do not imply unsupported guaranteed outcomes.
 - `WebPage.description`: mention review coverage and decision context at page level without claiming all users get the same result.
@@ -77,8 +77,8 @@ Use E-E-A-T as a trust-first quality lens for generated PDP schema and HTML cont
 
 ### 6.2 Brand and Category Authority
 
-- Brand identity can support tone and positioning, but it cannot create product claims.
-- If brand identity says "heritage", "science", "luxury", or "clean", map it to public copy only when the target product source supports the same positioning.
+- Brand identity can support tone, mood, vocabulary, and positioning, but it cannot create product claims.
+- If brand identity says "heritage", "science", "luxury", or "clean", use it as brand-image context only when the target product source supports the same category or positioning. Do not turn brand-only patents, official papers, research counts, or heritage stories into product-level efficacy, ingredient, technology, certification, or clinical claims.
 - Use authoritative phrasing by being precise and well-sourced, not by sounding exaggerated.
 
 ## 7. Trust
@@ -92,6 +92,7 @@ Use E-E-A-T as a trust-first quality lens for generated PDP schema and HTML cont
 ### 7.2 Diagnostics
 
 - Diagnostics should separate source-backed facts, review-backed signals, inferred CEP/customer context, omitted weak claims, and conflicts.
+- Diagnostics should retain inferred direct/indirect query candidates with query kind, question, core keywords, answer basis, and product/brand mention status. Direct queries mention the product or brand; indirect queries do not.
 - Public schema/content must not expose internal labels such as E-E-A-T, RAG, GEO, citation optimization, evidence signal, or review signal.
 
 ## 8. GEO Application

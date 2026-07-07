@@ -22,7 +22,7 @@ const queryIntents = [
   "stepwise HowTo reconstruction",
   "evidence-backed claim selection",
   "target customer and category-entry context",
-  "customer review language",
+  "positive or neutral customer review FAQ intent",
   "locale terminology and public wording"
 ];
 
@@ -34,6 +34,7 @@ type RagRoutingRule = {
   supportingIntents: PdpGeoRagIntent[];
   fieldTargets: PdpGeoRagFieldTarget[];
   fallbackKinds: PdpGeoRetrievedChunk["kind"][];
+  allowBrandIdentitySources?: boolean;
 };
 
 const ragRoutingByPrinciple: Record<RagRoutingKey, RagRoutingRule> = {
@@ -59,7 +60,8 @@ const ragRoutingByPrinciple: Record<RagRoutingKey, RagRoutingRule> = {
     primaryIntents: ["customer"],
     supportingIntents: ["faq", "review", "claims", "locale", "general"],
     fieldTargets: ["WebPage.description", "Product.description"],
-    fallbackKinds: [...crossCuttingRagKinds, "best-practice", "locale"]
+    fallbackKinds: [...crossCuttingRagKinds, "best-practice", "locale"],
+    allowBrandIdentitySources: true
   },
   review: {
     primaryIntents: ["review"],
@@ -73,6 +75,7 @@ const ragRoutingByPrinciple: Record<RagRoutingKey, RagRoutingRule> = {
 export function createPdpGeoReasoning(input: CreatePdpGeoReasoningInput): PdpGeoReasoningResult {
   const evidence = collectProductEvidence(input.product);
   const selectedSources = unique(input.ragChunks.map(formatRagSource)).slice(0, 12);
+  const productEvidenceSources = unique(input.ragChunks.filter((chunk) => !isBrandIdentityChunk(chunk)).map(formatRagSource)).slice(0, 12);
   const ragSourcesByPrinciple = {
     faq: sourcesForPrinciple(input.ragChunks, ragRoutingByPrinciple.faq),
     howTo: sourcesForPrinciple(input.ragChunks, ragRoutingByPrinciple.howTo),
@@ -86,22 +89,22 @@ export function createPdpGeoReasoning(input: CreatePdpGeoReasoningInput): PdpGeo
       principle: "answer-ready FAQ",
       ragSources: ragSourcesByPrinciple.faq,
       productEvidence: [...evidence.benefits, ...evidence.ingredients, ...evidence.usage, ...evidence.faq, ...evidence.reviews].slice(0, 8),
-      fallbackSources: selectedSources,
-      rationale: "FAQ generation should be grounded in selected schema/GEO RAG guidance plus product benefit, ingredient, usage, FAQ, or review evidence."
+      fallbackSources: productEvidenceSources,
+      rationale: "FAQ generation should be grounded in selected schema/GEO RAG guidance plus product benefit, ingredient, usage, FAQ, or review evidence. Brand identity can influence wording only, not answer evidence."
     }),
     createDecision({
       principle: "stepwise HowTo",
       ragSources: ragSourcesByPrinciple.howTo,
       productEvidence: evidence.usage.slice(0, 6),
-      fallbackSources: selectedSources,
-      rationale: "HowTo reconstruction is enabled only when usage evidence exists and selected RAG guidance can support step-level composition."
+      fallbackSources: productEvidenceSources,
+      rationale: "HowTo reconstruction is enabled only when usage evidence exists and selected RAG guidance can support step-level composition. Brand identity must not create usage steps."
     }),
     createDecision({
       principle: "evidence-backed claims",
       ragSources: ragSourcesByPrinciple.claims,
       productEvidence: [...evidence.sourceBackedClaims, ...evidence.effects, ...evidence.reviews].slice(0, 8),
-      fallbackSources: selectedSources,
-      rationale: "Claim wording should use selected trust/schema RAG guidance together with source-backed product claims, effects, or review evidence."
+      fallbackSources: productEvidenceSources,
+      rationale: "Claim wording should use selected trust/schema RAG guidance together with source-backed product claims, effects, or review evidence. Brand identity documents are brand-image context and cannot supply product claims."
     }),
     createDecision({
       principle: "target customer context",
@@ -114,8 +117,8 @@ export function createPdpGeoReasoning(input: CreatePdpGeoReasoningInput): PdpGeo
       principle: "review-intent FAQ",
       ragSources: ragSourcesByPrinciple.review,
       productEvidence: evidence.reviews.slice(0, 8),
-      fallbackSources: selectedSources,
-      rationale: "Review-led FAQ intent is enabled when customer review evidence is present and selected RAG guidance supports review language reuse."
+      fallbackSources: productEvidenceSources,
+      rationale: "Review-intent FAQ is enabled when customer review evidence is present and selected RAG guidance supports positive or neutral review language as reusable use-feel FAQ context while excluding negative review complaints. Brand identity may set tone only."
     })
   ];
   const principles = decisions
@@ -183,7 +186,8 @@ function sourcesForPrinciple(
   chunks: PdpGeoRetrievedChunk[],
   rule: RagRoutingRule
 ): string[] {
-  const scored = chunks
+  const eligibleChunks = rule.allowBrandIdentitySources ? chunks : chunks.filter((chunk) => !isBrandIdentityChunk(chunk));
+  const scored = eligibleChunks
     .map((chunk) => ({
       chunk,
       score: principleChunkScore(chunk, rule)
@@ -192,7 +196,12 @@ function sourcesForPrinciple(
     .sort((a, b) => b.score - a.score || b.chunk.score - a.chunk.score)
     .map((item) => formatRagSource(item.chunk));
 
-  return ensureCrossCuttingSourceCoverage(unique(scored), chunks).slice(0, 6);
+  return ensureCrossCuttingSourceCoverage(unique(scored), eligibleChunks).slice(0, 6);
+}
+
+function isBrandIdentityChunk(chunk: PdpGeoRetrievedChunk): boolean {
+  return /(?:^|\/)brand-identity(?:_|\.|-)/i.test(chunk.source)
+    || chunk.metadata.queryPlanTarget === "brandIdentityCoverage";
 }
 
 function ensureCrossCuttingSourceCoverage(sources: string[], chunks: PdpGeoRetrievedChunk[]): string[] {

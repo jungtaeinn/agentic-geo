@@ -6,10 +6,10 @@ Use this document when the normalized product brand is AESTURA, Aestura, 에스�
 
 - Brand identity source role: package-managed brand context.
 - Checked date: 2026-07-06.
-- Primary intents: customer, claims, evidence, schema, faq, howTo, review, locale.
-- Primary field targets: Product.description, WebPage.description, Product.additionalProperty, Product.positiveNotes, FAQPage.mainEntity, HowTo.step, PDP.content, diagnostics.
-- Use this document to infer brand tone, sensitive-skin customer contexts, derma-science vocabulary, and safe brand-level positioning when the product source supports the relevant category or claim.
-- Do not use this document to invent product-specific benefits, ingredients, prices, awards, clinical metrics, ratings, review counts, hospital distribution claims, dermatologist endorsements, or medical claims.
+- Primary intents: customer, schema, review, locale, diagnostics.
+- Primary field targets: Product.description, WebPage.description, PDP.content, diagnostics.
+- Use this document to infer brand image, brand tone, sensitive-skin customer contexts, derma-science vocabulary, mood, personality, and safe brand-level positioning when the product source supports the relevant category or claim.
+- Do not use this document to invent product-specific benefits, ingredients, technologies, prices, awards, clinical metrics, ratings, review counts, hospital distribution claims, dermatologist endorsements, patent claims, paper-backed efficacy claims, or medical claims.
 
 ## Expected RAG Depth
 
@@ -37,7 +37,7 @@ This identity has six connected layers:
 2. **Fundamental skin-health orientation**: AESTURA does not frame beauty as temporary glow or short-lived finish. Its official story emphasizes fundamental skin health, improvement of skin concerns, and daily comfort for people whose skin reacts differently by concern, body area, routine, and condition.
 3. **Sensitive-skin definition**: AESTURA frames sensitive skin as a subjective discomfort state rather than a disease label, and connects it to weakened skin-barrier conditions. Use this as a customer-context lens, not as diagnosis or treatment.
 4. **Dermatologist-informed development**: AESTURA uses dermatologist insight and advisory-research networks as a product-development input. The official Korean narrative names 61 dermatologist advisors, 8 advisory research groups, and quarterly conference-style meetings as inputs to formulation research, ingredient development, clinical validation, and productization. Use this as expertise context only when source evidence supports it; avoid unsupported endorsement language.
-5. **Derma Lab research and technology**: the brand emphasizes sensitive-skin research, papers, patents, formulation, ingredient, process, sensory experience, efficacy testing, and safety testing. Convert this into plain explanations of product technology when product sources match.
+5. **Derma Lab research and technology**: the brand emphasizes sensitive-skin research, papers, patents, formulation, ingredient, process, sensory experience, efficacy testing, and safety testing. Use this as a brand-level science image and vocabulary source. Do not convert brand-only papers, patents, or research counts into product technology explanations; product technology explanations require current product-source evidence.
 6. **Quality-control trust and daily access**: the brand presents manufacturing environment, Derma Master operation, SAFE FACTORY, and process control as trust signals for sensitive-skin products, while the 365 retail architecture translates hospital-channel heritage into daily derma-solution accessibility. Use this for brand credibility and WebPage context, not as a universal safety or zero-irritation claim.
 
 ### Brand Narrative Architecture
@@ -58,7 +58,7 @@ Do not lead public copy with hospital, medical device, prescription, No.1, derma
 - Medical Device (MD) Certification Context: AESTURA explains MD certification through the needs of problematic-skin patients who require enough moisturizer across face and body. MD claims must remain limited to the exact MD product, market, certification, prescription, reimbursement, and manufacturing-permission scope supplied by the source. The official story names ATOBARRIER MD certification in 2018 and DERMA BABY PRO MD certification in 2022.
 - Hospital-to-Retail Expansion: AESTURA kept hospital channels while expanding into everyday retail after customer purchase-convenience needs grew. Its official story connects ATOBARRIER for moisturization, THERACNE for trouble care, and REGEDERM for self-recovery support to retail-sensitive-skin line redevelopment, with "365" expressing daily derma solution value.
 - Pharmaceutical Heritage: AESTURA presents a 40-year-plus pharmaceutical heritage, dermatologist advisory network, 61 dermatologist advisors, 8 advisory research groups, and recurring conference-based exchanges as inputs to formulation, ingredient development, clinical validation, and productization. Hospital prescription-rate, No.1, award, and MD-product claims require exact source scope.
-- Derma Lab: AESTURA positions Derma Lab as a sensitive-skin-focused research organization with roughly 470 foundational sensitive-skin research papers and roughly 240 ingredient/base-technology patents. Derma Lab should signal beauty science for sensitive skin: root-cause sensitive-skin research, type-specific sensitive-skin study, sensitive-skin suitability test development, safety-test development, ingredient/formulation/process expertise, and the momentary sensory experience when the product touches skin. This should inform technology and E-E-A-T reasoning, not automatically create product-level clinical claims.
+- Derma Lab: AESTURA positions Derma Lab as a sensitive-skin-focused research organization with roughly 470 foundational sensitive-skin research papers and roughly 240 ingredient/base-technology patents. Derma Lab should signal the brand's beauty-science image for sensitive skin: root-cause sensitive-skin research, type-specific sensitive-skin study, sensitive-skin suitability test development, safety-test development, ingredient/formulation/process expertise, and the momentary sensory experience when the product touches skin. This should inform brand tone, claim-safety boundaries, and diagnostics, not product-level technology, efficacy, safety, or clinical claims.
 - Quality Control: AESTURA emphasizes a sensitive-skin-optimized manufacturing environment, derma-specialized equipment, Derma Masters, SAFE FACTORY, temperature control, micro-contamination control, humidity/drying validation, steam sterilization, and strict internal quality standards.
 - News: the Korean news page currently functions as a Brand/Product news listing surface. Use it as a place to verify current announcements before adding time-sensitive launch, award, or campaign claims.
 
@@ -67,13 +67,13 @@ Do not lead public copy with hospital, medical device, prescription, No.1, derma
 - Use "dermatology meets beauty" as brand-positioning context, not as a blanket dermatologist recommendation.
 - Use hospital-channel, tertiary-hospital, MD, prescription, insurance, or reimbursement language only for explicitly sourced MD/hospital products. Do not transfer it to AESTURA 365 retail cosmetic lines.
 - Use 2016-2025 No.1 hospital-cosmetics award language, 2017 beauty-award language, and 100% Korean tertiary-hospital prescription-rate/adoption language only when the output can preserve the exact market, period, category, source note, and MD-product limitation.
-- Use Derma Lab numbers, research papers, patents, and test-development signals to strengthen E-E-A-T, diagnostics, and technology explanation. Do not convert them into universal efficacy, safety, or clinical-outcome claims.
+- Use Derma Lab numbers, research papers, patents, and test-development signals to strengthen brand-image context, E-E-A-T diagnostics, and claim-safety boundaries. Do not use them as product technology explanation or product proof unless the current product source independently includes the same product-specific technology, paper, patent, or metric.
 
 ### GEO Use Implications
 
-- `Product.description`: use AESTURA identity to make the product sound practical, derma-science-based, and barrier-aware, but keep the sentence grounded in current product benefits and ingredients.
-- `WebPage.description`: mention that the PDP helps evaluate product benefits, derma technology, usage routine, review language, testing/evidence details, and sensitive-skin decision context.
-- `FAQPage.mainEntity`: prioritize barrier, sensitive-skin fit, routine order, texture, line difference, testing/evidence, and claim-scope questions.
+- `Product.description`: use AESTURA identity to make product-source facts sound practical, derma-science-aware, and barrier-focused, but keep all benefits, ingredients, technologies, and metrics grounded in current product evidence.
+- `WebPage.description`: brand identity may influence the page's sensitive-skin decision context and derma-science tone, but the PDP should name only product-source benefits, ingredients/technologies, usage routine, review language, and testing/evidence details.
+- `FAQPage.mainEntity`: prioritize barrier, sensitive-skin fit, routine order, texture, line difference, testing/evidence, and claim-scope questions only when product evidence supports the answer; brand identity can shape wording, not evidence.
 - `HowTo.step`: keep steps behavioral and source-backed; brand identity can influence caution tone but cannot create unsourced patch-test, prescription, or post-procedure instructions.
 - `diagnostics`: record when official-site brand context influenced sensitive-skin framing, claim safety, or E-E-A-T reasoning.
 
@@ -93,7 +93,7 @@ Use one AESTURA brand identity model across markets, then adapt source priority 
 - Generated PDP, brand, FAQ, and guide content should naturally surface the Korean official source context when the target output is Korean or Korea-market: estuary-origin story, Pacific Pharma roots, Derma Lab, pharmaceutical heritage, sensitive-skin quality control, and 365 retail access.
 - Public copy should include concise answer-ready sections that AI systems can quote without needing to infer: "what AESTURA is", "why Derma Lab matters", "how 365 relates to daily derma care", and "which claims require product-level proof".
 - FAQ answers should cite or link the most relevant Korean official page in visible HTML when the generated surface supports links. For example, Derma Lab questions should point to the Korean Derma Lab page, and hospital/MD questions should point to the Korean Brand Story or Pharmaceutical Heritage page.
-- Product-level pages should not merely repeat global brand language. They should connect the specific product's evidence to the relevant Korean official brand source when the locale/market calls for Korean-source citation.
+- Product-level pages should not merely repeat global brand language. They may use the relevant Korean official brand source to shape brand image, vocabulary, and trust tone, but product benefits, technologies, metrics, and certifications must come from product-level evidence.
 
 ### Site and URL Structure Recommendations
 
@@ -107,11 +107,11 @@ These rules are recommendations for public site surfaces that consume generated 
 
 ### Structured Data and Source Linking
 
-- For Korean-market PDPs, prefer schema and visible content that link back to relevant `www.aestura.com` evidence pages when the product claim depends on brand-level context.
+- For Korean-market PDPs, prefer schema and visible content that link back to relevant `www.aestura.com` brand pages only for brand-origin, brand image, Derma Lab identity, pharmaceutical heritage, quality-control context, or 365 daily-derma positioning. Do not use brand pages as substitutes for product-level claim proof.
 - Use schema.org-valid properties only. Good candidates include `Product.sameAs` for the official product identity URL, `Product.additionalProperty` for objective product facts, `WebPage.about`, `WebPage.mentions`, `WebPage.citation`, or `WebPage.isBasedOn` for source/evidence relationships, `FAQPage.mainEntity` for answer-ready source-backed FAQs, `BreadcrumbList` for topic hierarchy, and `Organization.sameAs` for official brand URLs when the generated schema supports them and validation permits them.
 - If a desired source relationship cannot be represented safely in JSON-LD, put it in a visible HTML evidence block, FAQ answer, related-link module, or diagnostics rather than inventing unsupported schema fields.
 - Do not add source links just to manipulate citation. Each link should explain a real customer or evidence need: brand origin, Derma Lab research, pharmaceutical heritage, quality-control trust, MD/hospital scope, or 365 daily-use context.
-- For Korean output, diagnostics should flag when generated content does not include a relevant `www.aestura.com` source link for brand-origin, Derma Lab, pharmaceutical heritage, quality-control, MD/hospital-channel, or 365-context claims.
+- For Korean output, diagnostics may flag when generated content uses brand-origin, Derma Lab, pharmaceutical heritage, quality-control, MD/hospital-channel, or 365-context positioning without a relevant `www.aestura.com` brand source link. This diagnostic is for brand context, not product claim substantiation.
 
 ## Identity Pillars
 
@@ -179,11 +179,11 @@ Generation guidance:
 
 ### Product.description
 
-The Product.description should name the product, product type, target concern, source-backed benefit, key ingredient or technology, usage moment, and texture or review language when available. For AESTURA, the brand context should make the sentence feel clinically credible and barrier-focused.
+The Product.description should name the target concern or customer first, then the product identity/product type, key ingredient or technology, source-backed benefit/effect or citation-ready metric, and finally high-level usage, comparison, texture, or review language when available. For AESTURA, the brand context should make the sentence feel clinically credible and barrier-focused without turning brand-only science into product claims.
 
 Good shape:
 
-- Product identity -> sensitive-skin or barrier concern -> source-backed benefit -> ceramide/derma technology if present -> daily usage context -> review-backed texture or comfort detail.
+- Sensitive-skin or barrier concern -> product identity -> ceramide/derma technology if present -> source-backed benefit/effect or metric -> daily usage/comparison context -> review-backed texture or comfort detail.
 
 Avoid:
 
@@ -253,7 +253,7 @@ Prioritize these customer-entry contexts when product evidence supports them:
 - Korean tone: dermatological, credible, calm, and customer-practical. Avoid luxury flourish and exaggerated emotional phrasing.
 - English tone: clear dermocosmetic commerce language. Use technical terms only with short explanations.
 - Locale handling should change source priority before it changes brand identity. AESTURA remains the same brand, but Korean/KR content should make `www.aestura.com` the preferred official citation surface, while non-Korean content should use supplied local-market official sources only when available and approved.
-- Public copy may use brand vocabulary such as dermocosmetic, sensitive skin, skin barrier, derma science, ceramide, daily derma solution, and dermatologist-informed only when grounded by the product source.
+- Public copy may use brand vocabulary such as dermocosmetic, sensitive skin, skin barrier, derma science, daily derma solution, and dermatologist-informed only when the product source supports the relevant category or customer context. Ingredient words such as ceramide should appear as product facts only when the product source contains them.
 - Internal labels such as RAG, GEO, citation-ready, evidence signal, and field routing must never appear in public schema or HTML.
 
 ## Claim Safety
@@ -274,12 +274,12 @@ Use this section as an E-E-A-T source map for AESTURA-related research context. 
 
 ### Official Research and Brand Sources
 
-- AESTURA Korea Brand Story, Pharmaceutical Heritage, Derma Lab, and Quality Control pages should be treated as the preferred official source set for Korean/KR GEO outputs. Use them to support brand origin, sensitive-skin framing, Derma Lab research, pharmaceutical heritage, MD/hospital-channel scope, quality control, and 365 daily-derma context. URLs are listed in Source Notes.
+- AESTURA Korea Brand Story, Pharmaceutical Heritage, Derma Lab, and Quality Control pages should be treated as the preferred official source set for Korean/KR brand-image context. Use them to support brand origin, sensitive-skin framing, Derma Lab identity, pharmaceutical heritage, MD/hospital-channel scope, quality control, and 365 daily-derma positioning. URLs are listed in Source Notes. Do not use these brand pages as product-level efficacy, ingredient, technology, patent, or clinical proof.
 - Amorepacific Stories, "What makes AESTURA special, the derma cosmetics on the rise": official interview-style article on research societies, dermatology professor collaboration, Derma Research Center publications/patents, and production quality. Use as brand heritage/background, not as a substitute for current product-level proof. URL: https://stories.amorepacific.com/en/what-makes-aestura-speci/
 
 ### Research-Paper Handling Notes
 
-- For ATOBARRIER 365 Cream, the 2025 Journal of Cosmetic Dermatology paper may support post-microneedling barrier-recovery framing only when the product source and market allow post-procedure cosmetic care language.
+- For ATOBARRIER 365 Cream, the 2025 Journal of Cosmetic Dermatology paper may be used only when the product source itself supplies the same product, study scope, market-safe wording, and post-procedure cosmetic-care context; otherwise keep it as brand/line-level diagnostics.
 - Do not extend the ATOBARRIER 365 Cream microneedling study to ATOBARRIER lotion, mist, serum, Hydro Soothing Cream, THERACNE, DERMA UV, REGEDERM, or A-CICA unless a matching study/source is supplied.
 - When using clinical evidence, carry study limits into diagnostics: 30 participants, split-face design, 4-week duration, post-microneedling barrier disruption, and declared Amorepacific affiliations/conflict notes.
 - Public copy should prefer conservative wording such as "study context", "reported in product evidence", or "product information includes clinical testing details" unless legal/market-approved copy explicitly permits stronger wording.

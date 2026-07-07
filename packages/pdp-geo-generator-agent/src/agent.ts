@@ -362,6 +362,7 @@ export async function generatePdpGeo(
     ragUsage,
     runtimeUsage,
     terminology: generated.terminology,
+    inferredSearchQueries: generated.inferredSearchQueries,
     validationWarnings: repaired.validationWarnings,
     validationRepairs: repaired.validationRepairs,
     ragMode: ragSettings.mode,
@@ -654,7 +655,7 @@ async function retrieveBrandIdentityCoverageRagChunks(input: {
   const retrieved = await retrievePdpGeoRagChunks(
     {
       query: [
-        "Target brand identity, E-E-A-T source map, official articles, research papers, brand tone, customer entry points, and claim safety for PDP GEO generation.",
+        "Target brand identity for PDP GEO generation: brand image, tone, vocabulary, mood, personality, customer entry points, and claim-safety boundaries. Use official articles, patents, or research papers from this document only as brand-level context, not product evidence.",
         `Product: ${input.product.name}.`,
         input.product.brand ? `Brand: ${input.product.brand}.` : undefined,
         input.product.category ? `Category: ${input.product.category}.` : undefined,
@@ -1131,7 +1132,7 @@ function describeRagUsage(principle: PdpGeoReasoningPrinciple, fieldTargets: Pdp
     "stepwise HowTo": "HowTo 단계와 사용 루틴 구성 근거",
     "evidence-backed claims": "효능/성분 주장 근거와 과장 방지 기준",
     "target customer context": "고객 맥락과 PDP 설명 문장 구성 근거",
-    "review-intent FAQ": "리뷰 언어를 FAQ/고객 질문으로 변환하는 근거"
+    "review-intent FAQ": "긍정/중립 리뷰 언어를 FAQ 사용감 의도로 재구성하는 근거"
   } satisfies Record<PdpGeoReasoningPrinciple, string>;
   const targetSummary = fieldTargets.length > 0 ? ` · 대상: ${fieldTargets.slice(0, 4).join(", ")}` : "";
   return `${base[principle]}${targetSummary}`;

@@ -26,7 +26,7 @@ GEO output should help generative engines cite and verify the product from struc
 
 - Prefer product-specific facts over generic SEO claims.
 - Treat ChatGPT Search, Gemini grounding, and Google AI Search as retrieval-and-citation environments: they reward crawlable, visible, source-backed content units, not hidden AI-only instructions or artificial markup tricks.
-- Compose descriptions from: target customer + core benefit + ingredient or technology + usage context + source-supported or review-backed detail.
+- Compose descriptions from: target customer + product identity + ingredient or technology + benefit/effect or citation-ready metric + high-level usage/comparison/review context.
 - Never expose internal wording such as "GEO-ready", "PDP name", "schema optimization", or "for generative engines" inside public schema/content.
 - Do not use analysis labels such as "usage", "review", "benefit", or "keyword" as product category values.
 - Do not create FAQ, review, or HowTo content from isolated tokens. Use complete questions, answers, review summaries, and actionable usage steps.
@@ -108,7 +108,7 @@ Avoid:
 ## Product Entity Best Practice
 
 The `Product` node should be dense but verifiable.
-Do not reuse the same description for `WebPage.description` and `Product.description`. The WebPage description should explain what the page covers at a higher level while still naming the key benefit areas, ingredients or technologies, customer review language, reported results, and target-customer decision context. Product.description should be a product-specific, answer-ready entity description that explains who the product is for, what benefits and major ingredients it has, what representative customer reviews say, how the product can be used, and which supported result details are available.
+Do not reuse the same description for `WebPage.description` and `Product.description`. The WebPage description should explain what the page covers at a higher level while still naming the key benefit areas, ingredients or technologies, customer review language, reported results, and target-customer decision context. Product.description should be a product-specific, answer-ready entity description ordered as target customer, product identity, ingredients/technology, benefit/effect or citation-ready metric, then high-level usage/comparison/review context.
 
 Resolve product identity before writing copy. Many commerce PDPs expose a SKU name such as `[Brand][small size] Representative Product 30ml`, while the BestPractice product entity should be the representative sellable product such as `Brand Representative Product`. Preserve the full source SKU name in `alternateName`, option facts, offer labels, and diagnostics; do not let bracketed badges, volume labels, or promotion labels become the canonical `Product.name`.
 
@@ -137,6 +137,7 @@ Recommended `additionalProperty` groups:
 - Brand science or heritage, such as research period, patented technology, or signature method.
 - Clinical result summary with metric, population, duration, and context.
 - Consumer satisfaction or review-backed outcome.
+- Review-derived recommendation context: repeated positive or neutral review language mapped to a customer situation, supported benefit, and ingredient/formula reason.
 - Treatment or routine synergy when supported.
 - Product variant comparison.
 - Renewal, discontinuation, or replacement guidance.
@@ -171,26 +172,26 @@ For English output, rewrite Korean or multilingual OCR meaning into natural Engl
 ## Description Pattern
 
 Descriptions should be rewritten into diverse, answer-ready product content, not copied mechanically.
-Avoid shallow descriptions that only say the page "organises information" or that the product is simply a "hydration serum". A strong Product description should expose the target customer, major benefit keywords, key ingredients or technologies, usage context when it improves the product story, representative customer review language, and any supported clinical, satisfaction, or reported-result detail.
+Avoid shallow descriptions that only say the page "organises information" or that the product is simply a "hydration serum". A strong Product description should expose the target customer, product identity, key ingredients or technologies, major benefit keywords and any supported clinical, satisfaction, or reported-result detail before adding high-level usage, comparison, or representative customer review language.
 
 Good structure:
 
-`[Product name] is a [product type] for [target customer or concern] that helps [core benefits] with [ingredient/technology]. [Source-supported or review-backed detail] explains [specific outcome or usage context].`
+`[Product name] is a [product type] for [target customer or concern]. [Ingredient/technology] supports [core benefits] and [source-supported metric when available]. [High-level routine/comparison/review context] follows as the final context sentence.`
 
 Korean example structure:
 
-`60년 인삼 연구로 완성된 [제품명]은 [대상 고민]을 위한 [제품 유형]으로, [핵심 성분/기술]을 통해 [효능]을 돕습니다. [임상/만족도/고객 리뷰에서 반복되는 표현]을 바탕으로 [사용 루틴], [사용감], [비교 기준]을 구체적으로 설명합니다.`
+`[제품명]은 [대상 고객/고민]을 위한 [제품 유형]입니다. [핵심 성분/기술]이 [효능/효과]를 돕고, [임상/만족도 수치]가 있으면 같은 문맥에서 자연스럽게 연결합니다. 마지막에는 [사용 루틴], [비교 기준], [고객 리뷰에서 반복되는 표현]을 고수준 맥락으로 덧붙입니다.`
 
 English example structure:
 
-`[Product name] is a [product type] for [target concern] that supports [benefits] with [ingredient/technology]. Clinical details or repeated customer review language highlight [specific outcome] in [usage context].`
+`[Product name] is a [product type] for [target concern]. [Ingredient/technology] supports [benefits], with clinical or reported details when available. High-level routine, comparison, or repeated customer review language can close the description.`
 
 The language may change, but the structure must remain fact-first.
 
 ## FAQ Best Practice
 
 Generate FAQ from customer intent and product evidence. Mix factual questions with shopping-decision questions.
-Do not copy visible PDP FAQ questions and answers into `FAQPage.mainEntity` as-is. Treat page FAQ as one evidence source, then reconstruct the final question set from GEO intent patterns, repeated customer review language, product benefit/effect facts, ingredient or technology facts, usage context, and selected RAG guidance.
+Do not copy visible PDP FAQ questions and answers into `FAQPage.mainEntity` as-is. Treat page FAQ as one evidence source, then reconstruct the final question set from GEO intent patterns, product benefit/effect facts, ingredient or technology facts, usage context, positive or neutral review use-feel language, and selected RAG guidance. Review-intent FAQ may summarize repeated positive use-feel signals, but do not create FAQ items from raw customer reviews, negative reviewer sentiment, ratings, reviewer metadata, or scent complaints.
 
 BestPractice depth is usually 8-14 questions for a rich beauty PDP. A thin 4-question FAQ often misses the citation surface that AI Search systems need for query fan-out, comparison, and follow-up questions. Keep the set smaller only when the source truly lacks evidence.
 
@@ -198,7 +199,6 @@ Recommended FAQ types:
 
 - Effectiveness: "What skin concerns does this product address?"
 - Ingredient/technology: "What are the key ingredients?"
-- Customer review intent: "What do customer reviews highlight about texture, absorption, hydration, or other repeated details?"
 - Variant comparison: "How is this different from the rich/soft/classic version?"
 - Skin suitability: "Can sensitive skin use it?"
 - Duration or persistence: "How long do the effects last?"
@@ -210,9 +210,9 @@ Recommended FAQ types:
 - Gift suitability or purchase context.
 - Natural-language customer questions, such as "I am starting to worry about wrinkles and firmness" or "I want a lightweight anti-aging cream."
 
-Answers should contain concise, reusable product facts with varied benefit, ingredient, review, and use-context wording. Include metrics only when they exist in the input evidence. Do not invent study populations, durations, rankings, or regulatory claims.
+Answers should contain concise, reusable product facts with varied benefit, ingredient, and use-context wording. Include metrics only when they exist in the input evidence. Do not invent study populations, durations, rankings, or regulatory claims.
 
-FAQ answers should start with the direct answer, then add one short evidence or comparison detail. Choose the FAQ count by search-intent coverage rather than a fixed number: 4-6 for thin products, 6-10 for normal beauty PDPs with ingredient/effect/usage/review/option evidence, and up to 8-12 when BestPractice-level evidence covers clinical results, ingredient technology, option comparison, sensitive skin, routine synergy, reviews, gift or purchase context. Quality-gate FAQ first and cap at 12: if only 7 answers are source-backed and distinct, use 7. Avoid observer phrasing such as "the product page says" unless the question is explicitly about what the page contains. The best answer unit should still make sense when ChatGPT, Gemini, or Google AI quotes it outside the original page.
+FAQ answers should start with the direct answer, then add one short evidence or comparison detail. Choose the FAQ count by search-intent coverage rather than a fixed number: 4-6 for thin products, 6-10 for normal beauty PDPs with ingredient/effect/usage/option evidence, and up to 8-12 when BestPractice-level evidence covers clinical results, ingredient technology, option comparison, sensitive skin, routine synergy, gift or purchase context. Quality-gate FAQ first and cap at 12: if only 7 answers are source-backed and distinct, use 7. Avoid observer phrasing such as "the product page says" unless the question is explicitly about what the page contains. The best answer unit should still make sense when ChatGPT, Gemini, or Google AI quotes it outside the original page.
 
 ## HowTo Best Practice
 
@@ -254,7 +254,7 @@ Use reference patterns as architecture guidance, not as reusable product copy. A
 - `WebPage`: current PDP URL, page-level description, locale, and link to the current product entity.
 - `Product`: current product name, brand, category, description, offer data, audience only when supported, and source-backed properties.
 - `Product.additionalProperty`: facts that belong to the product evidence layer, such as ingredient roles, certification, texture, scent, metrics, awards, variants, and source context.
-- `FAQPage`: answer-ready customer questions derived from product facts, reviews, CEPs, and search intent.
+- `FAQPage`: answer-ready customer questions derived from product facts, CEPs, and search intent.
 - `HowTo`: usage actions only, such as amount, order, application area, frequency, wait time, rinsing, layering, or caution steps.
 
 ### Field Evidence Routing Pattern
@@ -262,7 +262,8 @@ Use reference patterns as architecture guidance, not as reusable product copy. A
 - Product identity evidence goes to `Product.name`, `alternateName`, `brand`, `category`, and `WebPage.name`.
 - Benefit and effect evidence goes to `Product.description`, `positiveNotes`, `additionalProperty`, FAQ answers, and visible benefit sections.
 - Ingredient, formula, technology, full-INCI, allergen, or certification evidence goes to `additionalProperty`, ingredient sections, and ingredient-focused FAQ answers.
-- Customer review language goes to review summaries, FAQ intent, sensory copy, and CEP phrasing, but must not replace official claims.
+- Customer review language goes to review summaries, sensory copy, review-derived recommendation `additionalProperty`, and CEP phrasing, but must not replace official claims or become standalone FAQ content.
+- Review-derived query language goes to answer-ready FAQ or `additionalProperty` only after inference: indirect queries are customer-situation/category questions without product or brand mentions, while direct queries explicitly name the product or brand. Store the query kind, keywords, and answer basis in diagnostics.
 - Clinical, award, test, survey, or metric evidence goes to `additionalProperty` and FAQ answers with context, sample, duration, or source limits when available.
 - Usage evidence goes to `HowTo.step` and visible how-to sections only when it contains an actionable direction.
 
@@ -298,7 +299,7 @@ Adding more best-practice artifacts from other products can improve retrieval qu
 
 Recommended additional reference types:
 
-- Ingredient-led serum: strong for ingredient mechanism, clinical metric, texture, layering, and review-language FAQ patterns.
+- Ingredient-led serum: strong for ingredient mechanism, clinical metric, texture, layering, and review-language description or review-summary patterns.
 - Hydration or barrier cream: strong for sensitive-skin suitability, usage routine, skin-type matching, and soft claim wording.
 - Sunscreen or tone-up base: strong for regulatory claims, finish/texture, reapplication HowTo, and shade or use-case comparison.
 - Hair or scalp product: strong for routine order, target concern segmentation, before/after evidence, and usage frequency.

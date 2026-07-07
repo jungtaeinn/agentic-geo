@@ -1490,10 +1490,7 @@ function isCategorySignal(value: string): boolean {
 
 function isUsageInstruction(value: string): boolean {
   const normalized = normalizeSourceUsageInstruction(value);
-  if (normalized.length < 18 || normalized.length > 260) {
-    return false;
-  }
-  if (normalized.split(/\s+/).length < 4) {
+  if (normalized.length < 8 || normalized.length > 260) {
     return false;
   }
   if (isQuestionLikeSourceText(normalized) || isNonInstructionUsageText(normalized) || /사용\s*적합|테스트를\s*완료|임산부|영유아|어린이|논코메도제닉/i.test(normalized)) {
@@ -1509,8 +1506,28 @@ function isUsageInstruction(value: string): boolean {
   if (isEvidenceOnlyUsageCandidate(normalized)) {
     return false;
   }
+  if (isConciseStandaloneUsageStep(normalized)) {
+    return true;
+  }
+  if (normalized.length < 18 || normalized.split(/\s+/).length < 4) {
+    return false;
+  }
 
   return hasExplicitUsageAction(normalized);
+}
+
+function isConciseStandaloneUsageStep(value: string): boolean {
+  const text = cleanSourceSignalText(value);
+  if (text.length < 8 || text.length > 80 || !hasExplicitUsageAction(text)) {
+    return false;
+  }
+  return (
+    /\b(?:apply|dispense|massage|lather|rinse|pat|press|spread|smooth|pump|take)\b/i.test(text)
+    && /\b(?:water|face|skin|hands?|palms?|neck|product|amount)\b/i.test(text)
+  ) || (
+    hasKoreanInstructionVerb(text)
+    && /(?:적당량|손에|물과\s*함께|거품|얼굴|미온수|헹구|화장솜|덜어|펴\s*바르|흡수)/.test(text)
+  );
 }
 
 function isSensoryOnlyUsageInstruction(value: string): boolean {
@@ -1540,10 +1557,25 @@ function isNonInstructionUsageText(value: string): boolean {
 
 function isReviewLikeUsageCandidate(value: string): boolean {
   const text = cleanSourceSignalText(value);
+  if (isKoreanCustomerReviewNarrativeUsageLeak(text)) {
+    return true;
+  }
   if (!/[가-힣]/.test(text) || hasConcreteKoreanUsageAction(text)) {
     return false;
   }
   return /(?:타\s*제품|사용해\s*봤|사용해봤|사용했|썼는데|써\s*봤|써봤|했었|더라구|더라고|구요|네요|어요|좋아요|괜찮겠지|마음으로|시간이\s*조금\s*지나)/i.test(text);
+}
+
+function isKoreanCustomerReviewNarrativeUsageLeak(value: string): boolean {
+  const text = cleanSourceSignalText(value);
+  if (!/[가-힣]/.test(text)) {
+    return false;
+  }
+  return /(?:^|\s)[A-Za-z0-9_*.-]{2,}\s+20\d{2}[-.]\d{1,2}[-.]\d{1,2}\b/u.test(text)
+    || /(?:아직\s*본격적으로|워낙\s*평|평이\s*좋|기대가\s*많|기대되|고객\s*리뷰|후기|리뷰)/u.test(text)
+    || /(?:구매했|구매\s*했|구매했어요|필요해서\s*구매|배송|포장|도착했|득템|저렴한\s*가격|쓰기\s*전부터|쓰기도\s*전부터|기분이\s*정말\s*좋)/u.test(text)
+    || /(?:초등학생|딸|아들|남편|어머니|엄마|가족)[^.!?。！？]{0,80}(?:구매|필요|사용|쓰|선크림)/u.test(text)
+    || /(?:느낌이네요|느낌입니다|좋습니다|좋네요|좋아요|같아요|같습니다)\s*$/u.test(text) && !hasKoreanInstructionVerb(text);
 }
 
 function isSafetyOrTestClaimUsageCandidate(value: string): boolean {

@@ -629,6 +629,15 @@ export interface PdpGeoTerminologyDiagnostics {
   suggestions: string[];
 }
 
+export interface PdpGeoInferredSearchQueryDiagnostic {
+  kind: "direct" | "indirect";
+  question: string;
+  keywords: string[];
+  answer: string;
+  source: "review-derived-cep" | "product-fact" | "positive-review-usefeel";
+  mentionsProductOrBrand: boolean;
+}
+
 export interface PdpGeoDiagnostics {
   normalizedProduct: PdpProductSignal;
   ocrSentences: PdpGeoOcrSentenceDiagnostic[];
@@ -641,6 +650,7 @@ export interface PdpGeoDiagnostics {
   ragQueryPlan?: PdpGeoRagQueryPlan;
   runtimeUsage?: PdpGeoRuntimeUsage;
   terminology: PdpGeoTerminologyDiagnostics;
+  inferredSearchQueries?: PdpGeoInferredSearchQueryDiagnostic[];
   validationWarnings: string[];
   validationRepairs?: PdpGeoValidationRepair[];
   ragMode: PdpGeoRagMode;

@@ -80,7 +80,7 @@ export function createPdpGeoRagQuery(product: PdpProductSignal, locale: PdpGeoLo
     product.usage.length > 0 ? `Usage: ${product.usage.slice(0, 3).join(", ")}.` : undefined,
     product.reviews.keywords.length > 0 ? `Review keywords: ${product.reviews.keywords.slice(0, 6).join(", ")}.` : undefined,
     "Need schema.org Product FAQPage HowTo BreadcrumbList WebPage, E-E-A-T, CEP, GEO, locale terminology, additionalProperty, positiveNotes.",
-    "Need OCR sentence diagnostics, answer-ready FAQ intent, customer review language, WebPage/Product description separation, source-supported benefit/effect/HowTo reconstruction, and public wording without internal diagnostic labels.",
+    "Need OCR sentence diagnostics, answer-ready FAQ intent, positive or neutral customer review FAQ intent, WebPage/Product description separation, source-supported benefit/effect/HowTo reconstruction, and public wording without internal diagnostic labels.",
     "Use official OpenAI, Google Search Central, Gemini, and Perplexity docs for retrieval mode, embeddings, grounding, structured data, and answer-ready source support guidance."
   ].filter(Boolean).join("\n");
 }
@@ -154,7 +154,7 @@ function createTargetSubquery(
     productDescription: {
       id: "target-product-description",
       target,
-      query: `${baseFacts} Update only Product.description with source-backed benefits, ingredients, usage, review language, E-E-A-T claim safety, and product/entity separation. ${benefitText} ${ingredientText} ${usageText} ${reviewText}`,
+      query: `${baseFacts} Update only Product.description with the ordered flow target customer, product identity, ingredient/technology, benefit/effect or citation-ready metric, then high-level usage/comparison/review context. Keep E-E-A-T claim safety and product/entity separation. ${benefitText} ${ingredientText} ${usageText} ${reviewText}`,
       intents: ["claims", "evidence", "customer", "schema"],
       fieldTargets: ["Product.description", "Product.additionalProperty", "Product.positiveNotes"],
       reason: "Product description changed or needs regeneration without broad FAQ/HowTo updates."
@@ -202,8 +202,8 @@ function createTargetSubquery(
     faq: {
       id: "target-faq",
       target,
-      query: `${baseFacts} Update only FAQPage.mainEntity and FAQ PDP content. Need review-led questions, source-backed answers, ingredient/usage/customer intent, and FAQ schema compatibility. ${benefitText} ${ingredientText} ${usageText} ${reviewText}`,
-      intents: ["faq", "review", "customer", "schema", "evidence"],
+      query: `${baseFacts} Update only FAQPage.mainEntity and FAQ PDP content. Need source-backed answers, ingredient/usage/customer intent, metric evidence, positive or neutral review use-feel FAQ intent, negative review exclusion, and FAQ schema compatibility. ${benefitText} ${ingredientText} ${usageText} ${reviewText}`,
+      intents: ["faq", "customer", "review", "schema", "evidence"],
       fieldTargets: ["FAQPage.mainEntity", "PDP.content"],
       reason: "FAQ content changed or needs a targeted refresh."
     },
@@ -226,10 +226,10 @@ function createTargetSubquery(
     reviews: {
       id: "target-reviews",
       target,
-      query: `${baseFacts} Update review-led product copy, FAQ intent, and review-backed positive notes. ${reviewText}`,
+      query: `${baseFacts} Update positive or neutral review-led product copy, review-intent FAQ use-feel answers, review summaries, and review-backed positive notes. Exclude negative review complaints, scent complaints, rating metadata, and raw reviewer snippets from FAQPage. ${reviewText}`,
       intents: ["review", "faq", "customer", "evidence"],
       fieldTargets: ["FAQPage.mainEntity", "Product.positiveNotes", "Product.description", "PDP.content"],
-      reason: "Review signals changed and should update only review-dependent GEO content."
+      reason: "Review signals changed and should update review-dependent GEO content while keeping negative reviews out of public FAQ intent."
     }
   };
 

@@ -101,7 +101,7 @@ const routineOnlyTokens = new Set([
 const actionTargetPattern =
   /\b(?:apply|dispense|take|pump|scoop|spray|mist|spread|massage|lather|rub|warm|layer|pat|smooth)\s+([^.;\n]{2,120})/giu;
 const currentProductActionPattern =
-  /\b(?:apply|dispense|use|using|take|pump|scoop|spray|mist|spread|massage|lather|rub|warm|layer|pat|smooth|rinse|사용|도포|바르|덜어|펴\s*바르|마사지|흡수|塗布|なじませ)\b/iu;
+  /\b(?:apply|dispense|use|using|take|pump|scoop|spray|mist|spread|massage|lather|rub|warm|layer|pat|smooth|rinse)\b|(?:사용|도포|바르|덜어|펴\s*바르|마사지|흡수|거품\s*내|거품내|헹구|미온수)|塗布|なじませ/iu;
 
 export function filterCurrentProductUsageInstructions(product: PdpProductSignal): PdpProductSignal {
   if (product.usage.length === 0) {
@@ -140,7 +140,7 @@ export function filterCurrentProductUsageInstructions(product: PdpProductSignal)
         continue;
       }
 
-      if (lastContext === "current" || keptSegments.length > 0 || usage.length === 0 || currentProductActionPattern.test(segment)) {
+      if (lastContext === "current" || keptSegments.length > 0 || usage.length === 0 || hasCurrentProductAction(segment)) {
         keptSegments.push(cleanUsageSegment(segment));
         lastContext = lastContext ?? "orphan";
       }
@@ -271,7 +271,7 @@ function hasCurrentProductAnchor(segment: string, scope: ProductScope): boolean 
   if (scope.productPhrases.some((phrase) => phrase.length > 0 && containsTokenSequence(tokens, phrase))) {
     return true;
   }
-  if (scope.primaryFormToken && containsMatchingToken(tokens, scope.primaryFormToken) && currentProductActionPattern.test(segment)) {
+  if (scope.primaryFormToken && containsMatchingToken(tokens, scope.primaryFormToken) && hasCurrentProductAction(segment)) {
     return true;
   }
   if (scope.categoryTokens.length > 0 && tokenOverlapCount(tokens, scope.categoryTokens) === scope.categoryTokens.length) {
@@ -279,6 +279,10 @@ function hasCurrentProductAnchor(segment: string, scope: ProductScope): boolean 
   }
 
   return scope.nameTokens.length > 0 && tokenOverlapCount(tokens, scope.nameTokens) >= Math.min(3, scope.nameTokens.length);
+}
+
+function hasCurrentProductAction(value: string): boolean {
+  return currentProductActionPattern.test(value);
 }
 
 function extractProductCandidates(segment: string, scope: ProductScope): ProductCandidate[] {

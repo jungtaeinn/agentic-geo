@@ -133,11 +133,25 @@ describe("readPdpGeoGeneratorRagProfile", () => {
 
     expect(chunks.some((chunk) => chunk.source === pdpGeoGeneratorRagManifest.brandIdentities.sulwhasoo)).toBe(true);
     expect(chunks.find((chunk) => chunk.title === "GEO Projection Rules")?.fieldTargets)
-      .toEqual(expect.arrayContaining(["Product.description", "FAQPage.mainEntity", "HowTo.step"]));
+      .toEqual(expect.arrayContaining(["Product.description", "WebPage.description", "PDP.content", "diagnostics"]));
+    expect(chunks.find((chunk) => chunk.title === "GEO Projection Rules")?.fieldTargets ?? [])
+      .not.toContain("FAQPage.mainEntity");
+    expect(chunks.find((chunk) => chunk.title === "GEO Projection Rules")?.fieldTargets ?? [])
+      .not.toContain("HowTo.step");
+    expect(chunks.find((chunk) => chunk.title === "GEO Projection Rules")?.fieldTargets ?? [])
+      .not.toContain("Product.additionalProperty");
     expect(chunks.find((chunk) => chunk.title === "Identity Pillars")?.intents)
-      .toEqual(expect.arrayContaining(["customer", "claims", "evidence"]));
+      .toEqual(expect.arrayContaining(["customer", "locale"]));
+    expect(chunks.find((chunk) => chunk.title === "Identity Pillars")?.intents ?? [])
+      .not.toContain("claims");
+    expect(chunks.find((chunk) => chunk.title === "Identity Pillars")?.intents ?? [])
+      .not.toContain("evidence");
     expect(chunks.find((chunk) => chunk.title === "Research Papers and Official Articles")?.fieldTargets)
-      .toEqual(expect.arrayContaining(["diagnostics", "WebPage.description", "FAQPage.mainEntity"]));
+      .toEqual(expect.arrayContaining(["diagnostics", "WebPage.description", "PDP.content"]));
+    expect(chunks.find((chunk) => chunk.title === "Research Papers and Official Articles")?.fieldTargets ?? [])
+      .not.toContain("Product.additionalProperty");
+    expect(chunks.find((chunk) => chunk.title === "Research Papers and Official Articles")?.fieldTargets ?? [])
+      .not.toContain("FAQPage.mainEntity");
 
     const bestPracticeChunks = await new LocalVersionedRagRetriever().retrieve({
       query: createPdpGeoRagQuery(product, "en-US", "US"),
@@ -194,7 +208,7 @@ describe("readPdpGeoGeneratorRagProfile", () => {
     )).toBe(true);
   });
 
-  it("builds retrieval queries for review-led FAQ intent and public wording constraints", () => {
+  it("builds retrieval queries for review-intent FAQ and public wording constraints", () => {
     const query = createPdpGeoRagQuery({
       name: "Concentrated Ginseng Rejuvenating Serum",
       brand: "Sulwhasoo",
@@ -217,7 +231,7 @@ describe("readPdpGeoGeneratorRagProfile", () => {
 
     expect(query).toContain("answer-ready FAQ intent");
     expect(query).toContain("OCR sentence diagnostics");
-    expect(query).toContain("customer review language");
+    expect(query).toContain("positive or neutral customer review FAQ intent");
     expect(query).toContain("WebPage/Product description separation");
     expect(query).toContain("public wording without internal diagnostic labels");
   });
@@ -531,6 +545,19 @@ describe("readPdpGeoGeneratorRagProfile", () => {
           text: "Generative search answers need citation-ready, entity-rich source support.",
           metadata: {},
           score: 0.86
+        },
+        {
+          id: "brand-identity-claims-1",
+          source: pdpGeoGeneratorRagManifest.brandIdentities.sulwhasoo,
+          title: "Research Papers and Official Articles",
+          kind: "custom",
+          intents: ["claims", "evidence", "customer"],
+          fieldTargets: ["Product.description", "Product.additionalProperty"],
+          text: "Brand identity research and official articles are brand-image context only and should not become product claims.",
+          metadata: {
+            queryPlanTarget: "brandIdentityCoverage"
+          },
+          score: 0.99
         }
       ]
     });
@@ -546,5 +573,9 @@ describe("readPdpGeoGeneratorRagProfile", () => {
       .toContain(`${pdpGeoGeneratorRagManifest.documents.bestPractice}#HowTo Best Practice`);
     expect(reasoning.decisions.find((decision) => decision.principle === "stepwise HowTo")?.ragSources)
       .not.toContain(`${pdpGeoGeneratorRagManifest.documents.bestPractice}#FAQ Best Practice`);
+    expect(reasoning.decisions.find((decision) => decision.principle === "evidence-backed claims")?.ragSources.join(" "))
+      .not.toContain(pdpGeoGeneratorRagManifest.brandIdentities.sulwhasoo);
+    expect(reasoning.decisions.find((decision) => decision.principle === "target customer context")?.ragSources.join(" "))
+      .toContain(pdpGeoGeneratorRagManifest.brandIdentities.sulwhasoo);
   });
 });

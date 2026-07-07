@@ -148,6 +148,7 @@ function repairJsonLd(
   }
 
   repairSchemaEvidenceConsistency(graph, locale, warnings, repairs);
+  repairSchemaDescriptionRoleSeparation(graph, fallbackProductName, fallbackDescription, locale, warnings, repairs);
 
   return cleanJson({
     ...root,
@@ -204,6 +205,160 @@ function readReportedDetailsProperty(product: Record<string, unknown>): string |
     .find((item) => item.name && /reported details/i.test(item.name) && item.value)?.value;
 }
 
+function repairSchemaDescriptionRoleSeparation(
+  graph: Array<Record<string, unknown>>,
+  fallbackProductName: string,
+  fallbackDescription: string,
+  locale: PdpGeoLocale,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[]
+): void {
+  const product = graph.find((node) => node["@type"] === "Product");
+  const webPage = graph.find((node) => node["@type"] === "WebPage");
+  if (!product) {
+    return;
+  }
+
+  if (typeof product.description === "string") {
+    const before = product.description;
+    const after = repairProductDescriptionPageEntityLanguage(before, fallbackDescription, fallbackProductName, locale);
+    if (after !== before) {
+      product.description = after;
+      addRepair(warnings, repairs, {
+        field: "Product.description",
+        source: "field-contract-validator",
+        issue: "Product.description described the product page or page coverage rather than the product entity.",
+        action: "Removed page-level wording and restored a product-entity description.",
+        before,
+        after,
+        evidence: ["Product.description", "schema.org Product entity role", locale]
+      }, "Product.description was repaired to describe the product entity rather than the page.");
+    }
+  }
+
+  if (!webPage || typeof webPage.description !== "string" || typeof product.description !== "string") {
+    return;
+  }
+  if (!areSchemaDescriptionsTooSimilar(webPage.description, product.description)) {
+    return;
+  }
+
+  const before = webPage.description;
+  const after = createDistinctWebPageDescriptionFallback(fallbackProductName, locale);
+  webPage.description = after;
+  addRepair(warnings, repairs, {
+    field: "WebPage.description",
+    source: "field-contract-validator",
+    issue: "WebPage.description repeated Product.description instead of describing page-level coverage.",
+    action: "Replaced the duplicate WebPage description with a page-level product-page description.",
+    before,
+    after,
+    evidence: ["WebPage.description", "Product.description", "schema.org WebPage/Product role separation", locale]
+  }, "WebPage.description was repaired because it duplicated the Product entity description.");
+}
+
+function repairProductDescriptionPageEntityLanguage(
+  value: string,
+  fallbackDescription: string,
+  fallbackProductName: string,
+  locale: PdpGeoLocale
+): string {
+  if (!containsProductDescriptionPageEntityLanguage(value)) {
+    return value;
+  }
+  const kept = splitPublicSentences(value)
+    .filter((sentence) => !containsProductDescriptionPageEntityLanguage(sentence))
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+  if (kept.length > 0) {
+    return kept.join(" ").replace(/\s+/g, " ").trim();
+  }
+  const fallback = fallbackDescription.trim();
+  if (fallback && !containsProductDescriptionPageEntityLanguage(fallback)) {
+    return fallback;
+  }
+  return createProductEntityDescriptionFallback(fallbackProductName, locale);
+}
+
+function containsProductDescriptionPageEntityLanguage(value: string): boolean {
+  return splitPublicSentences(value).some((sentence) => {
+    const text = sentence.trim();
+    if (/[가-힣]/.test(text)
+      && /(?:상품\s*페이지|제품\s*페이지|상세\s*페이지|페이지(?:에서는|에는|는)?)/u.test(text)
+      && /(?:상품|제품|고객|피부|성분|기술|효능|효과|사용|리뷰|FAQ|HowTo|구매|정보|다룹니다|소개|추천|안내|확인|제공)/iu.test(text)) {
+      return true;
+    }
+    if (/[A-Za-z]/.test(text)
+      && /(?:\bproduct\s+page\b|\bproduct-detail\s+page\b|\bPDP\b|\bthis\s+page\b|\bthe\s+page\b|\bpage\s+(?:covers?|introduces?|summari[sz]es?|presents?|describes?|includes?|helps?))/i.test(text)) {
+      return true;
+    }
+    return /[ぁ-んァ-ン一-龯]/.test(text)
+      && /(?:商品ページ|製品ページ|ページでは|ページは)/.test(text);
+  });
+}
+
+function areSchemaDescriptionsTooSimilar(webPageDescription: string, productDescription: string): boolean {
+  const webPage = normalizeDescriptionForRoleComparison(webPageDescription);
+  const product = normalizeDescriptionForRoleComparison(productDescription);
+  if (!webPage || !product) {
+    return false;
+  }
+  if (webPage === product) {
+    return true;
+  }
+  if (product.length >= 72 && webPage.includes(product)) {
+    return true;
+  }
+  if (webPage.length >= 72 && product.includes(webPage)) {
+    return true;
+  }
+
+  const webPageSentences = splitPublicSentences(webPageDescription)
+    .map(normalizeDescriptionForRoleComparison)
+    .filter((sentence) => sentence.length >= 72);
+  const productSentences = splitPublicSentences(productDescription)
+    .map(normalizeDescriptionForRoleComparison)
+    .filter((sentence) => sentence.length >= 72);
+  return productSentences.some((productSentence) =>
+    webPageSentences.some((webPageSentence) =>
+      webPageSentence === productSentence
+      || webPageSentence.includes(productSentence)
+      || productSentence.includes(webPageSentence)
+    )
+  );
+}
+
+function normalizeDescriptionForRoleComparison(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\b(?:this|the)\b/g, " ")
+    .replace(/\b(?:product\s+detail\s+page|product\s+page|pdp|page)\b/g, " ")
+    .replace(/\b(?:introduces?|summari[sz]es?|covers?|presents?|describes?|includes?|explains?|helps?|lets?)\b/g, " ")
+    .replace(/(?:상품\s*페이지|제품\s*페이지|상세\s*페이지|페이지에서는|페이지에는|페이지는|페이지|소개합니다|추천합니다|다룹니다|안내합니다|설명합니다|제공합니다|확인할\s*수\s*있습니다)/g, " ")
+    .replace(/(?:商品ページ|製品ページ|ページでは|ページは|ページ)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function createProductEntityDescriptionFallback(productName: string, locale: PdpGeoLocale): string {
+  return fallback(locale, {
+    "ko-KR": `${productName}은 상품 원문 근거를 바탕으로 구성된 제품입니다.`,
+    "ja-JP": `${productName}は商品原文の根拠に基づく製品です。`,
+    "en-US": `${productName} is described as a product backed by the available PDP source evidence.`,
+    "en-GB": `${productName} is described as a product backed by the available PDP source evidence.`
+  });
+}
+
+function createDistinctWebPageDescriptionFallback(productName: string, locale: PdpGeoLocale): string {
+  return fallback(locale, {
+    "ko-KR": `${productName} 상품 페이지에서는 상품의 주요 효능, 성분/기술, 사용 맥락, 리뷰, 옵션, 측정/평가 근거를 원문 범위 안에서 다룹니다.`,
+    "ja-JP": `${productName}の商品ページでは、主なベネフィット、成分/技術、使用文脈、レビュー、選択肢、測定/評価根拠を原文の範囲で扱います。`,
+    "en-US": `This ${productName} product page covers the product's key benefits, ingredients or technologies, routine context, reviews, variants, offers, and reported evidence when those details are available in the source.`,
+    "en-GB": `This ${productName} product page covers the product's key benefits, ingredients or technologies, routine context, reviews, variants, offers, and reported evidence when those details are available in the source.`
+  });
+}
+
 function alignDescriptionEvidenceScope(description: string, reportedDetails: string): string {
   const reported = reportedDetails.toLowerCase();
   let next = description
@@ -248,7 +403,7 @@ function repairGraphNode(
   }
 
   if (node["@type"] === "FAQPage" && Array.isArray(node.mainEntity)) {
-    node.mainEntity = node.mainEntity.filter(isRecord).flatMap((item) => {
+    const repairedFaqItems = node.mainEntity.filter(isRecord).flatMap((item) => {
       const name = stringValue(item.name);
       const acceptedAnswer = isRecord(item.acceptedAnswer) ? item.acceptedAnswer : undefined;
       const answer = stringValue(acceptedAnswer?.text);
@@ -267,6 +422,30 @@ function repairGraphNode(
       const repairedQuestion = repairGeneratedText(name, locale, "FAQPage.mainEntity.name", warnings, repairs);
       const repairedAnswer = repairGeneratedText(answer, locale, "FAQPage.mainEntity.acceptedAnswer.text", warnings, repairs);
       const fieldContractAnswer = repairFaqAnswerFieldContract(repairedQuestion, repairedAnswer, locale, warnings, repairs);
+      if (!fieldContractAnswer) {
+        addRepair(warnings, repairs, {
+          field: "FAQPage.mainEntity",
+          source: "field-contract-validator",
+          issue: "FAQ answer only contained review-based wording after field-contract repair.",
+          action: "Removed the FAQ item because no product-detail answer remained.",
+          before: toJsonValue(item),
+          after: null,
+          evidence: ["FAQPage.mainEntity.acceptedAnswer.text", "answer-ready FAQ contract"]
+        }, "Review-only FAQ item was removed after answer repair.");
+        return [];
+      }
+      if (isReviewBasedFaqItem(repairedQuestion, fieldContractAnswer, locale)) {
+        addRepair(warnings, repairs, {
+          field: "FAQPage.mainEntity",
+          source: "field-contract-validator",
+          issue: "FAQ item was based on negative customer review text rather than a reusable review-intent question.",
+          action: "Removed the negative review-based FAQ item so FAQPage keeps product-fact questions and positive review-intent questions only.",
+          before: toJsonValue(item),
+          after: null,
+          evidence: ["FAQPage.mainEntity.name", "FAQPage.mainEntity.acceptedAnswer.text", "review-intent FAQ contract"]
+        }, "Negative review-based FAQ item was removed during final sentence QA.");
+        return [];
+      }
       if (isSectionHeadingFaqQuestion(repairedQuestion)) {
         addRepair(warnings, repairs, {
           field: "FAQPage.mainEntity",
@@ -290,6 +469,7 @@ function repairGraphNode(
         }
       }];
     });
+    node.mainEntity = dedupeFaqMainEntityBySemanticIntent(repairedFaqItems, locale, warnings, repairs);
   }
 
   if (node["@type"] === "HowTo" && Array.isArray(node.step)) {
@@ -310,7 +490,20 @@ function repairGraphNode(
         return [];
       }
       const repairedText = repairGeneratedText(text, locale, "HowTo.step.text", warnings, repairs);
-      if (!isActionableUsageText(repairedText)) {
+      const usageStepParts = splitHowToStepUsageText(repairedText, locale);
+      if (usageStepParts.length > 1) {
+        addRepair(warnings, repairs, {
+          field: "HowTo.step.text",
+          source: "field-contract-validator",
+          issue: "HowTo.step combined multiple actionable usage directions into one step.",
+          action: "Split the compound HowTo step into atomic usage actions before deduplication.",
+          before: repairedText,
+          after: usageStepParts,
+          evidence: ["HowTo.step", "stepwise HowTo contract"]
+        }, "Compound HowTo usage step was split into atomic actions.");
+      }
+      const validParts = usageStepParts.filter((part) => isActionableUsageText(part));
+      if (validParts.length === 0) {
         addRepair(warnings, repairs, {
           field: "HowTo.step.text",
           source: "field-contract-validator",
@@ -322,28 +515,32 @@ function repairGraphNode(
         }, "HowTo step was removed because it was not actionable usage content.");
         return [];
       }
-      const stepKey = howToStepDedupeKey(repairedText);
-      if (stepKey && seenStepKeys.has(stepKey)) {
-        addRepair(warnings, repairs, {
-          field: "HowTo.step.text",
-          source: "field-contract-validator",
-          issue: "HowTo.step duplicated the same actionable usage direction with different surface wording.",
-          action: "Removed the duplicate HowTo step so usage directions remain concise and non-repetitive.",
-          before: toJsonValue(item),
-          after: null,
-          evidence: ["HowTo.step", "actionable usage dedupe"]
-        }, "Duplicate HowTo usage step was removed during field contract validation.");
-        return [];
-      }
-      if (stepKey) {
-        seenStepKeys.add(stepKey);
-      }
-      return [{
-        "@type": "HowToStep",
-        position: nextPosition++,
-        name: stringValue(item.name) ? repairGeneratedText(stringValue(item.name) ?? "", locale, "HowTo.step.name", warnings, repairs) : undefined,
-        text: repairedText
-      }];
+
+      return validParts.flatMap((part) => {
+        const stepKey = howToStepDedupeKey(part);
+        if (stepKey && seenStepKeys.has(stepKey)) {
+          addRepair(warnings, repairs, {
+            field: "HowTo.step.text",
+            source: "field-contract-validator",
+            issue: "HowTo.step duplicated the same actionable usage direction with different surface wording.",
+            action: "Removed the duplicate HowTo step so usage directions remain concise and non-repetitive.",
+            before: toJsonValue(item),
+            after: null,
+            evidence: ["HowTo.step", "actionable usage dedupe"]
+          }, "Duplicate HowTo usage step was removed during field contract validation.");
+          return [];
+        }
+        if (stepKey) {
+          seenStepKeys.add(stepKey);
+        }
+        const position = nextPosition++;
+        return [{
+          "@type": "HowToStep",
+          position,
+          name: createValidatedHowToStepName(locale, position),
+          text: part
+        }];
+      });
     });
   }
 
@@ -470,7 +667,7 @@ function repairWebPageDescriptionFieldContract(
       changed = true;
       return factNavigationRepaired ? [factNavigationRepaired] : [];
     }
-    const mixedIngredientMetricRepaired = repairKoreanWebPageMixedIngredientMetricEvidenceSentence(sentence);
+    const mixedIngredientMetricRepaired = repairKoreanWebPageMixedIngredientMetricEvidenceSentence(sentence, benefitContext);
     if (mixedIngredientMetricRepaired) {
       changed = true;
       return mixedIngredientMetricRepaired;
@@ -538,6 +735,9 @@ function normalizeKoreanRepairPhrase(value: string): string {
   return value
     .replace(/\s+/g, " ")
     .replace(/\s+([,.])/g, "$1")
+    .replace(/떠\s*있은/g, "떠 있는")
+    .replace(/떠\s*있어야/g, "떠 있어야")
+    .replace(/떠\s*있는\s+것이/g, "떠 있는 것이")
     .replace(/[.。！？!?]+$/g, "")
     .trim();
 }
@@ -587,7 +787,7 @@ function repairRedundantKoreanFaqHowToNavigationSentence(value: string): string 
     return "";
   }
   if (/(?:결과|수치|근거)$/u.test(base)) {
-    return `${base}를 제시합니다.`;
+    return `${base}입니다.`;
   }
   return `${base}.`;
 }
@@ -662,13 +862,13 @@ function repairKoreanWebPageFactNavigationSentence(value: string): string {
     const phrase = normalizeKoreanRepairPhrase(evidenceMatch[1])
       .replace(/\s*관련\s*결과$/u, " 관련 결과")
       .trim();
-    return phrase ? `${appendKoreanSubjectParticle(phrase)} 제시됩니다.` : "";
+    return phrase ? createKoreanEvidenceResultSentence(phrase) : "";
   }
 
   return value;
 }
 
-function repairKoreanWebPageMixedIngredientMetricEvidenceSentence(value: string): string[] | undefined {
+function repairKoreanWebPageMixedIngredientMetricEvidenceSentence(value: string, benefitContext?: string): string[] | undefined {
   const text = value.trim();
   if (!isKoreanWebPageMixedIngredientMetricEvidenceSentence(text)) {
     return undefined;
@@ -682,19 +882,241 @@ function repairKoreanWebPageMixedIngredientMetricEvidenceSentence(value: string)
   const split = withoutAwkwardPredicate.match(/^(.{2,260}?(?:구성|포뮬러|워터|캡슐|지방산|콜레스테롤|세라마이드))과\s+(.{2,320})$/u);
   if (!split?.[1] || !split[2]) {
     const base = stripTrailingKoreanSubjectParticle(withoutAwkwardPredicate);
-    return base ? [`${appendKoreanSubjectParticle(base)} 제시됩니다.`] : undefined;
+    return base ? [createKoreanEvidenceResultSentence(base)] : undefined;
   }
 
   const ingredientPhrase = normalizeKoreanIngredientMetricEvidencePhrase(split[1]);
   const metricPhrase = stripTrailingKoreanSubjectParticle(normalizeKoreanMetricEvidencePhrase(split[2]));
   const repaired: string[] = [];
   if (ingredientPhrase) {
-    repaired.push(`핵심 성분/기술은 ${ingredientPhrase}입니다.`);
+    repaired.push(benefitContext
+      ? `핵심 성분/기술은 ${ingredientPhrase}이며, ${appendKoreanObjectParticle(benefitContext)} 뒷받침합니다.`
+      : `핵심 성분/기술은 ${ingredientPhrase}입니다.`);
   }
   if (metricPhrase) {
-    repaired.push(`${appendKoreanSubjectParticle(metricPhrase)} 제시됩니다.`);
+    repaired.push(createKoreanEvidenceResultSentence(metricPhrase));
   }
   return repaired.length > 0 ? repaired : undefined;
+}
+
+const KOREAN_METRIC_OUTCOME_PATTERN = "회복|개선|감소|증가|상승|향상|완화|잔존|지속";
+
+function createKoreanEvidenceResultSentence(value: string): string {
+  const text = normalizeKoreanEvidenceResultValue(value);
+  if (isKoreanNaturalMetricResultSentence(text)) {
+    return `${text}.`;
+  }
+  const naturalSentence = formatKoreanEvidenceResultSentence(text);
+  if (naturalSentence) {
+    return `${naturalSentence}.`;
+  }
+  return text ? `${appendKoreanTopicParticle("측정/평가 결과")} ${text}입니다.` : "";
+}
+
+function isKoreanNaturalMetricResultSentence(value: string): boolean {
+  return hasKoreanQuantifiedReportedSignal(value)
+    && new RegExp(`(${KOREAN_METRIC_OUTCOME_PATTERN})(?:했|되었)습니다$`, "u").test(value.trim());
+}
+
+function normalizeKoreanEvidenceResultValue(value: string): string {
+  return normalizeKoreanRepairPhrase(value)
+    .replace(/^(?:측정\/평가\s*결과|측정\s*결과|평가\s*지표|확인\s*지표)(?:는|은|:)?\s*/u, "")
+    .replace(/^시험\/평가\s*결과로\s*/u, "")
+    .replace(/^(?:평가\s*지표|확인\s*지표)\s*:\s*/u, "")
+    .replace(/\s*(?:가\s*)?보고되었습니다$/u, "")
+    .replace(/\s*(?:가\s*)?확인됩니다$/u, "")
+    .replace(new RegExp(`(${KOREAN_METRIC_OUTCOME_PATTERN})(?:된다고|된|한)?\\s*(?:것으로|결과가|수치가)?\\s*(?:제시(?:됩니다|되었습니다|된다|되며)|나타났습니다)$`, "u"), "$1")
+    .replace(new RegExp(`(${KOREAN_METRIC_OUTCOME_PATTERN})(?:된다고|된|한)?\\s*결과(?:를|을)\\s*제시합니다$`, "u"), "$1")
+    .replace(/\s*(?:결과|수치)(?:가|이)?\s*$/u, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function formatKoreanEvidenceResultSentence(value: string): string | undefined {
+  const text = normalizeKoreanEvidenceContextPunctuation(value);
+  if (!text || !hasKoreanQuantifiedReportedSignal(text)) {
+    return undefined;
+  }
+
+  const { context, claim } = splitKoreanEvidenceContext(text);
+  const claimSentence = formatKoreanMetricClaimSentence(claim);
+  if (!claimSentence) {
+    return undefined;
+  }
+  return context ? `${context}, ${claimSentence}` : claimSentence;
+}
+
+function normalizeKoreanEvidenceContextPunctuation(value: string): string {
+  return normalizeKoreanRepairPhrase(value)
+    .replace(/\s*[:：]\s*/g, ": ")
+    .replace(/\s*;\s*/g, "; ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function splitKoreanEvidenceContext(value: string): { context?: string; claim: string } {
+  const text = normalizeKoreanEvidenceContextPunctuation(value);
+  const contextMatch = text.match(/^(.{2,140}?)\s*기준\s*(?:평가\s*지표|측정\s*결과)?\s*:?\s*(.+)$/u);
+  if (contextMatch?.[1] && contextMatch[2] && !hasKoreanQuantifiedReportedSignal(contextMatch[1])) {
+    return {
+      context: `${normalizeKoreanEvidenceContextPunctuation(contextMatch[1]).replace(/\s*기준$/u, "")} 기준`,
+      claim: contextMatch[2].trim()
+    };
+  }
+
+  const methodMatch = text.match(/^(.{2,140}?(?:테스트|시험|평가|ex\s*vivo|in\s*vitro)[^,，。！？]{0,60}?)(?:에서|으로|에\s*의한)\s+(.+)$/iu);
+  if (methodMatch?.[1] && methodMatch[2] && !hasKoreanQuantifiedReportedSignal(methodMatch[1])) {
+    return {
+      context: `${normalizeKoreanEvidenceContextPunctuation(methodMatch[1]).replace(/\s*결과$/u, "")} 기준`,
+      claim: methodMatch[2].trim()
+    };
+  }
+
+  return { claim: text };
+}
+
+function formatKoreanMetricClaimSentence(value: string): string | undefined {
+  const segments = value
+    .split(/\s*;\s*/u)
+    .flatMap(splitKoreanCommaSeparatedMetricOutcomeSegments)
+    .map((segment) => normalizeKoreanMetricClaimPhrase(segment))
+    .filter(Boolean);
+  if (segments.length === 0) {
+    return undefined;
+  }
+
+  const clauses = segments
+    .map(formatKoreanMetricClaimSegment)
+    .filter((segment): segment is string => Boolean(segment));
+  if (clauses.length === 0) {
+    return undefined;
+  }
+  if (clauses.length === 1) {
+    return clauses[0];
+  }
+
+  return clauses
+    .map((clause, index) => index < clauses.length - 1 ? convertKoreanResultSentenceToConnector(clause) : clause)
+    .join(", ");
+}
+
+function splitKoreanCommaSeparatedMetricOutcomeSegments(value: string): string[] {
+  const parts = value.split(/\s*,\s*/u).map((part) => part.trim()).filter(Boolean);
+  if (parts.length <= 1) {
+    return [value];
+  }
+  const outcomePattern = new RegExp(`\\d+(?:\\.\\d+)?\\s*(?:%|배)\\s*(${KOREAN_METRIC_OUTCOME_PATTERN})(?:된다고|된|한)?$`, "u");
+  return parts.every((part) => outcomePattern.test(part)) ? parts : [value];
+}
+
+function normalizeKoreanMetricClaimPhrase(value: string): string {
+  return normalizeKoreanEvidenceContextPunctuation(value)
+    .replace(/\s*(?:결과|수치)(?:가|이)?\s*$/u, "")
+    .replace(new RegExp(`(${KOREAN_METRIC_OUTCOME_PATTERN})(?:된다고|된|한)?$`, "u"), "$1")
+    .trim();
+}
+
+function formatKoreanMetricClaimSegment(value: string): string | undefined {
+  const text = normalizeKoreanMetricClaimPhrase(value);
+  if (!text || !hasKoreanQuantifiedReportedSignal(text)) {
+    return undefined;
+  }
+
+  const retainedAndImproved = text.match(/^(.{2,120}?)\s+잔존\s+(\d+(?:\.\d+)?\s*(?:%|배))\s*,\s*(.{2,90}?)\s+(\d+(?:\.\d+)?\s*(?:%|배))\s*(?:및|과|와)\s*(.{2,90}?)\s+(\d+(?:\.\d+)?\s*(?:%|배))\s*개선$/u);
+  if (retainedAndImproved?.[1] && retainedAndImproved[2] && retainedAndImproved[3] && retainedAndImproved[4] && retainedAndImproved[5] && retainedAndImproved[6]) {
+    return `${formatKoreanMetricSubject(`${retainedAndImproved[1]} 잔존율`)} ${retainedAndImproved[2].trim()}이고, ${formatKoreanMetricSubject(retainedAndImproved[3])} ${retainedAndImproved[4].trim()}, ${formatKoreanMetricSubject(retainedAndImproved[5])} ${retainedAndImproved[6].trim()} 개선되었습니다`;
+  }
+
+  const particleSubject = text.match(new RegExp(`^(.{2,120}?(?:은|는))\\s+(.{1,180}?\\d+(?:\\.\\d+)?\\s*(?:%|배).{0,120}?)\\s*(${KOREAN_METRIC_OUTCOME_PATTERN})$`, "u"));
+  if (particleSubject?.[1] && particleSubject[2] && particleSubject[3]) {
+    return `${particleSubject[1].trim()} ${particleSubject[2].trim()} ${koreanMetricOutcomePredicate(particleSubject[3])}`;
+  }
+
+  const dualMetric = text.match(new RegExp(`^(.{2,90}?)\\s+(\\d+(?:\\.\\d+)?\\s*(?:%|배))\\s*(?:및|과|와|,)\\s*(.{2,90}?)\\s+(\\d+(?:\\.\\d+)?\\s*(?:%|배))\\s*(${KOREAN_METRIC_OUTCOME_PATTERN})$`, "u"));
+  if (dualMetric?.[1] && dualMetric[2] && dualMetric[3] && dualMetric[4] && dualMetric[5]) {
+    const firstSubject = formatKoreanMetricSubject(dualMetric[1]);
+    const secondSubject = formatKoreanMetricSubject(dualMetric[3]);
+    return `${firstSubject} ${dualMetric[2].trim()}, ${secondSubject} ${dualMetric[4].trim()} ${koreanMetricOutcomePredicate(dualMetric[5])}`;
+  }
+
+  const metricBeforeOutcome = text.match(new RegExp(`^(.{0,140}?)\\s*(\\d+(?:\\.\\d+)?\\s*(?:%|배))\\s*(${KOREAN_METRIC_OUTCOME_PATTERN})$`, "u"));
+  if (metricBeforeOutcome?.[2] && metricBeforeOutcome[3]) {
+    const subject = normalizeKoreanMetricClaimPhrase(metricBeforeOutcome[1] ?? "");
+    const metric = metricBeforeOutcome[2].trim();
+    const outcome = metricBeforeOutcome[3].trim();
+    return subject
+      ? `${formatKoreanMetricSubject(subject)} ${metric} ${koreanMetricOutcomePredicate(outcome)}`
+      : `${metric} ${koreanMetricOutcomePredicate(outcome)}`;
+  }
+
+  const outcomeBeforeMetric = text.match(new RegExp(`^(.{2,120}?)\\s+(${KOREAN_METRIC_OUTCOME_PATTERN})\\s+(\\d+(?:\\.\\d+)?\\s*(?:%|배))$`, "u"));
+  if (outcomeBeforeMetric?.[1] && outcomeBeforeMetric[2] && outcomeBeforeMetric[3]) {
+    const subject = normalizeKoreanMetricClaimPhrase(outcomeBeforeMetric[1]);
+    const outcome = outcomeBeforeMetric[2].trim();
+    const metric = outcomeBeforeMetric[3].trim();
+    if (outcome === "잔존") {
+      return `${formatKoreanMetricSubject(`${subject} 잔존율`)} ${metric}입니다`;
+    }
+    return `${formatKoreanMetricSubject(subject)} ${metric} ${koreanMetricOutcomePredicate(outcome)}`;
+  }
+
+  const trailingOutcome = text.match(new RegExp(`^(.{2,220}?\\d+(?:\\.\\d+)?\\s*(?:%|배).{0,120}?)\\s*(${KOREAN_METRIC_OUTCOME_PATTERN})$`, "u"));
+  if (trailingOutcome?.[1] && trailingOutcome[2]) {
+    return `${trailingOutcome[1].trim()} ${koreanMetricOutcomePredicate(trailingOutcome[2])}`;
+  }
+
+  return undefined;
+}
+
+function formatKoreanMetricSubject(value: string): string {
+  const subject = normalizeKoreanMetricClaimPhrase(value)
+    .replace(/\s*(?:은|는)$/u, "")
+    .trim();
+  if (isKoreanMetricTimingOnlySubject(subject)) {
+    return subject;
+  }
+  return subject ? appendKoreanTopicParticle(subject) : subject;
+}
+
+function isKoreanMetricTimingOnlySubject(value: string): boolean {
+  return /^(?:사용|도포|적용|세정)\s*(?:직후|전|후|\d+(?:\.\d+)?\s*(?:시간|일|주|개월)\s*후)$/u.test(value)
+    || /^\d+(?:\.\d+)?\s*(?:시간|일|주|개월)\s*(?:후|동안|뒤)$/u.test(value);
+}
+
+function koreanMetricOutcomePredicate(outcome: string): string {
+  switch (outcome.trim()) {
+    case "증가":
+      return "증가했습니다";
+    case "감소":
+      return "감소했습니다";
+    case "상승":
+      return "상승했습니다";
+    case "잔존":
+      return "잔존했습니다";
+    case "지속":
+      return "지속되었습니다";
+    case "회복":
+      return "회복되었습니다";
+    case "개선":
+      return "개선되었습니다";
+    case "향상":
+      return "향상되었습니다";
+    case "완화":
+      return "완화되었습니다";
+    default:
+      return `${outcome.trim()}되었습니다`;
+  }
+}
+
+function convertKoreanResultSentenceToConnector(value: string): string {
+  return value
+    .replace(/되었습니다$/u, "되었고")
+    .replace(/했습니다$/u, "했고")
+    .replace(/입니다$/u, "이고");
+}
+
+function hasKoreanQuantifiedReportedSignal(value: string): boolean {
+  return /(?:\d+(?:\.\d+)?\s*%|\d+(?:\.\d+)?\s*배)/.test(value);
 }
 
 function isKoreanWebPageMixedIngredientMetricEvidenceSentence(value: string): boolean {
@@ -1149,22 +1571,60 @@ function repairSectionByFieldContract(
   }
 
   const kept = lines.filter((line) => isValidSectionLineForField(line, field));
-  if (kept.length === lines.length) {
+  const repairedLines = field === "content.sections.howToUse" ? repairHowToUseSectionLines(kept, locale) : kept;
+  const removedInvalidLines = kept.length !== lines.length;
+  const changedHowToLines = !arraysEqual(repairedLines, kept);
+  if (!removedInvalidLines && !changedHowToLines) {
     return value;
   }
 
-  const next = kept.length > 0 ? kept.join("\n") : fieldContractFallback(field, locale);
+  const next = repairedLines.length > 0 ? repairedLines.join("\n") : fieldContractFallback(field, locale);
+  const isHowToDedupeOnly = field === "content.sections.howToUse" && !removedInvalidLines && changedHowToLines;
   addRepair(warnings, repairs, {
     field,
     source: "field-contract-validator",
-    issue: "Public content section contained lines that did not match the RAG field evidence contract.",
-    action: "Removed misrouted lines so usage, ingredient, and benefit content stay separated after generation.",
+    issue: isHowToDedupeOnly
+      ? "Public how-to section duplicated the same actionable usage direction with different surface wording."
+      : "Public content section contained lines that did not match the RAG field evidence contract.",
+    action: isHowToDedupeOnly
+      ? "Deduplicated semantically equivalent HowTo lines and rebuilt the ordered usage section."
+      : "Removed misrouted lines so usage, ingredient, and benefit content stay separated after generation.",
     before: value,
     after: next,
     evidence: ["RAG Field Evidence Contract", field]
   }, `Content section ${field} was repaired by field evidence contract validation.`);
 
   return next;
+}
+
+function repairHowToUseSectionLines(lines: string[], locale: PdpGeoLocale): string[] {
+  if (lines.every((line) => isFallbackSectionLine(stripListMarker(line)))) {
+    return lines;
+  }
+
+  const results: string[] = [];
+  const seenKeys = new Set<string>();
+
+  for (const line of lines) {
+    const text = stripListMarker(line);
+    const parts = splitHowToStepUsageText(text, locale).filter((part) => isActionableUsageText(part));
+    for (const part of parts) {
+      const key = howToStepDedupeKey(part);
+      if (key && seenKeys.has(key)) {
+        continue;
+      }
+      if (key) {
+        seenKeys.add(key);
+      }
+      results.push(part);
+    }
+  }
+
+  return results.map((step, index) => `${index + 1}. ${step}`);
+}
+
+function arraysEqual(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function sectionLines(value: string): string[] {
@@ -1259,10 +1719,23 @@ function isNonInstructionUsageText(value: string): boolean {
 
 function isReviewLikeUsageText(value: string): boolean {
   const text = value.trim();
-  if (!/[가-힣]/.test(text) || hasConcreteKoreanUsageAction(text)) {
+  if (!/[가-힣]/.test(text)) {
     return false;
   }
-  return /(?:타\s*제품|사용해\s*봤|사용해봤|사용했|썼는데|써\s*봤|써봤|했었|더라구|더라고|구요|네요|어요|좋아요|괜찮겠지|마음으로|시간이\s*조금\s*지나)/i.test(text);
+  if (isKoreanCustomerReviewNarrativeUsageLeak(text)) {
+    return true;
+  }
+  const hasReviewVoice = /(?:아직|본격적으로|워낙\s*평|평이\s*좋|기대(?:가|되|하)|타\s*제품|사용해\s*보|사용해보|사용해\s*봤|사용해봤|사용했|썼는데|써\s*보|써보|했었|더라구|더라고|구요|네요|어요|좋아요|괜찮겠지|마음으로|시간이\s*조금\s*지나)/i.test(text);
+  return hasReviewVoice && !hasActionableApplicationVerb(text);
+}
+
+function isKoreanCustomerReviewNarrativeUsageLeak(value: string): boolean {
+  const text = stripListMarker(value).trim();
+  return /(?:^|\s)[A-Za-z0-9_*.-]{2,}\s+20\d{2}[-.]\d{1,2}[-.]\d{1,2}\b/u.test(text)
+    || /(?:아직\s*본격적으로|워낙\s*평|평이\s*좋|기대가\s*많|기대되|고객\s*리뷰|후기|리뷰)/u.test(text)
+    || /(?:구매했|구매\s*했|구매했어요|필요해서\s*구매|배송|포장|도착했|득템|저렴한\s*가격|쓰기\s*전부터|쓰기도\s*전부터|기분이\s*정말\s*좋)/u.test(text)
+    || /(?:초등학생|딸|아들|남편|어머니|엄마|가족)[^.!?。！？]{0,80}(?:구매|필요|사용|쓰|선크림)/u.test(text)
+    || /(?:느낌이네요|느낌입니다|좋습니다|좋네요|좋아요|같아요|같습니다)\s*$/u.test(text) && !hasActionableApplicationVerbWithoutGenericApply(text);
 }
 
 function isSafetyOrTestClaimUsageText(value: string): boolean {
@@ -1302,6 +1775,12 @@ function hasActionableApplicationVerb(value: string): boolean {
     || /(?:적당량|손에|물과\s*함께|거품\s*내|거품내|얼굴에|문지르|미온수|헹구|화장솜|덜어|펴\s*바르|펴\s*바릅|펴\s*발라|바르(?:고|며|듯|세요|십시오|기|면|는|도록)|바릅|바른\s*후|발라(?:주|주세요|줍니다|서|가며)|마사지(?:하듯|하[고여]|한\s*후|해|하세요|하며)|흡수(?:시켜|시키|될\s*때까지|되도록|해\s*주세요|시킵)|마무리(?:해|하세요|합니다|하십시오)|도포(?:해|하세요|합니다|하십시오|한\s*(?:뒤|후)))/.test(text);
 }
 
+function hasActionableApplicationVerbWithoutGenericApply(value: string): boolean {
+  const text = stripListMarker(value).trim();
+  return /\b(?:apply|dispense|massage|lather|rinse|pat|press|spread|smooth|warm|pump)\b|なじませ|塗布/i.test(text)
+    || /(?:적당량|손에|물과\s*함께|거품\s*내|거품내|얼굴에|문지르|미온수|헹구|화장솜|덜어|펴\s*바르|펴\s*바릅|펴\s*발라|발라(?:주|주세요|줍니다|서|가며)|마사지(?:하듯|하[고여]|한\s*후|해|하세요|하며)|흡수(?:시켜|시키|될\s*때까지|되도록|해\s*주세요|시킵)|마무리(?:해|하세요|합니다|하십시오)|도포(?:해|하세요|합니다|하십시오|한\s*(?:뒤|후)))/.test(text);
+}
+
 function isIngredientEvidenceText(value: string): boolean {
   const text = value.trim();
   if (/^(?:full\s+)?ingredients?\s*:/i.test(text) || /^(?:전성분|全成分)\s*:/i.test(text)) {
@@ -1334,12 +1813,17 @@ function repairFaqSectionText(
   warnings: string[],
   repairs: PdpGeoValidationRepair[]
 ): string {
-  const next = value
+  let next = value
     .replace(/\b(\d)based\b/gi, "$1 based")
     .replace(/[ \t]+(Q[.:]\s)/g, "\n\n$1")
     .replace(/[ \t]+(A[.:]\s)/g, "\n$1")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+
+  if (locale === "ko-KR") {
+    next = removeReviewBasedFaqSectionItems(next, value, locale, warnings, repairs);
+  }
+  next = dedupeFaqSectionTextBySemanticIntent(next, value, locale, warnings, repairs);
 
   if (next !== value.trim()) {
     addRepair(warnings, repairs, {
@@ -1351,6 +1835,183 @@ function repairFaqSectionText(
       after: next,
       evidence: ["content.sections.faq", "FAQ Q/A markers", locale]
     }, "FAQ section structure was repaired during final sentence QA.");
+  }
+
+  return next;
+}
+
+function dedupeFaqSectionTextBySemanticIntent(
+  value: string,
+  original: string,
+  locale: PdpGeoLocale,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[]
+): string {
+  const lines = value.split("\n");
+  const selected: Array<{
+    block: string[];
+    question: string;
+    answer: string;
+    key: string;
+    semanticKeys: string[];
+    preference: number;
+  }> = [];
+  let changed = false;
+
+  for (let index = 0; index < lines.length;) {
+    const line = lines[index] ?? "";
+    const match = line.match(/^(Q[.:]\s*)(.+)$/u);
+    if (!match?.[2]) {
+      selected.push({
+        block: [line],
+        question: "",
+        answer: "",
+        key: "",
+        semanticKeys: [],
+        preference: 0
+      });
+      index += 1;
+      continue;
+    }
+
+    const block: string[] = [line];
+    let nextIndex = index + 1;
+    while (nextIndex < lines.length && !/^Q[.:]\s*/u.test(lines[nextIndex] ?? "")) {
+      block.push(lines[nextIndex] ?? "");
+      nextIndex += 1;
+    }
+
+    const question = match[2];
+    const answer = block
+      .slice(1)
+      .join("\n")
+      .replace(/^A[.:]\s*/u, "")
+      .trim();
+    const key = normalizeFaqQuestionDedupeKey(question);
+    const semanticKeys = createFaqSemanticDedupeKeys(question, locale);
+    const preference = scoreFaqSemanticDedupePreference(question, answer, locale);
+    const exactIndex = key ? selected.findIndex((candidate) => candidate.key === key) : -1;
+    const semanticIndex = semanticKeys.length > 0
+      ? selected.findIndex((candidate) => hasFaqSemanticDedupeConflict(semanticKeys, candidate.semanticKeys))
+      : -1;
+    const conflictIndex = exactIndex > -1 ? exactIndex : semanticIndex;
+
+    if (conflictIndex === -1) {
+      selected.push({
+        block,
+        question,
+        answer,
+        key,
+        semanticKeys,
+        preference
+      });
+    } else {
+      changed = true;
+      const existing = selected[conflictIndex];
+      if (!existing) {
+        index = nextIndex;
+        continue;
+      }
+      if (preference > existing.preference) {
+        selected[conflictIndex] = {
+          block,
+          question,
+          answer,
+          key,
+          semanticKeys,
+          preference
+        };
+      }
+    }
+    index = nextIndex;
+  }
+
+  const next = selected.flatMap((item) => item.block).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  if (changed) {
+    addRepair(warnings, repairs, {
+      field: "content.sections.faq",
+      source: "field-contract-validator",
+      issue: "FAQ section contained duplicate or overlapping ingredient-benefit and benefit-overview question intent.",
+      action: "Removed overlapping FAQ section blocks so public FAQ content stays distinct.",
+      before: original.trim(),
+      after: next,
+      evidence: ["content.sections.faq", "semantic FAQ intent dedupe"]
+    }, "Overlapping FAQ section intent was removed during final sentence QA.");
+  }
+
+  return next;
+}
+
+function removeReviewBasedFaqSectionItems(
+  value: string,
+  original: string,
+  locale: PdpGeoLocale,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[]
+): string {
+  const lines = value.split("\n");
+  let changed = false;
+  const kept: string[] = [];
+
+  for (let index = 0; index < lines.length;) {
+    const line = lines[index] ?? "";
+    const match = line.match(/^(Q[.:]\s*)(.+)$/u);
+    if (!match?.[2]) {
+      kept.push(line);
+      index += 1;
+      continue;
+    }
+
+    const block: string[] = [line];
+    let nextIndex = index + 1;
+    while (nextIndex < lines.length && !/^Q[.:]\s*/u.test(lines[nextIndex] ?? "")) {
+      block.push(lines[nextIndex] ?? "");
+      nextIndex += 1;
+    }
+
+    const answerText = block
+      .slice(1)
+      .join("\n")
+      .replace(/^A[.:]\s*/u, "")
+      .trim();
+    if (isReviewBasedFaqItem(match[2], answerText, locale)) {
+      changed = true;
+      index = nextIndex;
+      continue;
+    }
+    const positiveReviewRepair = repairPositiveReviewFaqItem(match[2], answerText, locale);
+    if (positiveReviewRepair) {
+      kept.push(`${match[1]}${positiveReviewRepair.question}`);
+      kept.push(`A. ${positiveReviewRepair.answer}`);
+      changed = true;
+      index = nextIndex;
+      continue;
+    }
+    const usageReviewLeakRepair = repairKoreanUsageFaqReviewLeak(match[2], answerText);
+    if (usageReviewLeakRepair !== answerText) {
+      kept.push(line);
+      kept.push(`A. ${usageReviewLeakRepair}`);
+      changed = true;
+      index = nextIndex;
+      continue;
+    }
+
+    kept.push(...block);
+    index = nextIndex;
+  }
+
+  const next = kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+
+  if (changed) {
+    addRepair(warnings, repairs, {
+      field: "content.sections.faq",
+      source: "field-contract-validator",
+      issue: "FAQ section included raw or negative customer review text.",
+      action: "Rewrote positive review-intent FAQ blocks and removed negative review-based FAQ blocks.",
+      before: original.trim(),
+      after: next,
+      evidence: ["content.sections.faq", "review-intent FAQ contract", "negative review filter"]
+    }, "Review-intent FAQ section blocks were repaired during final sentence QA.");
   }
 
   return next;
@@ -1397,7 +2058,257 @@ function repairFaqAnswerFieldContract(
     next = repairedBenefit;
   }
 
+  const repairedPositiveReviewAnswer = repairPositiveReviewFaqAnswer(question, next, locale);
+  if (repairedPositiveReviewAnswer !== next) {
+    addRepair(warnings, repairs, {
+      field: "FAQPage.mainEntity.acceptedAnswer.text",
+      source: "field-contract-validator",
+      issue: "FAQ answer mixed raw customer-review language with product-detail or ingredient sentences.",
+      action: "Rewrote the answer as a positive review-intent use-feel summary and removed mixed ingredient/technology clauses.",
+      before: next,
+      after: repairedPositiveReviewAnswer,
+      evidence: ["FAQPage.mainEntity.acceptedAnswer.text", "review-intent FAQ contract"]
+    }, "Positive review-intent FAQ answer was repaired during final sentence QA.");
+    next = repairedPositiveReviewAnswer;
+  }
+
+  const repairedReviewRouting = repairFaqAnswerReviewFieldRouting(question, next, locale);
+  if (repairedReviewRouting !== next) {
+    addRepair(warnings, repairs, {
+      field: "FAQPage.mainEntity.acceptedAnswer.text",
+      source: "field-contract-validator",
+      issue: "FAQ answer mixed customer-review language into a product-detail answer.",
+      action: "Removed review-only answer sentences so FAQPage remains grounded in product-detail evidence.",
+      before: next,
+      after: repairedReviewRouting,
+      evidence: ["FAQPage.mainEntity.acceptedAnswer.text", "review-intent FAQ", "answer-ready FAQ contract"]
+    }, "Review language was removed from FAQ answer text.");
+    next = repairedReviewRouting;
+  }
+
+  const repairedUsageReviewLeak = repairKoreanUsageFaqReviewLeak(question, next);
+  if (repairedUsageReviewLeak !== next) {
+    addRepair(warnings, repairs, {
+      field: "FAQPage.mainEntity.acceptedAnswer.text",
+      source: "field-contract-validator",
+      issue: "FAQ usage or routine answer included raw customer-review expectation text as if it were usage guidance.",
+      action: "Removed review-only usage sentences so usage and routine FAQ answers stay grounded in product usage evidence.",
+      before: next,
+      after: repairedUsageReviewLeak,
+      evidence: ["FAQPage.mainEntity.acceptedAnswer.text", "usage FAQ contract", "review-intent FAQ contract"]
+    }, "Raw review expectation text was removed from a usage or routine FAQ answer.");
+    next = repairedUsageReviewLeak;
+  }
+
   return next;
+}
+
+function dedupeFaqMainEntityBySemanticIntent(
+  items: Array<Record<string, unknown>>,
+  locale: PdpGeoLocale,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[]
+): Array<Record<string, unknown>> {
+  const selected: Array<{
+    item: Record<string, unknown>;
+    question: string;
+    answer: string;
+    key: string;
+    semanticKeys: string[];
+    preference: number;
+  }> = [];
+
+  for (const item of items) {
+    const question = stringValue(item.name) ?? "";
+    const answer = isRecord(item.acceptedAnswer) ? stringValue(item.acceptedAnswer.text) ?? "" : "";
+    const key = normalizeFaqQuestionDedupeKey(question);
+    if (!key) {
+      selected.push({
+        item,
+        question,
+        answer,
+        key,
+        semanticKeys: [],
+        preference: 0
+      });
+      continue;
+    }
+
+    const semanticKeys = createFaqSemanticDedupeKeys(question, locale);
+    const preference = scoreFaqSemanticDedupePreference(question, answer, locale);
+    const exactIndex = selected.findIndex((candidate) => candidate.key === key);
+    const semanticIndex = semanticKeys.length > 0
+      ? selected.findIndex((candidate) => hasFaqSemanticDedupeConflict(semanticKeys, candidate.semanticKeys))
+      : -1;
+    const conflictIndex = exactIndex > -1 ? exactIndex : semanticIndex;
+    if (conflictIndex === -1) {
+      selected.push({
+        item,
+        question,
+        answer,
+        key,
+        semanticKeys,
+        preference
+      });
+      continue;
+    }
+
+    const existing = selected[conflictIndex];
+    if (!existing) {
+      selected.push({
+        item,
+        question,
+        answer,
+        key,
+        semanticKeys,
+        preference
+      });
+      continue;
+    }
+    const keepCurrent = preference > existing.preference;
+    const removed = keepCurrent ? existing.item : item;
+    const kept = keepCurrent ? item : existing.item;
+    if (keepCurrent) {
+      selected[conflictIndex] = {
+        item,
+        question,
+        answer,
+        key,
+        semanticKeys,
+        preference
+      };
+    }
+    addRepair(warnings, repairs, {
+      field: "FAQPage.mainEntity",
+      source: "field-contract-validator",
+      issue: "FAQ contained duplicate or overlapping ingredient-benefit and benefit-overview question intent.",
+      action: "Kept the more specific answer-ready FAQ question and removed the overlapping FAQ item.",
+      before: toJsonValue(removed),
+      after: toJsonValue(kept),
+      evidence: ["FAQPage.mainEntity.name", "semantic FAQ intent dedupe"]
+    }, "Overlapping FAQ question intent was removed during final sentence QA.");
+  }
+
+  return selected.map((candidate) => candidate.item);
+}
+
+function normalizeFaqQuestionDedupeKey(question: string): string {
+  return normalizeKoreanRepairPhrase(question)
+    .toLocaleLowerCase()
+    .replace(/[?？!.。！？]/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function createFaqSemanticDedupeKeys(question: string, locale: PdpGeoLocale): string[] {
+  if (isDirectIngredientBenefitFaqQuestion(question, locale)) {
+    return ["ingredient-benefit-overview"];
+  }
+  if (isGenericBenefitOverviewFaqQuestion(question, locale)) {
+    return ["benefit-overview"];
+  }
+  return [];
+}
+
+function hasFaqSemanticDedupeConflict(nextKeys: string[], selectedKeys: string[]): boolean {
+  return nextKeys.some((nextKey) => selectedKeys.includes(nextKey)
+    || nextKey === "ingredient-benefit-overview" && selectedKeys.includes("benefit-overview")
+    || nextKey === "benefit-overview" && selectedKeys.includes("ingredient-benefit-overview"));
+}
+
+function scoreFaqSemanticDedupePreference(question: string, answer: string, locale: PdpGeoLocale): number {
+  const combined = `${question} ${answer}`;
+  return [
+    isDirectIngredientBenefitFaqQuestion(question, locale) ? 40 : 0,
+    isGenericBenefitOverviewFaqQuestion(question, locale) ? 20 : 0,
+    /(?:성분|기술|ingredient|formula|technology)/i.test(combined) ? 5 : 0,
+    /(?:효능|효과|보습|장벽|수분|탄력|주름|benefit|effect|hydration|barrier|firm|wrinkle)/i.test(combined) ? 5 : 0,
+    /(?:\d+(?:\.\d+)?\s*%|\d+\s*(?:시간|일|주|명|회|hours?|days?|weeks?|participants?))/.test(answer) ? 4 : 0
+  ].reduce((sum, score) => sum + score, 0);
+}
+
+function isDirectIngredientBenefitFaqQuestion(question: string, locale: PdpGeoLocale): boolean {
+  const text = normalizeKoreanRepairPhrase(question);
+  if (locale === "ko-KR") {
+    return /(?:주요|핵심)\s*(?:성분|성분\/기술)[^?？.。!！]{0,30}(?:효능|효과)|(?:성분|성분\/기술)[^?？.。!！]{0,30}(?:효능|효과)[^?？.。!！]{0,20}(?:무엇|뭔가요|있나요)/u.test(text);
+  }
+  return /\b(?:key|main|primary)\s+(?:ingredients?|formula|technolog(?:y|ies))\b[^?!.]{0,60}\b(?:benefits?|effects?)\b|\b(?:ingredients?|formula|technolog(?:y|ies))\b[^?!.]{0,60}\b(?:benefits?|effects?)\b/i.test(text);
+}
+
+function isGenericBenefitOverviewFaqQuestion(question: string, locale: PdpGeoLocale): boolean {
+  const text = normalizeKoreanRepairPhrase(question);
+  if (locale === "ko-KR") {
+    return /(?:어떤\s*)?피부\s*고민(?:과|및)?\s*효능|피부\s*고민과\s*효능/u.test(text)
+      && !isDirectIngredientBenefitFaqQuestion(text, locale);
+  }
+  return /\bskin\s+concerns?\s+(?:and|&)\s+(?:benefits?|effects?)\b|\b(?:benefits?|effects?)\s+and\s+skin\s+concerns?\b/i.test(text)
+    && !isDirectIngredientBenefitFaqQuestion(text, locale);
+}
+
+function repairKoreanUsageFaqReviewLeak(question: string, answer: string): string {
+  if (classifyKoreanQuestionIntent(question) !== "usage") {
+    return answer;
+  }
+  const sentences = splitPublicSentences(answer);
+  if (sentences.length === 0) {
+    return answer.trim();
+  }
+  const kept = sentences.filter((sentence) => !isKoreanUsageFaqReviewLeakSentence(sentence));
+  if (kept.length === sentences.length) {
+    return answer;
+  }
+  if (kept.length > 0) {
+    return kept.join(" ").trim();
+  }
+  const productName = extractKoreanProductNameFromQuestion(question);
+  if (productName && /(?:클렌|세안|폼|워시)/u.test(question)) {
+    return `${appendKoreanTopicParticle(productName)} 세안 단계에서 사용한 뒤 토너, 세럼, 크림 등 후속 스킨케어로 이어갈 수 있습니다.`;
+  }
+  if (productName) {
+    return `${appendKoreanTopicParticle(productName)} 상품 상세의 사용 단계에 맞춰 루틴에 포함할 수 있습니다.`;
+  }
+  return "상품 상세의 사용 단계에 맞춰 루틴에 포함할 수 있습니다.";
+}
+
+function isKoreanUsageFaqReviewLeakSentence(value: string): boolean {
+  const text = normalizeKoreanRepairPhrase(value);
+  if (!text || !/[가-힣]/u.test(text)) {
+    return false;
+  }
+  const hasReviewExpectation = /(?:아직|본격적으로|워낙\s*평|평이\s*좋|기대(?:가|되|하)|사용해\s*보|사용해보|써\s*보|써보|후기|리뷰|좋아요|더라구|더라고|구요|네요|어요)/u.test(text);
+  if (hasReviewExpectation && !hasActionableApplicationVerb(text)) {
+    return true;
+  }
+  return /(?:성분\/기술\s*맥락|루틴\s*선택\s*기준을\s*제공|성분\/기술과\s*함께\s*루틴)/u.test(text);
+}
+
+function repairFaqAnswerReviewFieldRouting(question: string, answer: string, locale: PdpGeoLocale): string {
+  if (isExplicitReviewFaqQuestion(question)) {
+    return answer;
+  }
+  if (isPositiveReviewIntentFaqCandidate(question, answer, locale)) {
+    return answer;
+  }
+  const sentences = splitPublicSentences(answer);
+  if (sentences.length === 0) {
+    return answer.trim();
+  }
+  const kept = sentences.filter((sentence) => !isReviewFaqAnswerSentence(sentence, locale));
+  if (kept.length === sentences.length) {
+    return answer;
+  }
+  return kept.join(" ").trim();
+}
+
+function isReviewFaqAnswerSentence(value: string, locale: PdpGeoLocale): boolean {
+  const text = value.trim();
+  if (!text) {
+    return false;
+  }
+  if (locale === "ko-KR") {
+    return /(?:고객\s*리뷰|대표\s*고객\s*리뷰|리뷰에서는|후기에서는|리뷰\s*표현|후기\s*표현|리뷰의|후기의)/u.test(text);
+  }
+  return /(?:customer\s+reviews?|representative\s+customer\s+reviews?|reviews?\s+(?:mention|describe|highlight|say)|review\s+language)/iu.test(text);
 }
 
 function repairKoreanComparisonFaqAnswer(question: string, answer: string): string {
@@ -1505,6 +2416,20 @@ function repairFaqQuestionAnswerAlignment(
     return { question, answer };
   }
 
+  const positiveReviewRepair = repairPositiveReviewFaqItem(question, answer, locale);
+  if (positiveReviewRepair) {
+    addRepair(warnings, repairs, {
+      field: "FAQPage.mainEntity",
+      source: "sentence-qa",
+      issue: "FAQ question contained raw customer-review wording instead of a reusable review-intent question.",
+      action: "Reframed the FAQ as a positive review-intent question and kept only reusable use-feel signals in the answer.",
+      before: { question, answer },
+      after: positiveReviewRepair,
+      evidence: ["question intent: review", "review-intent FAQ contract"]
+    }, "Raw positive review FAQ was reframed during final sentence QA.");
+    return positiveReviewRepair;
+  }
+
   const intent = classifyKoreanQuestionIntent(question);
   if (intent === "evidence" && !isKoreanEvidenceAnswer(answer) && isKoreanProductContextAnswer(answer)) {
     const productName = extractKoreanProductNameFromQuestion(question);
@@ -1549,6 +2474,152 @@ function repairFaqQuestionAnswerAlignment(
   return { question, answer };
 }
 
+function isRawReviewLikeKoreanFaqQuestion(value: string): boolean {
+  const text = normalizeKoreanRepairPhrase(value)
+    .replace(/[?？!！.。]+$/u, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!/[가-힣]/u.test(text)) {
+    return false;
+  }
+  if (hasKoreanReviewMetadataPrefix(text)) {
+    return true;
+  }
+
+  const hasReviewVoice = /(?:뽀득거리지도|미끌거리지도|무난하게|데일리로\s*사용|트러블\s*올라오지|성분이\s*착해서|약품\s*냄새|약품냄새|냄새|향이|아쉬운|좋아요|좋네요|좋은\s*것\s*같|같아요|같구요|같네요|더라구|더라고|구요|했어요|써봤|구매했|사용중|느낌)$/u.test(text)
+    || /(?:뽀득|미끌|촉촉|당김|크리미|거품|순해서|자극없이|데일리|무난|트러블|아쉬운|냄새|향이|좋아요|같아요|느낌)/u.test(text);
+  if (!hasReviewVoice) {
+    return false;
+  }
+
+  const hasQuestionForm = hasKoreanFaqQuestionForm(text);
+  const isOverlongReview = text.length >= 55 || text.split(/\s+/).length >= 9;
+  const hasMultipleReviewClauses = (text.match(/(?:좋아요|같아요|아쉬운|느낌|냄새|트러블|데일리|무난)/gu) ?? []).length >= 2;
+
+  return !hasQuestionForm || isOverlongReview || hasMultipleReviewClauses;
+}
+
+function hasKoreanReviewMetadataPrefix(value: string): boolean {
+  const text = value.trim();
+  return /^(?:\d(?:\.\d)?\s+){1,2}[A-Za-z0-9_*.-]{2,}\s+20\d{2}[-.]\d{1,2}[-.]\d{1,2}\b/u.test(text)
+    || /^(?:평점|별점)?\s*\d(?:\.\d)?\s*(?:\/\s*5)?\s+[A-Za-z0-9_*.-]{2,}\s+20\d{2}[-.]\d{1,2}[-.]\d{1,2}\b/u.test(text);
+}
+
+function hasKoreanFaqQuestionForm(value: string): boolean {
+  return /(?:인가요|나요|까요|어떤가요|무엇인가요|맞나요|좋나요|괜찮나요|가능한가요|있나요|되나요|하나요|추천할\s*수\s*있나요|사용할\s*수\s*있나요)\s*[?？]?$/u.test(value);
+}
+
+function repairPositiveReviewFaqAnswer(question: string, answer: string, locale: PdpGeoLocale): string {
+  if (!isPositiveReviewIntentFaqCandidate(question, answer, locale)) {
+    return answer;
+  }
+  if (locale === "ko-KR" && isRawReviewLikeKoreanFaqQuestion(question)) {
+    return createKoreanPositiveReviewFaqAnswer(question, answer);
+  }
+  return answer;
+}
+
+function repairPositiveReviewFaqItem(
+  question: string,
+  answer: string,
+  locale: PdpGeoLocale
+): { question: string; answer: string } | undefined {
+  if (!isPositiveReviewIntentFaqCandidate(question, answer, locale)) {
+    return undefined;
+  }
+  if (locale !== "ko-KR" || !isRawReviewLikeKoreanFaqQuestion(question)) {
+    return undefined;
+  }
+  return {
+    question: createKoreanPositiveReviewFaqQuestion(question, answer),
+    answer: createKoreanPositiveReviewFaqAnswer(question, answer)
+  };
+}
+
+function isPositiveReviewIntentFaqCandidate(question: string, answer: string, locale: PdpGeoLocale): boolean {
+  if (locale !== "ko-KR") {
+    return false;
+  }
+  const normalizedQuestion = normalizeKoreanRepairPhrase(question);
+  const normalizedAnswer = normalizeKoreanRepairPhrase(answer);
+  return isRawReviewLikeKoreanFaqQuestion(normalizedQuestion)
+    && !isNegativeReviewSignalText(`${normalizedQuestion} ${normalizedAnswer}`);
+}
+
+function createKoreanPositiveReviewFaqQuestion(question: string, answer: string): string {
+  const productName = extractKoreanProductNameFromFaqText(answer) ?? extractKoreanProductNameFromFaqText(question);
+  return productName
+    ? `고객 리뷰는 ${productName}의 어떤 사용감을 강조하나요?`
+    : "고객 리뷰에서는 어떤 사용감이 반복되나요?";
+}
+
+function createKoreanPositiveReviewFaqAnswer(question: string, answer: string): string {
+  const productName = extractKoreanProductNameFromFaqText(answer) ?? extractKoreanProductNameFromFaqText(question);
+  const subject = productName ? appendKoreanTopicParticle(productName) : "제품은";
+  const signals = extractKoreanPositiveReviewUseFeelSignals(`${question} ${answer}`);
+  const signalPhrase = formatKoreanListForSentence((signals.length > 0 ? signals : ["긍정적 사용감"]).join(", "));
+  return `${subject} 고객 리뷰 기준으로 ${signalPhrase} 같은 긍정적 사용감이 반복됩니다.`;
+}
+
+function extractKoreanPositiveReviewUseFeelSignals(value: string): string[] {
+  const text = normalizeKoreanRepairPhrase(value);
+  const signals = [
+    /(?:뽀득거리지도|미끌거리지도|중간인\s*느낌)/u.test(text) ? "균형 잡힌 세정감" : undefined,
+    /(?:크리미|거품)/u.test(text) ? "크리미한 사용감" : undefined,
+    /(?:촉촉|수분|보습)/u.test(text) ? "세안 후 촉촉함" : undefined,
+    /(?:당김\s*없|당김이\s*적|당기지)/u.test(text) ? "세안 후 당김이 적은 사용감" : undefined,
+    /(?:데일리|무난)/u.test(text) ? "데일리 사용감" : undefined,
+    /(?:순하|자극\s*없|자극없이|민감|건성)/u.test(text) ? "민감·건성 피부 사용 맥락" : undefined,
+    /(?:흡수|흡수감)/u.test(text) ? "흡수감" : undefined,
+    /(?:부드러)/u.test(text) ? "부드러운 사용감" : undefined
+  ].filter((signal): signal is string => typeof signal === "string" && !isNegativeReviewSignalText(signal));
+  return Array.from(new Set(signals)).slice(0, 3);
+}
+
+function extractKoreanProductNameFromFaqText(value: string): string | undefined {
+  const text = normalizeKoreanRepairPhrase(value);
+  const match = text.match(/((?:에스트라\s*)?[가-힣A-Za-z0-9·®™\s]{2,}?(?:클렌징폼|폼\s*클렌저|폼클렌저|클렌저|토너|크림|세럼|로션|앰플|에센스|선\s*크림|선크림|쿠션|마스크|팩|샴푸|바디워시|바디로션))(?:은|는|의|을|를|에서|,|\.|\s)/u);
+  return match?.[1] ? normalizeKoreanRepairPhrase(match[1]) : undefined;
+}
+
+function isNegativeReviewSignalText(value: string): boolean {
+  const text = normalizeKoreanRepairPhrase(value).toLocaleLowerCase();
+  if (!text) {
+    return false;
+  }
+  return /(?:약품\s*냄새|냄새|향(?:이|은)?[^.。！？]{0,24}(?:아쉬|별로|강하|불편)|아쉬|별로|불편|따가|화끈|자극(?!\s*(?:없|없이|적))|트러블(?!\s*(?:없|안|올라오지|올라오지\s*않))|건조하|당김이\s*심|끈적|답답|무거|뻑뻑|실망|문제|bad|worse|worst|smell|odor|scent|fragrance|irritat|breakout|sticky|greasy|heavy|drying|disappoint|complain)/iu.test(text);
+}
+
+function isReviewBasedFaqItem(question: string, answer: string, locale: PdpGeoLocale): boolean {
+  const normalizedQuestion = normalizeKoreanRepairPhrase(question);
+  const normalizedAnswer = normalizeKoreanRepairPhrase(answer);
+  const combined = `${normalizedQuestion} ${normalizedAnswer}`;
+  if (locale === "ko-KR" && isRawReviewLikeKoreanFaqQuestion(normalizedQuestion)) {
+    return isNegativeReviewSignalText(combined);
+  }
+  if (isExplicitReviewFaqQuestion(normalizedQuestion)) {
+    return isNegativeReviewSignalText(normalizedAnswer);
+  }
+  if (isReviewOnlyFaqAnswer(normalizedAnswer) && !hasOfficialProductDetailFaqSignal(normalizedAnswer)) {
+    return isNegativeReviewSignalText(normalizedAnswer);
+  }
+  return false;
+}
+
+function isExplicitReviewFaqQuestion(value: string): boolean {
+  return /(?:고객\s*리뷰|리뷰|후기|평점|customer\s+reviews?|reviews?\s+(?:highlight|mention|describe)|what\s+do\s+customer\s+reviews|レビュー|口コミ)/iu.test(value);
+}
+
+function isReviewOnlyFaqAnswer(value: string): boolean {
+  const text = value.trim();
+  return /^(?:고객\s*리뷰|대표\s*고객\s*리뷰|리뷰에서는|후기에서는|Customer\s+reviews?|Reviews?|Representative\s+customer\s+reviews?|レビュー|口コミ)/iu.test(text)
+    || /(?:고객\s*리뷰|리뷰|후기)\s*(?:표현|기준|에서는|의|에서)|review\s+language|customer\s+review\s+(?:context|language|signals?)/iu.test(text);
+}
+
+function hasOfficialProductDetailFaqSignal(value: string): boolean {
+  return /(?:성분|기술|포뮬러|전성분|효능|효과|보습|장벽|진정|탄력|주름|미백|자외선|SPF|PA|인체\s*적용|임상|시험|테스트|사용\s*(?:직후|후)|\d+(?:\.\d+)?\s*(?:%|배|시간|일|주|명)|ingredient|formula|technology|benefit|effect|hydration|barrier|clinical|study|test|SPF|PA)/iu.test(value);
+}
+
 function classifyKoreanQuestionIntent(question: string): "benefit" | "ingredient" | "usage" | "review" | "evidence" | "general" {
   if (/정보는\s*(?:무엇|어떤 근거|무슨 정보|뭐로)|무엇으로\s*확인|근거로\s*확인|정보를\s*뒷받침|확인할 수 있나요/.test(question)) {
     return "evidence";
@@ -1580,7 +2651,7 @@ function ensureKoreanFaqAnswerSourceContext(answer: string): string {
   if (/상품\s*상세|상세\s*정보|제품\s*정보|성분\/효능\s*정보|기준으로|바탕으로|확인\s*정보/.test(answer)) {
     return answer;
   }
-  return `제품의 성분/효능 정보와 고객 리뷰 표현을 기준으로 ${lowercaseKoreanSentenceStart(answer)}`;
+  return `제품의 성분/효능 정보와 상품 상세 정보를 기준으로 ${lowercaseKoreanSentenceStart(answer)}`;
 }
 
 function lowercaseKoreanSentenceStart(value: string): string {
@@ -1643,7 +2714,11 @@ function pruneInvalidSchemaText(
     node.additionalProperty = node.additionalProperty.filter(isRecord).flatMap((item) => {
       const name = stringValue(item.name);
       const rawValue = stringValue(item.value);
-      const value = name === "Usage" && rawValue ? repairUsagePropertyValue(rawValue, locale) : rawValue;
+      const value = name === "Usage" && rawValue
+        ? repairUsagePropertyValue(rawValue, locale)
+        : name === "Functional certification" && rawValue
+          ? repairFunctionalCertificationPropertyValue(rawValue, locale)
+          : rawValue;
       if (name === "Usage" && rawValue && value && value !== rawValue) {
         addRepair(warnings, repairs, {
           field: "Product.additionalProperty.Usage",
@@ -1654,6 +2729,17 @@ function pruneInvalidSchemaText(
           after: value,
           evidence: ["Product.additionalProperty.Usage", "actionable usage contract", locale]
         }, "Usage PropertyValue was deduplicated during final sentence QA.");
+      }
+      if (name === "Functional certification" && rawValue && value && value !== rawValue) {
+        addRepair(warnings, repairs, {
+          field: "Product.additionalProperty.Functional certification",
+          source: "field-contract-validator",
+          issue: "Functional certification PropertyValue mixed certification facts with OCR benefit fragments.",
+          action: "Kept only atomic certification or test-completion facts in Functional certification.",
+          before: rawValue,
+          after: value,
+          evidence: ["Product.additionalProperty.Functional certification", "public certification field contract", locale]
+        }, "Functional certification PropertyValue was reduced to public certification facts.");
       }
       if (!name || !value || isInvalidPropertyValue(name, value, locale)) {
         addRepair(warnings, repairs, {
@@ -1678,11 +2764,11 @@ function pruneInvalidSchemaText(
   if (node["@type"] === "Product" && isRecord(node.positiveNotes) && Array.isArray(node.positiveNotes.itemListElement)) {
     const items = node.positiveNotes.itemListElement.filter(isRecord).flatMap((item) => {
       const name = stringValue(item.name);
-      if (!name || hasTruncationMarker(name) || isBrokenGeneratedFragment(name)) {
+      if (!name || hasTruncationMarker(name) || isBrokenGeneratedFragment(name) || isLowQualityPositiveNoteName(name, locale)) {
         addRepair(warnings, repairs, {
           field: "Product.positiveNotes.itemListElement",
           source: "sentence-qa",
-          issue: "positiveNotes item was blank, truncated, or contained broken generated fragments.",
+          issue: "positiveNotes item was blank, truncated, duplicated wording, or contained broken generated fragments.",
           action: "Removed the invalid positiveNotes item and renumbered the remaining list items.",
           before: toJsonValue(item),
           after: null,
@@ -1705,6 +2791,9 @@ function isInvalidPropertyValue(name: string, value: string, locale: PdpGeoLocal
   if (hasUrlOrImageArtifact(value) || hasTruncationMarker(value) || isBrokenGeneratedFragment(value)) {
     return true;
   }
+  if (/^Functional certification$/i.test(name) && isLowQualityFunctionalCertificationValue(value, locale)) {
+    return true;
+  }
   if (/reported details/i.test(name) && isQuestionLike(value, locale)) {
     return true;
   }
@@ -1720,6 +2809,58 @@ function isInvalidPropertyValue(name: string, value: string, locale: PdpGeoLocal
     });
   }
   return false;
+}
+
+function repairFunctionalCertificationPropertyValue(value: string, locale: PdpGeoLocale): string {
+  if (locale !== "ko-KR") {
+    return value;
+  }
+  const text = value.replace(/\s+/g, " ").trim();
+  const signals = [
+    /민감\s*성?\s*피부\s*사용\s*적합\s*테스트\s*완료/u.test(text) ? "민감성 피부 사용 적합 테스트 완료" : undefined,
+    /민감\s*피부\s*대상\s*사용성\s*테스트\s*완료/u.test(text) ? "민감 피부 대상 사용성 테스트 완료" : undefined,
+    /민감\s*피부\s*대상\s*피부\s*자극\s*테스트\s*완료/u.test(text) ? "민감 피부 대상 피부 자극 테스트 완료" : undefined,
+    /피부\s*자극\s*테스트\s*완료/u.test(text) ? "피부 자극 테스트 완료" : undefined,
+    /저자극\s*테스트\s*완료/u.test(text) ? "저자극 테스트 완료" : undefined,
+    /안\s*자극\s*대체\s*시험\s*완료/u.test(text) ? "안자극 대체 시험 완료" : undefined,
+    /하이포\s*알러지\s*테스트\s*완료/u.test(text) || /하이포알러지\s*테스트\s*완료/u.test(text) ? "하이포알러지 테스트 완료" : undefined,
+    /논코메도제닉\s*테스트\s*완료/u.test(text) ? "논코메도제닉 테스트 완료" : undefined
+  ].filter((item): item is string => Boolean(item));
+
+  return uniqueValidationText(signals).join(", ") || value;
+}
+
+function isLowQualityFunctionalCertificationValue(value: string, locale: PdpGeoLocale): boolean {
+  const text = value.replace(/\s+/g, " ").trim();
+  if (locale === "ko-KR" && /(?:효와|피부\s*장벽\s*강화|피부\s*보습|피부\s*진정|성분으로|효능어|추천\s*대상)/u.test(text)) {
+    return true;
+  }
+  return text.length > 180 || isRawMetricEvidenceText(text);
+}
+
+function isLowQualityPositiveNoteName(value: string, locale: PdpGeoLocale): boolean {
+  const text = value.replace(/\s+/g, " ").trim();
+  if (text.length > 90 || isQuestionLike(text, locale)) {
+    return true;
+  }
+  if (locale === "ko-KR" && /(?:케어\s*케어|성분으로|효능어|성분어|기반\s+.+\s+기반|,\s*[^,]+,\s*[^,]+)/u.test(text)) {
+    return true;
+  }
+  return false;
+}
+
+function uniqueValidationText(values: string[]): string[] {
+  const seen = new Set<string>();
+  const results: string[] = [];
+  for (const value of values) {
+    const key = value.replace(/\s+/g, " ").trim();
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    results.push(key);
+  }
+  return results;
 }
 
 function repairGeneratedText(
@@ -1748,16 +2889,21 @@ function repairGeneratedText(
   }
 
   if (locale === "ko-KR") {
+    next = next
+      .replace(/떠\s*있은/g, "떠 있는")
+      .replace(/떠\s*있어야/g, "떠 있어야")
+      .replace(/떠\s*있는\s+것이/g, "떠 있는 것이");
     next = repairKoreanReviewQuoteFragments(next);
     next = repairKoreanEvidenceFragments(next, path);
     next = repairKoreanSentenceQuality(next);
     next = repairKoreanParticles(next);
     if (isShortKoreanLabelValue(path, next)) {
       next = stripTrailingKoreanObjectParticle(next);
-    }
-    next = repairKoreanAwkwardSpacing(next);
-    next = repairKoreanScientificTestWording(next);
-  }
+	    }
+	    next = repairKoreanAwkwardSpacing(next);
+	    next = repairKoreanScientificTestWording(next);
+	    next = repairKoreanPublicEvidencePresentationWording(next, path);
+	  }
   if (locale === "en-US" || locale === "en-GB") {
     next = repairEnglishSentenceQuality(next);
     next = repairEnglishOcrArtifacts(next);
@@ -1790,13 +2936,149 @@ function repairHowToStepUsageText(value: string): string {
     next = next.slice(cueIndex).trim();
   }
 
-  return stripLeadingKoreanUsageParticle(stripLeadingUsageStepMarkers(next
+  return normalizeKoreanHowToInstructionText(stripLeadingKoreanUsageParticle(stripLeadingUsageStepMarkers(next
     .replace(/^\d+[.)]?\s+/, "")
     .replace(/^(?:[\p{L}\p{N}™®().,'\s-]{0,100})?(?:사용\s*방법|사용법)\s*\d*[:.]?\s*/iu, "")
     .replace(/^(?:[\p{L}\p{N}™®().,'\s-]{0,100})?(?:how\s*to\s*use|directions?)\s*\d*[:.]?\s*/iu, "")
     .replace(usageMeasurementLeadPattern(), "")
+    .replace(/\s+\d+\s+(?=(?:미온수|물|깨끗|충분|헹구|다음|이후))/gu, " ")
     .replace(/\s+/g, " ")
-    .trim()));
+    .trim())));
+}
+
+function splitHowToStepUsageText(value: string, locale: PdpGeoLocale): string[] {
+  const normalized = repairHowToStepUsageText(value);
+  if (locale !== "ko-KR") {
+    return [normalized];
+  }
+  const split = splitKoreanCompoundHowToStep(normalized);
+  return split.length > 0 ? split : [normalized];
+}
+
+function splitKoreanCompoundHowToStep(value: string): string[] {
+  const text = normalizeKoreanHowToInstructionText(value)
+    .replace(/[.。]+$/u, "")
+    .replace(/\s+\d+\s+(?=(?:미온수|물|깨끗|충분|헹구|다음|이후))/gu, " ")
+    .trim();
+  const signatures = koreanHowToActionSignatures(text);
+  if (signatures.length <= 1) {
+    return [text];
+  }
+  if (!signatures.includes("foam") && !signatures.includes("rinse")) {
+    return [text];
+  }
+
+  const steps: string[] = [];
+  const foam = createKoreanFoamHowToStep(text);
+  const massage = createKoreanMassageHowToStep(text);
+  const rinse = createKoreanRinseHowToStep(text);
+  const wipe = createKoreanWipeHowToStep(text);
+  const apply = createKoreanApplyHowToStep(text);
+  const absorb = createKoreanAbsorbHowToStep(text);
+
+  if (foam) {
+    steps.push(foam);
+  }
+  if (massage) {
+    steps.push(massage);
+  }
+  if (rinse) {
+    steps.push(rinse);
+  }
+  if (wipe) {
+    steps.push(wipe);
+  }
+  if (apply) {
+    steps.push(apply);
+  }
+  if (absorb) {
+    steps.push(absorb);
+  }
+
+  return dedupeUsagePropertySteps(steps).filter((step) => step.length >= 6);
+}
+
+function koreanHowToActionSignatures(value: string): string[] {
+  const text = value.trim();
+  return [
+    /거품/u.test(text) ? "foam" : undefined,
+    /(?:마사지|문지르)/u.test(text) ? "massage" : undefined,
+    /(?:미온수|헹구)/u.test(text) ? "rinse" : undefined,
+    /(?:화장솜|닦아?내|닦아냅|피부결을\s*따라\s*닦)/u.test(text) ? "wipe" : undefined,
+    /(?:펴\s*바르|펴\s*발라|바릅|바른\s*뒤|도포)/u.test(text) ? "apply" : undefined,
+    /(?:흡수|두드려|톡톡)/u.test(text) ? "absorb" : undefined
+  ].filter((signature): signature is string => Boolean(signature));
+}
+
+function createKoreanFoamHowToStep(value: string): string | undefined {
+  if (!/거품/u.test(value)) {
+    return undefined;
+  }
+  const amount = /적당량/u.test(value) ? "적당량을 " : "";
+  const dispense = /덜어/u.test(value) ? "덜어 " : "";
+  const water = /물과\s*함께/u.test(value) ? "물과 함께 " : "";
+  return normalizeKoreanHowToInstructionText(`${amount}${dispense}${water}거품을 냅니다`);
+}
+
+function createKoreanMassageHowToStep(value: string): string | undefined {
+  if (!/(?:마사지|문지르)/u.test(value)) {
+    return undefined;
+  }
+  if (/문지르/u.test(value)) {
+    return /마사지/u.test(value) ? "얼굴에 마사지하듯 문지릅니다" : "얼굴에 부드럽게 문지릅니다";
+  }
+  return /부드럽/u.test(value) ? "얼굴에 부드럽게 마사지합니다" : "얼굴에 마사지합니다";
+}
+
+function createKoreanRinseHowToStep(value: string): string | undefined {
+  if (!/(?:미온수|헹구)/u.test(value)) {
+    return undefined;
+  }
+  const water = /미온수/u.test(value) ? "미온수로" : "물로";
+  const clean = /깨끗하게/u.test(value) ? " 깨끗하게" : /깨끗이/u.test(value) ? " 깨끗이" : "";
+  if (/마무리/u.test(value)) {
+    return `${water}${clean} 헹구어 마무리해 주세요`;
+  }
+  return `${water}${clean} 헹굽니다`;
+}
+
+function createKoreanWipeHowToStep(value: string): string | undefined {
+  if (!/(?:화장솜|닦아?내|닦아냅|피부결을\s*따라\s*닦)/u.test(value)) {
+    return undefined;
+  }
+  const amount = /적당량/u.test(value) ? "적당량을 덜어 " : "";
+  const cotton = /화장솜/u.test(value) ? "화장솜에 " : "";
+  const texture = /피부결/u.test(value) ? "피부결을 따라 " : "";
+  const gentle = /부드럽/u.test(value) ? "부드럽게 " : "";
+  return normalizeKoreanHowToInstructionText(`${cotton}${amount}${texture}${gentle}닦아냅니다`);
+}
+
+function createKoreanApplyHowToStep(value: string): string | undefined {
+  if (!/(?:펴\s*바르|펴\s*발라|바릅|바른\s*뒤|도포)/u.test(value)) {
+    return undefined;
+  }
+  const palm = /손바닥|손에/u.test(value) ? "손바닥에 덜어 " : "";
+  const texture = /피부결/u.test(value) ? "피부결을 따라 " : "";
+  const gentle = /부드럽/u.test(value) ? "부드럽게 " : "";
+  return normalizeKoreanHowToInstructionText(`${palm}${texture}${gentle}펴 바릅니다`);
+}
+
+function createKoreanAbsorbHowToStep(value: string): string | undefined {
+  if (!/(?:흡수|두드려|톡톡)/u.test(value)) {
+    return undefined;
+  }
+  const tap = /톡톡|두드/u.test(value) ? "가볍게 두드려 " : "";
+  return normalizeKoreanHowToInstructionText(`${tap}흡수시켜 줍니다`);
+}
+
+function createValidatedHowToStepName(locale: PdpGeoLocale, position: number): string {
+  if (locale === "ko-KR") {
+    return `${position}단계`;
+  }
+  if (locale === "ja-JP") {
+    return `${position}段階`;
+  }
+  return `Step ${position}`;
 }
 
 function stripLeadingKoreanUsageParticle(value: string): string {
@@ -1810,16 +3092,64 @@ function howToStepDedupeKey(value: string): string {
   return usagePropertyStepKey(normalizeHowToStepSurfaceForDedupe(value));
 }
 
+function koreanHowToSemanticDedupeKey(value: string): string | undefined {
+  if (!/[가-힣]/.test(value)) {
+    return undefined;
+  }
+  const signatures = koreanHowToActionSignatures(value);
+  if (signatures.length !== 1) {
+    return undefined;
+  }
+  const signature = signatures[0];
+  if (signature !== "foam" && signature !== "massage" && signature !== "rinse" && signature !== "wipe") {
+    return undefined;
+  }
+  return `ko-action:${signature}`;
+}
+
 function normalizeHowToStepSurfaceForDedupe(value: string): string {
-  return stripLeadingKoreanUsageParticle(value)
+  return normalizeKoreanHowToInstructionText(stripLeadingKoreanUsageParticle(value))
     .replace(/닦아내는\s*방식입니다$/u, "닦아냅니다")
     .replace(/닦아내는\s*방법입니다$/u, "닦아냅니다")
     .replace(/흡수시키는\s*방식입니다$/u, "흡수시켜 줍니다")
     .replace(/흡수시키는\s*방법입니다$/u, "흡수시켜 줍니다")
+    .replace(/헹구어\s*냅니다$/u, "헹굽니다")
+    .replace(/헹구어\s*마무리해\s*주세요$/u, "헹굽니다")
     .replace(/바르는\s*방식입니다$/u, "바릅니다")
     .replace(/바르는\s*방법입니다$/u, "바릅니다")
     .replace(/사용하는\s*방식입니다$/u, "사용합니다")
     .replace(/사용하는\s*방법입니다$/u, "사용합니다")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeKoreanHowToInstructionText(value: string): string {
+  return value
+    .replace(/거품\s*내어\s*(?:줍니다|주세요)$/u, "거품을 냅니다")
+    .replace(/거품을\s*내어\s*(?:줍니다|주세요)$/u, "거품을 냅니다")
+    .replace(/거품\s*내\s*(?:줍니다|주세요)$/u, "거품을 냅니다")
+    .replace(/거품을\s*내\s*(?:줍니다|주세요)$/u, "거품을 냅니다")
+    .replace(/거품\s*내어$/u, "거품을 냅니다")
+    .replace(/거품\s*낸다$/u, "거품을 냅니다")
+    .replace(/거품을\s*낸다$/u, "거품을 냅니다")
+    .replace(/거품을\s*낸(?:\s*(?:뒤|후|다음))?$/u, "거품을 냅니다")
+    .replace(/마사지한다$/u, "마사지합니다")
+    .replace(/마사지하고$/u, "마사지합니다")
+    .replace(/문지른\s*후$/u, "문지릅니다")
+    .replace(/문지른다$/u, "문지릅니다")
+    .replace(/헹구는\s*방식(?:이다|입니다)$/u, "헹굽니다")
+    .replace(/헹구어\s*낸다$/u, "헹구어 냅니다")
+    .replace(/헹구어\s*냅니다$/u, "헹구어 냅니다")
+    .replace(/닦아내는\s*것(?:이다|입니다)$/u, "닦아냅니다")
+    .replace(/닦아낸다$/u, "닦아냅니다")
+    .replace(/흡수시키는\s*것(?:이다|입니다)$/u, "흡수시켜 줍니다")
+    .replace(/흡수시킨다$/u, "흡수시켜 줍니다")
+    .replace(/펴\s*바르는\s*것(?:이다|입니다)$/u, "펴 바릅니다")
+    .replace(/펴\s*바른다$/u, "펴 바릅니다")
+    .replace(/펴\s*발라\s*줍니다$/u, "펴 바릅니다")
+    .replace(/펴\s*발라줍니다$/u, "펴 바릅니다")
+    .replace(/바르는\s*것(?:이다|입니다)$/u, "바릅니다")
+    .replace(/바른다$/u, "바릅니다")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -1863,10 +3193,16 @@ function dedupeUsagePropertySteps(values: string[]): string[] {
 }
 
 function usagePropertyStepKey(value: string): string {
-  return stripLeadingUsageStepMarkers(value)
+  const normalized = normalizeHowToStepSurfaceForDedupe(stripLeadingUsageStepMarkers(value));
+  const semanticKey = koreanHowToSemanticDedupeKey(normalized);
+  if (semanticKey) {
+    return semanticKey;
+  }
+  return normalized
     .toLocaleLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .replace(/\b(?:the|a|an|your|this|it|of|serum|cream|toner|product)\b/g, " ")
+    .replace(/(?:합니다|하세요|해\s*주세요|해줍니다|줍니다|입니다|다)$/u, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -2061,12 +3397,45 @@ function repairKoreanReviewQuoteFragments(value: string): string {
   });
 }
 
+function repairKoreanPublicEvidencePresentationWording(value: string, path: string): string {
+  if (!shouldRepairKoreanPublicEvidencePresentationPath(path) || !/[가-힣]/.test(value) || !hasKoreanQuantifiedReportedSignal(value) || !/(?:제시(?:됩니다|되었습니다|되며|합니다)|나타났습니다)/u.test(value)) {
+    return value;
+  }
+
+  const sentences = splitPublicSentences(value);
+  if (sentences.length === 0) {
+    return repairKoreanPublicEvidencePresentationSentence(value);
+  }
+  return sentences
+    .map(repairKoreanPublicEvidencePresentationSentence)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function shouldRepairKoreanPublicEvidencePresentationPath(path: string): boolean {
+  if (/acceptedAnswer\.text|content\.sections\.faq|HowTo\.step\.text|step\.\d+\.text/u.test(path)) {
+    return false;
+  }
+  return /(?:description|additionalProperty|positiveNotes|reviewBody|content\.sections\.(?:description|quickFacts|benefits)|value)$/u.test(path)
+    || path === "fallbackDescription";
+}
+
+function repairKoreanPublicEvidencePresentationSentence(value: string): string {
+  if (!hasKoreanQuantifiedReportedSignal(value) || !/(?:제시(?:됩니다|되었습니다|되며|합니다)|나타났습니다)/u.test(value)) {
+    return value;
+  }
+  const text = normalizeKoreanEvidenceResultValue(value);
+  const naturalSentence = formatKoreanEvidenceResultSentence(text);
+  return naturalSentence ? `${naturalSentence}.` : value;
+}
+
 function repairKoreanSentenceQuality(value: string): string {
   return repairKoreanMetaNarrationFrames(value)
     .replace(/설명된다\s+사용법을\s+다룹니다/g, "설명됩니다")
     .replace(/설명됩니다\s+사용법을\s+다룹니다/g, "설명됩니다")
-    .replace(/제시된다\s+사용법을\s+다룹니다/g, "제시됩니다")
-    .replace(/제시됩니다\s+사용법을\s+다룹니다/g, "제시됩니다")
+    .replace(/제시된다\s+사용법을\s+다룹니다/g, "설명됩니다")
+    .replace(/제시됩니다\s+사용법을\s+다룹니다/g, "설명됩니다")
     .replace(/제품로/g, "제품으로")
     .replace(/(?:합니다|줍니다|입니다)입니다/g, (match) => match.replace(/입니다$/, ""))
     .replace(/(?:하세요|주세요)입니다/g, (match) => match.replace(/입니다$/, ""))
@@ -2531,6 +3900,10 @@ function escapeHtml(value: string): string {
 
 function escapeScriptJson(value: string): string {
   return value.replace(/</g, "\\u003c");
+}
+
+function fallback(locale: PdpGeoLocale, values: Record<PdpGeoLocale, string>): string {
+  return values[locale] ?? values["en-US"];
 }
 
 function slug(value: string): string {

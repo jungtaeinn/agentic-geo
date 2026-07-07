@@ -56,7 +56,7 @@ Generative Engine Optimization, or GEO, focuses on improving how useful, visible
 ### 4.2 Answer-Ready Facts
 
 - Write concise factual sentences that can stand alone in an AI answer.
-- Include product name, brand, category, target customer, benefit, ingredient/technology, usage context, review-backed preference, and supported metric only when available.
+- Include product name, brand, category, target customer, ingredient/technology, benefit/effect or supported metric, and high-level usage/comparison/review preference only when available.
 
 ### 4.3 Source-Backed Claims
 
@@ -70,7 +70,7 @@ Generative Engine Optimization, or GEO, focuses on improving how useful, visible
 
 ### 4.5 Review and Customer Language
 
-- Use repeated customer review language to shape customer-facing questions, preference phrases, and experience summaries.
+- Use repeated customer review language to shape preference phrases and experience summaries; do not turn raw review language into standalone FAQ questions.
 - Keep customer review language representative. Do not turn customer sentiment into universal product guarantees.
 
 ### 4.6 FAQ and HowTo Answerability

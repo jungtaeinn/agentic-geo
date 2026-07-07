@@ -7828,7 +7828,7 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
   const validationRepairs = diagnostics.validationRepairs?.length ?? 0;
   const validationWarnings = Math.max(0, diagnostics.validationWarnings.length - validationRepairs);
   const validationDetailLines = collectValidationDetailLines(diagnostics, copy);
-  const validationImprovementDirections = collectValidationImprovementLines(diagnostics, copy);
+  const validationImprovementDirections = validationWarnings > 0 ? collectValidationImprovementLines(diagnostics, copy, validationRepairs) : [];
   const artifactHits = collectPublicArtifactHits(publicText, faqQuestions, language);
   const metricIssues = collectMetricIntegrityIssues(publicText, language);
   const ingredientCount = diagnostics.normalizedProduct.ingredients.length + countTextItems(sections.ingredients);
@@ -8008,15 +8008,11 @@ function collectValidationDetailLines(
 
 function collectValidationImprovementLines(
   diagnostics: PdpGeoDiagnostics,
-  copy: ReturnType<typeof getGeoQualityCopy>
+  copy: ReturnType<typeof getGeoQualityCopy>,
+  repairCount = diagnostics.validationRepairs?.length ?? 0
 ): string[] {
-  const repairScopes = (diagnostics.validationRepairs ?? []).map((repair) => [
-    repair.field,
-    repair.source,
-    repair.issue,
-    repair.action
-  ].join(" "));
-  const scopes = [...repairScopes, ...diagnostics.validationWarnings];
+  const unresolvedWarnings = diagnostics.validationWarnings.slice(Math.min(repairCount, diagnostics.validationWarnings.length));
+  const scopes = unresolvedWarnings.length > 0 ? unresolvedWarnings : diagnostics.validationWarnings;
   const directions = uniqueQualityItems(scopes.flatMap((scope) => {
     const direction = inferValidationDirection(scope, copy);
     return direction ? [direction] : [];
@@ -8104,7 +8100,7 @@ function getGeoQualityCopy(language: UiLanguage) {
       detailSummary: "상세 근거와 개선점",
       evidenceLabel: "평가 근거",
       improvementLabel: "개선점",
-      validationDetailLabel: "검증 경고 상세",
+      validationDetailLabel: "검증/보정 상세",
       validationDetailDescription: "검증/보정 단계에서 문제가 난 필드, 원인, 적용 액션을 기준으로 공개 문구 개선 방향을 분리합니다.",
       validationIssueLabel: "경고 항목",
       validationDirectionLabel: "검증 기반 개선 방향",
@@ -8183,7 +8179,7 @@ function getGeoQualityCopy(language: UiLanguage) {
     detailSummary: "Detailed rationale and improvements",
     evidenceLabel: "Rationale",
     improvementLabel: "Improvements",
-    validationDetailLabel: "Validation warning details",
+    validationDetailLabel: "Validation and repair details",
     validationDetailDescription: "Validation and repair output is grouped by field, issue, and action so the next improvement step is visible.",
     validationIssueLabel: "Warning items",
     validationDirectionLabel: "Validation-based improvements",
@@ -8409,7 +8405,7 @@ function hasReportedSampleScopeDisclosure(publicText: string): boolean {
 }
 
 function hasIngredientBenefitChoiceBridge(text: string): boolean {
-  return /(?:ingredient|active|extract|formula|formulated|contains|powered by|with|성분|함유).{0,160}(?:help|support|improv|target|benefit|elastic|firm|wrinkle|hydration|moistur|radiance|texture|효능|개선|도움|선택)/is.test(text);
+  return /(?:ingredient|active|extract|formula|formulated|contains|powered by|with|ceramide|capsule|technology|성분|함유|포함|포뮬러|캡슐|세라마이드|기술).{0,180}(?:help|support|improv|target|benefit|elastic|firm|wrinkle|barrier|hydration|moistur|radiance|texture|효능|효과|개선|강화|제공|도움|보습|수분|장벽|진정|선택|추천)/is.test(text);
 }
 
 function hasCustomerChoiceCue(text: string): boolean {

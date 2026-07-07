@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-Category Entry Points, or CEPs, describe buying, discovery, usage, or memory situations where a customer may enter a category and recall a brand or product. For PDP GEO, CEP guidance helps the agent map product facts, reviews, and brand identity to natural customer-intent language that can be used in schema descriptions, FAQ, HowTo, benefits, and PDP sections.
+Category Entry Points, or CEPs, describe buying, discovery, usage, or memory situations where a customer may enter a category and recall a brand or product. For PDP GEO, CEP guidance helps the agent map product facts and reviews to natural customer-intent language, while brand identity may tune vocabulary, mood, and brand personality in schema descriptions, FAQ, HowTo, benefits, and PDP sections.
 
 ## 2. Source Scope
 
@@ -17,7 +17,7 @@ Category Entry Points, or CEPs, describe buying, discovery, usage, or memory sit
 ### 2.2 Relationship to GEO
 
 - CEPs help generative engines connect a product to the kind of customer questions and shopping situations that appear in fan-out queries and AI answers.
-- CEPs must be grounded in product facts, customer-review language, source category information, or approved brand positioning.
+- CEPs must be grounded in product facts, customer-review language, or source category information. Brand identity can refine tone, vocabulary, sensory style, and positioning, but brand-only patents, papers, heritage stories, or authority claims cannot create product-level CEPs.
 - CEPs are not a license to keyword-stuff product names, add unrelated category language, or create unsupported benefit claims.
 
 ## 3. CEP Dimensions
@@ -58,7 +58,7 @@ Category Entry Points, or CEPs, describe buying, discovery, usage, or memory sit
 
 1. Extract product facts: name, brand, category, benefits, effects, ingredients, usage, size, texture, format, variants, metrics, offer data, and constraints.
 2. Extract customer signals: review keywords, repeated review phrases, rating context, complaints, questions, and routine mentions.
-3. Extract brand identity signals: brand vocabulary, hero ingredients, category authority, sensory style, and target audience.
+3. Extract brand identity signals: brand vocabulary, mood, personality, category authority, sensory style, and target audience. Treat hero ingredients, patents, papers, or research systems as product CEP inputs only when the current product source independently contains the same product-level fact.
 4. Generate CEP candidates by combining product facts with customer contexts and query intents.
 5. Filter candidates that are unsupported, too generic, medically risky, duplicated, or unrelated to the category.
 6. Prioritize candidates by source support, specificity, review repetition, commerce usefulness, locale fit, and schema field usefulness.
@@ -66,7 +66,7 @@ Category Entry Points, or CEPs, describe buying, discovery, usage, or memory sit
 ### 4.2 Scoring Guidance
 
 - Strong CEP: supported by product facts and repeated review/customer language; maps to a clear schema or PDP section.
-- Medium CEP: supported by product facts but weak review repetition; useful for description or FAQ if not overused.
+- Medium CEP: supported by product facts but weak review repetition; useful for description or product-context copy if not overused.
 - Weak CEP: generic category phrase, unsupported trend term, or only inferred from brand identity; keep out of public output unless diagnostics requests it.
 - Blocked CEP: medical, disease-treatment, guaranteed, competitive, or unrelated claim without explicit support.
 
@@ -76,7 +76,8 @@ Category Entry Points, or CEPs, describe buying, discovery, usage, or memory sit
 
 - `WebPage.description`: use customer discovery context, page coverage, review information, FAQ/HowTo coverage, and decision-making context.
 - `Product.description`: use product-specific CEPs such as target concern, category, ingredient need, usage moment, and representative review preference.
-- `Product.additionalProperty`: use objective CEP attributes such as skin type, concern, texture, ingredient, usage timing, size, technology, or format.
+- `Product.additionalProperty`: use objective CEP attributes such as skin type, concern, texture, ingredient, usage timing, size, technology, format, or review-derived recommendation context when repeated positive/neutral reviews support the customer situation.
+- Review-derived query units: infer indirect queries from customer situation plus category without product or brand mentions, and infer direct queries with the product or brand explicitly named. Combine the inferred query with product facts, core CEP keywords, and a short answer-ready evidence sentence; keep the query kind and keyword reasoning in diagnostics.
 - `Product.positiveNotes`: use source-backed benefit and review-backed positive points.
 - `FAQPage.mainEntity`: phrase questions around the customer's likely category-entry problem, ingredient concern, review question, or routine moment.
 - `HowTo.step`: use routine and occasion CEPs only when the source provides usage instructions.
@@ -135,6 +136,7 @@ Category Entry Points, or CEPs, describe buying, discovery, usage, or memory sit
 ## 9. Anti-Patterns
 
 - Do not use CEPs as hidden keyword lists.
+- Do not expose the label "CEP" in public schema values. Express the customer situation directly, then connect it to supported product benefits, ingredients, and positive review use-feel.
 - Do not add "best", "top", "recommended by dermatologists", "for acne", "cures eczema", or similar high-risk claims without source support.
 - Do not let CEPs override the real product category or product name.
 - Do not generate separate pages or sections for every fan-out query. Prefer a compact set of well-supported, reusable PDP sections.
