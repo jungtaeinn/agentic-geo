@@ -3,6 +3,7 @@ import { formatPolicyChecklistPayload, formatPolicyComplianceRecap } from "./rag
 import type {
   JsonObject,
   PdpGeoContentArtifact,
+  PdpGeoCopyRefinementFeedback,
   PdpGeoCopyRefinementRequest,
   PdpGeoCopyRefinementResult,
   PdpGeoCopyRefinementSettings,
@@ -22,6 +23,7 @@ interface CopyRefinementApplication {
   usage?: PdpGeoTokenUsage;
   called: boolean;
   applied: boolean;
+  rejections: PdpGeoCopyRefinementFeedback[];
 }
 
 interface ModelBackedCopyRefinerConfig {
@@ -57,7 +59,8 @@ export async function refinePdpGeoCopy(
     evidence: [],
     warnings: [],
     called: false,
-    applied: false
+    applied: false,
+    rejections: []
   };
 
   if (!resolved.refiner) {
@@ -129,7 +132,8 @@ export async function refinePdpGeoCopy(
       warnings,
       usage: result.usage,
       called: true,
-      applied: applied.applied
+      applied: applied.applied,
+      rejections: applied.rejections
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Copy refinement provider failed.";
@@ -137,7 +141,8 @@ export async function refinePdpGeoCopy(
       ...baseApplication,
       evidence: [{ field: "copy.refinement", source: "llm", value: `Copy refinement skipped: ${message}` }],
       warnings: [message],
-      called: true
+      called: true,
+      rejections: []
     };
   }
 }
@@ -735,9 +740,10 @@ function evidenceTextScore(value: string): number {
 function applyCopyRefinement(
   request: PdpGeoCopyRefinementRequest,
   result: PdpGeoCopyRefinementResult
-): Pick<CopyRefinementApplication, "schemaMarkup" | "content" | "evidence" | "warnings" | "applied"> {
+): Pick<CopyRefinementApplication, "schemaMarkup" | "content" | "evidence" | "warnings" | "applied" | "rejections"> {
   const warnings: string[] = [];
   const evidence: PdpGeoEvidence[] = [];
+  const rejections: PdpGeoCopyRefinementFeedback[] = [];
   const descriptions = readSchemaDescriptions(request.schemaMarkup.jsonLd);
   const claimEvidenceCorpus = createClaimEvidenceCorpus(request);
   const productDescription = acceptRefinedText(
@@ -745,35 +751,35 @@ function applyCopyRefinement(
     descriptions.product ?? request.content.sections.description,
     "Product.description",
     warnings,
-    { evidenceCorpus: claimEvidenceCorpus, requireSupportedClaimTokens: true }
+    { evidenceCorpus: claimEvidenceCorpus, requireSupportedClaimTokens: true, rejections }
   );
   let webPageDescription = acceptRefinedText(
     result.schemaDescriptions?.webPage,
     descriptions.webPage,
     "WebPage.description",
     warnings,
-    { evidenceCorpus: claimEvidenceCorpus, requireSupportedClaimTokens: true }
+    { evidenceCorpus: claimEvidenceCorpus, requireSupportedClaimTokens: true, rejections }
   );
   const contentDescription = acceptRefinedText(
     result.contentSections?.description ?? productDescription,
     request.content.sections.description,
     "content.sections.description",
     warnings,
-    { evidenceCorpus: claimEvidenceCorpus, requireSupportedClaimTokens: true }
+    { evidenceCorpus: claimEvidenceCorpus, requireSupportedClaimTokens: true, rejections }
   );
   const contentQuickFacts = acceptRefinedText(
     result.contentSections?.quickFacts,
     request.content.sections.quickFacts,
     "content.sections.quickFacts",
     warnings,
-    { minLength: 20, maxLength: 2200, evidenceCorpus: claimEvidenceCorpus, requireSupportedClaimTokens: true }
+    { minLength: 20, maxLength: 2200, evidenceCorpus: claimEvidenceCorpus, requireSupportedClaimTokens: true, rejections }
   );
   const contentFaq = acceptRefinedText(
     result.contentSections?.faq,
     request.content.sections.faq,
     "content.sections.faq",
     warnings,
-    { minLength: 20, maxLength: 3200, evidenceCorpus: claimEvidenceCorpus, requireSupportedClaimTokens: true }
+    { minLength: 20, maxLength: 3200, evidenceCorpus: claimEvidenceCorpus, requireSupportedClaimTokens: true, rejections }
   );
 
   const nextProductDescription = productDescription ?? contentDescription;
@@ -816,7 +822,8 @@ function applyCopyRefinement(
     request,
     result.schemaProperties,
     warnings,
-    claimEvidenceCorpus
+    claimEvidenceCorpus,
+    rejections
   );
   for (const refinement of propertyRefinements) {
     schemaMarkup = writeProductAdditionalProperty(schemaMarkup, refinement.name, refinement.value);
@@ -824,7 +831,7 @@ function applyCopyRefinement(
     applied = true;
   }
 
-  const faqRefinements = acceptedFaqAnswerRefinements(request, result.faqAnswers, warnings, claimEvidenceCorpus);
+  const faqRefinements = acceptedFaqAnswerRefinements(request, result.faqAnswers, warnings, claimEvidenceCorpus, rejections);
   for (const refinement of faqRefinements) {
     schemaMarkup = writeFaqAnswer(schemaMarkup, refinement.index, refinement.answer);
     evidence.push({ field: `schema.FAQPage.mainEntity.${refinement.index + 1}.acceptedAnswer`, source: "llm", value: summarizeRefinement(refinement.before, refinement.answer) });
@@ -858,7 +865,8 @@ function applyCopyRefinement(
     content,
     evidence,
     warnings,
-    applied
+    applied,
+    rejections
   };
 }
 
@@ -867,6 +875,23 @@ interface AcceptRefinedTextOptions {
   maxLength?: number;
   evidenceCorpus?: string;
   requireSupportedClaimTokens?: boolean;
+  rejections?: PdpGeoCopyRefinementFeedback[];
+}
+
+const analysisLabelArtifactPattern = /(?:평가\s*지표|측정\/평가\s*결과|측정\s*결과|확인\s*지표|확인\s*근거|reported\s+results?|consumer\s+assessment|試験結果|確認指標)\s*[:：]/iu;
+
+function containsAnalysisLabelArtifact(text: string): boolean {
+  return analysisLabelArtifactPattern.test(text);
+}
+
+const rawVolumeFragmentPattern = /\d+(?:\.\d+)?\s*fl\.?\s*oz\.?|\/\s*\d+(?:\.\d+)?\s*m[lL]\b|\d+(?:\.\d+)?\s*m[lL]\s*용량/;
+
+function containsRawVolumeFragment(text: string): boolean {
+  return rawVolumeFragmentPattern.test(text);
+}
+
+function isDescriptionField(field: string): boolean {
+  return field === "Product.description" || field === "WebPage.description" || field === "content.sections.description";
 }
 
 function acceptRefinedText(
@@ -884,103 +909,92 @@ function acceptRefinedText(
   if (!text || text === fallbackValue) {
     return text || undefined;
   }
+
+  const reject = (reason: string): undefined => {
+    warnings.push(`${field} refinement rejected because ${reason}`);
+    options.rejections?.push({ field, reason, rejectedText: text });
+    return undefined;
+  };
+
   const minLength = options.minLength ?? 40;
   const maxLength = options.maxLength ?? 1800;
   if (text.length < minLength) {
-    warnings.push(`${field} refinement rejected because it is too short.`);
-    return undefined;
+    return reject("it is too short.");
   }
   if (text.length > maxLength) {
-    warnings.push(`${field} refinement rejected because it is too long.`);
-    return undefined;
+    return reject("it is too long.");
   }
   if (containsInternalOrVisualArtifact(text)) {
-    warnings.push(`${field} refinement rejected because it contains internal labels or visual-caption artifacts.`);
-    return undefined;
+    return reject("it contains internal labels or visual-caption artifacts.");
   }
   if (field !== "WebPage.description" && containsPublicMetaNarrationArtifact(text)) {
-    warnings.push(`${field} refinement rejected because it uses meta-narration instead of customer-facing product copy.`);
-    return undefined;
+    return reject("it uses meta-narration instead of customer-facing product copy.");
   }
   if (field === "WebPage.description" && !startsWithProductPageIntroduction(text)) {
-    warnings.push(`${field} refinement rejected because it does not start with a product-page introduction grounded in product information.`);
-    return undefined;
+    return reject("it does not start with a product-page introduction grounded in product information.");
   }
   if (field === "WebPage.description" && containsAwkwardKoreanWebPageOpening(text)) {
-    warnings.push(`${field} refinement rejected because its Korean opening compresses the target customer into an awkward possessive noun stack.`);
-    return undefined;
+    return reject("its Korean opening compresses the target customer into an awkward possessive noun stack.");
   }
   if (field === "WebPage.description" && containsMechanicalKoreanSelectionCheckOpening(text)) {
-    warnings.push(`${field} refinement rejected because its Korean opening uses a mechanical selection/check frame instead of a natural product-page introduction.`);
-    return undefined;
+    return reject("its Korean opening uses a mechanical selection/check frame instead of a natural product-page introduction.");
   }
   if (field === "WebPage.description" && containsKoreanSkinTypeAsActorOpening(text)) {
-    warnings.push(`${field} refinement rejected because its Korean opening makes a skin type the actor instead of a customer or concern.`);
-    return undefined;
+    return reject("its Korean opening makes a skin type the actor instead of a customer or concern.");
   }
   if (field === "WebPage.description" && containsGenericKoreanWebPageCoverageLead(text)) {
-    warnings.push(`${field} refinement rejected because its Korean opening uses generic coverage labels instead of concrete product facts.`);
-    return undefined;
+    return reject("its Korean opening uses generic coverage labels instead of concrete product facts.");
   }
   if (field === "WebPage.description" && containsMisroutedUsageTechnologySentence(text)) {
-    warnings.push(`${field} refinement rejected because it routes ingredient/technology explanation through a usage-area sentence.`);
-    return undefined;
+    return reject("it routes ingredient/technology explanation through a usage-area sentence.");
   }
   if (field === "WebPage.description" && containsIngredientTechnologyUsageCoverageBlend(text)) {
-    warnings.push(`${field} refinement rejected because it merges ingredient/technology coverage and usage coverage into the same list sentence.`);
-    return undefined;
+    return reject("it merges ingredient/technology coverage and usage coverage into the same list sentence.");
   }
   if (field === "WebPage.description" && containsMixedFaqHowToUsageSentence(text)) {
-    warnings.push(`${field} refinement rejected because it merges full usage steps with FAQ topics in the same WebPage sentence.`);
-    return undefined;
+    return reject("it merges full usage steps with FAQ topics in the same WebPage sentence.");
   }
   if (field === "WebPage.description" && containsRedundantFaqHowToNavigationSentence(text)) {
-    warnings.push(`${field} refinement rejected because it adds redundant FAQ/HowTo navigation instead of citation-worthy product facts.`);
-    return undefined;
+    return reject("it adds redundant FAQ/HowTo navigation instead of citation-worthy product facts.");
   }
   if (field === "WebPage.description" && containsWebPageFactNavigationSentence(text)) {
-    warnings.push(`${field} refinement rejected because it uses check/view navigation wording instead of direct product facts.`);
-    return undefined;
+    return reject("it uses check/view navigation wording instead of direct product facts.");
   }
   if (field === "WebPage.description" && containsWebPagePatentIdentifierCoreSentence(text)) {
-    warnings.push(`${field} refinement rejected because it uses patent identifiers as a core WebPage description sentence instead of benefit-linked product facts.`);
-    return undefined;
+    return reject("it uses patent identifiers as a core WebPage description sentence instead of benefit-linked product facts.");
   }
   if (field === "WebPage.description" && containsWebPageQuestionNavigationSentence(text)) {
-    warnings.push(`${field} refinement rejected because FAQ-topic navigation belongs in FAQPage rather than WebPage.description.`);
-    return undefined;
+    return reject("FAQ-topic navigation belongs in FAQPage rather than WebPage.description.");
   }
   if (field === "WebPage.description" && containsWebPageMixedIngredientMetricEvidenceSentence(text)) {
-    warnings.push(`${field} refinement rejected because it merges ingredient/technology lists and numeric test results into one awkward selection-evidence sentence.`);
-    return undefined;
+    return reject("it merges ingredient/technology lists and numeric test results into one awkward selection-evidence sentence.");
   }
   if (field === "WebPage.description" && containsWebPageIngredientTechnologyAnalysisLabelSentence(text)) {
-    warnings.push(`${field} refinement rejected because it uses ingredient/technology analysis labels instead of a natural product-introduction sentence.`);
-    return undefined;
+    return reject("it uses ingredient/technology analysis labels instead of a natural product-introduction sentence.");
   }
   if ((field === "Product.description" || field === "content.sections.description") && containsConcreteProductDescriptionUsageStep(text)) {
-    warnings.push(`${field} refinement rejected because it appends concrete usage directions that belong in Usage or HowTo.`);
-    return undefined;
+    return reject("it appends concrete usage directions that belong in Usage or HowTo.");
   }
   if ((field === "Product.description" || field === "content.sections.description") && containsProductDescriptionDenseCepFormulaSentence(text)) {
-    warnings.push(`${field} refinement rejected because it compresses CEP, formula, and product identity into an awkward noun-stack sentence.`);
-    return undefined;
+    return reject("it compresses CEP, formula, and product identity into an awkward noun-stack sentence.");
   }
   if ((field === "Product.description" || field === "content.sections.description") && containsProductDescriptionPageEntityLanguage(text)) {
-    warnings.push(`${field} refinement rejected because Product descriptions must describe the product entity, not the product page or page coverage.`);
-    return undefined;
+    return reject("Product descriptions must describe the product entity, not the product page or page coverage.");
   }
   if ((field === "Product.description" || field === "content.sections.description") && containsMisroutedProductDescriptionTail(text)) {
-    warnings.push(`${field} refinement rejected because it ends with FAQ, purchase, patent-identifier, or field-navigation content instead of product-facing context.`);
-    return undefined;
+    return reject("it ends with FAQ, purchase, patent-identifier, or field-navigation content instead of product-facing context.");
+  }
+  if (isDescriptionField(field) && containsAnalysisLabelArtifact(text)) {
+    return reject("it exposes an internal analysis label such as 평가 지표: instead of a natural product sentence.");
+  }
+  if (isDescriptionField(field) && containsRawVolumeFragment(text)) {
+    return reject("it lists raw volume/size strings that belong in quickFacts or Product.additionalProperty.");
   }
   if (containsBrokenKoreanCopyFragment(text)) {
-    warnings.push(`${field} refinement rejected because it contains a broken Korean sentence fragment.`);
-    return undefined;
+    return reject("it contains a broken Korean sentence fragment.");
   }
   if (options.requireSupportedClaimTokens && hasUnsupportedClaimTokens(text, options.evidenceCorpus ?? "")) {
-    warnings.push(`${field} refinement rejected because it introduced unsupported numeric or study claim details.`);
-    return undefined;
+    return reject("it introduced unsupported numeric or study claim details.");
   }
 
   return text;
@@ -1000,7 +1014,8 @@ function acceptedSchemaPropertyRefinements(
   request: PdpGeoCopyRefinementRequest,
   values: PdpGeoCopyRefinementResult["schemaProperties"],
   warnings: string[],
-  evidenceCorpus: string
+  evidenceCorpus: string,
+  rejections: PdpGeoCopyRefinementFeedback[]
 ): Array<{ name: string; value: string; before: string }> {
   if (!values || !isRecord(values)) {
     return [];
@@ -1020,7 +1035,7 @@ function acceptedSchemaPropertyRefinements(
       before,
       `Product.additionalProperty.${name}`,
       warnings,
-      { minLength: 12, maxLength: 900, evidenceCorpus, requireSupportedClaimTokens: true }
+      { minLength: 12, maxLength: 900, evidenceCorpus, requireSupportedClaimTokens: true, rejections }
     );
     if (accepted && !isAcceptedSchemaPropertyValue(name, accepted, request, warnings)) {
       return [];
@@ -1107,7 +1122,8 @@ function acceptedFaqAnswerRefinements(
   request: PdpGeoCopyRefinementRequest,
   values: PdpGeoCopyRefinementResult["faqAnswers"],
   warnings: string[],
-  evidenceCorpus: string
+  evidenceCorpus: string,
+  rejections: PdpGeoCopyRefinementFeedback[]
 ): Array<{ index: number; answer: string; before: string }> {
   if (!Array.isArray(values)) {
     return [];
@@ -1133,7 +1149,7 @@ function acceptedFaqAnswerRefinements(
       before,
       `FAQPage.mainEntity.${faqIndex + 1}.acceptedAnswer`,
       warnings,
-      { minLength: 24, maxLength: 900, evidenceCorpus, requireSupportedClaimTokens: true }
+      { minLength: 24, maxLength: 900, evidenceCorpus, requireSupportedClaimTokens: true, rejections }
     );
     if (accepted && !isAcceptedFaqAnswerValue(question, accepted, warnings, faqIndex)) {
       return [];

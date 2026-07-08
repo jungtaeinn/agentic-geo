@@ -554,6 +554,13 @@ export interface PdpGeoCopyRefinementRequest {
   policyRules?: PdpGeoPolicyRule[];
 }
 
+export interface PdpGeoCopyRefinementFeedback {
+  field: string;
+  reason: string;
+  rejectedText?: string;
+  currentText?: string;
+}
+
 export interface PdpGeoCopyRefinementResult {
   schemaDescriptions?: {
     webPage?: string;
