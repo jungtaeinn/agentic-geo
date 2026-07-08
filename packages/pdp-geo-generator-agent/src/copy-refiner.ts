@@ -76,6 +76,7 @@ export async function refinePdpGeoCopy(
     let applied = applyCopyRefinement(request, result);
     let usage = result.usage;
     let retryWarnings: string[] = [];
+    let retryLlmWarnings: string[] = [];
     const retryTargets = collectRetryTargets(applied);
 
     if (retryTargets.length > 0) {
@@ -83,12 +84,16 @@ export async function refinePdpGeoCopy(
         ...request,
         schemaMarkup: applied.schemaMarkup,
         content: applied.content,
-        refinementFeedback: retryTargets
+        refinementFeedback: retryTargets,
+        // Reduced corrective-pass payload: drop the full hydrated RAG documents (the largest
+        // payload block) since the corrective pass only needs to fix specific listed fields.
+        hydratedRagDocuments: undefined
       };
       try {
         const retryResult = await resolved.refiner.refineCopy(retryRequest);
         const retryApplied = applyCopyRefinement(retryRequest, retryResult);
         usage = mergeTokenUsage(usage, retryResult.usage);
+        retryLlmWarnings = retryResult.warnings ?? [];
         const remaining = collectRetryTargets(retryApplied);
         if (remaining.length > 0) {
           retryWarnings = [
@@ -119,6 +124,7 @@ export async function refinePdpGeoCopy(
     const warnings = [
       ...(result.warnings ?? []),
       ...applied.warnings,
+      ...retryLlmWarnings,
       ...retryWarnings
     ];
     const evidence = [...applied.evidence];
@@ -958,7 +964,8 @@ function applyCopyRefinement(
     applied = true;
   }
 
-  const faqRefinement = acceptedFaqRefinements(request, result.faqAnswers, warnings, claimEvidenceCorpus, rejections);
+  const isCorrectivePass = Boolean(request.refinementFeedback && request.refinementFeedback.length > 0);
+  const faqRefinement = acceptedFaqRefinements(request, result.faqAnswers, warnings, claimEvidenceCorpus, rejections, isCorrectivePass);
   if (faqRefinement) {
     schemaMarkup = writeFaqEntries(schemaMarkup, faqRefinement.entries, faqRefinement.order);
     for (const entry of faqRefinement.entries) {
@@ -1278,7 +1285,8 @@ function acceptedFaqRefinements(
   values: PdpGeoCopyRefinementResult["faqAnswers"],
   warnings: string[],
   evidenceCorpus: string,
-  rejections: PdpGeoCopyRefinementFeedback[]
+  rejections: PdpGeoCopyRefinementFeedback[],
+  correctivePass: boolean
 ): AcceptedFaqRefinement | undefined {
   if (!Array.isArray(values) || values.length === 0) {
     return undefined;
@@ -1299,7 +1307,9 @@ function acceptedFaqRefinements(
       ? currentFaq.findIndex((faq) => normalizeComparableText(faq.question) === normalizeComparableText(matchKey))
       : (itemIndex < currentFaq.length ? itemIndex : -1);
     if (faqIndex < 0) {
-      warnings.push(`FAQPage.mainEntity refinement item "${truncate(cleanText(matchKey), 80)}" dropped because it does not match an existing FAQ question.`);
+      if (!correctivePass) {
+        warnings.push(`FAQPage.mainEntity refinement item "${truncate(cleanText(matchKey), 80)}" dropped because it does not match an existing FAQ question.`);
+      }
       continue;
     }
     if (matchedOrder.includes(faqIndex)) {
@@ -1329,6 +1339,15 @@ function acceptedFaqRefinements(
 
   if (entries.length === 0) {
     return undefined;
+  }
+
+  if (correctivePass) {
+    // A corrective pass regenerates only the fields listed in refinementFeedback, so the
+    // returned faqAnswers list is intentionally partial. Apply text replacements only and
+    // never recompute FAQ order from a partial list, which would otherwise promote whichever
+    // item happened to be retried to the front and destroy pass 1's recommendation-first order.
+    const isChanged = entries.some((entry) => entry.question !== entry.beforeQuestion || entry.answer !== entry.beforeAnswer);
+    return isChanged ? { entries, order: undefined } : undefined;
   }
 
   const remaining = currentFaq.map((_, index) => index).filter((index) => !matchedOrder.includes(index));

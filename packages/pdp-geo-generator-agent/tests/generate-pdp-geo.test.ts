@@ -2837,9 +2837,16 @@ describe("generatePdpGeo", () => {
   });
 
   it("selects package GEO, CEP, and E-E-A-T RAG chunks during generation", async () => {
+    // Capture only the first (initial) call's payload: this mock's fixed response appends a
+    // concrete usage step to Product.description, which triggers a corrective retry pass. The
+    // retry intentionally sends a reduced payload without hydratedRagDocuments/strategicFullDocuments
+    // (see copy-refiner.ts), so capturing a later call here would no longer reflect the primary
+    // RAG-selection payload this test is actually about.
     let capturedBody: Record<string, any> | undefined;
     vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
-      capturedBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, any>;
+      if (!capturedBody) {
+        capturedBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, any>;
+      }
       return new Response(JSON.stringify({
         output_text: JSON.stringify({
           schemaDescriptions: {
