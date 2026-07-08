@@ -302,7 +302,8 @@ export async function generatePdpGeo(
       ragChunks: selectedRagChunks,
       hydratedRagDocuments,
       reasoning,
-      policyRules: policyChecklist.injectedRules
+      policyRules: policyChecklist.injectedRules,
+      inferredSearchQueries: generated.inferredSearchQueries
     },
     options
   );

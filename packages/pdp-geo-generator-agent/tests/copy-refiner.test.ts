@@ -227,3 +227,68 @@ describe("corrective refinement pass", () => {
     expect(result.warnings.some((warning) => warning.includes("Corrective refinement pass skipped"))).toBe(true);
   });
 });
+
+describe("FAQ generative-intent recomposition", () => {
+  it("reorders FAQ, rewrites questions, and applies yes-leading comparison answers", async () => {
+    const request = createRefinementRequest();
+    const result = await refinePdpGeoCopy(request, createOptions(() => ({
+      faqAnswers: [
+        {
+          sourceQuestion: "에스트라 아토베리어365 캡슐 토너는 어떤 고객에게 추천할 수 있나요?",
+          question: "민감하고 건조한 피부에는 어떤 토너를 추천하나요?",
+          answer: "에스트라 아토베리어365 캡슐 토너는 건조하고 민감한 피부 고객에게 추천할 수 있는 장벽보습 캡슐 토너로, 고밀도 세라마이드 캡슐이 장벽 보습을 돕습니다."
+        },
+        {
+          sourceQuestion: "에스트라 아토베리어365 캡슐 토너의 주요 성분과 효능은 무엇인가요?",
+          question: "에스트라 아토베리어365 캡슐 토너에는 어떤 성분이 들어 있나요?",
+          answer: "에스트라 아토베리어365 캡슐 토너는 PHA와 고밀도 세라마이드 캡슐을 담은 장벽보습 캡슐 토너로, 장벽 보습과 피부결 정돈을 돕습니다."
+        },
+        {
+          sourceQuestion: "아토베리어365 크림에 함유된 캡슐과 동일한 캡슐인가요?",
+          question: "아토베리어365 크림에 함유된 캡슐과 동일한 캡슐인가요?",
+          answer: "네, 동일한 고밀도 세라마이드 캡슐입니다. 아토베리어365 크림과 캡슐 토너에 같은 고밀도 세라마이드 캡슐이 사용됩니다."
+        }
+      ]
+    })));
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const faqPage = graph.find((node) => node["@type"] === "FAQPage") as Record<string, any>;
+    const mainEntity = faqPage.mainEntity as Array<Record<string, any>>;
+
+    expect(mainEntity[0]!.name).toBe("민감하고 건조한 피부에는 어떤 토너를 추천하나요?");
+    expect(mainEntity[2]!.name).toBe("아토베리어365 크림에 함유된 캡슐과 동일한 캡슐인가요?");
+    expect(mainEntity[2]!.acceptedAnswer.text.startsWith("네,")).toBe(true);
+    expect(result.content.sections.faq.indexOf("민감하고 건조한 피부에는")).toBeLessThan(
+      result.content.sections.faq.indexOf("동일한 캡슐인가요?")
+    );
+  });
+
+  it("drops FAQ items without a matching sourceQuestion and preserves unlisted existing items", async () => {
+    const request = createRefinementRequest();
+    const result = await refinePdpGeoCopy(request, createOptions(() => ({
+      faqAnswers: [
+        {
+          sourceQuestion: "이 제품은 어디에서 구매할 수 있나요?",
+          question: "이 제품은 어디에서 구매할 수 있나요?",
+          answer: "구매처 정보는 공식몰에서 확인할 수 있습니다."
+        },
+        {
+          sourceQuestion: "에스트라 아토베리어365 캡슐 토너는 어떤 고객에게 추천할 수 있나요?",
+          question: "민감하고 건조한 피부에는 어떤 토너를 추천하나요?",
+          answer: "에스트라 아토베리어365 캡슐 토너는 건조하고 민감한 피부 고객에게 추천할 수 있는 장벽보습 캡슐 토너입니다."
+        }
+      ]
+    })));
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const faqPage = graph.find((node) => node["@type"] === "FAQPage") as Record<string, any>;
+    const mainEntity = faqPage.mainEntity as Array<Record<string, any>>;
+
+    expect(mainEntity).toHaveLength(3);
+    expect(mainEntity[0]!.name).toBe("민감하고 건조한 피부에는 어떤 토너를 추천하나요?");
+    expect(mainEntity.some((item) => String(item.name).includes("구매"))).toBe(false);
+    expect(mainEntity.some((item) => String(item.name).includes("동일한 캡슐"))).toBe(true);
+    expect(mainEntity.some((item) => String(item.name).includes("주요 성분과 효능"))).toBe(true);
+    expect(result.warnings.some((warning) => warning.includes("does not match an existing FAQ question"))).toBe(true);
+  });
+});

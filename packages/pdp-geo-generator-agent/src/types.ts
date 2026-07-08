@@ -570,6 +570,7 @@ export interface PdpGeoCopyRefinementResult {
   };
   schemaProperties?: Record<string, string>;
   faqAnswers?: Array<{
+    sourceQuestion?: string;
     question?: string;
     answer?: string;
   }>;

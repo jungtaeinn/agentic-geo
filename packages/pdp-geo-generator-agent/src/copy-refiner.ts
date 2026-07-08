@@ -470,7 +470,7 @@ function createCopyRefinementPrompt(request: PdpGeoCopyRefinementRequest): { sys
   return {
     system: [
       "You are a conservative GEO product-copy reasoning agent for structured PDP schema descriptions.",
-      "Return strict JSON only: {\"schemaDescriptions\":{\"webPage\":\"\",\"product\":\"\"},\"schemaProperties\":{\"Target customer\":\"\",\"Brand science\":\"\",\"Usage\":\"\",\"Key ingredients and technologies\":\"\",\"Ingredient/effect detail\":\"\",\"Reported details\":\"\",\"Customer review context\":\"\"},\"faqAnswers\":[{\"question\":\"\",\"answer\":\"\"}],\"contentSections\":{\"description\":\"\",\"quickFacts\":\"\",\"faq\":\"\"},\"ruleCompliance\":{\"violatedRuleIds\":[],\"notes\":[]},\"warnings\":[]}.",
+      "Return strict JSON only: {\"schemaDescriptions\":{\"webPage\":\"\",\"product\":\"\"},\"schemaProperties\":{\"Target customer\":\"\",\"Brand science\":\"\",\"Usage\":\"\",\"Key ingredients and technologies\":\"\",\"Ingredient/effect detail\":\"\",\"Reported details\":\"\",\"Customer review context\":\"\"},\"faqAnswers\":[{\"sourceQuestion\":\"\",\"question\":\"\",\"answer\":\"\"}],\"contentSections\":{\"description\":\"\",\"quickFacts\":\"\",\"faq\":\"\"},\"ruleCompliance\":{\"violatedRuleIds\":[],\"notes\":[]},\"warnings\":[]}.",
       "When the user payload includes policyChecklist, treat it as the complete compiled requirement set from all RAG policy documents: every [critical] rule is a hard constraint, [guidance] rules apply unless product evidence makes them inapplicable, and rules scoped to a field group apply to that output field.",
       "Work field by field: before writing each output field, scan the policyChecklist group for that field plus the General/cross-field group, then draft the copy to satisfy those rules together rather than reacting to individual rules.",
       "After drafting all fields, run a final self-check against every [critical] rule id and the complianceRecap list; fix violations first, and only report ids in ruleCompliance.violatedRuleIds when a rule genuinely cannot be satisfied with the available evidence, with a short reason in ruleCompliance.notes.",
@@ -490,7 +490,9 @@ function createCopyRefinementPrompt(request: PdpGeoCopyRefinementRequest): { sys
       "For Product.description and contentSections.description, compose the product entity sentence flow in this order when evidence exists: target customer or concern, product identity/product type, key ingredient or technology, benefit/effect and citation-ready metric, then high-level usage, comparison, and positive/neutral review context. Product.description describes the product itself, not the PDP or page resource; never use page-level wording such as product page, page covers, 페이지에서는, or 상품 페이지 in Product.description. Do not preserve old fallback wording that violates this order; rewrite from productEvidence and omit facts that belong only to FAQ, HowTo, Offer, diagnostics, or brand identity.",
       "For Product.description and contentSections.description in every locale, keep the CEP readable by splitting dense clauses when needed: first state product identity for the target customer or concern, then connect ingredient/formula evidence to the supported benefit. Avoid one-sentence noun stacks such as \"[target customer]을 위한 [product name]은 [ingredients/formula]의 [benefit product type]입니다\", \"[product] is a [benefit product type] of [patent-pending formula]\", or \"[target]向けの[product]は[処方]の[商品]です\". Infer the ingredient/technology role and use natural locale predicates: ingredient/capsule facts are included or blended, formula/process facts are used/adopted/applied, and mixed ingredient-plus-formula facts become the basis or composition for the supported benefit. Keep patent-application wording in Brand science/additionalProperty when needed.",
       "For Product.description and contentSections.description, usage may appear only as high-level routine context such as post-cleanse first step, morning/evening cream step, as-needed misting, or pre-makeup care. Concrete application steps such as \"화장솜에 적당량을 덜어 피부결을 따라 닦아냅니다\" belong in Usage and HowTo.",
-      "For faqAnswers, keep the same question intent and order as currentCopy.faqAnswers. Improve answer naturalness and GEO usefulness by blending ingredient, benefit/effect, metric, usage evidence, and positive or neutral review use-feel evidence only when supplied; exclude negative review sentiment, scent complaints, rating metadata, and raw reviewer snippets.",
+      "For faqAnswers, return the COMPLETE FAQ list in final display order. Every item must set sourceQuestion to the exact matching question from currentCopy.faqAnswers; items without a matching sourceQuestion are dropped. Never invent a new FAQ item that has no source question.",
+      "Compose each FAQ question as the natural question a generative-AI user (ChatGPT, Gemini, Perplexity) would actually ask about this product or its category, using generativeQueryIntents and review/CEP evidence as intent candidates. Rewrite the question wording when it increases citation likelihood, but keep the underlying intent answerable from productEvidence. Order FAQ by buying-consultation intent: recommendation/suitability first, then key ingredients/benefits, texture/use-feel, usage/routine, comparison/sameness, and evidence/measured results last; skip intents that have no evidence.",
+      "For FAQ questions that ask a yes/no determination such as sameness, compatibility, or suitability, begin the answer with 네, or 아니요, (Yes,/No, in English locales) when productEvidence supports the determination, followed by one supported fact sentence. When the evidence cannot support the determination, do not guess and do not lead with a non-answer; answer the underlying intent directly with this product's supported fact.",
       "For FAQ breadth, prefer BestPractice-level coverage when evidence exists: benefit, ingredient/technology, usage, skin suitability, positive review use-feel intent, evidence/metric, variant comparison, routine synergy, persistence, renewal/replacement, and purchase/gift context. Keep unsupported intents unchanged rather than inventing answers.",
       "For faqAnswers, make the first sentence directly answer the question and stand alone as a citation-ready claim unit: include the product name, target concern or customer, product type, key ingredient/technology, benefit/effect, usage context, or metric only when each fact is supported.",
       "For Korean and English public copy, avoid meta-narration: outside the opening WebPage.description page-introduction sentence, do not make the page, source material, evidence, information, product details, usage guidance, context, or generation process the grammatical subject of a sentence. The customer-facing subject should be the product, ingredient/technology, benefit, usage action, review pattern, option, or customer concern.",
@@ -701,6 +703,12 @@ function createCopyRefinementPayload(request: PdpGeoCopyRefinementRequest): Reco
       }))
     } : undefined,
     complianceRecap: formatPolicyComplianceRecap(request.policyRules ?? []),
+    generativeQueryIntents: (request.inferredSearchQueries ?? []).slice(0, 8).map((query) => ({
+      kind: query.kind,
+      question: query.question,
+      keywords: query.keywords,
+      mentionsProductOrBrand: query.mentionsProductOrBrand
+    })),
     refinementFeedback: request.refinementFeedback?.map((item) => ({
       field: item.field,
       reason: item.reason,
@@ -938,15 +946,25 @@ function applyCopyRefinement(
     applied = true;
   }
 
-  const faqRefinements = acceptedFaqAnswerRefinements(request, result.faqAnswers, warnings, claimEvidenceCorpus, rejections);
-  for (const refinement of faqRefinements) {
-    schemaMarkup = writeFaqAnswer(schemaMarkup, refinement.index, refinement.answer);
-    evidence.push({ field: `schema.FAQPage.mainEntity.${refinement.index + 1}.acceptedAnswer`, source: "llm", value: summarizeRefinement(refinement.before, refinement.answer) });
+  const faqRefinement = acceptedFaqRefinements(request, result.faqAnswers, warnings, claimEvidenceCorpus, rejections);
+  if (faqRefinement) {
+    schemaMarkup = writeFaqEntries(schemaMarkup, faqRefinement.entries, faqRefinement.order);
+    for (const entry of faqRefinement.entries) {
+      if (entry.answer !== entry.beforeAnswer) {
+        evidence.push({ field: `schema.FAQPage.mainEntity.${entry.index + 1}.acceptedAnswer`, source: "llm", value: summarizeRefinement(entry.beforeAnswer, entry.answer) });
+      }
+      if (entry.question !== entry.beforeQuestion) {
+        evidence.push({ field: `schema.FAQPage.mainEntity.${entry.index + 1}.name`, source: "llm", value: summarizeRefinement(entry.beforeQuestion, entry.question) });
+      }
+    }
+    if (faqRefinement.order) {
+      evidence.push({ field: "schema.FAQPage.mainEntity", source: "llm", value: "FAQ items were reordered by inferred generative-search question intent." });
+    }
     applied = true;
   }
 
   const nextQuickFacts = contentQuickFacts;
-  const nextFaq = contentFaq ?? (faqRefinements.length > 0 ? createFaqSectionFromSchema(schemaMarkup.jsonLd) : undefined);
+  const nextFaq = faqRefinement ? createFaqSectionFromSchema(schemaMarkup.jsonLd) : contentFaq;
   if ((nextQuickFacts && nextQuickFacts !== content.sections.quickFacts) || (nextFaq && nextFaq !== content.sections.faq)) {
     const sections = {
       ...content.sections,
@@ -1225,44 +1243,103 @@ function extractBrandIdentityAuthorityTokens(value: string): string[] {
   ].map(normalizeComparableText).filter((token) => normalized.includes(token));
 }
 
-function acceptedFaqAnswerRefinements(
+interface AcceptedFaqRefinement {
+  entries: Array<{ index: number; question: string; answer: string; beforeQuestion: string; beforeAnswer: string }>;
+  order?: number[];
+}
+
+function acceptedFaqRefinements(
   request: PdpGeoCopyRefinementRequest,
   values: PdpGeoCopyRefinementResult["faqAnswers"],
   warnings: string[],
   evidenceCorpus: string,
   rejections: PdpGeoCopyRefinementFeedback[]
-): Array<{ index: number; answer: string; before: string }> {
-  if (!Array.isArray(values)) {
-    return [];
+): AcceptedFaqRefinement | undefined {
+  if (!Array.isArray(values) || values.length === 0) {
+    return undefined;
   }
 
   const currentFaq = readSchemaFaqItems(request.schemaMarkup.jsonLd);
-  return values.flatMap((item, index) => {
+  const matchedOrder: number[] = [];
+  const entries: AcceptedFaqRefinement["entries"] = [];
+
+  for (const [itemIndex, item] of values.entries()) {
     if (!isRecord(item)) {
-      return [];
+      continue;
     }
-    const answer = typeof item.answer === "string" ? item.answer : undefined;
-    const matchingIndex = typeof item.question === "string"
-      ? currentFaq.findIndex((faq) => normalizeComparableText(faq.question) === normalizeComparableText(item.question ?? ""))
-      : index;
-    const faqIndex = matchingIndex >= 0 ? matchingIndex : index;
-    const before = currentFaq[faqIndex]?.answer;
-    if (!before) {
-      return [];
+    const matchKey = typeof item.sourceQuestion === "string" && item.sourceQuestion.trim().length > 0
+      ? item.sourceQuestion
+      : typeof item.question === "string" ? item.question : "";
+    const faqIndex = matchKey
+      ? currentFaq.findIndex((faq) => normalizeComparableText(faq.question) === normalizeComparableText(matchKey))
+      : (itemIndex < currentFaq.length ? itemIndex : -1);
+    if (faqIndex < 0) {
+      warnings.push(`FAQPage.mainEntity refinement item "${truncate(cleanText(matchKey), 80)}" dropped because it does not match an existing FAQ question.`);
+      continue;
     }
-    const question = currentFaq[faqIndex]?.question ?? (typeof item.question === "string" ? item.question : "");
-    const accepted = acceptRefinedText(
-      answer,
-      before,
+    if (matchedOrder.includes(faqIndex)) {
+      continue;
+    }
+    matchedOrder.push(faqIndex);
+
+    const beforeQuestion = currentFaq[faqIndex]!.question;
+    const beforeAnswer = currentFaq[faqIndex]!.answer;
+    const question = acceptRefinedFaqQuestion(item.question, beforeQuestion, faqIndex, warnings, evidenceCorpus);
+    const answer = acceptRefinedText(
+      item.answer,
+      beforeAnswer,
       `FAQPage.mainEntity.${faqIndex + 1}.acceptedAnswer`,
       warnings,
       { minLength: 24, maxLength: 900, evidenceCorpus, requireSupportedClaimTokens: true, rejections }
     );
-    if (accepted && !isAcceptedFaqAnswerValue(question, accepted, warnings, faqIndex)) {
-      return [];
-    }
-    return accepted && accepted !== before ? [{ index: faqIndex, answer: accepted, before }] : [];
-  });
+    const acceptedAnswer = answer && isAcceptedFaqAnswerValue(question ?? beforeQuestion, answer, warnings, faqIndex) ? answer : beforeAnswer;
+    entries.push({
+      index: faqIndex,
+      question: question ?? beforeQuestion,
+      answer: acceptedAnswer,
+      beforeQuestion,
+      beforeAnswer
+    });
+  }
+
+  if (entries.length === 0) {
+    return undefined;
+  }
+
+  const remaining = currentFaq.map((_, index) => index).filter((index) => !matchedOrder.includes(index));
+  const order = [...matchedOrder, ...remaining];
+  const isReordered = order.some((value, index) => value !== index);
+  const isChanged = isReordered || entries.some((entry) => entry.question !== entry.beforeQuestion || entry.answer !== entry.beforeAnswer);
+  return isChanged ? { entries, order: isReordered ? order : undefined } : undefined;
+}
+
+function acceptRefinedFaqQuestion(
+  value: unknown,
+  beforeQuestion: string,
+  index: number,
+  warnings: string[],
+  evidenceCorpus: string
+): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const text = cleanText(value);
+  if (!text || text === beforeQuestion) {
+    return text || undefined;
+  }
+  if (text.length < 8 || text.length > 200) {
+    warnings.push(`FAQPage.mainEntity.${index + 1}.name refinement rejected because the rewritten question length is out of range.`);
+    return undefined;
+  }
+  if (containsInternalOrVisualArtifact(text)) {
+    warnings.push(`FAQPage.mainEntity.${index + 1}.name refinement rejected because it contains internal labels or visual-caption artifacts.`);
+    return undefined;
+  }
+  if (hasUnsupportedClaimTokens(text, evidenceCorpus)) {
+    warnings.push(`FAQPage.mainEntity.${index + 1}.name refinement rejected because it introduced unsupported numeric or study claim details.`);
+    return undefined;
+  }
+  return text;
 }
 
 function isAcceptedFaqAnswerValue(question: string, answer: string, warnings: string[], index: number): boolean {
@@ -1461,14 +1538,32 @@ function writeProductAdditionalProperty(schemaMarkup: PdpGeoSchemaMarkup, name: 
   return schemaMarkupFromJsonLd(jsonLd);
 }
 
-function writeFaqAnswer(schemaMarkup: PdpGeoSchemaMarkup, index: number, answer: string): PdpGeoSchemaMarkup {
+function writeFaqEntries(
+  schemaMarkup: PdpGeoSchemaMarkup,
+  entries: AcceptedFaqRefinement["entries"],
+  order?: number[]
+): PdpGeoSchemaMarkup {
   const jsonLd = cloneJsonObject(schemaMarkup.jsonLd);
   const graph = Array.isArray(jsonLd["@graph"]) ? jsonLd["@graph"] : [];
   const faqPage = graph.find((node) => isSchemaNodeOfType(node, "FAQPage"));
-  const item = isRecord(faqPage) && Array.isArray(faqPage.mainEntity) ? faqPage.mainEntity[index] : undefined;
-  const acceptedAnswer = isRecord(item) && isRecord(item.acceptedAnswer) ? item.acceptedAnswer : undefined;
-  if (acceptedAnswer) {
-    acceptedAnswer.text = answer;
+  if (!isRecord(faqPage) || !Array.isArray(faqPage.mainEntity)) {
+    return schemaMarkupFromJsonLd(jsonLd);
+  }
+  const mainEntity = faqPage.mainEntity;
+  for (const entry of entries) {
+    const item = mainEntity[entry.index];
+    if (!isRecord(item)) {
+      continue;
+    }
+    item.name = entry.question;
+    if (isRecord(item.acceptedAnswer)) {
+      item.acceptedAnswer.text = entry.answer;
+    }
+  }
+  if (order) {
+    faqPage.mainEntity = order
+      .map((index) => mainEntity[index])
+      .filter((item): item is JsonObject => isRecord(item));
   }
   return schemaMarkupFromJsonLd(jsonLd);
 }
@@ -1526,6 +1621,7 @@ function parseCopyRefinementJson(text: string): PdpGeoCopyRefinementResult {
       ? payload.faqAnswers
         .filter(isRecord)
         .map((item) => ({
+          sourceQuestion: typeof item.sourceQuestion === "string" ? item.sourceQuestion : undefined,
           question: typeof item.question === "string" ? item.question : undefined,
           answer: typeof item.answer === "string" ? item.answer : undefined
         }))
