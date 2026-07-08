@@ -73,10 +73,53 @@ export async function refinePdpGeoCopy(
 
   try {
     const result = await resolved.refiner.refineCopy(request);
-    const applied = applyCopyRefinement(request, result);
+    let applied = applyCopyRefinement(request, result);
+    let usage = result.usage;
+    let retryWarnings: string[] = [];
+    const retryTargets = collectRetryTargets(applied);
+
+    if (retryTargets.length > 0) {
+      const retryRequest: PdpGeoCopyRefinementRequest = {
+        ...request,
+        schemaMarkup: applied.schemaMarkup,
+        content: applied.content,
+        refinementFeedback: retryTargets
+      };
+      try {
+        const retryResult = await resolved.refiner.refineCopy(retryRequest);
+        const retryApplied = applyCopyRefinement(retryRequest, retryResult);
+        usage = mergeTokenUsage(usage, retryResult.usage);
+        const remaining = collectRetryTargets(retryApplied);
+        if (remaining.length > 0) {
+          retryWarnings = [
+            `Corrective refinement pass could not repair: ${remaining.map((item) => item.field).join(", ")} (corrective refinement pass exhausted).`
+          ];
+        }
+        applied = {
+          schemaMarkup: retryApplied.schemaMarkup,
+          content: retryApplied.content,
+          evidence: [
+            ...applied.evidence,
+            ...retryApplied.evidence,
+            {
+              field: "copy.refinement.retry",
+              source: "llm",
+              value: `Corrective refinement pass regenerated fields: ${retryTargets.map((item) => item.field).join(", ")}`
+            }
+          ],
+          warnings: [...applied.warnings, ...retryApplied.warnings],
+          rejections: retryApplied.rejections,
+          applied: applied.applied || retryApplied.applied
+        };
+      } catch (retryError) {
+        const message = retryError instanceof Error ? retryError.message : "Corrective refinement provider failed.";
+        retryWarnings = [`Corrective refinement pass skipped: ${message}`];
+      }
+    }
     const warnings = [
       ...(result.warnings ?? []),
-      ...applied.warnings
+      ...applied.warnings,
+      ...retryWarnings
     ];
     const evidence = [...applied.evidence];
     const strategicSources = strategicExposureSourceSummary(request);
@@ -130,7 +173,7 @@ export async function refinePdpGeoCopy(
       content: applied.content,
       evidence,
       warnings,
-      usage: result.usage,
+      usage,
       called: true,
       applied: applied.applied,
       rejections: applied.rejections
@@ -493,7 +536,8 @@ function createCopyRefinementPrompt(request: PdpGeoCopyRefinementRequest): { sys
       "If a sentence is useful evidence but belongs to a different field, rewrite it only in the correct field and do not move the raw phrase across public fields.",
       "Do not mention the strategy labels in the public copy: no RAG, GEO, geo-paper, CEP, E-E-A-T, schema optimization, citation-ready, OCR, image caption, product shot, pack shot, with text, or in the corner.",
       "Keep the output in the requested locale and make Product.description suitable for schema.org Product.description as an item description, not a page description.",
-      "If evidence is insufficient, return the current copy unchanged and explain the limitation in warnings."
+      "If evidence is insufficient, return the current copy unchanged and explain the limitation in warnings.",
+      "When the user payload includes refinementFeedback, this is a corrective pass: regenerate ONLY the fields listed in refinementFeedback, fixing the stated rejection reason while keeping all other rules satisfied. Return empty strings or omit every field that is not listed in refinementFeedback."
     ].join("\n"),
     user: JSON.stringify(createCopyRefinementPayload(request), null, 2)
   };
@@ -656,7 +700,13 @@ function createCopyRefinementPayload(request: PdpGeoCopyRefinementRequest): Reco
         productEvidence: decision.productEvidence
       }))
     } : undefined,
-    complianceRecap: formatPolicyComplianceRecap(request.policyRules ?? [])
+    complianceRecap: formatPolicyComplianceRecap(request.policyRules ?? []),
+    refinementFeedback: request.refinementFeedback?.map((item) => ({
+      field: item.field,
+      reason: item.reason,
+      rejectedText: item.rejectedText ? truncate(cleanText(item.rejectedText), maxEvidenceTextChars) : undefined,
+      currentText: item.currentText ? truncate(cleanText(item.currentText), maxEvidenceTextChars) : undefined
+    }))
   };
 }
 
@@ -735,6 +785,63 @@ function evidenceTextScore(value: string): number {
     score += 2;
   }
   return score;
+}
+
+function collectRetryTargets(
+  applied: Pick<CopyRefinementApplication, "schemaMarkup" | "content" | "rejections">
+): PdpGeoCopyRefinementFeedback[] {
+  const feedback: PdpGeoCopyRefinementFeedback[] = [...applied.rejections];
+  const descriptions = readSchemaDescriptions(applied.schemaMarkup.jsonLd);
+  const finalTexts: Array<{ field: string; text?: string }> = [
+    { field: "Product.description", text: descriptions.product },
+    { field: "WebPage.description", text: descriptions.webPage },
+    { field: "content.sections.description", text: applied.content.sections.description }
+  ];
+  for (const item of finalTexts) {
+    if (!item.text) {
+      continue;
+    }
+    if (containsAnalysisLabelArtifact(item.text)) {
+      feedback.push({
+        field: item.field,
+        reason: "the current adopted text still exposes an internal analysis label such as 평가 지표:; rewrite the measured result as a natural product sentence with a supported predicate.",
+        currentText: item.text
+      });
+    } else if (containsRawVolumeFragment(item.text)) {
+      feedback.push({
+        field: item.field,
+        reason: "the current adopted text still lists a raw volume/size string; keep volume in quickFacts or Product.additionalProperty and restore a natural CEP sentence flow.",
+        currentText: item.text
+      });
+    }
+  }
+  const seen = new Set<string>();
+  return feedback.filter((item) => {
+    if (seen.has(item.field)) {
+      return false;
+    }
+    seen.add(item.field);
+    return true;
+  });
+}
+
+function mergeTokenUsage(
+  first: PdpGeoTokenUsage | undefined,
+  second: PdpGeoTokenUsage | undefined
+): PdpGeoTokenUsage | undefined {
+  if (!first) {
+    return second;
+  }
+  if (!second) {
+    return first;
+  }
+  const sum = (a?: number, b?: number): number | undefined =>
+    a === undefined && b === undefined ? undefined : (a ?? 0) + (b ?? 0);
+  return {
+    inputTokens: sum(first.inputTokens, second.inputTokens),
+    outputTokens: sum(first.outputTokens, second.outputTokens),
+    totalTokens: sum(first.totalTokens, second.totalTokens)
+  };
 }
 
 function applyCopyRefinement(
@@ -884,7 +991,7 @@ function containsAnalysisLabelArtifact(text: string): boolean {
   return analysisLabelArtifactPattern.test(text);
 }
 
-const rawVolumeFragmentPattern = /\d+(?:\.\d+)?\s*fl\.?\s*oz\.?|\/\s*\d+(?:\.\d+)?\s*m[lL]\b|\d+(?:\.\d+)?\s*m[lL]\s*용량/;
+const rawVolumeFragmentPattern = /\d+(?:\.\d+)?\s*fl\.?\s*oz\.?|\/\s*\d+(?:\.\d+)?\s*m[lL]\b|\d+(?:\.\d+)?\s*m[lL]\s*용량/i;
 
 function containsRawVolumeFragment(text: string): boolean {
   return rawVolumeFragmentPattern.test(text);

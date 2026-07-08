@@ -132,3 +132,75 @@ describe("copy refinement description gates", () => {
     expect(result.warnings.some((warning) => warning.includes("WebPage.description") && warning.includes("volume"))).toBe(true);
   });
 });
+
+describe("corrective refinement pass", () => {
+  it("retries rejected description refinement once with structured feedback", async () => {
+    const request = createRefinementRequest();
+    const cleanDescription = "에스트라 아토베리어365 캡슐 토너는 건조하고 민감한 피부 고객을 위한 장벽보습 캡슐 토너로, 고밀도 세라마이드 캡슐이 장벽 보습을 돕고 세정에 의한 장벽 손상은 사용 직후 93% 회복되었습니다.";
+    const calls: PdpGeoCopyRefinementRequest[] = [];
+
+    const result = await refinePdpGeoCopy(request, createOptions((incoming) => {
+      calls.push(incoming);
+      if (calls.length === 1) {
+        return {
+          schemaDescriptions: {
+            product: "에스트라 아토베리어365 캡슐 토너는 민감 피부용 캡슐 토너입니다. 사용 직후 시점 기준 평가 지표: 사용 직후는 93% 회복되었습니다."
+          },
+          usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 }
+        };
+      }
+      return {
+        schemaDescriptions: { product: cleanDescription },
+        usage: { inputTokens: 40, outputTokens: 20, totalTokens: 60 }
+      };
+    }));
+
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.refinementFeedback?.some((item) =>
+      item.field === "Product.description" && item.reason.includes("analysis label")
+    )).toBe(true);
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    expect(product.description).toBe(cleanDescription);
+    expect(result.usage?.totalTokens).toBe(210);
+  });
+
+  it("triggers the corrective pass when unrefined fallback copy keeps analysis labels", async () => {
+    const request = createRefinementRequest({
+      productDescription: "에스트라 아토베리어365 캡슐 토너는 민감 피부용 캡슐 토너입니다. 사용 직후 시점 기준 평가 지표: 사용 직후는 93% 회복되었습니다."
+    });
+    const cleanDescription = "에스트라 아토베리어365 캡슐 토너는 건조하고 민감한 피부 고객을 위한 장벽보습 캡슐 토너로, 세정에 의한 장벽 손상은 사용 직후 93% 회복되었습니다.";
+    const calls: PdpGeoCopyRefinementRequest[] = [];
+
+    const result = await refinePdpGeoCopy(request, createOptions((incoming) => {
+      calls.push(incoming);
+      if (calls.length === 1) {
+        return {};
+      }
+      return { schemaDescriptions: { product: cleanDescription } };
+    }));
+
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.refinementFeedback?.some((item) => item.field === "Product.description")).toBe(true);
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    expect(product.description).toBe(cleanDescription);
+  });
+
+  it("falls back with a warning when the corrective pass also fails", async () => {
+    const badDescription = "에스트라 아토베리어365 캡슐 토너는 민감 피부용 캡슐 토너입니다. 사용 직후 시점 기준 평가 지표: 사용 직후는 93% 회복되었습니다.";
+    const request = createRefinementRequest();
+    let callCount = 0;
+
+    const result = await refinePdpGeoCopy(request, createOptions(() => {
+      callCount += 1;
+      return { schemaDescriptions: { product: badDescription } };
+    }));
+
+    expect(callCount).toBe(2);
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    expect(product.description).toBe(request.content.sections.description);
+    expect(result.warnings.some((warning) => warning.includes("corrective refinement pass"))).toBe(true);
+  });
+});

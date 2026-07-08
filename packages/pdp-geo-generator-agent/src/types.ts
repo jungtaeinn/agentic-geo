@@ -552,6 +552,8 @@ export interface PdpGeoCopyRefinementRequest {
   hydratedRagDocuments?: PdpGeoHydratedRagDocument[];
   reasoning?: PdpGeoReasoningResult;
   policyRules?: PdpGeoPolicyRule[];
+  inferredSearchQueries?: PdpGeoInferredSearchQueryDiagnostic[];
+  refinementFeedback?: PdpGeoCopyRefinementFeedback[];
 }
 
 export interface PdpGeoCopyRefinementFeedback {
