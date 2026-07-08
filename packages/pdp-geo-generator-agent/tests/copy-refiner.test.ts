@@ -203,4 +203,27 @@ describe("corrective refinement pass", () => {
     expect(product.description).toBe(request.content.sections.description);
     expect(result.warnings.some((warning) => warning.includes("corrective refinement pass"))).toBe(true);
   });
+
+  it("keeps fallback copy and records a warning when the corrective pass provider throws", async () => {
+    const request = createRefinementRequest();
+    let callCount = 0;
+
+    const result = await refinePdpGeoCopy(request, createOptions(() => {
+      callCount += 1;
+      if (callCount === 1) {
+        return {
+          schemaDescriptions: {
+            product: "에스트라 아토베리어365 캡슐 토너는 민감 피부용 캡슐 토너입니다. 사용 직후 시점 기준 평가 지표: 사용 직후는 93% 회복되었습니다."
+          }
+        };
+      }
+      throw new Error("corrective provider unavailable");
+    }));
+
+    expect(callCount).toBe(2);
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    expect(product.description).toBe(request.content.sections.description);
+    expect(result.warnings.some((warning) => warning.includes("Corrective refinement pass skipped"))).toBe(true);
+  });
 });
