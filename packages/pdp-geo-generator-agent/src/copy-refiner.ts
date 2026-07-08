@@ -516,6 +516,10 @@ function createCopyRefinementPrompt(request: PdpGeoCopyRefinementRequest): { sys
       "For WebPage.description, do not merge a HowTo step with FAQ topics in one object list. Avoid structures such as \"application method and capsule FAQ topics can be checked in FAQ and HowTo\"; keep FAQ topics and HowTo steps separate or omit the HowTo step from WebPage.description.",
       "For WebPage.description, keep field roles separated: ingredient/technology evidence may describe formula or brand science, while usage coverage may describe only actual actions such as dispense, apply, spread, pat, rinse, massage, or absorb. Never write a usage-area sentence whose main content is an ingredient/technology mechanism.",
       "For WebPage.description in every locale, do not expose analysis labels such as \"핵심 성분/기술\", \"key ingredients and technologies\", or \"主な成分・技術\" as the predicate/object of the product-page sentence. Infer a natural product-introduction sentence from the evidence instead: ingredient/capsule facts are included/blended, formula/process facts are applied/used/adopted, and mixed ingredient-plus-formula facts can be connected as the product's basis or composition before the supported benefit. Keep patent-application qualifiers in Brand science or additionalProperty rather than chaining them as \"특허 출원 [formula]의\", \"patent-pending [formula]'s\", or \"特許出願[処方]の\" in WebPage.description.",
+      "For WebPage.description and Product.description in every locale, never include raw volume/size strings such as \"10.14 fl. oz. / 300 mL\"; volume, size, and count facts belong only in quickFacts, Product.additionalProperty, or Offer context.",
+      "For WebPage.description, compose a connected narrative in this flow when evidence exists: product-page introduction, target customer or concern, key ingredient/technology, benefit/effect or measured result, then review use-feel context. Connect these with natural transitions; do not end the description with a comma-separated enumeration of heterogeneous facts such as \"리뷰 맥락, 용량을 함께 살펴볼 수 있습니다\".",
+      "For Product.description, weave measured results into natural predicate sentences such as \"세정에 의한 장벽 손상이 사용 직후 93% 회복되었습니다\"; never expose analysis labels or colon-label structures such as \"평가 지표:\", \"측정/평가 결과\", or \"Reported result:\" in any public description.",
+      "Treat review bodies or review examples that consist only of volume/size strings, product labels, or product names as non-review data: never use them as review context, review keywords, or use-feel evidence.",
       "For Target customer, infer the customer from explicit source evidence. Prefer stated skin type, concern, routine moment, or customer-entry-point evidence. Do not infer visible-aging, wrinkle, or anti-aging intent from weak texture or generic care words unless explicit aging/wrinkle/anti-aging evidence exists.",
       "For Brand science, use only current product-source-backed ingredient, technology, formula, patent, proprietary method, or research evidence. If a patent, paper, research center, or official article appears only in a brand identity document, keep it as brand-image/diagnostic context and do not write it as a product property.",
       "For Usage, include only procedural directions that combine an actual use action with context such as amount, tool, body area, order, frequency, or instruction mood. Exclude formula mechanisms, technology explanations, measured results, review comments, product marketing copy, benefit claims, and application-effect descriptions that merely say what happens when the product is used.",
@@ -584,7 +588,12 @@ function createCopyRefinementPayload(request: PdpGeoCopyRefinementRequest): Reco
         rating: request.product.reviews.rating,
         reviewCount: request.product.reviews.reviewCount,
         keywords: compactEvidenceList(request.product.reviews.keywords, maxEvidenceItems),
-        examples: compactEvidenceList(request.product.reviews.items.map((review) => review.body), 5)
+        examples: compactEvidenceList(
+          request.product.reviews.items
+            .map((review) => review.body)
+            .filter((body) => typeof body === "string" && !isVolumeOrLabelOnlyReviewText(body)),
+          5
+        )
       },
       sourceTexts: selectHighValueEvidenceTexts(request.product.sourceTexts, maxEvidenceItems)
     },
@@ -675,7 +684,10 @@ function createCopyRefinementPayload(request: PdpGeoCopyRefinementRequest): Reco
       "Reject WebPage.description wording that uses a stock helper phrase such as \"The page helps answer\" instead of reasoning from the actual page elements and supported customer intent.",
       "Reject copy that reads like a report about available information instead of product-facing PDP content.",
       "Accept only sentences that remain natural when quoted by ChatGPT, Gemini, Google AI, or another answer engine.",
-      "Accept fewer FAQ answers when only fewer distinct source-backed search intents are available."
+      "Accept fewer FAQ answers when only fewer distinct source-backed search intents are available.",
+      "Reject WebPage.description or Product.description sentences that contain raw volume/size strings such as fl. oz. or mL values.",
+      "Reject WebPage.description or Product.description sentences that expose analysis labels such as 평가 지표: or Reported result: instead of natural predicates.",
+      "Reject WebPage.description closings that enumerate heterogeneous facts in a comma list instead of a connected narrative."
     ],
     strategicExposureGuidance: strategicChunks.map(formatRagGuidanceChunk),
     strategicFullDocuments: (request.hydratedRagDocuments ?? []).map(formatHydratedRagDocument),
@@ -1013,6 +1025,15 @@ const rawVolumeFragmentPattern = /\d+(?:\.\d+)?\s*fl\.?\s*oz\.?|\/\s*\d+(?:\.\d+
 
 function containsRawVolumeFragment(text: string): boolean {
   return rawVolumeFragmentPattern.test(text);
+}
+
+function isVolumeOrLabelOnlyReviewText(value: string): boolean {
+  const stripped = cleanText(value)
+    .replace(/\d+(?:\.\d+)?\s*(?:fl\.?\s*oz\.?|m[lL]|g|kg|ea|매|개입|정|호)\b/gi, " ")
+    .replace(/[\d\s.,/×xX*+·-]+/g, " ")
+    .replace(/\b(?:oz|ml)\b/gi, " ")
+    .trim();
+  return stripped.length < 4;
 }
 
 function isDescriptionField(field: string): boolean {

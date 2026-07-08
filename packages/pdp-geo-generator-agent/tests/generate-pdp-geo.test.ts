@@ -2637,6 +2637,95 @@ describe("generatePdpGeo", () => {
     expect(payload.strategicExposureGuidance.map((item: Record<string, unknown>) => item.kind)).toEqual(["geo-research", "cep", "eeat"]);
   });
 
+  it("sends CEP narrative, volume isolation, and generative FAQ intent guidance to copy refinement", async () => {
+    let capturedBody: Record<string, any> | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      capturedBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, any>;
+      return new Response(JSON.stringify({
+        output_text: JSON.stringify({ warnings: [] }),
+        usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 }
+      }), { status: 200 });
+    }));
+
+    try {
+      const refiner = new ModelBackedCopyRefiner({
+        provider: "openai",
+        apiKey: "test-key",
+        model: "test-model"
+      });
+      await refiner.refineCopy({
+        locale: "ko-KR",
+        product: {
+          name: "에스트라 아토베리어365 캡슐 토너",
+          description: "장벽보습 캡슐 토너",
+          images: [],
+          options: [],
+          benefits: ["장벽 보습"],
+          effects: [],
+          ingredients: ["고밀도 세라마이드 캡슐"],
+          usage: [],
+          metrics: [],
+          faq: [],
+          reviews: {
+            keywords: ["장벽 보습"],
+            items: [
+              { body: "10.14 fl. oz. / 300 mL" },
+              { body: "촉촉하고 장벽 보습이 잘 느껴져요." }
+            ]
+          },
+          breadcrumbs: [],
+          sourceTexts: ["고밀도 세라마이드 캡슐이 장벽 보습을 돕는다."]
+        },
+        schemaMarkup: {
+          jsonLd: {
+            "@context": "https://schema.org",
+            "@graph": [
+              { "@type": "WebPage", description: "현재 웹페이지 설명입니다." },
+              { "@type": "Product", description: "현재 상품 설명입니다." }
+            ]
+          },
+          scriptTag: ""
+        },
+        content: {
+          sections: {
+            productName: "에스트라 아토베리어365 캡슐 토너",
+            description: "현재 상품 설명입니다.",
+            quickFacts: "",
+            benefits: "",
+            ingredients: "",
+            howToUse: "",
+            faq: ""
+          },
+          html: ""
+        },
+        ragChunks: [],
+        inferredSearchQueries: [
+          {
+            kind: "indirect",
+            question: "피부가 많이 건조하고 당김이 느껴질 때 어떤 제품을 선택하면 좋나요?",
+            keywords: ["수분감", "피부 장벽"],
+            answer: "장벽보습 캡슐 토너를 비교할 수 있습니다.",
+            source: "review-derived-cep",
+            mentionsProductOrBrand: false
+          }
+        ]
+      });
+
+      const instructions = String(capturedBody?.instructions ?? "");
+      const input = String(capturedBody?.input ?? "");
+
+      expect(instructions).toContain("volume/size strings");
+      expect(instructions).toContain("connected narrative");
+      expect(instructions).toContain("네, or 아니요,");
+      expect(input).toContain("generativeQueryIntents");
+      expect(input).toContain("피부가 많이 건조하고 당김이 느껴질 때");
+      expect(input).not.toContain("10.14 fl. oz. / 300 mL");
+      expect(input).toContain("촉촉하고 장벽 보습이 잘 느껴져요.");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("retries AI Studio copy refinement without temperature and keeps token totals", async () => {
     const fetchMock = vi
       .fn()
