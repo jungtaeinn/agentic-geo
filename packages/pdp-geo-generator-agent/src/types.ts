@@ -552,6 +552,15 @@ export interface PdpGeoCopyRefinementRequest {
   hydratedRagDocuments?: PdpGeoHydratedRagDocument[];
   reasoning?: PdpGeoReasoningResult;
   policyRules?: PdpGeoPolicyRule[];
+  inferredSearchQueries?: PdpGeoInferredSearchQueryDiagnostic[];
+  refinementFeedback?: PdpGeoCopyRefinementFeedback[];
+}
+
+export interface PdpGeoCopyRefinementFeedback {
+  field: string;
+  reason: string;
+  rejectedText?: string;
+  currentText?: string;
 }
 
 export interface PdpGeoCopyRefinementResult {
@@ -561,6 +570,7 @@ export interface PdpGeoCopyRefinementResult {
   };
   schemaProperties?: Record<string, string>;
   faqAnswers?: Array<{
+    sourceQuestion?: string;
     question?: string;
     answer?: string;
   }>;
