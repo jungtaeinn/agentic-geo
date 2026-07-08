@@ -139,6 +139,7 @@ Recommended fields:
 - `award`: include only clear awards, rankings, certifications, or sales claims with period and source context.
 - `additionalProperty`: use `PropertyValue` entries to preserve facts that generative engines can quote.
 - Keep each `additionalProperty.value` atomic and single-line. Do not place a multiline Quick facts paragraph in Product schema; split it into target customer, key benefit, key ingredients, customer reviews, and reported details instead. Put actual usage instructions in HowTo or the generated usage section, not as a separate use-context property.
+- Keep each `PropertyValue.name` as the name of the property, not the customer phrase being targeted. Customer situations such as dry/tight skin should use a stable name like `Review-derived recommendation context` with the situation in `value`; full questions should normally live in `FAQPage.mainEntity`, or use stable names like `Indirect customer question` or `Direct product question` when retained as product context.
 
 Recommended `additionalProperty` groups:
 
@@ -277,6 +278,7 @@ Use reference patterns as architecture guidance, not as reusable product copy. A
 - Benefit and effect evidence goes to `Product.description`, `positiveNotes`, `additionalProperty`, FAQ answers, and visible benefit sections.
 - Ingredient, formula, technology, full-INCI, allergen, or certification evidence goes to `additionalProperty`, ingredient sections, and ingredient-focused FAQ answers.
 - Customer review language goes to review summaries, sensory copy, review-derived recommendation `additionalProperty`, and CEP phrasing, but must not replace official claims or become standalone FAQ content.
+- Review-derived query language goes to answer-ready FAQ or `additionalProperty` only after inference. In `additionalProperty`, keep `PropertyValue.name` stable (`Indirect customer question` or `Direct product question`) and place the inferred question/answer context in `value`.
 - Clinical, award, test, survey, or metric evidence goes to `additionalProperty` and FAQ answers with context, sample, duration, or source limits when available.
 - Usage evidence goes to `HowTo.step` and visible how-to sections only when it contains an actionable direction.
 

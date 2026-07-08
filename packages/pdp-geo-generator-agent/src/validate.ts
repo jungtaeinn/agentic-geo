@@ -15,6 +15,12 @@ interface ValidateAndRepairOutput {
   validationRepairs: PdpGeoValidationRepair[];
 }
 
+interface PropertyValueNameRepair {
+  name: string;
+  propertyID: string;
+  issue: string;
+}
+
 const allowedGraphTypes = new Set(["WebPage", "Product", "FAQPage", "HowTo", "BreadcrumbList", "Question", "Answer", "HowToStep", "Offer", "AggregateRating", "Review", "Rating", "PropertyValue", "ItemList", "ListItem", "Brand", "Person"]);
 
 /** Validates and repairs generated JSON-LD and simple accordion HTML. */
@@ -421,7 +427,20 @@ function repairGraphNode(
       }
       const repairedQuestion = repairGeneratedText(name, locale, "FAQPage.mainEntity.name", warnings, repairs);
       const repairedAnswer = repairGeneratedText(answer, locale, "FAQPage.mainEntity.acceptedAnswer.text", warnings, repairs);
-      const fieldContractAnswer = repairFaqAnswerFieldContract(repairedQuestion, repairedAnswer, locale, warnings, repairs);
+      const nonAnswerRepaired = repairFaqNonAnswerLead(repairedAnswer, warnings, repairs, item);
+      if (!nonAnswerRepaired) {
+        addRepair(warnings, repairs, {
+          field: "FAQPage.mainEntity",
+          source: "field-contract-validator",
+          issue: "FAQ answer was only a non-answer (cannot-confirm) statement with no supported product fact.",
+          action: "Removed the non-answer FAQ item because answer engines cannot cite an answer that answers nothing.",
+          before: toJsonValue(item),
+          after: null,
+          evidence: ["FAQPage.mainEntity.acceptedAnswer.text", "answer-ready FAQ contract"]
+        }, "Non-answer FAQ item was removed during final sentence QA.");
+        return [];
+      }
+      const fieldContractAnswer = repairFaqAnswerFieldContract(repairedQuestion, nonAnswerRepaired, locale, warnings, repairs);
       if (!fieldContractAnswer) {
         addRepair(warnings, repairs, {
           field: "FAQPage.mainEntity",
@@ -547,12 +566,22 @@ function repairGraphNode(
   if (node["@type"] === "Product") {
     repairProductTrustFields(node, locale, warnings, repairs);
     if (typeof node.description === "string") {
-      node.description = repairProductDescriptionFieldContract(node.description, locale, warnings, repairs);
+      node.description = dedupeRedundantMetricClausesWithRepair(
+        repairProductDescriptionFieldContract(node.description, locale, warnings, repairs),
+        "Product.description",
+        warnings,
+        repairs
+      );
     }
   }
 
   if (node["@type"] === "WebPage" && typeof node.description === "string") {
-    node.description = repairWebPageDescriptionFieldContract(node.description, locale, warnings, repairs);
+    node.description = dedupeRedundantMetricClausesWithRepair(
+      repairWebPageDescriptionFieldContract(node.description, locale, warnings, repairs),
+      "WebPage.description",
+      warnings,
+      repairs
+    );
   }
 
   if (node["@type"] === "BreadcrumbList") {
@@ -1685,6 +1714,9 @@ function isActionableUsageText(value: string): boolean {
   if (isNonInstructionUsageText(text)) {
     return false;
   }
+  if (isNonProceduralUsageCandidate(text)) {
+    return false;
+  }
   if (isEvidenceOnlyUsageText(text)) {
     return false;
   }
@@ -1694,7 +1726,7 @@ function isActionableUsageText(value: string): boolean {
   if (isIngredientTechnologyUsageLeak(text)) {
     return false;
   }
-  return hasUsageActionVerb(text);
+  return isProceduralUsageInstruction(text);
 }
 
 function isSensoryOnlyUsageText(value: string): boolean {
@@ -1762,11 +1794,73 @@ function hasKoreanInstructionVerb(value: string): boolean {
 
 function isIngredientTechnologyUsageLeak(value: string): boolean {
   const text = stripListMarker(value).trim();
-  const hasFormulaOrTechnology = /(?:성분|기술|포뮬러|복합체|캡슐|세라마이드|히알루론산|레티놀|나이아신아마이드|펩타이드|formula|technology|complex|capsule|ceramide|hyaluronic|retinol|niacinamide|peptide)/i.test(text);
-  const hasInstructionCue = /(?:사용\s*방법|사용법|\bhow\s+to\s+use\b|\bdirections?\b|적당량|손에|얼굴에|피부결|펴\s*바르|발라|흡수|도포|massage|apply|dispense|pat|press|spread|smooth|rinse|lather)/i.test(text);
-  const hasOnlyDescriptiveUse = /(?:사용할\s*때마다|사용\s*시|when\s+used|with\s+each\s+use)/i.test(text) && !hasInstructionCue;
-  const hasReportingFrame = /(?:적용|설계|제공|도출|방출|설명|특징|구성|함유|담(?:긴|은)|녹지\s*않|patent|proprietary|designed|delivers?|provides?|contains?|features?)/i.test(text);
-  return hasFormulaOrTechnology && (hasOnlyDescriptiveUse || hasReportingFrame) && !hasActionableApplicationVerb(text);
+  const hasFormulaOrTechnology = /(?:성분|기술|포뮬러|복합체|캡슐|세라마이드|히알루론산|레티놀|나이아신아마이드|펩타이드|formula|technology|complex|capsule|ceramide|hyaluronic|retinol|niacinamide|peptide|成分|技術|処方|フォーミュラ|複合体|カプセル|セラミド|ヒアルロン酸|レチノール|ナイアシンアミド|ペプチド)/i.test(text);
+  const hasInstructionCue = /(?:사용\s*방법|사용법|\bhow\s+to\s+use\b|\bdirections?\b|使い方|使用方法|適量|手のひら|顔全体|肌になじませ|塗布|すすぎ|マッサージ|적당량|손에|얼굴에|피부결|펴\s*바르|발라|흡수|도포|massage|apply|dispense|pat|press|spread|smooth|rinse|lather)/i.test(text);
+  const hasOnlyDescriptiveUse = /(?:사용할\s*때마다|사용\s*시|when\s+used|with\s+each\s+use|使用時|使うたび)/i.test(text) && !hasInstructionCue;
+  const hasTechnologyUseFrame = /(?:성분|기술|포뮬러|복합체|캡슐)[^.!?。！？]{0,60}(?:사용|적용|쓰(?:인|이는)|활용)|(?:uses?|using|applies?)[^.!?]{0,60}(?:ingredient|formula|technology|complex|capsule)|(?:成分|技術|処方|フォーミュラ|複合体|カプセル)[^.!?。！？]{0,60}(?:使用|採用|配合|活用)/i.test(text);
+  const hasReportingFrame = /(?:적용|설계|제공|도출|방출|설명|특징|구성|함유|담(?:긴|은)|녹지\s*않|patent|proprietary|designed|delivers?|provides?|contains?|features?|採用|設計|提供|説明|特徴|構成|配合|含有|特許|独自)/i.test(text);
+  return hasFormulaOrTechnology && (hasOnlyDescriptiveUse || hasTechnologyUseFrame || hasReportingFrame) && !hasActionableApplicationVerb(text);
+}
+
+function isProceduralUsageInstruction(value: string): boolean {
+  const text = stripListMarker(value).trim();
+  if (!text) {
+    return false;
+  }
+  const proceduralScore = usageProcedureSignalScore(text);
+  const descriptiveScore = usageDescriptionSignalScore(text);
+  if ((hasDescriptiveApplicationFrame(text) || hasSensoryEvaluationFrame(text)) && proceduralScore < 3) {
+    return false;
+  }
+  return (hasProcedureActionCue(text) || hasRoutinePlacementCue(text))
+    && proceduralScore >= 2
+    && proceduralScore >= descriptiveScore;
+}
+
+function isNonProceduralUsageCandidate(value: string): boolean {
+  const text = stripListMarker(value).trim();
+  if (!text || (!hasProcedureActionCue(text) && !hasRoutinePlacementCue(text))) {
+    return false;
+  }
+  return !isProceduralUsageInstruction(text) && usageDescriptionSignalScore(text) > 0;
+}
+
+function usageProcedureSignalScore(value: string): number {
+  const text = stripListMarker(value).trim();
+  return [
+    /(?:적당량|소량|충분량|손바닥|손에|화장솜|얼굴|피부결|미온수|물과\s*함께|appropriate amount|small amount|palm|hands?|cotton pad|face|skin|neck|water|適量|手のひら|顔|肌|コットン)/i.test(text) ? 1 : 0,
+    hasProcedureActionCue(text) ? 1 : 0,
+    /(?:후|뒤|다음|먼저|마지막|단계|순서|때는|then|after|before|next|finally|step|when|後|次|最後)/i.test(text) ? 1 : 0,
+    /(?:주세요|줍니다|합니다|하세요|하십시오|바릅니다|흡수시킵니다|헹굽니다|사용할\s*수\s*있|\buse\b|\bapply\b|\bdispense\b|ます|してください)/i.test(text) ? 1 : 0,
+    /(?:아침|저녁|매일|데일리|morning|night|daily|twice|once|朝|夜|毎日)/i.test(text) ? 1 : 0
+  ].reduce((sum, score) => sum + score, 0);
+}
+
+function usageDescriptionSignalScore(value: string): number {
+  const text = stripListMarker(value).trim();
+  return [
+    hasDescriptiveApplicationFrame(text) ? 2 : 0,
+    hasSensoryEvaluationFrame(text) ? 2 : 0,
+    /(?:케어|개선|도움|효과|효능|추천|위한|민감|건조|보습|수분|장벽|care|benefit|helps?|supports?|improves?|recommended|for\s+\w+|効果|ケア|改善|おすすめ|向け)/i.test(text) ? 1 : 0,
+    /(?:성분|원료|캡슐|포뮬러|기술|ingredient|formula|technology|capsule|成分|処方|技術|カプセル)/i.test(text) ? 1 : 0,
+    /(?:제품|상품|토너|크림|세럼|로션|클렌저|product|toner|cream|serum|lotion|cleanser|商品|製品|化粧水|クリーム|美容液)/i.test(text) ? 1 : 0
+  ].reduce((sum, score) => sum + score, 0);
+}
+
+function hasDescriptiveApplicationFrame(value: string): boolean {
+  return /(?:바르는\s*순간|사용(?:할\s*때마다|하는\s*순간)|도포\s*직후|on\s+application|upon\s+application|when\s+(?:used|applied)|with\s+each\s+use|塗った瞬間|使用(?:時|する瞬間)|使うたび)/i.test(value);
+}
+
+function hasSensoryEvaluationFrame(value: string): boolean {
+  return /(?:테스트|시험|사용감|마무리감|수분감|보습감|흡수감|끈적임|산뜻|촉촉|느껴지는|진정되는|피부가\s*진정|부드러운|피부결이\s*부드러운|use[-\s]?feel|finish(?:es)?|non[-\s]?sticky|stickiness|fresh\s+feel|dewy|soothing|skin\s+feels?\s+smooth|tested?|sensory|使用感|仕上がり|べたつき|さっぱり|しっとり|うるおい感|なめらか|落ち着|テスト|試験|感じられる)/i.test(value);
+}
+
+function hasProcedureActionCue(value: string): boolean {
+  return /(?:덜어|적셔|올려두|펴\s*바르|펴\s*발라|두드려|흡수(?!감)|마사지|문지르|헹구|헹굽|거품|도포(?!감)|마무리(?:해|하세요|합니다|하십시오)|사용(?:해|하세요|합니다|하십시오|할\s*수\s*있)|apply|dispense|spread|smooth|pat|press|absorb|massage|lather|rinse|pump|take|use\s+as|なじませ|塗布|すすぎ|マッサージ)/i.test(value);
+}
+
+function hasRoutinePlacementCue(value: string): boolean {
+  return /(?:아침|저녁|매일|데일리|스킨케어|샤워\s*후|세안\s*후|마지막\s*단계|첫\s*단계|루틴|morning|night|daily|routine|after\s+(?:cleansing|shower)|last\s+step|first\s+step|朝|夜|毎日|スキンケア|洗顔後|最後のステップ)/i.test(value);
 }
 
 function hasActionableApplicationVerb(value: string): boolean {
@@ -2704,21 +2798,251 @@ function shouldRepairSchemaString(path: string[], value: string): boolean {
   return true;
 }
 
+const faqNonAnswerLeadPattern = /(확인하기\s*어렵|확인이\s*어렵|확인되지\s*않|확인할\s*수\s*없|알\s*수\s*없|알기\s*어렵|판단하기\s*어렵|정보만으로는|정보가\s*없|공개되지\s*않|미공개입니다|cannot\s+be\s+(?:confirmed|verified|determined)|is\s+unclear|is\s+not\s+(?:confirmed|specified|available)|no\s+information\s+is\s+available)/i;
+
+/**
+ * Public FAQ answers must lead with an answer, not a cannot-confirm
+ * statement — answer engines cite standalone answer sentences, and a
+ * non-answer lead poisons the whole Q/A as a citation unit.
+ * Returns the repaired answer, or undefined when nothing substantive remains.
+ */
+function repairFaqNonAnswerLead(
+  answer: string,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[],
+  item: Record<string, unknown>
+): string | undefined {
+  const sentences = answer.split(/(?<=[.。!?？])\s+/).filter(Boolean);
+  const lead = sentences[0];
+  if (!lead || !faqNonAnswerLeadPattern.test(lead)) {
+    return answer;
+  }
+  const remainder = sentences.slice(1).join(" ").trim();
+  if (remainder.length < 20 || faqNonAnswerLeadPattern.test(remainder)) {
+    return undefined;
+  }
+  addRepair(warnings, repairs, {
+    field: "FAQPage.mainEntity.acceptedAnswer.text",
+    source: "field-contract-validator",
+    issue: "FAQ answer opened with a non-answer (cannot-confirm) sentence instead of a supported product fact.",
+    action: "Removed the non-answer lead sentence so the answer starts with the citable supported fact.",
+    before: answer,
+    after: remainder,
+    evidence: ["FAQPage.mainEntity.acceptedAnswer.text", "answer-ready FAQ contract"]
+  }, "Non-answer FAQ lead sentence was removed during final sentence QA.");
+  return remainder;
+}
+
+/** Fixes "?."/",." join artifacts without touching decimals or URLs. */
+function normalizePunctuationArtifacts(value: string): string {
+  return value
+    .replace(/([?？!！])\s*\.(?=\s|$)/g, "$1")
+    .replace(/,\s*\.\s*$/g, ".")
+    .replace(/,\s*\.\s*/g, ", ")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+/** Dedupes short comma-separated list values such as "민감 피부, 건조 피부, 민감 피부". */
+function dedupeCommaListValue(value: string): string {
+  const parts = value.split(/,\s*/);
+  if (parts.length < 3 || parts.some((part) => part.trim().length === 0 || part.trim().length > 24 || /[.!?。！？]/.test(part))) {
+    return value;
+  }
+  const seen = new Set<string>();
+  const deduped = parts.map((part) => part.trim()).filter((part) => {
+    if (seen.has(part)) {
+      return false;
+    }
+    seen.add(part);
+    return true;
+  });
+  return deduped.length === parts.length ? value : deduped.join(", ");
+}
+
+function normalizePropertyValueText(
+  value: string,
+  name: string,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[]
+): string {
+  const next = normalizePunctuationArtifacts(dedupeCommaListValue(value));
+  if (next !== value) {
+    addRepair(warnings, repairs, {
+      field: `Product.additionalProperty.${name}`,
+      source: "sentence-qa",
+      issue: "PropertyValue contained punctuation join artifacts or duplicated list items.",
+      action: "Normalized punctuation and deduplicated the list items in the PropertyValue.",
+      before: value,
+      after: next,
+      evidence: ["PropertyValue.value", "final sentence QA"]
+    }, "PropertyValue text was normalized during final sentence QA.");
+  }
+  return next;
+}
+
+function isUsableImageUrl(url: string): boolean {
+  return /^https?:\/\/\S+$/i.test(url) && !/[.,;:]$/.test(url);
+}
+
+const koreanClauseConnectivePattern = /(되었고|되었으며|하였고|했고|이고),\s*/;
+
+/**
+ * Removes clauses that are fully redundant with an earlier clause in the same
+ * sentence (e.g. "... 사용 7일 후 87.3% 회복되었고, 사용 7일 후 87.3% 회복되었습니다"),
+ * then restores a terminal ending on the last kept clause.
+ */
+function dedupeRedundantMetricClausesWithRepair(
+  value: string,
+  field: string,
+  warnings: string[],
+  repairs: PdpGeoValidationRepair[]
+): string {
+  if (!/[가-힣]/.test(value) || !/\d+(?:\.\d+)?\s*%/.test(value)) {
+    return value;
+  }
+  const next = value
+    .split(/(?<=[.。])\s+/)
+    .map((sentence) => dedupeRedundantKoreanMetricClausesInSentence(sentence))
+    .join(" ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  if (next !== value) {
+    addRepair(warnings, repairs, {
+      field,
+      source: "sentence-qa",
+      issue: "Description repeated the same measured-result clause more than once in one sentence.",
+      action: "Removed the fully redundant duplicated metric clause and restored the sentence ending.",
+      before: value,
+      after: next,
+      evidence: [field, "final sentence QA"]
+    }, "Duplicated metric clause was removed during final sentence QA.");
+  }
+  return next;
+}
+
+function dedupeRedundantKoreanMetricClausesInSentence(sentence: string): string {
+  if (!/\d+(?:\.\d+)?\s*%/.test(sentence) || !koreanClauseConnectivePattern.test(sentence)) {
+    return sentence;
+  }
+  const trailing = sentence.match(/[.。]$/)?.[0] ?? "";
+  const body = trailing ? sentence.slice(0, -trailing.length) : sentence;
+  const parts = body.split(/(되었고|되었으며|하였고|했고|이고),\s*/);
+  if (parts.length < 3) {
+    return sentence;
+  }
+  const clauses: Array<{ text: string; connective?: string }> = [];
+  for (let index = 0; index < parts.length; index += 2) {
+    clauses.push({ text: parts[index] ?? "", connective: parts[index + 1] });
+  }
+  const kept: Array<{ text: string; connective?: string }> = [];
+  const tokenSets: Array<Set<string>> = [];
+  for (const clause of clauses) {
+    const tokens = koreanClauseCoreTokens(clause.text);
+    if (tokens.size > 0 && tokenSets.some((previous) => isTokenSubset(tokens, previous))) {
+      continue;
+    }
+    kept.push(clause);
+    tokenSets.push(tokens);
+  }
+  if (kept.length === clauses.length) {
+    return sentence;
+  }
+  const rejoined = kept.map((clause, index) => {
+    if (index < kept.length - 1) {
+      return `${clause.text}${clause.connective ?? ""}, `;
+    }
+    return clause.connective ? `${clause.text}${terminalKoreanEnding(clause.connective)}` : clause.text;
+  }).join("");
+  return `${rejoined}${trailing || "."}`;
+}
+
+function koreanClauseCoreTokens(text: string): Set<string> {
+  const tokens = text.match(/\d+(?:\.\d+)?\s*%|\d+[가-힣]+|[가-힣]{2,}|[A-Za-z]{3,}/g) ?? [];
+  return new Set(tokens
+    .map((token) => token.replace(/\s+/g, "").replace(/(되었습니다|되었고|되었으며|하였습니다|했습니다|합니다|됩니다|입니다)$/u, ""))
+    .filter((token) => token.length > 0));
+}
+
+function isTokenSubset(candidate: Set<string>, reference: Set<string>): boolean {
+  for (const token of candidate) {
+    if (!reference.has(token)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function terminalKoreanEnding(connective: string): string {
+  switch (connective) {
+    case "되었고":
+    case "되었으며":
+      return "되었습니다";
+    case "하였고":
+      return "하였습니다";
+    case "했고":
+      return "했습니다";
+    case "이고":
+      return "입니다";
+    default:
+      return connective;
+  }
+}
+
 function pruneInvalidSchemaText(
   node: Record<string, unknown>,
   locale: PdpGeoLocale,
   warnings: string[],
   repairs: PdpGeoValidationRepair[]
 ): Record<string, unknown> {
+  if (node["@type"] === "Product" && Array.isArray(node.image)) {
+    const originalImages = node.image;
+    const filteredImages = originalImages.filter((image) => typeof image !== "string" || isUsableImageUrl(image));
+    if (filteredImages.length !== originalImages.length) {
+      addRepair(warnings, repairs, {
+        field: "Product.image",
+        source: "schema-validator",
+        issue: "Product.image contained malformed or truncated image URLs.",
+        action: "Removed malformed image URLs from Product.image.",
+        before: toJsonValue(originalImages.filter((image) => typeof image === "string" && !isUsableImageUrl(image))),
+        after: null,
+        evidence: ["Product.image", "URL syntax check"]
+      }, "Malformed Product.image URL was removed during schema validation.");
+      node.image = filteredImages;
+    }
+  }
+
   if (node["@type"] === "Product" && Array.isArray(node.additionalProperty)) {
     node.additionalProperty = node.additionalProperty.filter(isRecord).flatMap((item) => {
-      const name = stringValue(item.name);
+      const rawName = stringValue(item.name);
       const rawValue = stringValue(item.value);
-      const value = name === "Usage" && rawValue
+      const nameRepair = rawName ? repairPropertyValueName(rawName, node, locale) : undefined;
+      const name = nameRepair?.name ?? rawName;
+      const propertyID = nameRepair?.propertyID ?? stringValue(item.propertyID);
+      const contractValue = name === "Usage" && rawValue
         ? repairUsagePropertyValue(rawValue, locale)
         : name === "Functional certification" && rawValue
           ? repairFunctionalCertificationPropertyValue(rawValue, locale)
           : rawValue;
+      const value = contractValue && name
+        ? normalizePropertyValueText(contractValue, name, warnings, repairs)
+        : contractValue;
+      if (rawName && nameRepair) {
+        addRepair(warnings, repairs, {
+          field: "Product.additionalProperty.name",
+          source: "field-contract-validator",
+          issue: nameRepair.issue,
+          action: "Replaced the free-form PropertyValue.name with a stable property name and schema.org propertyID while keeping the customer situation or question in the value.",
+          before: toJsonValue(item),
+          after: toJsonValue({
+            ...item,
+            name: nameRepair.name,
+            propertyID: nameRepair.propertyID,
+            value
+          }),
+          evidence: ["schema.org PropertyValue.name", "Product.additionalProperty field contract", locale]
+        }, "Question-like or situation-like PropertyValue.name was normalized to a stable property label.");
+      }
       if (name === "Usage" && rawValue && value && value !== rawValue) {
         addRepair(warnings, repairs, {
           field: "Product.additionalProperty.Usage",
@@ -2756,6 +3080,7 @@ function pruneInvalidSchemaText(
       return [{
         ...item,
         name,
+        ...(propertyID ? { propertyID } : {}),
         value
       }];
     });
@@ -2785,6 +3110,80 @@ function pruneInvalidSchemaText(
   }
 
   return node;
+}
+
+function repairPropertyValueName(
+  name: string,
+  product: Record<string, unknown>,
+  locale: PdpGeoLocale
+): PropertyValueNameRepair | undefined {
+  const text = name.replace(/\s+/g, " ").trim();
+  if (!text || isStablePropertyValueName(text)) {
+    return undefined;
+  }
+  if (isPropertyValueQuestionName(text, locale)) {
+    const direct = isDirectProductPropertyValueQuestion(text, product);
+    return {
+      name: direct ? "Direct product question" : "Indirect customer question",
+      propertyID: direct ? "directProductQuestion" : "indirectCustomerQuestion",
+      issue: "PropertyValue.name contained a full customer question instead of the name of a product property."
+    };
+  }
+  if (isCustomerSituationPropertyValueName(text, locale)) {
+    return {
+      name: "Review-derived recommendation context",
+      propertyID: "reviewDerivedRecommendationContext",
+      issue: "PropertyValue.name contained a customer situation/search-intent phrase instead of the name of a product property."
+    };
+  }
+  return undefined;
+}
+
+function isStablePropertyValueName(name: string): boolean {
+  return /^(?:Target customer|Target concern|Customer situation|Recommended use case|Recommended skin type|Key benefit|Key efficacy|Key ingredients|Key ingredients and technologies|Ingredient\/effect detail|Functional certification|Texture and finish|Brand science|Usage|Routine synergy|Customer review context|Review-derived recommendation context|Indirect customer question|Direct product question|Consumer satisfaction|Reported details|Clinical result summary|Variant comparison|Renewal guidance|Gift suitability|Options)$/i.test(name);
+}
+
+function isPropertyValueQuestionName(name: string, locale: PdpGeoLocale): boolean {
+  return isQuestionLike(name, locale)
+    || /^(?:what|which|how|why|when|who|can|should|does|do|is|are)\b.+\?$/i.test(name)
+    || /(?:무엇|어떤|어떻게|왜|누구|사용감|효능|성분|제품|선택하면\s+좋나요|추천할\s+수\s+있나요)[^.!。！？]*[?？]$/u.test(name)
+    || /(?:どの|何|なぜ|どのよう|おすすめ|選べば|ですか|ますか)[^.!。！？]*[?？]$/u.test(name);
+}
+
+function isCustomerSituationPropertyValueName(name: string, locale: PdpGeoLocale): boolean {
+  const englishSituation = /^when\s+.{8,120}$/i.test(name)
+    || /^(?:if|for)\s+.{8,120}\b(?:skin|shoppers?|customers?|routine|gift|concern|dryness|texture|firmness|sensitivity)\b/i.test(name);
+  if (englishSituation) {
+    return true;
+  }
+  if (locale === "ko-KR" || /[가-힣]/u.test(name)) {
+    return /(?:^|[\s,])(?:피부|고객|매일|가족|지인|선물|탄력|주름|건조|당김|윤기|광채|피부결|화장|민감|예민)[^.!?。！？]{2,80}(?:때|경우)$/u.test(name)
+      || /(?:신경\s*쓰이기\s*시작할\s*때|필요할\s*때|느껴질\s*때|찾을\s*때)$/u.test(name);
+  }
+  return false;
+}
+
+function isDirectProductPropertyValueQuestion(name: string, product: Record<string, unknown>): boolean {
+  return collectProductEntityNames(product).some((entity) => containsNormalizedEntity(name, entity));
+}
+
+function collectProductEntityNames(product: Record<string, unknown>): string[] {
+  const brand = isRecord(product.brand) ? stringValue(product.brand.name) : stringValue(product.brand);
+  return uniqueValidationText([
+    stringValue(product.name),
+    stringValue(product.alternateName),
+    brand
+  ].filter((value): value is string => Boolean(value)));
+}
+
+function containsNormalizedEntity(text: string, entity: string): boolean {
+  const haystack = normalizePropertyValueEntityKey(text);
+  const needle = normalizePropertyValueEntityKey(entity);
+  return needle.length >= 3 && haystack.includes(needle);
+}
+
+function normalizePropertyValueEntityKey(value: string): string {
+  return value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
 function isInvalidPropertyValue(name: string, value: string, locale: PdpGeoLocale): boolean {
@@ -2874,6 +3273,9 @@ function repairGeneratedText(
     .replace(/\\"/g, "\"")
     .replace(/\\[rn]/g, " ")
     .replace(/\u00a0/g, " ")
+    .replace(/([?\uff1f!\uff01])\s*\.(?=\s|$)/g, "$1")
+    .replace(/,\s*\.\s*$/g, ".")
+    .replace(/,\s*\.\s*/g, ", ")
     .replace(/\bKEY INGREDIENTS\s*:\s*/g, "")
     .replace(/\bKEY INGREDIENTS\s+details?\s+mention\b/g, "Ingredient details mention")
     .replace(/\b(?:and|with)\s+KEY INGREDIENTS\b/g, "")
@@ -3163,7 +3565,7 @@ function repairUsagePropertyValue(value: string, locale: PdpGeoLocale): string {
     .filter((part) => part.length >= 8 && isActionableUsageText(part)));
 
   if (steps.length === 0) {
-    return value;
+    return "";
   }
   if (steps.length === 1) {
     return steps[0] ?? value;

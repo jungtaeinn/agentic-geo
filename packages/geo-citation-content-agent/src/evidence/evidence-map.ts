@@ -18,6 +18,7 @@ export function createEvidenceMap(
     title: item.title,
     text: item.text,
     url: item.url,
+    rating: item.rating,
     publishedAt: item.publishedAt,
     observedAt: item.observedAt
   }));

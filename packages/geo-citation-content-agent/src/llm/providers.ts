@@ -52,9 +52,12 @@ function renderMockRedditArtifact(request: GeoCitationDraftWriterRequest): Reddi
   const caveatChunk = request.brief.answerChunks[2] ?? request.brief.answerChunks[0];
   const usedCaveats = new Set<string>();
   const shortVersion = request.brief.answerChunks.slice(0, 3).map((chunk) => `- ${renderPublicAnswerChunk(chunk, usedCaveats, request)}`);
+  const reviewQuote = request.brief.quotableEvidence.find((quote) => quote.sourceType === "review");
+  const strongerQuote = request.brief.quotableEvidence.find((quote) => quote.sourceType === "paper" || quote.sourceType === "news");
+  const reviewStat = request.brief.statisticsHighlights.find((highlight) => /review/i.test(highlight));
   const sections = orderSections(request, [
     {
-      heading: "Short version",
+      heading: "TL;DR",
       body: shortVersion.join("\n")
     },
     {
@@ -64,13 +67,20 @@ function renderMockRedditArtifact(request: GeoCitationDraftWriterRequest): Reddi
     {
       heading: "What reviews or user signals seem to say",
       body: reviewChunk
-        ? `The clearest review-side signal I found is: ${trimSentence(reviewChunk.text, request)}`
+        ? [
+            `The clearest review-side signal I found is: ${trimSentence(reviewChunk.text, request)}`,
+            reviewQuote ? `One review put it as:\n\n> "${trimSentence(reviewQuote.quote, request)}"` : undefined,
+            reviewStat ? sanitizePublicRedditText(reviewStat, request.product) : undefined
+          ].filter(Boolean).join("\n\n")
         : "I do not have enough review evidence to treat user sentiment as a strong signal."
     },
     {
       heading: "What I could verify from stronger sources",
       body: paperOrNews
-        ? `${paperOrNews.sourceType === "paper" ? "Paper" : "News"} evidence points to: ${trimSentence(paperOrNews.text, request)}`
+        ? [
+            `${paperOrNews.sourceType === "paper" ? "Paper" : "News"} evidence points to: ${trimSentence(paperOrNews.text, request)}`,
+            strongerQuote ? `As ${strongerQuote.attribution} puts it:\n\n> "${trimSentence(strongerQuote.quote, request)}"` : undefined
+          ].filter(Boolean).join("\n\n")
         : evidenceSummary
     },
     {
@@ -85,9 +95,11 @@ function renderMockRedditArtifact(request: GeoCitationDraftWriterRequest): Reddi
   const bodyMarkdown = sanitizePublicRedditText([
     `I was looking into ${request.product.category ?? "this category"} and kept seeing ${request.product.name} come up, so I tried to separate what seems supported from what feels like marketing.`,
     "",
+    ...sections.flatMap((section) => [`## ${section.heading}`, section.body, ""]),
     request.brief.freshnessStatement,
     "",
-    ...sections.flatMap((section) => [`## ${section.heading}`, section.body, ""]),
+    "---",
+    "",
     `Question for people who have looked at similar products: ${request.variantStrategy.communityQuestion}`
   ].join("\n").trim(), request.product);
 
@@ -95,10 +107,11 @@ function renderMockRedditArtifact(request: GeoCitationDraftWriterRequest): Reddi
     surface: "reddit",
     title,
     bodyMarkdown,
-    flairSuggestion: "Discussion",
+    flairSuggestion: request.variantStrategy.flairSuggestion,
     subredditFitNotes: [
       "Question-led and comparison-oriented instead of sales-led.",
-      "Separates product claims, review signals, stronger evidence, and caveats."
+      "Separates product claims, review signals, stronger evidence, and caveats.",
+      "Map the suggested flair to the target subreddit's actual flair list before posting."
     ],
     disclosureNote: "Add an affiliation disclosure before posting if the poster has any brand, agency, or commercial relationship.",
     commentSeeds: [

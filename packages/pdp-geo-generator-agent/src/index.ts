@@ -6,6 +6,7 @@ export { pdpGeoGeneratorRagManifest } from "./rag/manifest";
 export {
   pdpGeoRagIndex,
   type PdpGeoRagDocumentIndexEntry,
+  type PdpGeoRagRuleExtraction,
   type PdpGeoRagSectionIndexEntry,
   type PdpGeoRagSourceRole
 } from "./rag/rag-index";
@@ -17,6 +18,13 @@ export {
   type StoredPdpGeoGeneratorRagProfile
 } from "./rag/profile";
 export { createPdpGeoReasoning } from "./rag/reasoning";
+export {
+  compilePdpGeoPolicyChecklist,
+  formatPolicyChecklistPayload,
+  formatPolicyComplianceRecap,
+  type PdpGeoCompiledPolicyChecklist,
+  type PdpGeoPolicyDocumentInput
+} from "./rag/policy-compiler";
 export type {
   JsonObject,
   JsonValue,
@@ -47,6 +55,12 @@ export type {
   PdpGeoLocale,
   PdpGeoOcrSentenceDiagnostic,
   PdpGeoOcrSentenceIntent,
+  PdpGeoPolicyChecklistSettings,
+  PdpGeoPolicyCoverage,
+  PdpGeoPolicyCoverageDocument,
+  PdpGeoPolicyRule,
+  PdpGeoPolicyRuleExtraction,
+  PdpGeoPolicyRuleSeverity,
   PdpGeoProviderId,
   PdpGeoProductNormalizationRequest,
   PdpGeoProductNormalizationResult,

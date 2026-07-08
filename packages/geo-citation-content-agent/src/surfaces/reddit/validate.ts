@@ -27,6 +27,10 @@ export function validateRedditArtifact(input: {
     warnings.push("Reddit title should be a question, comparison, or research observation.");
   }
 
+  if (artifact.title.length > 100) {
+    warnings.push("Reddit title is over 100 characters; 60-100 characters reads best in feeds and answer-engine snippets.");
+  }
+
   if (!caveatPattern.test(artifact.bodyMarkdown)) {
     warnings.push("Reddit body should include a caveat, limitation, or careful wording.");
   }

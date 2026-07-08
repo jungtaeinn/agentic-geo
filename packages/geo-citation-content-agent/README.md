@@ -59,6 +59,27 @@
 
 이 근거들은 chunk로 나뉘고, 상품/검색 의도에 맞게 검색 및 리랭킹된 뒤 글의 claim과 연결됩니다.
 
+### RAG 활용 플로우
+
+두 종류의 RAG(정책 문서, 근거 자료)가 생성 프롬프트와 검증 단계에 어떻게 흘러가는지는 다음과 같습니다.
+
+```mermaid
+flowchart TD
+  MRAG["Mandatory RAG (5종)<br/>contract / citation-readiness / eeat / cep / claim-safety"] --> PROMPT
+  SRAG["Reddit Surface RAG (2종)<br/>content-guidelines / post-patterns"] --> PROMPT
+  EV["Evidence 입력<br/>상품 / 리뷰 / OCR / 뉴스 / 논문 / 기존 GEO"] --> CHUNKING["Evidence 정규화 + 청킹"]
+  CHUNKING --> RETRIEVE["검색 + 리랭킹<br/>(source type, freshness 기준)"]
+  RETRIEVE --> BRIEF["Content Brief<br/>answer chunks / search intent /<br/>citation angle / CEP context / caveat"]
+  BRIEF --> PROMPT["LLM 프롬프트<br/>RAG 정책 + answer chunks + evidence map"]
+  PROMPT --> DRAFT["Reddit 초안 생성"]
+  DRAFT --> VALIDATE["검증/보수<br/>광고 표현 차단, claim safety,<br/>GEO citation readiness 점수(9항목),<br/>공개 카피 새니타이징"]
+  VALIDATE --> OUT["artifact + diagnostics<br/>(사용 근거, RAG usage, readiness report)"]
+```
+
+- **정책 RAG는 방향을 제어**합니다: 광고가 아닌 근거 기반 토론글 형식, claim-evidence 분리, caveat 필수.
+- **Evidence RAG는 내용을 공급**합니다: 각 claim은 evidence id로 근거에 연결되고, 공개 카피에서는 id가 제거되지만 diagnostics에는 전체 추적이 남습니다.
+- 최종 결과는 GEO citation readiness 점수(구조 9항목 × 0.78 + 키워드 커버리지 × 0.22, 통과 기준 0.78)로 검증됩니다.
+
 ## Reddit 결과물
 
 대표 결과는 Reddit에 올리기 좋은 글입니다.

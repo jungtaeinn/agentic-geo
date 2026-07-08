@@ -182,8 +182,17 @@ export interface GeoCitationEvidenceReference {
   title?: string;
   text: string;
   url?: string;
+  rating?: number;
   publishedAt?: string;
   observedAt?: string;
+}
+
+/** A short verbatim excerpt safe to quote directly in public copy. */
+export interface GeoCitationQuotableEvidence {
+  evidenceId: string;
+  sourceType: GeoCitationEvidenceSourceType;
+  quote: string;
+  attribution: string;
 }
 
 export interface GeoCitationClaimWithEvidence {
@@ -213,6 +222,8 @@ export interface GeoCitationContentBrief {
   comparisonPoints: string[];
   audienceContexts: string[];
   evidenceMap: GeoCitationEvidenceReference[];
+  quotableEvidence: GeoCitationQuotableEvidence[];
+  statisticsHighlights: string[];
 }
 
 export interface RedditCitationArtifact {
@@ -248,13 +259,16 @@ export interface RedditContentVariantStrategy {
   evidenceFocus: GeoCitationEvidenceSourceType[];
   toneProfile: GeoCitationToneProfile;
   communityQuestion: string;
+  flairSuggestion: string;
 }
 
 export interface GeoCitationReadinessCheck {
   id:
     | "answer-ready-title"
     | "short-version-chunks"
+    | "tldr-position"
     | "claim-evidence-language"
+    | "quotation-or-statistic"
     | "source-type-separation"
     | "caveat-limitation"
     | "comparison-context"

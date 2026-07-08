@@ -101,6 +101,7 @@ export interface PdpGeoRagSettings {
   analysisPrompt?: string;
   queryPlanning?: PdpGeoRagQueryPlanningSettings;
   fullDocumentHydration?: PdpGeoRagFullDocumentHydrationSettings;
+  policyChecklist?: PdpGeoPolicyChecklistSettings;
 }
 
 export interface PdpGeoRagQueryPlanningSettings {
@@ -108,6 +109,12 @@ export interface PdpGeoRagQueryPlanningSettings {
   updateTargets?: PdpGeoRagUpdateTarget[];
   includeBaseQuery?: boolean;
   maxSubqueries?: number;
+}
+
+export interface PdpGeoPolicyChecklistSettings {
+  enabled?: boolean;
+  maxRules?: number;
+  maxRuleChars?: number;
 }
 
 export interface PdpGeoRagFullDocumentHydrationSettings {
@@ -296,6 +303,46 @@ export interface PdpGeoHydratedRagDocument {
   hydrationMode: "controlled-full-document";
   selectedChunkTitles: string[];
   content: string;
+}
+
+export type PdpGeoPolicyRuleSeverity = "critical" | "guidance";
+export type PdpGeoPolicyRuleExtraction = "rules" | "narrative";
+
+/** One atomic, deduplicated requirement compiled from a RAG policy document. */
+export interface PdpGeoPolicyRule {
+  id: string;
+  document: string;
+  version?: string;
+  kind: PdpGeoRagKind;
+  heading: string;
+  text: string;
+  intents: PdpGeoRagIntent[];
+  fieldTargets: PdpGeoRagFieldTarget[];
+  severity: PdpGeoPolicyRuleSeverity;
+  extraction: PdpGeoPolicyRuleExtraction;
+  priority: number;
+}
+
+export interface PdpGeoPolicyCoverageDocument {
+  document: string;
+  kind: PdpGeoRagKind;
+  totalRules: number;
+  injectedRules: number;
+  criticalRules: number;
+  injectedCriticalRules: number;
+  narrativeRules: number;
+}
+
+/** Accounting of how many compiled policy rules actually reached the model prompt. */
+export interface PdpGeoPolicyCoverage {
+  mode: "compiled-policy-checklist";
+  totalRules: number;
+  injectedRules: number;
+  criticalRules: number;
+  injectedCriticalRules: number;
+  criticalCoverageRatio: number;
+  documents: PdpGeoPolicyCoverageDocument[];
+  excludedRuleIds: string[];
 }
 
 export interface PdpGeoRagSubquery {
@@ -504,6 +551,7 @@ export interface PdpGeoCopyRefinementRequest {
   ragChunks: PdpGeoRetrievedChunk[];
   hydratedRagDocuments?: PdpGeoHydratedRagDocument[];
   reasoning?: PdpGeoReasoningResult;
+  policyRules?: PdpGeoPolicyRule[];
 }
 
 export interface PdpGeoCopyRefinementResult {
@@ -517,6 +565,10 @@ export interface PdpGeoCopyRefinementResult {
     answer?: string;
   }>;
   contentSections?: Partial<Pick<PdpGeoContentSections, "description" | "quickFacts" | "faq">>;
+  ruleCompliance?: {
+    violatedRuleIds: string[];
+    notes: string[];
+  };
   warnings?: string[];
   rawText?: string;
   usage?: PdpGeoTokenUsage;
@@ -645,6 +697,7 @@ export interface PdpGeoDiagnostics {
   evidence: PdpGeoEvidence[];
   selectedRagChunks: PdpGeoRetrievedChunk[];
   hydratedRagDocuments?: PdpGeoHydratedRagDocument[];
+  policyCoverage?: PdpGeoPolicyCoverage;
   reasoning?: PdpGeoReasoningResult;
   ragUsage: PdpGeoRagUsageDiagnostic[];
   ragQueryPlan?: PdpGeoRagQueryPlan;

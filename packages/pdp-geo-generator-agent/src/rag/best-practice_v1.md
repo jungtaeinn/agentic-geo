@@ -125,6 +125,7 @@ Recommended fields:
 - `award`: include only clear awards, rankings, certifications, or sales claims with period and source context.
 - `additionalProperty`: use `PropertyValue` entries to preserve facts that generative engines can quote.
 - Keep each `additionalProperty.value` atomic and single-line. Do not place a multiline Quick facts paragraph in Product schema; split it into target customer, key benefit, key ingredients, customer reviews, and reported details instead. Put actual usage instructions in HowTo or the generated usage section, not as a separate use-context property.
+- Keep each `PropertyValue.name` as the name of the property, not the customer phrase being targeted. Customer situations such as "skin feels dry and tight" should use a stable name like `Review-derived recommendation context` with the situation in `value`; full questions should normally live in `FAQPage.mainEntity`, or use stable names like `Indirect customer question` or `Direct product question` when retained as product context.
 
 Recommended `additionalProperty` groups:
 
@@ -214,6 +215,10 @@ Answers should contain concise, reusable product facts with varied benefit, ingr
 
 FAQ answers should start with the direct answer, then add one short evidence or comparison detail. Choose the FAQ count by search-intent coverage rather than a fixed number: 4-6 for thin products, 6-10 for normal beauty PDPs with ingredient/effect/usage/option evidence, and up to 8-12 when BestPractice-level evidence covers clinical results, ingredient technology, option comparison, sensitive skin, routine synergy, gift or purchase context. Quality-gate FAQ first and cap at 12: if only 7 answers are source-backed and distinct, use 7. Avoid observer phrasing such as "the product page says" unless the question is explicitly about what the page contains. The best answer unit should still make sense when ChatGPT, Gemini, or Google AI quotes it outside the original page.
 
+- Never publish a FAQ answer that opens with a non-answer such as "동일 여부는 확인하기 어렵습니다", "알 수 없습니다", "미공개입니다", "cannot be confirmed", or "is unclear". Answer engines cite standalone answer sentences, and a cannot-confirm lead makes the whole Q/A uncitable. When evidence cannot answer the asked comparison, answer the underlying intent with this product's supported fact; when no supported fact exists, drop the question entirely.
+- Do not let the same measured value, metric clause, or list item appear twice in one answer, description sentence, or property value. Duplicated clauses read as generation noise and lower citation trust.
+- When intent overlap suppresses generated FAQ candidates (for example a benefit question already covered by Product.additionalProperty queries), FAQPage must still keep at least 4 citable questions whenever benefit, ingredient, usage, review, or metric evidence exists; re-admit the strongest suppressed candidates rather than shipping a thin FAQ.
+
 ## HowTo Best Practice
 
 HowTo steps must be complete actions, not keyword fragments.
@@ -263,7 +268,7 @@ Use reference patterns as architecture guidance, not as reusable product copy. A
 - Benefit and effect evidence goes to `Product.description`, `positiveNotes`, `additionalProperty`, FAQ answers, and visible benefit sections.
 - Ingredient, formula, technology, full-INCI, allergen, or certification evidence goes to `additionalProperty`, ingredient sections, and ingredient-focused FAQ answers.
 - Customer review language goes to review summaries, sensory copy, review-derived recommendation `additionalProperty`, and CEP phrasing, but must not replace official claims or become standalone FAQ content.
-- Review-derived query language goes to answer-ready FAQ or `additionalProperty` only after inference: indirect queries are customer-situation/category questions without product or brand mentions, while direct queries explicitly name the product or brand. Store the query kind, keywords, and answer basis in diagnostics.
+- Review-derived query language goes to answer-ready FAQ or `additionalProperty` only after inference: indirect queries are customer-situation/category questions without product or brand mentions, while direct queries explicitly name the product or brand. In `additionalProperty`, keep `PropertyValue.name` stable (`Indirect customer question` or `Direct product question`) and place the inferred question/answer context in `value`. Store the query kind, keywords, and answer basis in diagnostics.
 - Clinical, award, test, survey, or metric evidence goes to `additionalProperty` and FAQ answers with context, sample, duration, or source limits when available.
 - Usage evidence goes to `HowTo.step` and visible how-to sections only when it contains an actionable direction.
 

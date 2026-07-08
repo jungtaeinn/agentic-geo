@@ -1,4 +1,5 @@
 import { createPdpGeoContentHtml } from "./generate";
+import { formatPolicyChecklistPayload, formatPolicyComplianceRecap } from "./rag/policy-compiler";
 import type {
   JsonObject,
   PdpGeoContentArtifact,
@@ -96,6 +97,25 @@ export async function refinePdpGeoCopy(
         source: "rag",
         value: `Strategic copy selection considered GEO research/geo-paper, CEP, and E-E-A-T guidance from: ${strategicSources}`
       });
+    }
+    if (request.policyRules && request.policyRules.length > 0) {
+      const criticalCount = request.policyRules.filter((rule) => rule.severity === "critical").length;
+      evidence.push({
+        field: "copy.refinement.policy",
+        source: "rag",
+        value: `Compiled policy checklist injected ${request.policyRules.length} rules (${criticalCount} critical) from all loaded RAG policy documents.`
+      });
+      const violated = result.ruleCompliance?.violatedRuleIds ?? [];
+      if (violated.length > 0) {
+        const notes = result.ruleCompliance?.notes ?? [];
+        warnings.push(`Copy refinement reported unsatisfied policy rules: ${violated.join(", ")}${notes.length > 0 ? ` (${notes.join(" / ")})` : ""}`);
+      } else if (result.ruleCompliance) {
+        evidence.push({
+          field: "copy.refinement.policy",
+          source: "llm",
+          value: "Copy refinement self-check confirmed all critical policy rules were satisfied."
+        });
+      }
     }
     for (const warning of warnings) {
       evidence.push({ field: "copy.refinement.warning", source: "llm", value: warning });
@@ -402,7 +422,10 @@ function createCopyRefinementPrompt(request: PdpGeoCopyRefinementRequest): { sys
   return {
     system: [
       "You are a conservative GEO product-copy reasoning agent for structured PDP schema descriptions.",
-      "Return strict JSON only: {\"schemaDescriptions\":{\"webPage\":\"\",\"product\":\"\"},\"schemaProperties\":{\"Target customer\":\"\",\"Brand science\":\"\",\"Usage\":\"\",\"Key ingredients and technologies\":\"\",\"Ingredient/effect detail\":\"\",\"Reported details\":\"\",\"Customer review context\":\"\"},\"faqAnswers\":[{\"question\":\"\",\"answer\":\"\"}],\"contentSections\":{\"description\":\"\",\"quickFacts\":\"\",\"faq\":\"\"},\"warnings\":[]}.",
+      "Return strict JSON only: {\"schemaDescriptions\":{\"webPage\":\"\",\"product\":\"\"},\"schemaProperties\":{\"Target customer\":\"\",\"Brand science\":\"\",\"Usage\":\"\",\"Key ingredients and technologies\":\"\",\"Ingredient/effect detail\":\"\",\"Reported details\":\"\",\"Customer review context\":\"\"},\"faqAnswers\":[{\"question\":\"\",\"answer\":\"\"}],\"contentSections\":{\"description\":\"\",\"quickFacts\":\"\",\"faq\":\"\"},\"ruleCompliance\":{\"violatedRuleIds\":[],\"notes\":[]},\"warnings\":[]}.",
+      "When the user payload includes policyChecklist, treat it as the complete compiled requirement set from all RAG policy documents: every [critical] rule is a hard constraint, [guidance] rules apply unless product evidence makes them inapplicable, and rules scoped to a field group apply to that output field.",
+      "Work field by field: before writing each output field, scan the policyChecklist group for that field plus the General/cross-field group, then draft the copy to satisfy those rules together rather than reacting to individual rules.",
+      "After drafting all fields, run a final self-check against every [critical] rule id and the complianceRecap list; fix violations first, and only report ids in ruleCompliance.violatedRuleIds when a rule genuinely cannot be satisfied with the available evidence, with a short reason in ruleCompliance.notes.",
       "Your job is to use GEO research/geo-paper, CEP, and E-E-A-T guidance to identify product facts, keywords, and source-backed phrases that are likely to be useful in AI answer exposure.",
       "Top priority: make public copy more likely to be selected, quoted, or cited by AI answer engines such as ChatGPT, Gemini, Perplexity, and Google AI by creating concise, self-contained, source-backed answer units.",
       "Use selected strategic chunks as the primary task-specific guidance. Use hydrated full RAG documents only as controlled background for missing context, conflict resolution, and policy completeness.",
@@ -417,6 +440,7 @@ function createCopyRefinementPrompt(request: PdpGeoCopyRefinementRequest): { sys
       "Preserve numeric claims, study populations, usage instructions, ingredient names, and product names exactly when they appear in evidence.",
       "For schemaProperties, refine only existing Product.additionalProperty values. Rewrite rigid labels such as Reported details, Ingredient/effect detail, and Customer review context into natural source-backed target-locale sentences.",
       "For Product.description and contentSections.description, compose the product entity sentence flow in this order when evidence exists: target customer or concern, product identity/product type, key ingredient or technology, benefit/effect and citation-ready metric, then high-level usage, comparison, and positive/neutral review context. Product.description describes the product itself, not the PDP or page resource; never use page-level wording such as product page, page covers, 페이지에서는, or 상품 페이지 in Product.description. Do not preserve old fallback wording that violates this order; rewrite from productEvidence and omit facts that belong only to FAQ, HowTo, Offer, diagnostics, or brand identity.",
+      "For Product.description and contentSections.description in every locale, keep the CEP readable by splitting dense clauses when needed: first state product identity for the target customer or concern, then connect ingredient/formula evidence to the supported benefit. Avoid one-sentence noun stacks such as \"[target customer]을 위한 [product name]은 [ingredients/formula]의 [benefit product type]입니다\", \"[product] is a [benefit product type] of [patent-pending formula]\", or \"[target]向けの[product]は[処方]の[商品]です\". Infer the ingredient/technology role and use natural locale predicates: ingredient/capsule facts are included or blended, formula/process facts are used/adopted/applied, and mixed ingredient-plus-formula facts become the basis or composition for the supported benefit. Keep patent-application wording in Brand science/additionalProperty when needed.",
       "For Product.description and contentSections.description, usage may appear only as high-level routine context such as post-cleanse first step, morning/evening cream step, as-needed misting, or pre-makeup care. Concrete application steps such as \"화장솜에 적당량을 덜어 피부결을 따라 닦아냅니다\" belong in Usage and HowTo.",
       "For faqAnswers, keep the same question intent and order as currentCopy.faqAnswers. Improve answer naturalness and GEO usefulness by blending ingredient, benefit/effect, metric, usage evidence, and positive or neutral review use-feel evidence only when supplied; exclude negative review sentiment, scent complaints, rating metadata, and raw reviewer snippets.",
       "For FAQ breadth, prefer BestPractice-level coverage when evidence exists: benefit, ingredient/technology, usage, skin suitability, positive review use-feel intent, evidence/metric, variant comparison, routine synergy, persistence, renewal/replacement, and purchase/gift context. Keep unsupported intents unchanged rather than inventing answers.",
@@ -441,16 +465,19 @@ function createCopyRefinementPrompt(request: PdpGeoCopyRefinementRequest): { sys
       "For WebPage.description, do not list usage guidance as the final item in an ingredient/technology list. Separate formula coverage from usage coverage in different clauses or sentences; avoid structures such as \"ceramide capsule, formula, usage directions\" or \"포뮬러, 사용법을 확인\".",
       "For WebPage.description, do not merge a HowTo step with FAQ topics in one object list. Avoid structures such as \"application method and capsule FAQ topics can be checked in FAQ and HowTo\"; keep FAQ topics and HowTo steps separate or omit the HowTo step from WebPage.description.",
       "For WebPage.description, keep field roles separated: ingredient/technology evidence may describe formula or brand science, while usage coverage may describe only actual actions such as dispense, apply, spread, pat, rinse, massage, or absorb. Never write a usage-area sentence whose main content is an ingredient/technology mechanism.",
+      "For WebPage.description in every locale, do not expose analysis labels such as \"핵심 성분/기술\", \"key ingredients and technologies\", or \"主な成分・技術\" as the predicate/object of the product-page sentence. Infer a natural product-introduction sentence from the evidence instead: ingredient/capsule facts are included/blended, formula/process facts are applied/used/adopted, and mixed ingredient-plus-formula facts can be connected as the product's basis or composition before the supported benefit. Keep patent-application qualifiers in Brand science or additionalProperty rather than chaining them as \"특허 출원 [formula]의\", \"patent-pending [formula]'s\", or \"特許出願[処方]の\" in WebPage.description.",
       "For Target customer, infer the customer from explicit source evidence. Prefer stated skin type, concern, routine moment, or customer-entry-point evidence. Do not infer visible-aging, wrinkle, or anti-aging intent from weak texture or generic care words unless explicit aging/wrinkle/anti-aging evidence exists.",
       "For Brand science, use only current product-source-backed ingredient, technology, formula, patent, proprietary method, or research evidence. If a patent, paper, research center, or official article appears only in a brand identity document, keep it as brand-image/diagnostic context and do not write it as a product property.",
-      "For Usage, include only actionable directions. Exclude formula mechanisms, technology explanations, measured results, review comments, and sentences that merely say what happens when the product is used.",
+      "For Usage, include only procedural directions that combine an actual use action with context such as amount, tool, body area, order, frequency, or instruction mood. Exclude formula mechanisms, technology explanations, measured results, review comments, product marketing copy, benefit claims, and application-effect descriptions that merely say what happens when the product is used.",
       "Do not solve copy quality by copying a fixed template. Infer the sentence structure from the target locale, product type, supported evidence, user intent, and field role. Vary syntax naturally while keeping the claim verifiable.",
       "For Korean and English faqAnswers, write direct commerce-answer sentences. Start with the answer itself, then add one supported fact. Use natural predicate families such as suitability, inclusion, care support, benefit delivery, usage action, comparison, or measured result; avoid passive observer/reporting frames unless the question literally asks about a source or document.",
       "Use repeated positive or neutral customer review language to infer review-backed recommendation contexts in Product.additionalProperty when it connects a customer situation to supported benefits, ingredients, and use-feel. Exclude negative review sentiment, scent complaints, ratings, and raw reviewer snippets.",
       "When deriving search questions from review-backed CEP, treat an indirect query as a customer-situation/category question that does not mention the product or brand, and a direct query as a product/brand-explicit question. Infer query wording from the customer need, product category, brand/product entity, supported benefits, and key ingredients rather than copying a fixed template.",
-      "Keep inferred direct and indirect queries answer-ready: pair each question with short source-backed answer evidence and core keywords. Public schema may expose the question as the PropertyValue.name and the answer as PropertyValue.value, but must not prefix them with labels such as direct query, indirect query, core keywords, or 핵심 키워드. Diagnostics should retain the query kind, question, keywords, answer basis, and whether the product or brand was mentioned.",
+      "Keep inferred direct and indirect queries answer-ready: pair each question with short source-backed answer evidence and core keywords. Public schema must not expose the full question as PropertyValue.name; use stable names such as Indirect customer question or Direct product question and keep the inferred question/answer context in PropertyValue.value or route true Q/A pairs to FAQPage.mainEntity. Do not prefix values with labels such as direct query, indirect query, core keywords, or 핵심 키워드. Diagnostics should retain the query kind, question, keywords, answer basis, and whether the product or brand was mentioned.",
       "Do not create or preserve FAQ answers whose only purpose is customer-review sentiment, rating, scent preference, or reviewer experience. Positive review-intent FAQ may summarize reusable use-feel signals, while review-derived recommendation contexts belong in Product.additionalProperty.",
-      "For Korean FAQ answers asking whether two capsules, variants, products, or ingredients are the same, answer the same/different/uncertain point first. Keep only one concise source-backed support phrase; do not append patent application numbers or broad formula-technology explanations unless the question asks about patents.",
+      "For Korean FAQ answers asking whether two capsules, variants, products, or ingredients are the same, answer the same/different point first only when the evidence supports it. When the evidence cannot confirm sameness, never lead with a cannot-confirm sentence such as \"동일 여부는 확인하기 어렵습니다\"; instead answer the underlying intent directly with this product's supported fact (what this product's capsule/formula is). Keep only one concise source-backed support phrase; do not append patent application numbers or broad formula-technology explanations unless the question asks about patents.",
+      "Never begin any public FAQ answer, description, or property value with a non-answer such as 확인하기 어렵습니다, 알 수 없습니다, 미공개입니다, cannot be confirmed, or is unclear. If the evidence cannot answer the asked comparison, state the supported fact for this product only; if no supported fact exists for the question, drop the FAQ item instead of publishing a non-answer.",
+      "Do not repeat the same metric clause, measured value, or list item twice within one sentence or one property value (e.g. duplicated \"사용 7일 후 87.3% 회복\" clauses or duplicated skin-type items). Each measured result appears exactly once per field.",
       "For suitability/benefit questions, infer a natural sentence that connects product, customer concern, product type, and supported benefit. Do not force a fixed wording pattern when the evidence points to another structure.",
       "For Korean suitability/benefit FAQ answers, preserve supported numeric values but use customer-facing effect predicates such as \"효과가 있습니다\" or \"도움이 됩니다\" instead of report-style endings such as \"결과가 제시됩니다\", unless the question asks for evidence, tests, or reported results.",
       "For Korean evidence/test FAQ answers, avoid \"나타났습니다\" and \"제시됩니다\"; prefer natural direct-result wording such as \"[method] 기준, [measured subject]은/는 [value] 개선되었습니다/증가했습니다/회복되었습니다\".",
@@ -475,6 +502,7 @@ function createCopyRefinementPayload(request: PdpGeoCopyRefinementRequest): Reco
   const fieldSeparatedEvidence = createFieldSeparatedEvidencePayload(request);
   return {
     task: "Select AI-exposure-worthy product keywords and sentences from productEvidence, guided by GEO research/geo-paper, CEP, and E-E-A-T. Use model reasoning to compose natural target-locale public PDP copy from grounded facts; do not rely on fixed public sentence templates.",
+    policyChecklist: formatPolicyChecklistPayload(request.policyRules ?? []),
     locale: request.locale,
     market: request.market,
     currentCopy: {
@@ -543,9 +571,9 @@ function createCopyRefinementPayload(request: PdpGeoCopyRefinementRequest): Reco
     fieldRoleContracts: {
       targetCustomer: "Infer from explicit skin type, concern, customer-entry-point, routine moment, or test-audience evidence. Do not transfer an unrelated product's target concern.",
       brandScience: "Use only current product-source-backed ingredient, technology, formula, patent, proprietary method, or research evidence. Brand identity documents may influence tone and brand positioning, but brand-only patents, official papers, or research-center facts must stay out of product properties.",
-      usage: "Use only actionable directions: dispense, apply, spread, pat, press, massage, rinse, absorb, or equivalent target-locale verbs.",
-      productDescription: "Compose Product.description and content.sections.description as: target customer -> product identity -> ingredient/technology -> benefit/effect or citation-ready metric -> high-level usage/comparison/review context. It must describe the product entity itself and must not mention the product page/PDP/page coverage. Remove unsupported or misrouted FAQ, purchase, brand-only, weak metric, and concrete HowTo facts instead of appending them.",
-      webPageDescription: "Introduce the product page and then describe coverage from actual page elements. Keep the target customer readable as an actor or beneficiary in the opening sentence, keep ingredient/technology and usage-action evidence in separate clauses, and do not reuse Product.description verbatim or near-verbatim."
+      usage: "Use only procedural directions: an actual use action plus context such as amount, tool, body area, order, frequency, or instruction mood. Reject product marketing, benefit, or application-effect copy even when it contains a use/action verb.",
+      productDescription: "Compose Product.description and content.sections.description as: target customer -> product identity -> ingredient/technology -> benefit/effect or citation-ready metric -> high-level usage/comparison/review context. It must describe the product entity itself and must not mention the product page/PDP/page coverage. In every locale, keep CEP natural by splitting target-customer/product identity from formula-benefit explanation when the phrase gets dense, infer whether the evidence is ingredient/capsule, formula/process, or mixed, and use product-facing predicates such as include/blend, use/adopt/apply, support, 담은, 적용한, 바탕으로, 配合, 採用, or もとに instead of patent/formula possessive noun stacks. Remove unsupported or misrouted FAQ, purchase, brand-only, weak metric, and concrete HowTo facts instead of appending them.",
+      webPageDescription: "Introduce the product page and then describe coverage from actual page elements. Keep the target customer readable as an actor or beneficiary in the opening sentence, keep ingredient/technology and usage-action evidence in separate clauses, and do not reuse Product.description verbatim or near-verbatim. In every locale, convert ingredient/technology evidence into product-facing predicates instead of exposing labels like 핵심 성분/기술, key ingredients and technologies, or 主な成分・技術, or chaining patent qualifiers directly before a formula possessive phrase."
     },
     fieldSeparatedEvidence,
     extractionPriorities: [
@@ -556,6 +584,7 @@ function createCopyRefinementPayload(request: PdpGeoCopyRefinementRequest): Reco
       "Use E-E-A-T guidance to keep claims verifiable, attributed to page evidence, and free of exaggeration.",
       "Use GEO research guidance to make descriptions answer-ready without exposing internal optimization language.",
       "For Product.description and content.sections.description, rebuild the sentence flow as target customer -> product identity -> ingredient/technology -> benefit/effect or citation-ready metric -> high-level usage/comparison/review context. Keep Product.description product-centric and remove page-resource wording such as product page, page coverage, 페이지에서는, or 상품 페이지. If currentCopy has extra FAQ navigation, purchase details, patent-first phrasing, or concrete usage steps, remove them rather than paraphrasing them.",
+      "For Product.description and content.sections.description in every locale, reject dense CEP noun stacks and rebuild them from productEvidence: target customer/concern + product type as one clause, then ingredient/formula + supported benefit as the next clause. Avoid patent/formula possessive product identities in Korean, English, and Japanese.",
       "When currentCopy contains stiff fallback wording, rewrite the meaning from productEvidence instead of paraphrasing the fallback template.",
       "For English as well as Korean, generate the final sentence through evidence-based reasoning rather than inserting a stock phrase.",
       "For WebPage.description, make the first sentence a product-page introduction grounded first in productEvidence, then replace fallback frames like \"The page helps answer...\" with natural page-level coverage language grounded in actual FAQ, HowTo, review, variant, offer, ingredient, benefit, or reported-result evidence.",
@@ -565,6 +594,7 @@ function createCopyRefinementPayload(request: PdpGeoCopyRefinementRequest): Reco
       "For WebPage.description in every locale, do not let a skin condition noun be the actor of comparing, selecting, referencing, or checking product information. A skin type can modify a customer, concern, or suitability context, but it cannot act by itself.",
       "For WebPage.description in every locale, separate target-customer reasoning from usage reasoning: the opening may say who evaluates/selects the product, while a later usage sentence may say how or when it is applied.",
       "For WebPage.description, keep ingredient/technology coverage and usage coverage grammatically separated. A sentence may mention both only when usage is in its own clause, not as part of the ingredient/technology object list.",
+      "For WebPage.description in every locale, infer whether ingredient/technology evidence is an ingredient/capsule, formula/process, or mixed formula-plus-ingredient fact; choose a natural product-facing predicate from that role instead of writing labels such as 핵심 성분/기술로 설명합니다, key ingredients and technologies, or 主な成分・技術.",
       "For Korean metric sentences, do not translate scientific method labels unless the source provides the translation; preserve the label and make it grammatically function as the test method.",
       "For WebPage.description in every locale, prefer omitting concrete HowTo steps entirely; rely on FAQ/HowTo schema for detailed application directions."
     ],
@@ -578,6 +608,7 @@ function createCopyRefinementPayload(request: PdpGeoCopyRefinementRequest): Reco
       "Reject WebPage.description openings where a target customer phrase directly performs a concrete usage action.",
       "Reject Product.description when a full usage step is appended after benefit, ingredient, or metric claims.",
       "Reject content.sections.description when a full usage step is appended after benefit, ingredient, or metric claims.",
+      "Reject Product.description or content.sections.description in every locale when the first product sentence is a dense target-customer + formula possessive noun stack, such as \"건조하거나 민감한 피부 고객을 위한 [product]은 ... 포뮬러의 ... 토너입니다\", \"[product] is a [benefit product type] of patent-pending [formula]\", or \"[target]向けの[product]は[処方]の[商品]です\".",
       "Reject Product.description or content.sections.description when it describes the product page/PDP/page coverage instead of the product entity itself.",
       "Reject WebPage.description when it repeats Product.description verbatim or near-verbatim instead of describing page-level coverage.",
       "Reject Product.description or content.sections.description when the final sentence is only FAQ navigation, purchase guidance, patent identifiers, or a report-style note about available information.",
@@ -585,6 +616,7 @@ function createCopyRefinementPayload(request: PdpGeoCopyRefinementRequest): Reco
       "Reject WebPage.description sentences where a full usage step and FAQ topics are merged into one sentence with \"FAQ와 HowTo\".",
       "Reject WebPage.description sentences that only route the reader to FAQ, HowTo, usage guidance, or purchase information.",
       "Reject WebPage.description sentences that say only that formula, ingredient, technology, or measurement details can be checked or viewed.",
+      "Reject WebPage.description sentences in every locale that use analysis labels such as \"핵심 성분/기술\", \"key ingredients and technologies\", or \"主な成分・技術\" as the product-introduction predicate, or that chain patent-application qualifiers directly into a formula possessive phrase such as \"특허 출원 ... 포뮬러의\", \"patent-pending ... formula's\", or \"特許出願...処方の\".",
       "Reject WebPage.description sentences where the main product-fact sentence centers on a patent number or patent-application identifier.",
       "Reject WebPage.description sentences that route to FAQ-like topics instead of stating product facts.",
       "Reject Korean FAQ answers for same/different comparison questions when they append patent numbers or formula-technology dumps after the direct answer.",
@@ -618,7 +650,8 @@ function createCopyRefinementPayload(request: PdpGeoCopyRefinementRequest): Reco
         ragSources: decision.ragSources,
         productEvidence: decision.productEvidence
       }))
-    } : undefined
+    } : undefined,
+    complianceRecap: formatPolicyComplianceRecap(request.policyRules ?? [])
   };
 }
 
@@ -921,8 +954,16 @@ function acceptRefinedText(
     warnings.push(`${field} refinement rejected because it merges ingredient/technology lists and numeric test results into one awkward selection-evidence sentence.`);
     return undefined;
   }
+  if (field === "WebPage.description" && containsWebPageIngredientTechnologyAnalysisLabelSentence(text)) {
+    warnings.push(`${field} refinement rejected because it uses ingredient/technology analysis labels instead of a natural product-introduction sentence.`);
+    return undefined;
+  }
   if ((field === "Product.description" || field === "content.sections.description") && containsConcreteProductDescriptionUsageStep(text)) {
     warnings.push(`${field} refinement rejected because it appends concrete usage directions that belong in Usage or HowTo.`);
+    return undefined;
+  }
+  if ((field === "Product.description" || field === "content.sections.description") && containsProductDescriptionDenseCepFormulaSentence(text)) {
+    warnings.push(`${field} refinement rejected because it compresses CEP, formula, and product identity into an awkward noun-stack sentence.`);
     return undefined;
   }
   if ((field === "Product.description" || field === "content.sections.description") && containsProductDescriptionPageEntityLanguage(text)) {
@@ -1373,6 +1414,16 @@ function parseCopyRefinementJson(text: string): PdpGeoCopyRefinementResult {
           faq: typeof payload.contentSections.faq === "string" ? payload.contentSections.faq : undefined
         }
       : undefined,
+    ruleCompliance: isRecord(payload.ruleCompliance)
+      ? {
+          violatedRuleIds: Array.isArray(payload.ruleCompliance.violatedRuleIds)
+            ? payload.ruleCompliance.violatedRuleIds.map(String).filter(Boolean)
+            : [],
+          notes: Array.isArray(payload.ruleCompliance.notes)
+            ? payload.ruleCompliance.notes.map(String).filter(Boolean)
+            : []
+        }
+      : undefined,
     warnings: Array.isArray(payload.warnings) ? payload.warnings.map(String).filter(Boolean) : undefined,
     rawText
   };
@@ -1663,6 +1714,42 @@ function containsKoreanWebPageMixedIngredientMetricEvidenceSentence(value: strin
   });
 }
 
+function containsWebPageIngredientTechnologyAnalysisLabelSentence(value: string): boolean {
+  return splitPublicSentences(value).some((sentence) => {
+    const text = cleanText(sentence);
+    if (containsKoreanWebPageIngredientTechnologyAnalysisLabelSentence(text)) {
+      return true;
+    }
+    if (/[A-Za-z]/.test(text)) {
+      return /(?:key|core|main|primary)\s+(?:ingredients?\s*(?:and|\/)\s*technolog(?:y|ies)|ingredient\/technology|formula(?:\s+technology)?)[^.!?]{0,100}(?:explained|described|introduced|presented|covered|highlighted|used\s+to\s+introduce)/i.test(text)
+        || /(?:ingredients?|technolog(?:y|ies)|formula|capsules?|water)[^.!?]{0,140}(?:as|as\s+the)?[^.!?]{0,50}(?:key|core|main|primary)\s+(?:ingredients?|technolog(?:y|ies)|formula|product\s+facts?)/i.test(text)
+        || /(?:patent[-\s]?(?:pending|application)|patent\s+application)[^.!?]{0,80}(?:formula|technology|process)(?:'s|\s+of)\s/i.test(text);
+    }
+    if (/[ぁ-んァ-ン一-龯]/.test(text)) {
+      return /(?:主な|主要な|核心)?(?:成分|技術|処方|フォーミュラ)(?:\/|・|と)?(?:成分|技術)?[^。！？]{0,80}(?:中心|説明|紹介|提示|扱います)/.test(text)
+        || /(?:成分|技術|処方|フォーミュラ|カプセル|水)[^。！？]{0,140}を中心に(?:商品|製品)を?(?:紹介|説明|提示)/.test(text)
+        || /特許\s*出願[^。！？]{0,80}(?:処方|フォーミュラ|技術)の\s/.test(text);
+    }
+    return false;
+  });
+}
+
+function containsKoreanWebPageIngredientTechnologyAnalysisLabelSentence(value: string): boolean {
+  return splitPublicSentences(value).some((sentence) => {
+    const text = cleanText(sentence);
+    if (!/[가-힣]/.test(text)) {
+      return false;
+    }
+    if (/(?:핵심\s*)?성분\s*\/\s*(?:기술|포뮬러)(?:을|를|로|으로)?[^.!?。！？]{0,80}(?:중심|설명|소개|제시|다룹니다)/u.test(text)) {
+      return true;
+    }
+    if (/(?:성분|기술|포뮬러|캡슐|워터)[^.!?。！？]{0,140}(?:을|를)\s*중심으로\s*(?:제품|상품)(?:을|를)?\s*(?:소개|설명|제시)/u.test(text)) {
+      return true;
+    }
+    return /특허\s*출원[^.!?。！？]{0,80}(?:포뮬러|공법|기술)의\s/u.test(text);
+  });
+}
+
 function containsWebPagePatentIdentifierCoreSentence(value: string): boolean {
   return splitPublicSentences(value).some((sentence) => {
     const text = cleanText(sentence);
@@ -1725,6 +1812,63 @@ function containsConcreteProductDescriptionUsageStep(value: string): boolean {
       return false;
     }
     return /(?:사용\s*시|사용할\s*때|사용\s*방법|사용법|화장솜|손바닥|손에|적당량|얼굴\s*전체|피부결|펴\s*바르|펴\s*발라|닦아내|흡수|두드려|도포)/u.test(text);
+  });
+}
+
+function containsProductDescriptionDenseCepFormulaSentence(value: string): boolean {
+  return splitPublicSentences(value).some((sentence, index) => {
+    const text = cleanText(sentence);
+    if (containsKoreanProductDescriptionDenseCepFormulaSentence(text)) {
+      return true;
+    }
+    if (/[A-Za-z]/.test(text)) {
+      if (/(?:patent[-\s]?(?:pending|application)|patent\s+application)[^.!?]{0,90}(?:formula|technology|process)(?:'s|\s+of)\s+(?:barrier|moisturizing|moisture|hydrating|hydration|soothing|sensitive|skin|capsule|toner|cream|serum|mist|lotion|product)/i.test(text)) {
+        return true;
+      }
+      if (/(?:formula|technology|process)(?:'s|\s+of)\s+(?:barrier|moisturizing|moisture|hydrating|hydration|soothing|sensitive|skin|capsule|toner|cream|serum|mist|lotion|product)/i.test(text)
+        && /\bfor\b[^.!?]{0,100}(?:customers?|skin|concerns?|dry|sensitive|barrier|hydration|moisture)/i.test(text)) {
+        return true;
+      }
+      return index === 0
+        && /\bfor\b[^.!?]{0,100}(?:customers?|skin|concerns?|dry|sensitive|barrier|hydration|moisture)/i.test(text)
+        && /(?:PHA|ceramide|capsules?|water|formula|technology|process)[^.!?]{0,160}(?:'s|\s+of)?\s*(?:barrier|moisturizing|moisture|hydrating|hydration|soothing|capsule|toner|cream|serum|mist|lotion|product)/i.test(text)
+        && /\bis\b/i.test(text);
+    }
+    if (/[ぁ-んァ-ン一-龯]/.test(text)) {
+      if (/特許\s*出願[^。！？]{0,90}(?:処方|フォーミュラ|技術)の\s*(?:バリア|保湿|水分|うるおい|敏感|肌|カプセル|化粧水|トナー|クリーム|美容液|ミスト|ローション|商品|製品)/.test(text)) {
+        return true;
+      }
+      if (/(?:処方|フォーミュラ|技術)の\s*(?:バリア|保湿|水分|うるおい|敏感|肌|カプセル|化粧水|トナー|クリーム|美容液|ミスト|ローション|商品|製品)/.test(text)
+        && /(?:顧客|肌|悩み|乾燥|敏感)[^。！？]{0,80}(?:向け|ための)/.test(text)) {
+        return true;
+      }
+      return index === 0
+        && /(?:乾燥|敏感|バリア|保湿|水分|うるおい|肌)[^。！？]{0,80}(?:顧客|肌|悩み|方)[^。！？]{0,40}(?:向け|ための)/.test(text)
+        && /(?:PHA|セラミド|カプセル|ウォーター|水|処方|フォーミュラ|技術)[^。！？]{0,160}の?\s*(?:バリア|保湿|水分|うるおい|敏感|肌|カプセル|化粧水|トナー|クリーム|美容液|ミスト|ローション|商品|製品)です/.test(text);
+    }
+    return false;
+  });
+}
+
+function containsKoreanProductDescriptionDenseCepFormulaSentence(value: string): boolean {
+  return splitPublicSentences(value).some((sentence, index) => {
+    const text = cleanText(sentence);
+    if (!/[가-힣]/.test(text)) {
+      return false;
+    }
+    if (/특허\s*출원[^.!?。！？]{0,90}(?:포뮬러|공법|기술)의\s*(?:장벽|보습|수분|진정|피부|탄력|주름|캡슐|토너|크림|세럼|미스트|로션|제품)/u.test(text)) {
+      return true;
+    }
+    if (/(?:포뮬러|공법|기술)의\s*(?:장벽|보습|수분|진정|피부|탄력|주름|캡슐|토너|크림|세럼|미스트|로션|제품)/u.test(text)
+      && /(?:고객|피부|고민)[^.!?。！？]{0,80}(?:을|를)\s*위한/u.test(text)) {
+      return true;
+    }
+    if (index === 0
+      && /(?:건조|민감|장벽|수분|보습|피부)[^.!?。！？]{0,70}(?:고객|피부|고민)[^.!?。！？]{0,40}(?:을|를)\s*위한/u.test(text)
+      && /(?:PHA|세라마이드|캡슐|워터|포뮬러|공법|기술)[^.!?。！？]{0,140}(?:의\s*)?(?:장벽|보습|수분|진정|피부|캡슐|토너|크림|세럼|미스트|제품)입니다/u.test(text)) {
+      return true;
+    }
+    return false;
   });
 }
 
@@ -1837,11 +1981,14 @@ function isActionableUsageCopy(value: string): boolean {
     .split(/\s*;\s*|\n+|(?<=[.!?。！？])\s+/u)
     .map((part) => cleanText(part).replace(/^\s*(?:step\s*)?\d+\s*(?:단계|段階)?\s*[:.)-]?\s*/i, ""))
     .filter((part) => part.length >= 8);
-  return parts.length > 0 && parts.every((part) => hasActionableApplicationVerb(part) && !isIngredientTechnologyUsageLeak(part));
+  return parts.length > 0
+    && parts.every((part) => isProceduralUsageInstruction(part)
+      && !isIngredientTechnologyUsageLeak(part)
+      && !isNonProceduralUsageCandidate(part));
 }
 
 function hasIngredientTechnologyEvidence(value: string): boolean {
-  return /(?:성분|기술|포뮬러|복합체|캡슐|세라마이드|히알루론산|레티놀|나이아신아마이드|펩타이드|특허|독자|연구|formula|technology|complex|capsule|ceramide|hyaluronic|retinol|niacinamide|peptide|patent|proprietary|research)/i.test(value);
+  return /(?:성분|기술|포뮬러|복합체|캡슐|세라마이드|히알루론산|레티놀|나이아신아마이드|펩타이드|특허|독자|연구|formula|technology|complex|capsule|ceramide|hyaluronic|retinol|niacinamide|peptide|patent|proprietary|research|成分|技術|処方|フォーミュラ|複合体|カプセル|セラミド|ヒアルロン酸|レチノール|ナイアシンアミド|ペプチド|特許|独自|研究)/i.test(value);
 }
 
 function isSupportedTargetCustomerCopy(value: string, request: PdpGeoCopyRefinementRequest): boolean {
@@ -1869,10 +2016,72 @@ function isSupportedTargetCustomerCopy(value: string, request: PdpGeoCopyRefinem
 function isIngredientTechnologyUsageLeak(value: string): boolean {
   const text = cleanText(value);
   const hasFormulaOrTechnology = hasIngredientTechnologyEvidence(text);
-  const hasInstructionCue = /(?:사용\s*방법|사용법|\bhow\s+to\s+use\b|\bdirections?\b|적당량|손에|얼굴에|피부결|펴\s*바르|발라|흡수|도포|massage|apply|dispense|pat|press|spread|smooth|rinse|lather)/i.test(text);
-  const hasOnlyDescriptiveUse = /(?:사용할\s*때마다|사용\s*시|when\s+used|with\s+each\s+use)/i.test(text) && !hasInstructionCue;
-  const hasReportingFrame = /(?:적용|설계|제공|도출|방출|설명|특징|구성|함유|담(?:긴|은)|녹지\s*않|patent|proprietary|designed|delivers?|provides?|contains?|features?)/i.test(text);
-  return hasFormulaOrTechnology && (hasOnlyDescriptiveUse || hasReportingFrame) && !hasActionableApplicationVerb(text);
+  const hasInstructionCue = /(?:사용\s*방법|사용법|\bhow\s+to\s+use\b|\bdirections?\b|使い方|使用方法|適量|手のひら|顔全体|肌になじませ|塗布|すすぎ|マッサージ|적당량|손에|얼굴에|피부결|펴\s*바르|발라|흡수|도포|massage|apply|dispense|pat|press|spread|smooth|rinse|lather)/i.test(text);
+  const hasOnlyDescriptiveUse = /(?:사용할\s*때마다|사용\s*시|when\s+used|with\s+each\s+use|使用時|使うたび)/i.test(text) && !hasInstructionCue;
+  const hasTechnologyUseFrame = /(?:성분|기술|포뮬러|복합체|캡슐)[^.!?。！？]{0,60}(?:사용|적용|쓰(?:인|이는)|활용)|(?:uses?|using|applies?)[^.!?]{0,60}(?:ingredient|formula|technology|complex|capsule)|(?:成分|技術|処方|フォーミュラ|複合体|カプセル)[^.!?。！？]{0,60}(?:使用|採用|配合|活用)/i.test(text);
+  const hasReportingFrame = /(?:적용|설계|제공|도출|방출|설명|특징|구성|함유|담(?:긴|은)|녹지\s*않|patent|proprietary|designed|delivers?|provides?|contains?|features?|採用|設計|提供|説明|特徴|構成|配合|含有|特許|独自)/i.test(text);
+  return hasFormulaOrTechnology && (hasOnlyDescriptiveUse || hasTechnologyUseFrame || hasReportingFrame) && !hasActionableApplicationVerb(text);
+}
+
+function isProceduralUsageInstruction(value: string): boolean {
+  const text = cleanText(value);
+  if (!text) {
+    return false;
+  }
+  const proceduralScore = usageProcedureSignalScore(text);
+  const descriptiveScore = usageDescriptionSignalScore(text);
+  if ((hasDescriptiveApplicationFrame(text) || hasSensoryEvaluationFrame(text)) && proceduralScore < 3) {
+    return false;
+  }
+  return (hasProcedureActionCue(text) || hasRoutinePlacementCue(text))
+    && proceduralScore >= 2
+    && proceduralScore >= descriptiveScore;
+}
+
+function isNonProceduralUsageCandidate(value: string): boolean {
+  const text = cleanText(value);
+  if (!text || (!hasProcedureActionCue(text) && !hasRoutinePlacementCue(text))) {
+    return false;
+  }
+  return !isProceduralUsageInstruction(text) && usageDescriptionSignalScore(text) > 0;
+}
+
+function usageProcedureSignalScore(value: string): number {
+  const text = cleanText(value);
+  return [
+    /(?:적당량|소량|충분량|손바닥|손에|화장솜|얼굴|피부결|미온수|물과\s*함께|appropriate amount|small amount|palm|hands?|cotton pad|face|skin|neck|water|適量|手のひら|顔|肌|コットン)/i.test(text) ? 1 : 0,
+    hasProcedureActionCue(text) ? 1 : 0,
+    /(?:후|뒤|다음|먼저|마지막|단계|순서|때는|then|after|before|next|finally|step|when|後|次|最後)/i.test(text) ? 1 : 0,
+    /(?:주세요|줍니다|합니다|하세요|하십시오|바릅니다|흡수시킵니다|헹굽니다|사용할\s*수\s*있|\buse\b|\bapply\b|\bdispense\b|ます|してください)/i.test(text) ? 1 : 0,
+    /(?:아침|저녁|매일|데일리|morning|night|daily|twice|once|朝|夜|毎日)/i.test(text) ? 1 : 0
+  ].reduce((sum, score) => sum + score, 0);
+}
+
+function usageDescriptionSignalScore(value: string): number {
+  const text = cleanText(value);
+  return [
+    hasDescriptiveApplicationFrame(text) ? 2 : 0,
+    hasSensoryEvaluationFrame(text) ? 2 : 0,
+    /(?:케어|개선|도움|효과|효능|추천|위한|민감|건조|보습|수분|장벽|care|benefit|helps?|supports?|improves?|recommended|for\s+\w+|効果|ケア|改善|おすすめ|向け)/i.test(text) ? 1 : 0,
+    /(?:성분|원료|캡슐|포뮬러|기술|ingredient|formula|technology|capsule|成分|処方|技術|カプセル)/i.test(text) ? 1 : 0,
+    /(?:제품|상품|토너|크림|세럼|로션|클렌저|product|toner|cream|serum|lotion|cleanser|商品|製品|化粧水|クリーム|美容液)/i.test(text) ? 1 : 0
+  ].reduce((sum, score) => sum + score, 0);
+}
+
+function hasDescriptiveApplicationFrame(value: string): boolean {
+  return /(?:바르는\s*순간|사용(?:할\s*때마다|하는\s*순간)|도포\s*직후|on\s+application|upon\s+application|when\s+(?:used|applied)|with\s+each\s+use|塗った瞬間|使用(?:時|する瞬間)|使うたび)/i.test(value);
+}
+
+function hasSensoryEvaluationFrame(value: string): boolean {
+  return /(?:테스트|시험|사용감|마무리감|수분감|보습감|흡수감|끈적임|산뜻|촉촉|느껴지는|진정되는|피부가\s*진정|부드러운|피부결이\s*부드러운|use[-\s]?feel|finish(?:es)?|non[-\s]?sticky|stickiness|fresh\s+feel|dewy|soothing|skin\s+feels?\s+smooth|tested?|sensory|使用感|仕上がり|べたつき|さっぱり|しっとり|うるおい感|なめらか|落ち着|テスト|試験|感じられる)/i.test(value);
+}
+
+function hasProcedureActionCue(value: string): boolean {
+  return /(?:덜어|적셔|올려두|펴\s*바르|펴\s*발라|두드려|흡수(?!감)|마사지|문지르|헹구|헹굽|거품|도포(?!감)|마무리(?:해|하세요|합니다|하십시오)|사용(?:해|하세요|합니다|하십시오|할\s*수\s*있)|apply|dispense|spread|smooth|pat|press|absorb|massage|lather|rinse|pump|take|use\s+as|なじませ|塗布|すすぎ|マッサージ)/i.test(value);
+}
+
+function hasRoutinePlacementCue(value: string): boolean {
+  return /(?:아침|저녁|매일|데일리|스킨케어|샤워\s*후|세안\s*후|마지막\s*단계|첫\s*단계|루틴|morning|night|daily|routine|after\s+(?:cleansing|shower)|last\s+step|first\s+step|朝|夜|毎日|スキンケア|洗顔後|最後のステップ)/i.test(value);
 }
 
 function hasActionableApplicationVerb(value: string): boolean {

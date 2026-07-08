@@ -10,10 +10,15 @@ describe("generateGeoCitationContent", () => {
 
     expect(run.result.artifact.surface).toBe("reddit");
     expect(run.result.artifact.title).toMatch(/\?|noticed|looked|compared/i);
-    expect(run.result.artifact.bodyMarkdown).toContain("Short version");
+    expect(run.result.artifact.bodyMarkdown).toContain("TL;DR");
     expect(run.result.artifact.bodyMarkdown).toContain("What seems supported");
     expect(run.result.artifact.bodyMarkdown).toContain("Question for people");
     expect(run.result.artifact.bodyMarkdown).not.toMatch(/buy now|shop now|limited offer/i);
+    // TL;DR must sit near the top so answer engines can extract it.
+    expect(run.result.artifact.bodyMarkdown.indexOf("TL;DR")).toBeLessThanOrEqual(500);
+    // Flair follows the content angle instead of a hardcoded "Discussion".
+    expect(["Research", "Review", "Product Question", "Question", "Discussion"]).toContain(run.result.artifact.flairSuggestion);
+    expect(run.result.artifact.flairSuggestion).toBe(run.result.diagnostics.variantStrategy.flairSuggestion);
     expect(run.result.brief.answerChunks.length).toBeGreaterThan(0);
     expect(run.result.strategy.searchIntent.length).toBeGreaterThan(0);
     expect(run.result.diagnostics.mandatoryRagDocuments).toContain("citation-ready-content-contract_v1.md");
@@ -32,7 +37,9 @@ describe("generateGeoCitationContent", () => {
     expect(run.result.diagnostics.geoCitationReadiness.structureSignals).toEqual(expect.arrayContaining([
       "answer-ready-title",
       "short-version-chunks",
+      "tldr-position",
       "claim-evidence-language",
+      "quotation-or-statistic",
       "source-type-separation",
       "caveat-limitation",
       "comparison-context",

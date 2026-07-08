@@ -184,10 +184,32 @@ src/rag/
 - intent: faq, howTo, claims, customer, review, schema, evidence, retrieval 등
 - field target: `Product.description`, `WebPage.description`, `FAQPage.mainEntity`, `HowTo.step` 등
 - priority
+- rule extraction: `rules`(요구사항으로 강제) 또는 `narrative`(브랜드 서사/포지셔닝 맥락 — 정책 체크리스트에서 low-priority guidance로 강등되어 규칙으로 위장하지 못함)
 
 ## RAG를 추론에 활용하는 방식
 
-이 agent는 RAG 문서를 “많이 넣는 것”보다 “필요한 문서를 정확하게 찾고, 중요한 전략 문서는 원문 전체로 보강하는 것”을 목표로 합니다.
+이 agent는 RAG 문서를 “많이 넣는 것”보다 “필요한 문서를 정확하게 찾고, 중요한 전략 문서는 원문 전체로 보강하며, 전체 요구사항은 컴파일된 체크리스트로 빠짐없이 전달하는 것”을 목표로 합니다.
+
+한 번의 생성에서 RAG 문서가 흘러가는 전체 경로는 다음과 같습니다.
+
+```mermaid
+flowchart TD
+  DOCS["RAG 문서 로드<br/>(기본 + 브랜드 스코핑)"] --> COMPILE["7. 정책 컴파일<br/>전 문서 -> 원자 규칙 체크리스트<br/>(critical/guidance/brand-context)"]
+  DOCS --> CHUNK["2. Contextual Chunking<br/>heading 단위 + metadata"]
+  CHUNK --> RETRIEVE["1+3. Query Planning + Hybrid Retrieval<br/>lexical + vector + metadata boost"]
+  RETRIEVE --> RERANK["4. Reranking + 5. Strategic Coverage<br/>eeat/cep/geo-research 보장"]
+  RERANK --> HYDRATE["6. Full Document Hydration<br/>전략 문서 원문 최대 3개"]
+  RERANK --> REASON["Reasoning<br/>5개 원칙 x RAG 근거 x 상품 근거"]
+  REASON --> GEN["Deterministic 생성<br/>schema.org JSON-LD + PDP HTML"]
+  GEN --> REFINE["LLM Copy Refinement<br/>체크리스트(앞) + chunk/원문(중간) + recap(끝)"]
+  COMPILE --> REFINE
+  HYDRATE --> REFINE
+  REFINE --> SELFCHECK["모델 자가 검증<br/>ruleCompliance.violatedRuleIds"]
+  SELFCHECK --> VALIDATE["Validate + Repair<br/>field contract 강제 보정"]
+  VALIDATE --> DIAG["Diagnostics<br/>policyCoverage / selectedRagChunks / reasoning / repairs"]
+```
+
+핵심은 세 개의 상호 보완 채널입니다: **검색된 chunk**(현재 상품과 가장 관련 높은 지침), **hydrated 원문**(전략 문서의 충돌 해석/맥락), **컴파일된 정책 체크리스트**(검색에서 빠진 문서까지 포함한 전체 요구사항). 어느 한 채널이 놓쳐도 다른 채널이 보완하고, 최종적으로 validate/repair가 결정적으로 강제합니다.
 
 ### 1. Agentic Query Planning
 
@@ -288,6 +310,20 @@ GEO 생성에서 `geo-research`, `cep`, `eeat`는 전략 문서입니다.
 
 이 구조는 전체 문서를 넣을 때 생길 수 있는 본질 흐림을 줄이고, 동시에 문서 일부만 넣을 때 생기는 누락을 줄입니다.
 
+### 7. Compiled Policy Checklist
+
+retrieval top-K와 hydration만으로는 "선택되지 않은 문서의 요구사항"이 모델에 도달하지 못할 수 있습니다. 이를 막기 위해 rag-load 단계에서 로드된 모든 RAG 정책 문서를 결정적으로 파싱해 원자 규칙(atomic rule) 체크리스트로 컴파일합니다 (`src/rag/policy-compiler.ts`).
+
+- 각 markdown 문서의 목록 항목을 규칙 단위로 추출하고, heading 계층 스택으로 `###` 하위 섹션이 `##` 부모 섹션의 rag-index metadata(intent/fieldTarget/priority)를 상속합니다.
+- 규칙 텍스트를 정규화해 default 문서와 브랜드 오버레이 문서 간 중복을 제거합니다.
+- `must/never/do not/금지/반드시` 계열 표현은 `critical`, 나머지는 `guidance`로 분류합니다.
+- rag-index에서 `ruleExtraction: "narrative"`로 표시된 섹션(브랜드 아이덴티티의 Identity Pillars, 서사/출처 목록 등)의 항목은 규칙이 아닌 브랜드 맥락으로 취급되어 guidance로 강등되고 priority가 0.6 이하로 제한됩니다. 프롬프트에서는 `[brand-context]` 라벨로 구분되어 "어휘/무드로만 쓰고 product claim으로 변환 금지" 지시를 받습니다.
+- critical 규칙은 **항상 전부** 프롬프트에 주입되고, guidance 규칙은 priority 순으로 `maxRules`(기본 240)까지 채웁니다.
+- copy refinement 프롬프트에서 규칙은 출력 필드 그룹별로 정리되며, 프롬프트 맨 끝의 `complianceRecap`이 critical 규칙 id를 한 번 더 나열합니다(장문 프롬프트의 lost-in-the-middle 위치 편향 완화).
+- 모델은 응답 JSON의 `ruleCompliance.violatedRuleIds`로 만족하지 못한 규칙을 자가 보고하고, 이는 warnings/evidence로 기록됩니다.
+
+`rag.policyChecklist` 설정으로 조정할 수 있습니다: `{ enabled, maxRules, maxRuleChars }`.
+
 ## Copy Refinement에서 RAG가 쓰이는 방식
 
 기본 schema/content는 deterministic 로직으로 먼저 생성됩니다. 그 다음 provider API 또는 custom refiner가 설정되어 있으면 copy refinement가 실행됩니다.
@@ -295,10 +331,12 @@ GEO 생성에서 `geo-research`, `cep`, `eeat`는 전략 문서입니다.
 이 단계에서 모델은 다음 정보를 받습니다.
 
 - 상품 근거: 상품명, 브랜드, 카테고리, 효능, 성분, 사용법, 리뷰 키워드, 원문 source text
+- `policyChecklist`: 전체 RAG 문서에서 컴파일된 필드별 정책 규칙 체크리스트 (critical 우선)
 - `strategicExposureGuidance`: 최종 선택된 GEO/CEP/E-E-A-T chunk excerpt
 - `strategicFullDocuments`: 선택된 전략 RAG 문서 전체 원문
 - `hydrationPolicy`: chunk 우선순위와 충돌 해결 규칙
 - reasoning decisions: FAQ, HowTo, claim safety, customer context, review intent 판단
+- `complianceRecap`: 프롬프트 말미의 critical 규칙 id 재확인 목록
 
 모델은 새 효능/성분/수치/리뷰를 만들 수 없습니다. 상품 근거와 RAG 정책 안에서만 `Product.description`, `WebPage.description`, `content.sections.description`을 더 자연스럽고 AI answer-ready하게 다듬습니다.
 
@@ -311,6 +349,7 @@ GEO 생성에서 `geo-research`, `cep`, `eeat`는 전략 문서입니다.
 | `diagnostics.ragQueryPlan` | 어떤 subquery가 생성됐는지 |
 | `diagnostics.selectedRagChunks` | 최종 컨텍스트로 선택된 chunk |
 | `diagnostics.hydratedRagDocuments` | 원문 전체가 hydration된 전략 문서 |
+| `diagnostics.policyCoverage` | 컴파일된 정책 규칙 수, 프롬프트 주입 수, critical 커버리지 비율, 문서별/제외 규칙 내역 |
 | `diagnostics.reasoning` | 어떤 RAG 원칙과 상품 근거가 연결됐는지 |
 | `diagnostics.ragUsage` | FAQ, HowTo, claim safety 등 원칙별 참조 문서 |
 | `diagnostics.evidence` | 생성/보정/LLM refinement의 적용 또는 거절 근거 |

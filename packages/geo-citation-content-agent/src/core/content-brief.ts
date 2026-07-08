@@ -65,6 +65,9 @@ export function createGeoCitationContentBrief(input: {
     }
   ];
 
+  const quotableEvidence = createQuotableEvidence(input.evidenceMap);
+  const statisticsHighlights = createStatisticsHighlights(input.evidenceMap);
+
   return {
     productSummary: createProductSummary(input.product, category),
     freshnessStatement: createFreshnessStatement(input.evidenceMap, input.product),
@@ -90,8 +93,106 @@ export function createGeoCitationContentBrief(input: {
     caveats,
     comparisonPoints,
     audienceContexts,
-    evidenceMap: input.evidenceMap
+    evidenceMap: input.evidenceMap,
+    quotableEvidence,
+    statisticsHighlights
   };
+}
+
+const maxQuoteChars = 140;
+const minQuoteChars = 30;
+const marketingQuotePattern = /Formulated with|This powerhouse|melts into skin|essential nutrients|INGREDIENTS?|FORMULATED WITHOUT|buy now|shop now/i;
+
+/**
+ * Picks short verbatim excerpts (review first, then paper/news) that public
+ * copy may quote directly. Quotes must never be paraphrased once selected —
+ * the GEO research base shows direct quotations improve citation visibility
+ * only when they stay traceable to the source.
+ */
+function createQuotableEvidence(evidenceMap: GeoCitationEvidenceReference[]): GeoCitationContentBrief["quotableEvidence"] {
+  const bySourcePreference = [...evidenceMap].sort((a, b) => quoteSourceRank(a.sourceType) - quoteSourceRank(b.sourceType));
+  const quotes: GeoCitationContentBrief["quotableEvidence"] = [];
+  for (const evidence of bySourcePreference) {
+    if (quotes.length >= 2) {
+      break;
+    }
+    const sentence = firstQuotableSentence(evidence.text);
+    if (!sentence || marketingQuotePattern.test(sentence)) {
+      continue;
+    }
+    quotes.push({
+      evidenceId: evidence.id,
+      sourceType: evidence.sourceType,
+      quote: sentence,
+      attribution: quoteAttribution(evidence)
+    });
+  }
+  return quotes;
+}
+
+function quoteSourceRank(sourceType: GeoCitationEvidenceReference["sourceType"]): number {
+  switch (sourceType) {
+    case "review":
+      return 0;
+    case "paper":
+      return 1;
+    case "news":
+      return 2;
+    default:
+      return 3;
+  }
+}
+
+function firstQuotableSentence(text: string): string | undefined {
+  const sentences = text.replace(/\s+/g, " ").trim().split(/(?<=[.!?。])\s+/);
+  return sentences.find((sentence) => sentence.length >= minQuoteChars && sentence.length <= maxQuoteChars);
+}
+
+function quoteAttribution(evidence: GeoCitationEvidenceReference): string {
+  switch (evidence.sourceType) {
+    case "review":
+      return "one review";
+    case "paper":
+      return evidence.title ? `the paper "${evidence.title}"` : "a research paper";
+    case "news":
+      return evidence.title ? `a news article ("${evidence.title}")` : "a news article";
+    default:
+      return "the product page";
+  }
+}
+
+/**
+ * Aggregates source-backed numeric signals (never invented): review rating
+ * average/count from supplied ratings, plus verbatim numeric sentences found
+ * in paper/news evidence.
+ */
+function createStatisticsHighlights(evidenceMap: GeoCitationEvidenceReference[]): string[] {
+  const highlights: string[] = [];
+  const ratings = evidenceMap
+    .filter((evidence) => evidence.sourceType === "review" && typeof evidence.rating === "number" && Number.isFinite(evidence.rating))
+    .map((evidence) => evidence.rating as number);
+  if (ratings.length > 0) {
+    const average = ratings.reduce((sum, value) => sum + value, 0) / ratings.length;
+    highlights.push(`Across ${ratings.length} supplied review${ratings.length === 1 ? "" : "s"} with ratings, the average rating is ${Math.round(average * 10) / 10}.`);
+  }
+  for (const evidence of evidenceMap) {
+    if (highlights.length >= 3) {
+      break;
+    }
+    if (evidence.sourceType !== "paper" && evidence.sourceType !== "news") {
+      continue;
+    }
+    const numericSentence = firstNumericSentence(evidence.text);
+    if (numericSentence) {
+      highlights.push(numericSentence);
+    }
+  }
+  return unique(highlights);
+}
+
+function firstNumericSentence(text: string): string | undefined {
+  const sentences = text.replace(/\s+/g, " ").trim().split(/(?<=[.!?。])\s+/);
+  return sentences.find((sentence) => /\d+(?:\.\d+)?\s*(?:%|percent|점|명|주|week|day|hour)/i.test(sentence) && sentence.length <= 180);
 }
 
 function createProductSummary(product: GeoCitationNormalizedProduct, category: string): string {

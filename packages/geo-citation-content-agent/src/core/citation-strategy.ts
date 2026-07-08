@@ -36,8 +36,31 @@ export function createRedditVariantStrategy(input: {
     titlePattern,
     evidenceFocus,
     toneProfile,
-    communityQuestion: communityQuestionForAngle(angle, input.product)
+    communityQuestion: communityQuestionForAngle(angle, input.product),
+    flairSuggestion: flairForAngle(angle)
   };
+}
+
+/**
+ * Generic flair names that exist (or have close equivalents) across most
+ * product/skincare subreddits; the poster should still map to the target
+ * subreddit's actual flair list before submitting.
+ */
+function flairForAngle(angle: GeoCitationContentAngle): string {
+  switch (angle) {
+    case "claim-check":
+    case "skeptical-research":
+      return "Research";
+    case "review-pattern":
+      return "Review";
+    case "comparison":
+    case "buyer-question":
+      return "Product Question";
+    case "use-case-fit":
+      return "Question";
+    default:
+      return "Discussion";
+  }
 }
 
 function selectEvidenceFocus(angle: GeoCitationContentAngle, available: GeoCitationEvidenceSourceType[]): GeoCitationEvidenceSourceType[] {

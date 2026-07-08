@@ -310,6 +310,21 @@ export const productExtractorRagManifest = {
 
 앱의 설정 화면에서 추가한 커스텀 문서는 `src/rag/custom` 아래에 저장됩니다.
 
+### RAG 활용 플로우
+
+```mermaid
+flowchart TD
+  RAGDOCS["Extractor RAG 문서<br/>normalization / review / OCR / FAQ 기준"] --> SYS["system prompt<br/>분류 규칙 + 출력 스키마 + 금지사항"]
+  PDP["PDP URL / REST / HTML"] --> EXTRACT["원천 추출<br/>상품 / 리뷰 / OCR / FAQ 후보"]
+  EXTRACT --> USER["user prompt<br/>실제 상품 evidence"]
+  SYS --> LLM["LLM 분류/정규화<br/>(선택적)"]
+  USER --> LLM
+  LLM --> RAW["GEO RAW JSON<br/>+ evidence + warnings"]
+  RAW --> CHUNKS["rag.chunks 생성<br/>downstream generator 검색/감사용"]
+```
+
+핵심 원칙: RAG 문서는 **분류 정책**이고 상품 사실이 아닙니다. claim은 user prompt의 PDP evidence에서만 나오며, RAG 예시가 원문에 없는 효능/성분을 만들 수 없습니다.
+
 ### LLM 프롬프트에서의 RAG 구성
 
 OCR/상세 영역 키워드 분류에 provider LLM을 사용할 때는 RAG 정보를 다음처럼 분리해 전달합니다.

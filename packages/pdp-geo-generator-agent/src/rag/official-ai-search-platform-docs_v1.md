@@ -4,7 +4,7 @@
 
 Use this document as a versioned connector map to official provider docs for retrieval, embeddings, grounding, structured data eligibility, and citation diagnostics.
 
-- Official sources checked on 2026-07-03: OpenAI retrieval, OpenAI file search, OpenAI embeddings, OpenAI crawlers/Search bot docs, ChatGPT Search help, Google Search Central Product structured data, Google Search Product variants structured data, Google Search generative AI optimization guidance, Google AI features and your website, Gemini embeddings, Gemini grounding with Google Search, Perplexity Search API docs, Azure AI Search hybrid retrieval, and Azure agentic retrieval docs.
+- Official sources checked on 2026-07-08: OpenAI retrieval, OpenAI file search, OpenAI embeddings, OpenAI crawlers/Search bot docs, ChatGPT Search help, OpenAI commerce product feed spec, ChatGPT shopping help, Google Search Central Product structured data, Google Search Product variants structured data, Google Search generative AI optimization guidance, Google AI features and your website, Gemini embeddings, Gemini grounding with Google Search, Perplexity Search API docs, Bing Webmaster AI Performance and IndexNow docs, Azure AI Search hybrid retrieval, and Azure agentic retrieval docs.
 - Prefer official provider docs over blog posts or third-party summaries when deciding adapter behavior or generation constraints.
 - Keep generated PDP claims grounded in product/source facts. Provider docs can guide retrieval and citation strategy, but they must not create new product benefits.
 
@@ -60,3 +60,30 @@ Use this document as a versioned connector map to official provider docs for ret
 - Use hybrid retrieval and reranking when available: lexical matching catches exact schema/field terms, vector search catches semantic paraphrases, reciprocal-rank fusion balances sparse/dense recall, and semantic/reranker or coverage-aware layers improve final ordering.
 - Use agentic subquery planning for targeted partial updates such as FAQ, HowTo, Product.description, WebPage.description, or BreadcrumbList refreshes.
 - Preserve selected source document, section title, intent, field target, score, query plan target, and excerpt in diagnostics.
+
+## 8. OpenAI Product Feeds and ChatGPT Shopping
+
+- Official links: https://developers.openai.com/commerce/specs/spec, https://help.openai.com/en/articles/11128490-shopping-with-chatgpt-search, https://openai.com/index/powering-product-discovery-in-chatgpt/.
+- ChatGPT shopping results are organic and are chosen from structured metadata: price, description, availability, reviews, and merchant/feed data from first-party and third-party providers.
+- Merchants can submit a structured product feed directly to OpenAI (JSONL/CSV/TSV/Parquet over HTTPS, refreshable on a short cadence); Shopify catalogs are integrated natively and Google Merchant Center data can flow through third-party providers.
+- Keep Product/Offer schema on the PDP consistent with feed data: product id, variant, price, currency, and availability must match the visible page and stay fresh.
+- Feed-based channels are the highest-leverage GEO surface for product queries; prose phrasing cannot compensate for missing or stale price/availability metadata.
+
+## 9. Bing, Copilot, and IndexNow
+
+- Official links: https://blogs.bing.com/webmaster, https://www.indexnow.org/, https://www.bing.com/webmasters.
+- Microsoft states Bing uses schema markup to help its LLM-based experiences understand content; keep JSON-LD complete and consistent with visible text for Copilot/Bing AI summaries.
+- Use IndexNow (or Bing Webmaster URL submission) to signal content updates quickly; freshness is a ranking and citation signal in AI summaries.
+- Bing Webmaster Tools provides an AI Performance report with first-party citation data for Copilot and Bing AI summaries; use it as an official measurement channel where available.
+
+## 10. AI Crawler and Bot Access Requirements
+
+- Bot access is a hard precondition for AI citation: verify robots.txt, CDN, and WAF rules do not block answer/search bots.
+- Distinguish search/answer bots from training bots: `OAI-SearchBot` (ChatGPT search), `PerplexityBot` (Perplexity answers), and `Googlebot` (AI Overviews/AI Mode) affect answer inclusion; `GPTBot`, `Google-Extended`, and `CCBot` affect model training only.
+- Blocking `Google-Extended` does not remove pages from Google AI Overviews; those are powered by Googlebot and standard indexing/snippet controls (`nosnippet`, `max-snippet`, `noindex`).
+- CDN vendors increasingly ship managed AI-bot blocking defaults; audit them explicitly before concluding a citation problem is content-side.
+
+## 11. llms.txt Status
+
+- llms.txt is not used by major engines: Google states no AI system currently consumes it, and large-scale crawl studies show almost no AI-bot requests for deployed llms.txt files.
+- Do not invest generation effort in llms.txt or similar AI-only files; visible page content, structured data consistent with that content, and product feeds are the supported channels.

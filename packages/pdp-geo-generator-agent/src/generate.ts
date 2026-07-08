@@ -63,6 +63,12 @@ interface GeoOptimizationGuidance {
   useReviewIntentFaq: boolean;
 }
 
+interface ProductAdditionalPropertyEntry {
+  name: string;
+  value?: string;
+  propertyID?: string;
+}
+
 const defaultTargets: PdpGeoSchemaTarget[] = ["WebPage", "Product", "FAQPage", "HowTo", "BreadcrumbList"];
 
 const genericCategoryPattern = /^(usage|use|how to use|direction|directions|review|reviews|rating|ratings|benefit|benefits|effect|effects|ingredient|ingredients|content|section|product|item|type)$/i;
@@ -502,14 +508,7 @@ function formatKoreanNaturalList(values: string[]): string | undefined {
 function createKoreanWebPageCoverageScopeDescription(product: PdpProductSignal, productName: string, context: DescriptionContext): string | undefined {
   const ingredientPhrase = selectKoreanWebPageIngredientTechnologyPhrase(product, context);
   if (ingredientPhrase) {
-    const benefitContext = createKoreanWebPageBenefitContext(product, context);
-    const productSubject = appendKoreanTopicParticle(createKoreanShortProductReference(productName));
-    const ingredientRole = /(?:공법|포뮬러|캡슐|Formula|formula|technology|tech)/i.test(ingredientPhrase)
-      ? "핵심 성분/포뮬러"
-      : "핵심 성분/기술";
-    return benefitContext
-      ? `${productSubject} ${ingredientPhrase} 같은 ${ingredientRole}을 중심으로 ${appendKoreanObjectParticle(benefitContext)} 제안합니다`
-      : `${productSubject} ${ingredientPhrase} 같은 ${ingredientRole}을 중심으로 구성됩니다`;
+    return createKoreanWebPageIngredientTechnologyProductSentence(product, productName, context, ingredientPhrase);
   }
 
   const details = unique([
@@ -520,6 +519,51 @@ function createKoreanWebPageCoverageScopeDescription(product: PdpProductSignal, 
   ].filter((value): value is string => Boolean(value)));
   const coverage = formatDescriptionList(details, "ko-KR", 4);
   return coverage ? `주요 선택 기준은 ${coverage}입니다` : undefined;
+}
+
+function createKoreanWebPageIngredientTechnologyProductSentence(
+  product: PdpProductSignal,
+  productName: string,
+  context: DescriptionContext,
+  ingredientPhrase: string
+): string {
+  const productSubject = appendKoreanTopicParticle(createKoreanShortProductReference(productName));
+  const productIntro = createKoreanWebPageProductIntroNoun(product, context);
+  const ingredientObject = appendKoreanObjectParticle(stripKoreanPatentQualifier(ingredientPhrase));
+  const bridge = inferKoreanIngredientTechnologyBridge(ingredientPhrase);
+  const benefitContext = createKoreanWebPageBenefitContext(product, context);
+
+  return benefitContext
+    ? `${productSubject} ${ingredientObject} ${bridge.withBenefit} ${appendKoreanObjectParticle(benefitContext)} 돕는 ${productIntro}입니다`
+    : `${productSubject} ${ingredientObject} ${bridge.withoutBenefit} ${productIntro}입니다`;
+}
+
+type IngredientTechnologyRole = "ingredient" | "formula" | "mixed";
+
+function inferIngredientTechnologyRole(value: string): IngredientTechnologyRole {
+  const text = cleanSignal(value);
+  const hasFormulaOrProcess = /(?:공법|포뮬러|서스펜션|Formula|formula|technolog(?:y|ies)|tech|method|process|system|処方|技術|フォーミュラ|製法|フローティング)/iu.test(text);
+  const hasIngredientOrCapsule = /(?:성분|원료|캡슐|워터|세라마이드|콜레스테롤|지방산|히알루론산|레티놀|나이아신아마이드|펩타이드|PHA|ingredient|capsule|water|ceramide|cholesterol|fatty\s+acid|hyaluronic|retinol|niacinamide|peptide|成分|原料|カプセル|ウォーター|水|セラミド|コレステロール|脂肪酸|ヒアルロン酸|レチノール|ナイアシンアミド|ペプチド)/iu.test(text);
+
+  if (hasFormulaOrProcess && hasIngredientOrCapsule) {
+    return "mixed";
+  }
+  if (hasFormulaOrProcess) {
+    return "formula";
+  }
+  return "ingredient";
+}
+
+function inferKoreanIngredientTechnologyBridge(value: string): { withBenefit: string; withoutBenefit: string } {
+  const role = inferIngredientTechnologyRole(value);
+
+  if (role === "formula") {
+    return { withBenefit: "적용해", withoutBenefit: "적용한" };
+  }
+  if (role === "mixed") {
+    return { withBenefit: "바탕으로", withoutBenefit: "바탕으로 구성한" };
+  }
+  return { withBenefit: "담아", withoutBenefit: "담은" };
 }
 
 function selectKoreanPrimaryProductIngredient(product: PdpProductSignal): string | undefined {
@@ -561,16 +605,21 @@ function extractKoreanCeramideConcentration(value: string): string | undefined {
 
 function extractKoreanFormulaTechnologyPhrase(value: string): string | undefined {
   const text = cleanSignal(value);
+  const floatingFormula = text.match(/((?:특허\s*출원(?:\s*기술)?\s*)?[\p{L}0-9®™+\-/]{2,28}\s*플로팅\s*포뮬러)/iu)?.[1];
+  if (floatingFormula) {
+    return stripKoreanPatentQualifier(floatingFormula);
+  }
   return first([
     /흔들\s*필요\s*없는\s*특수\s*에멀징\s*공법/u.test(text) ? "흔들 필요 없는 특수 에멀징 공법" : undefined,
     /특수\s*에멀징\s*공법/u.test(text) ? "특수 에멀징 공법" : undefined,
     /하이드로겔\s*플로팅\s*포뮬러/u.test(text) ? "하이드로겔 플로팅 포뮬러" : undefined,
+    /하이드로퀄\s*플로팅\s*포뮬러/u.test(text) ? "하이드로퀄 플로팅 포뮬러" : undefined,
     /하이드로겔\s*서스펜션/u.test(text) ? "하이드로겔 서스펜션" : undefined
   ]);
 }
 
 function normalizeKoreanWebPageIngredientTechnologySignal(value: string, evidenceText: string): string | undefined {
-  const text = cleanSignal(value)
+  const text = stripKoreanPatentQualifier(cleanSignal(value))
     .replace(/\s+/g, " ")
     .trim();
   if (!text || text.length < 2 || text.length > 64 || isQuestionLikeText(text) || /[.。！？?]/.test(text)) {
@@ -597,6 +646,19 @@ function normalizeKoreanWebPageIngredientTechnologySignal(value: string, evidenc
     return undefined;
   }
   return normalizeIngredientSignal(text);
+}
+
+function stripKoreanPatentQualifier(value: string): string {
+  return stripPatentApplicationQualifier(value);
+}
+
+function stripPatentApplicationQualifier(value: string): string {
+  return cleanSignal(value)
+    .replace(/^(?:특허\s*출원(?:된|한)?|특허\s*출원\s*기술|특허\s*기술)\s*/u, "")
+    .replace(/^(?:patent[-\s]?pending|patent\s+application(?:\s+technology)?|patent[-\s]?applied)\s+/iu, "")
+    .replace(/^(?:特許\s*出願(?:中|済み)?(?:の)?|特許\s*技術(?:の)?|特許(?:取得済み)?(?:の)?)\s*/u, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function createKoreanShortProductReference(productName: string): string {
@@ -714,19 +776,19 @@ function createKoreanWebPageAnswerCoverageDescription(product: PdpProductSignal,
 function createJapaneseWebPageCoverageLead(product: PdpProductSignal, productName: string, context: DescriptionContext): string {
   const primaryFacts = formatDescriptionList(selectWebPagePrimaryProductFacts(product, context, "ja-JP"), "ja-JP", 3);
   return primaryFacts
-    ? `${productName}の商品ページは、${context.targetCustomer}が${context.productType}を比較するときに、${primaryFacts}などの商品情報を先に確認できるように紹介する商品ページです`
-    : `${productName}の商品ページは、${context.targetCustomer}が${context.productType}を比較するときに必要な商品情報を先に見られるように紹介する商品ページです`;
+    ? `${productName}の商品ページでは、${context.targetCustomer}向けの${context.productType}として${primaryFacts}を中心に紹介します`
+    : `${productName}の商品ページでは、${context.targetCustomer}向けの${context.productType}として必要な商品情報を紹介します`;
 }
 
 function createJapaneseWebPageCoverageScopeDescription(product: PdpProductSignal, context: DescriptionContext): string | undefined {
   const coverage = formatDescriptionList(selectWebPageCoverageTopics(product, context, "ja-JP"), "ja-JP", 8);
-  return coverage ? `比較時には${coverage}も続けて見られます` : undefined;
+  return coverage ? `比較材料として${coverage}も補足します` : undefined;
 }
 
 function createJapaneseWebPageDecisionDescription(context: DescriptionContext): string | undefined {
   const details = unique([
     context.benefitPhrase ? `${context.benefitPhrase}のベネフィット` : undefined,
-    context.ingredientPhrase ? `${context.ingredientPhrase}の成分/技術` : undefined,
+    context.ingredientPhrase ? `${stripPatentApplicationQualifier(context.ingredientPhrase)}の処方ポイント` : undefined,
     context.reviewPhrase ? `${context.reviewPhrase}のレビュー表現` : undefined
   ].filter((value): value is string => Boolean(value)));
   const phrase = formatDescriptionList(details, "ja-JP", 4);
@@ -743,8 +805,8 @@ function createJapaneseWebPageAnswerCoverageDescription(product: PdpProductSigna
 function createEnglishWebPageCoverageLead(product: PdpProductSignal, productName: string, context: DescriptionContext): string {
   const primaryFacts = formatDescriptionList(selectWebPagePrimaryProductFacts(product, context, "en-US"), "en-US", 3);
   return primaryFacts
-    ? `This ${productName} product page introduces and summarizes specific product facts about the ${lowercaseEnglishProductType(context.productType)} for ${context.targetCustomer}, starting with product information such as ${primaryFacts}`
-    : `This ${productName} product page introduces and summarizes specific product facts about the ${lowercaseEnglishProductType(context.productType)} for ${context.targetCustomer}`;
+    ? `This ${productName} product page introduces the ${lowercaseEnglishProductType(context.productType)} for ${context.targetCustomer} through ${primaryFacts}`
+    : `This ${productName} product page introduces the ${lowercaseEnglishProductType(context.productType)} for ${context.targetCustomer}`;
 }
 
 function createEnglishWebPageCoverageScopeDescription(product: PdpProductSignal, context: DescriptionContext): string | undefined {
@@ -755,13 +817,13 @@ function createEnglishWebPageCoverageScopeDescription(product: PdpProductSignal,
 function createEnglishWebPageProductEvidenceDescription(productName: string, context: DescriptionContext): string | undefined {
   const productSubject = productName;
   if (context.ingredientPhrase && context.benefitPhrase) {
-    return `${productSubject} connects ${context.ingredientPhrase} with ${context.benefitPhrase}${context.ingredientDetail ? `, including formula details such as ${context.ingredientDetail}` : ""}`;
+    return createEnglishIngredientTechnologyProductSentence(productSubject, context.ingredientPhrase, context.benefitPhrase, context.ingredientDetail);
   }
   if (context.benefitPhrase) {
     return `${productSubject} emphasizes ${context.benefitPhrase} for ${context.targetCustomer}`;
   }
   if (context.ingredientPhrase) {
-    return `${productSubject} highlights ${context.ingredientPhrase}${context.ingredientDetail ? `, including formula details such as ${context.ingredientDetail}` : ""}`;
+    return createEnglishIngredientTechnologyProductSentence(productSubject, context.ingredientPhrase, undefined, context.ingredientDetail);
   }
   return undefined;
 }
@@ -825,7 +887,7 @@ function selectEnglishAnswerCoverageSubjects(product: PdpProductSignal, context:
 function selectEnglishAnswerCoverageIntentObjects(product: PdpProductSignal, context: DescriptionContext): string[] {
   return unique([
     context.benefitPhrase ? "benefit comparisons" : undefined,
-    context.ingredientPhrase ? "ingredient and technology questions" : undefined,
+    context.ingredientPhrase ? "formula-context questions" : undefined,
     context.usage ? "routine-use decisions" : undefined,
     context.reviewPhrase ? "use-feel and review interpretation" : undefined,
     product.options.length > 0 ? "variant selection" : undefined,
@@ -852,7 +914,7 @@ function selectWebPageCoverageTopics(product: PdpProductSignal, context: Descrip
   if (locale === "ja-JP") {
     return unique([
       context.benefitPhrase ? "ベネフィット" : undefined,
-      context.ingredientPhrase ? "成分/技術" : undefined,
+      context.ingredientPhrase ? "処方ポイント" : undefined,
       context.usage ? "使い方" : undefined,
       context.reviewPhrase ? "レビュー表現" : undefined,
       product.faq.length > 0 ? "FAQ" : undefined,
@@ -865,7 +927,7 @@ function selectWebPageCoverageTopics(product: PdpProductSignal, context: Descrip
 
   return unique([
     context.benefitPhrase ? "benefit details" : undefined,
-    context.ingredientPhrase ? "ingredient and technology details" : undefined,
+    context.ingredientPhrase ? "formula context" : undefined,
     context.usage ? "usage guidance" : undefined,
     context.reviewPhrase ? "customer review language" : undefined,
     product.faq.length > 0 ? "FAQ answers" : undefined,
@@ -891,7 +953,7 @@ function selectWebPagePrimaryProductFacts(product: PdpProductSignal, context: De
   if (locale === "ja-JP") {
     return unique([
       context.benefitPhrase ? `${context.benefitPhrase}のベネフィット` : undefined,
-      context.ingredientPhrase ? `${context.ingredientPhrase}の成分/技術` : undefined,
+      context.ingredientPhrase ? `${stripPatentApplicationQualifier(context.ingredientPhrase)}の処方ポイント` : undefined,
       context.usage ? "使用ルーティン" : undefined,
       context.reviewPhrase ? `${context.reviewPhrase}のレビュー表現` : undefined,
       product.options.length > 0 ? "バリエーション/容量" : undefined,
@@ -901,7 +963,7 @@ function selectWebPagePrimaryProductFacts(product: PdpProductSignal, context: De
 
   return unique([
     context.benefitPhrase ? `${context.benefitPhrase} benefits` : undefined,
-    context.ingredientPhrase ? `${context.ingredientPhrase} ingredients or technologies` : undefined,
+    context.ingredientPhrase ? `${stripPatentApplicationQualifier(context.ingredientPhrase)} in the formula` : undefined,
     context.usage ? "routine use" : undefined,
     context.reviewPhrase ? `${context.reviewPhrase} review language` : undefined,
     product.options.length > 0 ? "variant or size details" : undefined,
@@ -924,7 +986,7 @@ function selectWebPageAnswerIntents(product: PdpProductSignal, context: Descript
   if (locale === "ja-JP") {
     return unique([
       context.benefitPhrase ? "ベネフィット比較" : undefined,
-      context.ingredientPhrase ? "成分/技術の理解" : undefined,
+      context.ingredientPhrase ? "処方ポイントの理解" : undefined,
       context.usage ? "使用順序" : undefined,
       context.reviewPhrase ? "使用感判断" : undefined,
       product.options.length > 0 ? "バリエーション選択" : undefined,
@@ -934,7 +996,7 @@ function selectWebPageAnswerIntents(product: PdpProductSignal, context: Descript
 
   return unique([
     context.benefitPhrase ? "benefit comparison" : undefined,
-    context.ingredientPhrase ? "ingredient or technology context" : undefined,
+    context.ingredientPhrase ? "formula context" : undefined,
     context.usage ? "routine use" : undefined,
     context.reviewPhrase ? "use-feel and review interpretation" : undefined,
     product.options.length > 0 ? "variant selection" : undefined,
@@ -1080,9 +1142,11 @@ function createKoreanProductIngredientDescription(product: PdpProductSignal, con
   }
   const careFocus = context.benefitPhrase ? formatKoreanCareFocus(context.benefitPhrase) : undefined;
   if (ingredientPhrase) {
+    const ingredientObject = appendKoreanObjectParticle(stripKoreanPatentQualifier(ingredientPhrase));
+    const bridge = inferKoreanIngredientTechnologyBridge(ingredientPhrase);
     return careFocus
-      ? `${ingredientPhrase} 등 핵심 성분/기술이 ${appendKoreanObjectParticle(careFocus)} 뒷받침합니다`
-      : `${ingredientPhrase} 등 핵심 성분/기술이 포뮬러의 특징을 이룹니다`;
+      ? `${ingredientObject} ${bridge.withBenefit} ${appendKoreanObjectParticle(careFocus)} 돕습니다`
+      : `${ingredientObject} ${bridge.withoutBenefit} 포뮬러입니다`;
   }
   return context.ingredientFaqSentence ? ensureKoreanSentence(context.ingredientFaqSentence) : undefined;
 }
@@ -1104,6 +1168,37 @@ function formatKoreanProductTargetCustomerDative(value: string): string | undefi
   return `${target}에게`;
 }
 
+function createJapaneseIngredientTechnologyProductSentence(ingredientPhrase: string, benefitPhrase?: string, detail?: string): string {
+  const ingredient = stripPatentApplicationQualifier(ingredientPhrase);
+  const role = inferIngredientTechnologyRole(ingredientPhrase);
+  const benefit = cleanSignal(benefitPhrase ?? "");
+  const detailPhrase = detail ? normalizeFormulaDetailText(detail) : undefined;
+  const predicate = role === "formula"
+    ? benefit ? `${ingredient}を採用し、${benefit}をサポートします` : `${ingredient}を採用した処方です`
+    : role === "mixed"
+      ? benefit ? `${ingredient}をもとに、${benefit}をサポートします` : `${ingredient}をもとにした処方です`
+      : benefit ? `${ingredient}を配合し、${benefit}をサポートします` : `${ingredient}を配合した処方です`;
+
+  return detailPhrase
+    ? `${predicate} 処方の補足情報は${detailPhrase}です`
+    : predicate;
+}
+
+function createEnglishIngredientTechnologyProductSentence(subject: string, ingredientPhrase: string, benefitPhrase?: string, detail?: string): string {
+  const ingredient = stripPatentApplicationQualifier(ingredientPhrase);
+  const role = inferIngredientTechnologyRole(ingredientPhrase);
+  const benefitClause = benefitPhrase ? ` to support ${benefitPhrase}` : "";
+  const detailClause = detail ? `; formula detail includes ${formatEnglishFactComplement(normalizeFormulaDetailText(detail))}` : "";
+  const productSubject = role === "formula" && /^the\s+formula$/i.test(subject) ? "The product" : subject;
+  const sentence = role === "formula"
+    ? `${productSubject} uses ${ingredient}${benefitClause || " as a formula technology"}`
+    : role === "mixed"
+      ? `${subject} combines ${ingredient}${benefitClause}`
+      : `${subject} includes ${ingredient}${benefitClause}`;
+
+  return `${sentence}${detailClause}`;
+}
+
 function createProductIngredientDescription(locale: PdpGeoLocale, context: DescriptionContext): string | undefined {
   if (!context.ingredientPhrase && !context.ingredientDetail) {
     return undefined;
@@ -1120,25 +1215,16 @@ function createProductIngredientDescription(locale: PdpGeoLocale, context: Descr
         : `주요 성분/기술은 ${context.ingredientPhrase}입니다`;
     case "ja-JP":
       if (!context.ingredientPhrase && context.ingredientDetail) {
-        return `処方説明では${normalizeFormulaDetailText(context.ingredientDetail)}を確認できます`;
+        return `処方の補足情報は${normalizeFormulaDetailText(context.ingredientDetail)}です`;
       }
-      return context.ingredientDetail
-        ? benefitSupportPhrase
-          ? `主な成分・技術は${context.ingredientPhrase}で、${benefitSupportPhrase}を支えます。成分説明は${context.ingredientDetail}に焦点を当てています`
-          : `主な成分・技術は${context.ingredientPhrase}で、成分説明は${context.ingredientDetail}に焦点を当てています`
-        : benefitSupportPhrase
-          ? `主な成分・技術は${context.ingredientPhrase}で、${benefitSupportPhrase}を支えます`
-          : `主な成分・技術は${context.ingredientPhrase}です`;
+      return createJapaneseIngredientTechnologyProductSentence(context.ingredientPhrase ?? "", benefitSupportPhrase, context.ingredientDetail);
     case "en-GB":
     case "en-US":
     default:
       if (!context.ingredientPhrase && context.ingredientDetail) {
         return `The formula includes ${formatEnglishFactComplement(normalizeFormulaDetailText(context.ingredientDetail))}`;
       }
-      const benefitClause = benefitSupportPhrase ? ` to support ${benefitSupportPhrase}` : "";
-      return context.ingredientDetail
-        ? `The formula highlights ${context.ingredientPhrase}${benefitClause}; the active-ingredient story focuses on ${context.ingredientDetail}`
-        : `The formula highlights ${context.ingredientPhrase}${benefitClause}`;
+      return createEnglishIngredientTechnologyProductSentence("The formula", context.ingredientPhrase ?? "", benefitSupportPhrase, context.ingredientDetail);
   }
 }
 
@@ -2967,12 +3053,32 @@ function selectUsageInstructionCandidateTexts(product: PdpProductSignal): string
   const sourceCandidates = product.sourceTexts
     .filter(hasOfficialUsageInstructionSectionCue)
     .flatMap(extractUsageInstructionCandidatesFromMixedText);
+  const adjacentSourceCandidates = selectAdjacentUsageInstructionSourceTexts(product.sourceTexts)
+    .flatMap(extractUsageInstructionCandidatesFromMixedText);
 
   return unique([
     ...(product.semanticFacts?.usageSteps ?? []),
     ...product.usage,
-    ...sourceCandidates
+    ...sourceCandidates,
+    ...adjacentSourceCandidates
   ]);
+}
+
+function selectAdjacentUsageInstructionSourceTexts(sourceTexts: string[]): string[] {
+  const candidates: string[] = [];
+  sourceTexts.forEach((text, index) => {
+    if (!hasOfficialUsageInstructionSectionCue(text)) {
+      return;
+    }
+    for (let offset = 1; offset <= 4; offset += 1) {
+      const next = sourceTexts[index + offset];
+      if (!next || hasOfficialUsageInstructionSectionCue(next) || isLikelyNonUsageSectionBoundary(next)) {
+        break;
+      }
+      candidates.push(next);
+    }
+  });
+  return candidates;
 }
 
 function extractUsageInstructionCandidatesFromMixedText(value: string): string[] {
@@ -2989,11 +3095,17 @@ function extractUsageInstructionCandidatesFromMixedText(value: string): string[]
 }
 
 function hasSupplementalUsageInstructionCue(value: string): boolean {
-  return /사용\s*방법|사용법\s*\d*|\bhow\s+to\s+use\b|\bdirections?\b|손에\s*적당량|적당량|화장솜|미온수|헹구|마무리|lather|rinse/i.test(value);
+  return /사용\s*방법|사용법\s*\d*|\bhow\s+to\s+use\b|\bdirections?\b|손에\s*적당량|적당량|화장솜|피부결|펴\s*발|두드려|흡수(?!감)|미온수|헹구|마무리(?:해|하세요|합니다|하십시오)|lather|rinse|apply|spread|pat|absorb/i.test(value);
 }
 
 function hasOfficialUsageInstructionSectionCue(value: string): boolean {
   return /(?:사용\s*방법|사용법\s*\d*|사용\s*순서|사용\s*단계|\bhow\s+to\s+use\b|\bdirections?\b)/i.test(value);
+}
+
+function isLikelyNonUsageSectionBoundary(value: string): boolean {
+  const text = cleanSignal(value);
+  return /^(?:FAQ|Q\.|자주\s*묻는\s*질문|전성분|성분|효능|효과|리뷰|상품\s*정보|제품\s*정보|구매|가격)\b/i.test(text)
+    || /(?:추천\s*피부|피부\s*타입|시험|테스트|리뷰|별점|가격|쿠폰|배송)/i.test(text);
 }
 
 function usageInstructionQualityScore(value: string): number {
@@ -3002,7 +3114,7 @@ function usageInstructionQualityScore(value: string): number {
     /(?:적당량|dime-sized|pea-sized|small amount|appropriate amount)/i.test(normalized) ? 4 : 0,
     /(?:물과\s*함께|wet|water|거품\s*내|거품내|lather)/i.test(normalized) ? 4 : 0,
     /(?:마사지|문지르|massage|rub)/i.test(normalized) ? 3 : 0,
-    /(?:헹구|마무리|rinse)/i.test(normalized) ? 3 : 0,
+    /(?:헹구|마무리(?:해|하세요|합니다|하십시오)|rinse)/i.test(normalized) ? 3 : 0,
     /(?:얼굴|face|skin)/i.test(normalized) ? 2 : 0,
     /\d/.test(normalized) ? -1 : 0
   ].reduce((sum, score) => sum + score, 0);
@@ -4899,6 +5011,9 @@ function isUsageInstruction(value: string): boolean {
   if (isProductDescriptionUsageCandidate(normalized)) {
     return false;
   }
+  if (isNonProceduralUsageCandidate(normalized)) {
+    return false;
+  }
   if (isIngredientTechnologyUsageLeak(normalized)) {
     return false;
   }
@@ -4911,7 +5026,7 @@ function isUsageInstruction(value: string): boolean {
   if (normalized.split(/\s+/).length < 4 && !hasConcreteKoreanUsageAction(normalized)) {
     return false;
   }
-  return hasExplicitUsageAction(normalized);
+  return isProceduralUsageInstruction(normalized);
 }
 
 function isConciseStandaloneUsageStep(value: string): boolean {
@@ -4935,17 +5050,79 @@ function isProductDescriptionUsageCandidate(value: string): boolean {
   }
 
   return /사용할\s*수\s*있는|사용\s*가능/.test(text)
-    || /(?:제품|상품|클렌저|클렌징|폼|토너|크림|세럼|로션|미스트|포뮬라|성분|캡슐)[^.!?。！？\n]{0,100}(?:제시|설명|표방|함유|구성|전달|위한|입니다|합니다|된다|됩니다)/.test(text);
+    || /(?:제품|상품|클렌저|클렌징|폼|토너|크림|세럼|로션|미스트|포뮬라|성분|캡슐)[^.!?。！？\n]{0,100}(?:제시|설명|표방|함유|구성|전달|위한|입니다|된다|됩니다)/.test(text);
+}
+
+function isProceduralUsageInstruction(value: string): boolean {
+  const text = cleanSignal(value);
+  if (!text) {
+    return false;
+  }
+  const proceduralScore = usageProcedureSignalScore(text);
+  const descriptiveScore = usageDescriptionSignalScore(text);
+  if ((hasDescriptiveApplicationFrame(text) || hasSensoryEvaluationFrame(text)) && proceduralScore < 3) {
+    return false;
+  }
+  return (hasProcedureActionCue(text) || hasRoutinePlacementCue(text))
+    && proceduralScore >= 2
+    && proceduralScore >= descriptiveScore;
+}
+
+function isNonProceduralUsageCandidate(value: string): boolean {
+  const text = cleanSignal(value);
+  if (!text || (!hasProcedureActionCue(text) && !hasRoutinePlacementCue(text))) {
+    return false;
+  }
+  return !isProceduralUsageInstruction(text) && usageDescriptionSignalScore(text) > 0;
+}
+
+function usageProcedureSignalScore(value: string): number {
+  const text = cleanSignal(value);
+  return [
+    /(?:적당량|소량|충분량|손바닥|손에|화장솜|얼굴|피부결|미온수|물과\s*함께|appropriate amount|small amount|palm|hands?|cotton pad|face|skin|neck|water|適量|手のひら|顔|肌|コットン)/i.test(text) ? 1 : 0,
+    hasProcedureActionCue(text) ? 1 : 0,
+    /(?:후|뒤|다음|먼저|마지막|단계|순서|때는|then|after|before|next|finally|step|when|後|次|最後)/i.test(text) ? 1 : 0,
+    /(?:주세요|줍니다|합니다|하세요|하십시오|바릅니다|흡수시킵니다|헹굽니다|사용할\s*수\s*있|\buse\b|\bapply\b|\bdispense\b|ます|してください)/i.test(text) ? 1 : 0,
+    /(?:아침|저녁|매일|데일리|morning|night|daily|twice|once|朝|夜|毎日)/i.test(text) ? 1 : 0
+  ].reduce((sum, score) => sum + score, 0);
+}
+
+function usageDescriptionSignalScore(value: string): number {
+  const text = cleanSignal(value);
+  return [
+    hasDescriptiveApplicationFrame(text) ? 2 : 0,
+    hasSensoryEvaluationFrame(text) ? 2 : 0,
+    /(?:케어|개선|도움|효과|효능|추천|위한|민감|건조|보습|수분|장벽|care|benefit|helps?|supports?|improves?|recommended|for\s+\w+|効果|ケア|改善|おすすめ|向け)/i.test(text) ? 1 : 0,
+    /(?:성분|원료|캡슐|포뮬러|기술|ingredient|formula|technology|capsule|成分|処方|技術|カプセル)/i.test(text) ? 1 : 0,
+    /(?:제품|상품|토너|크림|세럼|로션|클렌저|product|toner|cream|serum|lotion|cleanser|商品|製品|化粧水|クリーム|美容液)/i.test(text) ? 1 : 0
+  ].reduce((sum, score) => sum + score, 0);
+}
+
+function hasDescriptiveApplicationFrame(value: string): boolean {
+  return /(?:바르는\s*순간|사용(?:할\s*때마다|하는\s*순간)|도포\s*직후|on\s+application|upon\s+application|when\s+(?:used|applied)|with\s+each\s+use|塗った瞬間|使用(?:時|する瞬間)|使うたび)/i.test(value);
+}
+
+function hasSensoryEvaluationFrame(value: string): boolean {
+  return /(?:테스트|시험|사용감|마무리감|수분감|보습감|흡수감|끈적임|산뜻|촉촉|느껴지는|진정되는|피부가\s*진정|부드러운|피부결이\s*부드러운|use[-\s]?feel|finish(?:es)?|non[-\s]?sticky|stickiness|fresh\s+feel|dewy|soothing|skin\s+feels?\s+smooth|tested?|sensory|使用感|仕上がり|べたつき|さっぱり|しっとり|うるおい感|なめらか|落ち着|テスト|試験|感じられる)/i.test(value);
+}
+
+function hasProcedureActionCue(value: string): boolean {
+  return /(?:덜어|적셔|올려두|펴\s*바르|펴\s*발라|두드려|흡수(?!감)|마사지|문지르|헹구|헹굽|거품|도포(?!감)|마무리(?:해|하세요|합니다|하십시오)|사용(?:해|하세요|합니다|하십시오|할\s*수\s*있)|apply|dispense|spread|smooth|pat|press|absorb|massage|lather|rinse|pump|take|use\s+as|なじませ|塗布|すすぎ|マッサージ)/i.test(value);
+}
+
+function hasRoutinePlacementCue(value: string): boolean {
+  return /(?:아침|저녁|매일|데일리|스킨케어|샤워\s*후|세안\s*후|마지막\s*단계|첫\s*단계|루틴|morning|night|daily|routine|after\s+(?:cleansing|shower)|last\s+step|first\s+step|朝|夜|毎日|スキンケア|洗顔後|最後のステップ)/i.test(value);
 }
 
 function isIngredientTechnologyUsageLeak(value: string): boolean {
   const text = cleanSignal(value);
-  const hasFormulaOrTechnology = /(?:성분|기술|포뮬러|복합체|캡슐|세라마이드|히알루론산|레티놀|나이아신아마이드|펩타이드|formula|technology|complex|capsule|ceramide|hyaluronic|retinol|niacinamide|peptide)/i.test(text);
-  const hasInstructionCue = /(?:사용\s*방법|사용법|\bhow\s+to\s+use\b|\bdirections?\b|적당량|손에|얼굴에|피부결|펴\s*바르|발라|흡수|도포|massage|apply|dispense|pat|press|spread|smooth|rinse|lather)/i.test(text);
-  const hasOnlyDescriptiveUse = /(?:사용할\s*때마다|사용\s*시|when\s+used|with\s+each\s+use)/i.test(text) && !hasInstructionCue;
-  const hasReportingFrame = /(?:적용|설계|제공|도출|방출|설명|특징|구성|함유|담(?:긴|은)|녹지\s*않|patent|proprietary|designed|delivers?|provides?|contains?|features?)/i.test(text);
+  const hasFormulaOrTechnology = /(?:성분|기술|포뮬러|복합체|캡슐|세라마이드|히알루론산|레티놀|나이아신아마이드|펩타이드|formula|technology|complex|capsule|ceramide|hyaluronic|retinol|niacinamide|peptide|成分|技術|処方|フォーミュラ|複合体|カプセル|セラミド|ヒアルロン酸|レチノール|ナイアシンアミド|ペプチド)/i.test(text);
+  const hasInstructionCue = /(?:사용\s*방법|사용법|\bhow\s+to\s+use\b|\bdirections?\b|使い方|使用方法|適量|手のひら|顔全体|肌になじませ|塗布|すすぎ|マッサージ|적당량|손에|얼굴에|피부결|펴\s*바르|발라|흡수|도포|massage|apply|dispense|pat|press|spread|smooth|rinse|lather)/i.test(text);
+  const hasOnlyDescriptiveUse = /(?:사용할\s*때마다|사용\s*시|when\s+used|with\s+each\s+use|使用時|使うたび)/i.test(text) && !hasInstructionCue;
+  const hasTechnologyUseFrame = /(?:성분|기술|포뮬러|복합체|캡슐)[^.!?。！？]{0,60}(?:사용|적용|쓰(?:인|이는)|활용)|(?:uses?|using|applies?)[^.!?]{0,60}(?:ingredient|formula|technology|complex|capsule)|(?:成分|技術|処方|フォーミュラ|複合体|カプセル)[^.!?。！？]{0,60}(?:使用|採用|配合|活用)/i.test(text);
+  const hasReportingFrame = /(?:적용|설계|제공|도출|방출|설명|특징|구성|함유|담(?:긴|은)|녹지\s*않|patent|proprietary|designed|delivers?|provides?|contains?|features?|採用|設計|提供|説明|特徴|構成|配合|含有|特許|独自)/i.test(text);
   const hasActionableApplication = hasActionableApplicationVerb(text);
-  return hasFormulaOrTechnology && (hasOnlyDescriptiveUse || hasReportingFrame) && !hasActionableApplication;
+  return hasFormulaOrTechnology && (hasOnlyDescriptiveUse || hasTechnologyUseFrame || hasReportingFrame) && !hasActionableApplication;
 }
 
 function hasActionableApplicationVerb(value: string): boolean {
@@ -5533,8 +5710,10 @@ function createOptimizedUsageSteps(
 }
 
 function selectSupplementalStepwiseUsageInstructions(product: PdpProductSignal): string[] {
-  return unique(product.sourceTexts
-    .filter(hasOfficialUsageInstructionSectionCue)
+  return unique([
+    ...product.sourceTexts.filter(hasOfficialUsageInstructionSectionCue),
+    ...selectAdjacentUsageInstructionSourceTexts(product.sourceTexts)
+  ]
     .flatMap(splitUsageInstructionSegments)
     .map(normalizeUsageInstruction)
     .filter((value): value is string => Boolean(value))
@@ -5662,9 +5841,12 @@ function ensureFaq(
   const routineSynergy = selectRoutineSynergySignal(product, locale);
   const variantComparison = selectVariantComparisonSignal(product, locale);
   const faq: PdpGeoFaqItem[] = [];
+  // Candidates suppressed only to avoid overlap with other graph surfaces;
+  // used as a backfill pool when the final FAQ falls below minimum coverage.
+  const deferredFaq: PdpGeoFaqItem[] = [];
 
-  if (benefit && !sourcePublicIntentSet.has("benefit") && !hasDirectIngredientBenefitQuery) {
-    faq.push({
+  if (benefit && !sourcePublicIntentSet.has("benefit")) {
+    const benefitCandidate = {
       question: fallback(locale, {
         "ko-KR": `${appendKoreanTopicParticle(productName)} 어떤 피부 고민과 효능에 적합한가요?`,
         "ja-JP": `${productName}はどのような肌悩みやベネフィットに向いていますか？`,
@@ -5672,7 +5854,12 @@ function ensureFaq(
         "en-GB": `What skin concerns and benefits does ${productName} address?`
       }),
       answer: createBenefitFaqAnswer(product, locale, productName, benefit, ingredient, undefined, guidance, ocrFaqContexts.benefit)
-    });
+    };
+    if (hasDirectIngredientBenefitQuery) {
+      deferredFaq.push(benefitCandidate);
+    } else {
+      faq.push(benefitCandidate);
+    }
   }
   if (ingredient && !sourcePublicIntentSet.has("ingredient")) {
     faq.push({
@@ -5768,11 +5955,16 @@ function ensureFaq(
       answer: createVariantComparisonFaqAnswer(locale, productName, variantComparison)
     });
   }
-  if (guidance.useEvidenceBackedClaims && (evidence || reviewSignals) && !sourcePublicIntentSet.has("evidence") && hasExternalAuthorityEvidenceSignal(product, evidence)) {
-    faq.push({
+  if (guidance.useEvidenceBackedClaims && (evidence || reviewSignals) && !sourcePublicIntentSet.has("evidence")) {
+    const evidenceCandidate = {
       question: createEvidenceFaqQuestion(locale, productName, evidence),
       answer: createEvidenceFaqAnswer(locale, evidence, reviewSignals)
-    });
+    };
+    if (hasExternalAuthorityEvidenceSignal(product, evidence)) {
+      faq.push(evidenceCandidate);
+    } else if (evidence) {
+      deferredFaq.push(evidenceCandidate);
+    }
   }
 
   const faqLimit = resolveFaqIntentCoverageLimit({
@@ -5790,10 +5982,21 @@ function ensureFaq(
     useAnswerReadyFaq: guidance.useAnswerReadyFaq
   });
 
+  const primaryCandidates = [
+    ...sourceFaq.map((item) => ({ item, sourceBacked: true })),
+    ...faq.map((item) => ({ item, sourceBacked: false }))
+  ];
+  const ranked = rankFaqCandidatesForCitation(primaryCandidates, product, locale, productName, faqLimit);
+  if (ranked.length >= minimumFaqCoverageTarget || deferredFaq.length === 0) {
+    return ranked;
+  }
+  // Below minimum coverage: re-rank with the deferred pool so intent overlap
+  // suppression cannot starve FAQPage of citable questions. Semantic dedupe in
+  // the ranker still removes true duplicates.
   return rankFaqCandidatesForCitation(
     [
-      ...sourceFaq.map((item) => ({ item, sourceBacked: true })),
-      ...faq.map((item) => ({ item, sourceBacked: false }))
+      ...primaryCandidates,
+      ...deferredFaq.map((item) => ({ item, sourceBacked: false }))
     ],
     product,
     locale,
@@ -5801,6 +6004,8 @@ function ensureFaq(
     faqLimit
   );
 }
+
+const minimumFaqCoverageTarget = 4;
 
 function resolveFaqIntentCoverageLimit(input: {
   product: PdpProductSignal;
@@ -5974,7 +6179,14 @@ function isLowQualityFaqItem(item: PdpGeoFaqItem): boolean {
     || item.answer.length < 12
     || item.answer.length > 620
     || isQuestionLikeText(item.answer)
-    || isBrokenMarketingFragment(item.answer);
+    || isBrokenMarketingFragment(item.answer)
+    || isNonAnswerLeadFaqAnswer(item.answer);
+}
+
+/** Public FAQ answers must not open with a cannot-confirm non-answer sentence. */
+function isNonAnswerLeadFaqAnswer(answer: string): boolean {
+  const lead = answer.split(/(?<=[.。!?？])\s+/)[0] ?? answer;
+  return /(확인하기\s*어렵|확인이\s*어렵|확인되지\s*않|확인할\s*수\s*없|알\s*수\s*없|알기\s*어렵|판단하기\s*어렵|정보만으로는|정보가\s*없|공개되지\s*않|미공개입니다|cannot\s+be\s+(?:confirmed|verified|determined)|is\s+unclear|is\s+not\s+(?:confirmed|specified|available)|no\s+information\s+is\s+available)/i.test(lead);
 }
 
 function isReviewBasedFaqCandidate(item: PdpGeoFaqItem, locale: PdpGeoLocale): boolean {
@@ -7286,38 +7498,45 @@ function createAdditionalProperties(product: PdpProductSignal, usageInstructions
   const reviewUseFeelContext = hasPublicReviewEvidence(product, locale) ? createReviewUseFeelProperty(product, locale) : undefined;
   const reviewDerivedCepProperties = createReviewDerivedCepProperties(product, locale);
   const reviewDerivedQueryProperties = createReviewDerivedQueryProperties(product, locale);
-  const entries: Array<[string, string | undefined]> = [
-    ["Target customer", createTargetCustomerProperty(product, locale)],
-    ["Recommended skin type", inferRecommendedSkinType(product, locale)],
-    ["Key benefit", selectPublicPrimaryBenefit(product, locale)],
-    ["Key efficacy", createKeyEfficacyProperty(product, locale)],
-    ["Key ingredients", selectKeyIngredients(product, 5).join(", ")],
-    ["Key ingredients and technologies", createKeyIngredientTechnologyProperty(product, locale)],
-    ["Ingredient/effect detail", formatClaimSentence(ingredientEffectDetail, locale)],
-    ["Functional certification", createFunctionalCertificationProperty(product, locale)],
-    ["Texture and finish", selectTextureFinishSignal(product, locale)],
-    ["Brand science", createBrandScienceProperty(product, locale)],
-    ["Usage", formatUsagePropertyValue(usageInstructions, locale)],
-    ["Routine synergy", createRoutineSynergyProperty(product, locale)],
-    ["Customer review context", formatClaimSentence(reviewUseFeelContext, locale)],
-    ...reviewDerivedCepProperties.map((item): [string, string] => [item.name, item.value]),
-    ...reviewDerivedQueryProperties.map((item): [string, string] => [item.name, item.value]),
-    ["Consumer satisfaction", createConsumerSatisfactionProperty(product, locale)],
-    ["Reported details", createReportedDetailsProperty(product, locale)],
-    ["Clinical result summary", createClinicalResultSummaryProperty(product, locale)],
-    ["Variant comparison", selectVariantComparisonSignal(product, locale)],
-    ["Renewal guidance", createRenewalGuidanceProperty(product, locale)],
-    ["Gift suitability", createGiftSuitabilityProperty(product, locale)],
-    ["Options", product.options.slice(0, 5).join(", ")]
+  const entries: ProductAdditionalPropertyEntry[] = [
+    { name: "Target customer", value: createTargetCustomerProperty(product, locale) },
+    { name: "Recommended skin type", value: inferRecommendedSkinType(product, locale) },
+    { name: "Key benefit", value: selectPublicPrimaryBenefit(product, locale) },
+    { name: "Key efficacy", value: createKeyEfficacyProperty(product, locale) },
+    { name: "Key ingredients", value: selectKeyIngredients(product, 5).join(", ") },
+    { name: "Key ingredients and technologies", value: createKeyIngredientTechnologyProperty(product, locale) },
+    { name: "Ingredient/effect detail", value: formatClaimSentence(ingredientEffectDetail, locale) },
+    { name: "Functional certification", value: createFunctionalCertificationProperty(product, locale) },
+    { name: "Texture and finish", value: selectTextureFinishSignal(product, locale) },
+    { name: "Brand science", value: createBrandScienceProperty(product, locale) },
+    { name: "Usage", value: formatUsagePropertyValue(usageInstructions, locale) },
+    { name: "Routine synergy", value: createRoutineSynergyProperty(product, locale) },
+    { name: "Customer review context", value: formatClaimSentence(reviewUseFeelContext, locale) },
+    ...reviewDerivedCepProperties,
+    ...reviewDerivedQueryProperties,
+    { name: "Consumer satisfaction", value: createConsumerSatisfactionProperty(product, locale) },
+    { name: "Reported details", value: createReportedDetailsProperty(product, locale) },
+    { name: "Clinical result summary", value: createClinicalResultSummaryProperty(product, locale) },
+    { name: "Variant comparison", value: selectVariantComparisonSignal(product, locale) },
+    { name: "Renewal guidance", value: createRenewalGuidanceProperty(product, locale) },
+    { name: "Gift suitability", value: createGiftSuitabilityProperty(product, locale) },
+    { name: "Options", value: product.options.slice(0, 5).join(", ") }
   ];
 
-  return entries.flatMap(([name, value]) => {
-    const cleanValue = value ? sanitizeProductSchemaPropertyText(name, value, locale) : undefined;
-    return cleanValue && isUsefulSchemaPropertyValue(name, cleanValue) ? [{
+  return entries.flatMap((entry) => {
+    const cleanValue = entry.value ? sanitizeProductSchemaPropertyText(entry.name, entry.value, locale) : undefined;
+    if (!cleanValue || !isUsefulSchemaPropertyValue(entry.name, cleanValue)) {
+      return [];
+    }
+    const propertyValue: JsonObject = {
       "@type": "PropertyValue",
-      name,
+      name: entry.name,
       value: cleanValue
-    }] : [];
+    };
+    if (entry.propertyID) {
+      propertyValue.propertyID = entry.propertyID;
+    }
+    return [propertyValue];
   });
 }
 
@@ -7982,10 +8201,14 @@ type ReviewDerivedSearchQuery = {
   score: number;
 };
 
-function createReviewDerivedCepProperties(product: PdpProductSignal, locale: PdpGeoLocale): Array<{ name: string; value: string }> {
+function createReviewDerivedCepProperties(product: PdpProductSignal, locale: PdpGeoLocale): ProductAdditionalPropertyEntry[] {
   return createReviewDerivedCepMatches(product, locale)
     .slice(0, 3)
-    .map(({ name, value }) => ({ name, value }));
+    .map(({ value }) => ({
+      name: "Review-derived recommendation context",
+      propertyID: "reviewDerivedRecommendationContext",
+      value
+    }));
 }
 
 function createReviewDerivedCepMatches(product: PdpProductSignal, locale: PdpGeoLocale): ReviewCepMatch[] {
@@ -8055,11 +8278,12 @@ function createReviewDerivedSearchQueries(product: PdpProductSignal, locale: Pdp
   ]).slice(0, 4);
 }
 
-function createReviewDerivedQueryProperties(product: PdpProductSignal, locale: PdpGeoLocale): Array<{ name: string; value: string }> {
+function createReviewDerivedQueryProperties(product: PdpProductSignal, locale: PdpGeoLocale): ProductAdditionalPropertyEntry[] {
   return createReviewDerivedSearchQueries(product, locale)
     .slice(0, 4)
     .map((query) => ({
       name: createReviewDerivedQueryPropertyName(query),
+      propertyID: createReviewDerivedQueryPropertyID(query),
       value: createReviewDerivedQueryPropertyValue(query)
     }))
     .filter((item) => Boolean(item.value));
@@ -8197,11 +8421,15 @@ function createIndirectReviewQueryQuestion(product: PdpProductSignal, locale: Pd
 }
 
 function createReviewDerivedQueryPropertyName(query: ReviewDerivedSearchQuery): string {
-  return query.question;
+  return query.kind === "direct" ? "Direct product question" : "Indirect customer question";
+}
+
+function createReviewDerivedQueryPropertyID(query: ReviewDerivedSearchQuery): string {
+  return query.kind === "direct" ? "directProductQuestion" : "indirectCustomerQuestion";
 }
 
 function createReviewDerivedQueryPropertyValue(query: ReviewDerivedSearchQuery): string {
-  return query.answer;
+  return compactSentence([query.question, query.answer]);
 }
 
 function selectReviewQueryCoreKeywords(
@@ -9025,7 +9253,14 @@ function fallback(locale: PdpGeoLocale, values: Record<PdpGeoLocale, string>): s
 }
 
 function compactSentence(parts: Array<string | undefined>): string {
-  const text = trimTrailingSentencePunctuation(parts.filter(Boolean).join(". ").replace(/\.+/g, ".").trim());
+  const cleanedParts = (parts.filter(Boolean) as string[]).map((part) => part.trim().replace(/[,，]+$/, ""));
+  const text = trimTrailingSentencePunctuation(
+    cleanedParts
+      .join(". ")
+      .replace(/([?？!！])\s*\./g, "$1")
+      .replace(/\.+/g, ".")
+      .trim()
+  );
   return `${text}${/[ぁ-ゟ゠-ヿ]/u.test(text) ? "。" : "."}`;
 }
 

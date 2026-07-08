@@ -8,9 +8,14 @@ Generative Engine Optimization, or GEO, focuses on improving how useful, visible
 
 ### 2.1 Research Sources
 
-- Sources checked on 2026-06-24:
-  - GEO paper: https://arxiv.org/abs/2311.09735
+- Sources checked on 2026-07-08:
+  - GEO paper (KDD 2024): https://arxiv.org/abs/2311.09735
   - GEO project page: https://generative-engines.com/GEO/
+  - C-SEO Bench (NeurIPS 2025 Datasets & Benchmarks): https://arxiv.org/abs/2506.11097
+  - E-GEO e-commerce GEO testbed: https://arxiv.org/abs/2511.20867
+  - Citation selection vs citation absorption framework: https://arxiv.org/abs/2604.25707
+  - Answer non-determinism and repeated measurement: https://arxiv.org/abs/2604.07585
+  - RAG citation behavior (factual accuracy drives citation): https://arxiv.org/abs/2410.20833
 - The GEO paper describes generative engines as systems that retrieve sources and synthesize answers with LLMs, often using citations or source attribution.
 - The paper shows that visibility in generative answers differs from classic ranking, and that useful changes can include source attribution, statistics, clear phrasing, and better presentation. Effectiveness varies by domain.
 
@@ -45,6 +50,24 @@ Generative Engine Optimization, or GEO, focuses on improving how useful, visible
 
 - Beauty and skincare PDPs need product-specific evidence: category, brand, ingredient/technology, skin or hair concern, texture, usage step, customer review language, size, offer, and constraints.
 - A product page should be easy for AI systems to connect to customer questions such as "how to use it", "what ingredients are in it", "what reviews mention", and "who it is for".
+
+### 3.5 Retrieval Relevance Dominates Phrasing Tricks
+
+- C-SEO Bench (NeurIPS 2025) found many content-injection tactics are ineffective or harmful, while relevance and position of the source inside the model context dominate outcomes.
+- Do not rely on persuasive phrasing hacks. Prioritize retrievability: complete facts, clear entity coverage, sub-intent coverage, and consistent visible text.
+- When many competitors adopt the same phrasing tactic, per-adopter gains shrink toward zero; unique source-backed facts are the durable differentiator.
+
+### 3.6 E-Commerce Listing Rewrites Converge on a Stable Pattern
+
+- The E-GEO testbed (7,000+ realistic shopping queries) found effective listing rewrites converge on one domain-agnostic pattern: concrete attributes, benefit-framed language, and query-aligned wording.
+- Apply this as the description order used in this project: target customer or concern, product identity, ingredient/technology, benefit or measured result, then usage/comparison/review context.
+- Avoid category-specific gimmicks; keep the same evidence-first structure across product categories.
+
+### 3.7 Citation Selection Mechanics
+
+- RAG citation studies indicate the factual accuracy and self-containedness of a passage drive whether it is cited; there is no shortcut through authority claims alone.
+- Two stages must both succeed: the engine must retrieve/choose the page, and the page's sentences must be absorbable into the answer. Write sentences that survive being lifted out of context.
+- Generative answers are non-deterministic: identical prompts can cite different sources across runs. Visibility must be evaluated over repeated samples, not a single response.
 
 ## 4. Research-Backed GEO Principles
 
@@ -149,6 +172,7 @@ Generative Engine Optimization, or GEO, focuses on improving how useful, visible
 
 - Can a generative engine answer "what is it", "who is it for", "how do I use it", "what ingredients matter", and "what do reviews mention" from the generated output?
 - Are product facts specific enough to differentiate this product from nearby products?
+- When measuring citation visibility, sample the same buyer-intent prompts repeatedly per platform; single-shot checks are unreliable because generative answers are non-deterministic.
 
 ### 7.2 Evidence Coverage
 

@@ -51,9 +51,101 @@ describe("generatePdpGeo", () => {
     const description = String(webPage.description);
 
     expect(description).toContain("Barrier Hydro Soothing Cream product page");
-    expect(description).toMatch(/Barrier Hydro Soothing Cream connects .* with .*/);
+    expect(description).toMatch(/Barrier Hydro Soothing Cream (?:includes|combines|uses) .* to support .*/);
     expect(description).not.toMatch(/Decision details on the page|It connects those decision details|source-backed evidence reports|usage guidance covers/i);
     expect(description).not.toBe(String(product.description));
+  });
+
+  it("uses locale-natural ingredient and formula predicates for English and Japanese descriptions", async () => {
+    const english = await generatePdpGeo({
+      product: {
+        geoProduct: {
+          name: "AESTURA Atobarrier365 Capsule Toner",
+          description: "A barrier moisturizing capsule toner for dry or sensitive skin after cleansing.",
+          brand: "AESTURA",
+          category: "Toner",
+          benefits: ["barrier hydration", "skin barrier moisture"],
+          effects: ["supports skin barrier hydration after cleansing"],
+          ingredients: [
+            "PHA water",
+            "high-density ceramide capsules",
+            "patent-pending Hydroqual Floating Formula"
+          ],
+          usage: [
+            "AESTURA Atobarrier365 Capsule Toner uses patent-pending Hydroqual Floating Formula with PHA water and high-density ceramide capsules.",
+            "Dispense an appropriate amount into your palm.",
+            "Spread gently over skin and pat to absorb."
+          ],
+          sourceTexts: [
+            "Recommended for dry or sensitive skin after cleansing.",
+            "PHA water and high-density ceramide capsules are presented with patent-pending Hydroqual Floating Formula.",
+            "How to use. Dispense an appropriate amount into your palm. Spread gently over skin and pat to absorb."
+          ]
+        }
+      },
+      hints: {
+        locale: "en-US",
+        market: "US"
+      }
+    });
+
+    const englishGraph = english.result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const englishWebPage = englishGraph.find((node) => node["@type"] === "WebPage") as Record<string, any>;
+    const englishProduct = englishGraph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    const englishHowTo = englishGraph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
+    const englishProperties = Object.fromEntries((englishProduct.additionalProperty as Array<Record<string, any>>).map((item) => [item.name, item.value]));
+
+    expect(String(englishWebPage.description)).toContain("AESTURA Atobarrier365 Capsule Toner product page");
+    expect(String(englishWebPage.description)).not.toMatch(/can be (?:checked|viewed|confirmed)|key ingredients? (?:and|\/) technolog(?:y|ies)|patent[-\s]?pending[^.]*formula's/i);
+    expect(String(englishProduct.description)).toMatch(/(?:includes|combines|uses) .*support/i);
+    expect(String(englishProduct.description)).not.toMatch(/formula highlights|active-ingredient story|patent[-\s]?pending[^.]*formula's|key ingredients? (?:and|\/) technolog(?:y|ies)/i);
+    expect(JSON.stringify(englishHowTo.step)).not.toMatch(/Hydroqual Floating Formula|uses patent[-\s]?pending/i);
+    expect(String(englishProperties.Usage)).not.toMatch(/Hydroqual Floating Formula|uses patent[-\s]?pending/i);
+
+    const japanese = await generatePdpGeo({
+      product: {
+        geoProduct: {
+          name: "AESTURA アトバリア365 カプセルトナー",
+          description: "洗顔後の乾燥肌や敏感肌に向けたバリア保湿カプセルトナー。",
+          brand: "AESTURA",
+          category: "化粧水",
+          benefits: ["バリア保湿", "うるおい"],
+          effects: ["洗顔後の肌のバリア保湿をサポート"],
+          ingredients: [
+            "PHAウォーター",
+            "高密度セラミドカプセル",
+            "特許出願中のハイドロクオールフローティングフォーミュラ"
+          ],
+          usage: [
+            "AESTURA アトバリア365 カプセルトナーは特許出願中のハイドロクオールフローティングフォーミュラ処方を使用しています。",
+            "手のひらに適量を取ります。",
+            "肌になじませます。"
+          ],
+          sourceTexts: [
+            "乾燥肌や敏感肌におすすめです。",
+            "PHAウォーターと高密度セラミドカプセルを特許出願中のハイドロクオールフローティングフォーミュラで紹介しています。",
+            "使い方。手のひらに適量を取り、肌になじませます。"
+          ]
+        }
+      },
+      hints: {
+        locale: "ja-JP",
+        market: "JP"
+      }
+    });
+
+    const japaneseGraph = japanese.result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const japaneseWebPage = japaneseGraph.find((node) => node["@type"] === "WebPage") as Record<string, any>;
+    const japaneseProduct = japaneseGraph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    const japaneseHowTo = japaneseGraph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
+    const japaneseProperties = Object.fromEntries((japaneseProduct.additionalProperty as Array<Record<string, any>>).map((item) => [item.name, item.value]));
+
+    expect(String(japaneseWebPage.description)).toContain("AESTURA アトバリア365 カプセルトナーの商品ページ");
+    expect(String(japaneseWebPage.description)).not.toMatch(/確認できる|確認できます|見られます|主な成分・技術|成分\/技術|特許\s*出願[^。]*処方の/);
+    expect(String(japaneseProduct.description)).toMatch(/(?:配合|採用|もとに).*サポート/);
+    expect(String(japaneseProduct.description)).not.toMatch(/主な成分・技術|確認できる|特許\s*出願[^。]*処方の/);
+    expect(JSON.stringify(japaneseHowTo?.step ?? [])).not.toMatch(/ハイドロクオールフローティングフォーミュラ|処方を使用/);
+    expect(String(japaneseProperties.Usage)).not.toMatch(/ハイドロクオールフローティングフォーミュラ|処方を使用/);
   });
 
   it("generates GEO schema markup and HTML from arbitrary REST JSON with field mapping", async () => {
@@ -199,6 +291,9 @@ describe("generatePdpGeo", () => {
             "DermaON® 기술은 세라마이드, 콜레스테롤, 지방산을 포함한 독자적인 2-STEP 수분장벽 케어 기술로 소개된다."
           ],
           usage: [
+            "피부 장벽 유사 성분을 담은 캡슐 민감 피부 고보습 장벽 토너 바르는 순간 개운한 ‘보습 장벽’ 케어 무너진 피부장벽과 속건조 개선에 도움 피부 장벽 유사 성분을 담은 캡슐 토너 세라마이드 캡슐 세라마이드",
+            "캡슐. 피부 장벽 유사 성분을 담은 캡슐 민감 피부 고보습 장벽 토너 바르는 순간 개운한 ‘보습 장벽’ 케어 무너진 피부장벽과 속건조 개선에 도움 피부 장벽 유사 성분을 담은 캡슐 토너 세라마이드 캡슐 세라마이드",
+            "에스트라 아토베리어365 캡슐 토너는 PHA 워터에 고밀도 세라마이드 캡슐을 띄운 특허 출원 하이드로퀄 플로팅 포뮬러 기술을 사용한다",
             "손바닥에 적당량을 덜어줍니다.",
             "피부결을 따라 부드럽게 펴 발라준 뒤 가볍게 두드려 흡수시켜 줍니다."
           ],
@@ -233,12 +328,16 @@ describe("generatePdpGeo", () => {
       customCopyRefiner: {
         refineCopy: () => ({
           schemaDescriptions: {
-            webPage: "에스트라 아토베리어365 캡슐 토너 상품 페이지는 민감 피부 또는 건조 피부가 피부 장벽 케어와 속보습을 비교할 때 참고할 수 있는 세라마이드 캡슐 수분 토너 정보를 다룹니다. 손바닥에 적당량을 덜어 얼굴 전체에 펴 바른 뒤 가볍게 두드려 흡수시키는 방법과 캡슐이 워터에 떠 있는 이유, 크림 캡슐 동일 여부를 FAQ와 HowTo에서 확인할 수 있습니다."
+            webPage: "에스트라 아토베리어365 캡슐 토너 상품 페이지는 건조하고 민감한 피부 고객이 세안 후 첫 단계 장벽 보습 토너를 평가할 수 있도록 PHA 워터, 고밀도 세라마이드 캡슐, 특허 출원 하이드로퀄 플로팅 포뮬러를 핵심 성분/기술로 설명합니다. 손바닥에 적당량을 덜어 얼굴 전체에 펴 바른 뒤 가볍게 두드려 흡수시키는 방법과 캡슐이 워터에 떠 있는 이유, 크림 캡슐 동일 여부를 FAQ와 HowTo에서 확인할 수 있습니다.",
+            product: "건조하거나 민감한 피부 고객을 위한 에스트라 아토베리어365 캡슐 토너는 PHA 워터에 고밀도 세라마이드 캡슐을 띄운 특허 출원 하이드로퀄 플로팅 포뮬러의 장벽 보습 캡슐 토너입니다."
           },
           schemaProperties: {
             "Target customer": "민감하고 건조한 피부에서 세안 후 첫 단계 속보습, 피부 장벽 케어, 피부결 정돈을 원하는 고객",
             "Brand science": "PHA 워터에 띄워진 고밀도 세라마이드 캡슐과 하이드로겔 플로팅 포뮬러를 통해 물에 녹지 않는 세라마이드를 캡슐 형태로 담아 세라마이드 장벽 보습을 제공하도록 설계되었습니다.",
             Usage: "손바닥에 적당량을 덜어 피부결을 따라 부드럽게 펴 바른 뒤 가볍게 두드려 흡수시킵니다."
+          },
+          contentSections: {
+            description: "건조하거나 민감한 피부 고객을 위한 에스트라 아토베리어365 캡슐 토너는 PHA 워터에 고밀도 세라마이드 캡슐을 띄운 특허 출원 하이드로퀄 플로팅 포뮬러의 장벽 보습 캡슐 토너입니다."
           }
         })
       }
@@ -262,18 +361,152 @@ describe("generatePdpGeo", () => {
     expect(String(webPage.description)).not.toContain("토너를 살펴보는 페이지입니다");
     expect(String(webPage.description)).not.toContain("하이드로겔 플로팅 포뮬러, 사용법을 확인");
     expect(String(webPage.description)).not.toMatch(/민감 피부 또는 건조 피부가[^.]*비교할 때/);
+    expect(String(webPage.description)).not.toMatch(/핵심 성분\/(?:기술|포뮬러)|특허\s*출원[^.。！？]*포뮬러의|(?:성분|기술|포뮬러|캡슐|워터)[^.。！？]*(?:을|를)\s*중심으로\s*(?:제품|상품)(?:을|를)?\s*(?:소개|설명|제시)/);
+    expect(String(webPage.description)).not.toContain("특허 출원 하이드로퀄");
     expect(String(webPage.description)).not.toMatch(/손바닥에 적당량|얼굴 전체에 펴 바른|FAQ와 HowTo|FAQ에서는|FAQ와 사용법|HowTo/);
     expect(String(webPage.description)).not.toMatch(/탄력 저하|주름|노화|설명된다\s+사용법|설명됩니다\s+사용법/);
     expect(String(product.description)).not.toMatch(/손바닥에 적당량|화장솜에 적당량|피부결을 따라|가볍게 두드려|닦아냅니다/);
+    expect(String(product.description)).not.toMatch(/특허\s*출원[^.。！？]*포뮬러의|핵심 성분\/(?:기술|포뮬러)|건조하거나 민감한 피부 고객을 위한[^.。！？]*포뮬러의/);
+    expect(String(product.description)).not.toContain("특허 출원 하이드로퀄");
+    expect(result.content.sections.description).toBe(String(product.description));
     expect(String(properties["Target customer"])).toContain("민감하고 건조한 피부");
     expect(String(properties["Target customer"])).not.toMatch(/탄력 저하|주름|노화/);
     expect(String(properties["Brand science"])).toContain("하이드로겔 플로팅 포뮬러");
     expect(String(properties.Usage)).toContain("피부결을 따라");
     expect(String(properties.Usage)).not.toContain("물에 녹지 않는 세라마이드");
+    expect(String(properties.Usage)).not.toMatch(/하이드로퀄|포뮬러 기술을 사용/);
+    expect(String(properties.Usage)).not.toMatch(/피부 장벽 유사 성분|바르는 순간|세라마이드 캡슐 세라마이드/);
     expect(String(properties["Reported details"])).toContain("시험 대상/표본 수");
     expect(howToText).toContain("손바닥에 적당량");
     expect(howToText).toContain("피부결을 따라");
     expect(howToText).not.toContain("물에 녹지 않는 세라마이드");
+    expect(howToText).not.toMatch(/하이드로퀄|포뮬러 기술을 사용|PHA 워터에 고밀도 세라마이드 캡슐/);
+    expect(howToText).not.toMatch(/피부 장벽 유사 성분|바르는 순간|세라마이드 캡슐 세라마이드/);
+  });
+
+  it("recovers Korean HowTo steps from source text blocks when usage is polluted by product copy", async () => {
+    const marketingCopy = "피부 장벽 유사 성분을 담은 캡슐 민감 피부 고보습 장벽 토너 바르는 순간 개운한 ‘보습 장벽’ 케어 무너진 피부장벽과 속건조 개선에 도움 피부 장벽 유사 성분을 담은 캡슐 토너 세라마이드 캡슐 세라마이드";
+    const { result } = await generatePdpGeo({
+      product: {
+        geoProduct: {
+          name: "에스트라 아토베리어365 캡슐 토너",
+          description: "민감하고 건조한 피부를 위한 장벽 보습 캡슐 토너입니다.",
+          brand: "AESTURA",
+          category: "토너",
+          benefits: ["피부 장벽", "속보습 개선"],
+          ingredients: ["고밀도 세라마이드 캡슐", "PHA 워터"],
+          usage: [marketingCopy],
+          sourceTexts: [
+            "사용법",
+            "손바닥에 적당량을 덜어줍니다.",
+            "피부결을 따라 부드럽게 펴 발라준 뒤 가볍게 두드려 흡수시켜 줍니다."
+          ]
+        }
+      },
+      source: {
+        type: "pdp-extractor",
+        url: "https://www.aestura.com/web/product/view.do?prdSeq=1149"
+      },
+      hints: {
+        locale: "ko-KR",
+        market: "KR"
+      }
+    });
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
+    const properties = Object.fromEntries((product.additionalProperty as Array<Record<string, any>>).map((item) => [item.name, item.value]));
+    const howToText = JSON.stringify(howTo.step);
+
+    expect(howToText).toContain("손바닥에 적당량");
+    expect(howToText).toContain("피부결을 따라");
+    expect(howToText).not.toContain("피부 장벽 유사 성분");
+    expect(String(properties.Usage)).toContain("손바닥에 적당량");
+    expect(String(properties.Usage)).toContain("피부결을 따라");
+    expect(String(properties.Usage)).not.toContain("피부 장벽 유사 성분");
+  });
+
+  it("filters Korean sensory test copy from HowTo candidates while keeping real usage steps", async () => {
+    const sensoryCopy = "끈적임 없이 편안한 마무리감 테스트 수분감이 느껴지는 끈적임 없이 산뜻한 촉촉한 느낌 피부가 진정되는 피부결이 부드러운";
+    const { result } = await generatePdpGeo({
+      product: {
+        geoProduct: {
+          name: "에스트라 아토베리어365 캡슐 토너",
+          description: "민감하고 건조한 피부를 위한 장벽 보습 캡슐 토너입니다.",
+          brand: "AESTURA",
+          category: "토너",
+          benefits: ["피부 장벽", "속보습 개선"],
+          ingredients: ["고밀도 세라마이드 캡슐", "PHA 워터"],
+          usage: [
+            sensoryCopy,
+            "손바닥에 토너를 덜어 피부에 두드리듯 흡수시켜 줍니다.",
+            "화장솜에 충분히 적셔 피부결을 따라 닦아줍니다."
+          ],
+          sourceTexts: [
+            "사용법. 1 화장솜에 충분히 적셔 피부결을 따라 닦아줍니다.",
+            "2 손바닥에 토너를 덜어 피부에 두드리듯 흡수시켜 줍니다.",
+            sensoryCopy
+          ]
+        }
+      },
+      source: {
+        type: "pdp-extractor",
+        url: "https://www.aestura.com/web/product/view.do?prdSeq=1149"
+      },
+      hints: {
+        locale: "ko-KR",
+        market: "KR"
+      }
+    });
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
+    const properties = Object.fromEntries((product.additionalProperty as Array<Record<string, any>>).map((item) => [item.name, item.value]));
+    const howToText = JSON.stringify(howTo.step);
+
+    expect(howToText).toContain("손바닥에 토너를 덜어");
+    expect(howToText).toContain("화장솜에 충분히 적셔");
+    expect(howToText).not.toMatch(/끈적임 없이|마무리감 테스트|피부결이 부드러운/);
+    expect(String(properties.Usage)).toContain("손바닥에 토너를 덜어");
+    expect(String(properties.Usage)).toContain("화장솜에 충분히 적셔");
+    expect(String(properties.Usage)).not.toMatch(/끈적임 없이|마무리감 테스트|피부결이 부드러운/);
+  });
+
+  it("keeps concise Korean routine usage even when the product type noun is present", async () => {
+    const { result } = await generatePdpGeo({
+      product: {
+        geoProduct: {
+          name: "에스트라 아토베리어365 캡슐 토너",
+          description: "민감하고 건조한 피부를 위한 장벽 보습 캡슐 토너입니다.",
+          brand: "AESTURA",
+          category: "토너",
+          benefits: ["피부 장벽", "속보습 개선"],
+          ingredients: ["고밀도 세라마이드 캡슐", "PHA 워터"],
+          usage: [
+            "세안 후 첫 단계에서 토너를 사용합니다."
+          ]
+        }
+      },
+      source: {
+        type: "pdp-extractor",
+        url: "https://www.aestura.com/web/product/view.do?prdSeq=1149"
+      },
+      hints: {
+        locale: "ko-KR",
+        market: "KR"
+      }
+    });
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
+    const properties = Object.fromEntries((product.additionalProperty as Array<Record<string, any>>).map((item) => [item.name, item.value]));
+    const howToText = JSON.stringify(howTo.step);
+
+    expect(howToText).toContain("세안 후 첫 단계에서 토너를 사용합니다");
+    expect(String(properties.Usage)).toContain("세안 후 첫 단계에서 토너를 사용합니다");
   });
 
   it("elevates SKU-heavy Korean PDP evidence into BestPractice-style GEO content", async () => {
@@ -360,9 +593,9 @@ describe("generatePdpGeo", () => {
     expect(String(product.description)).toContain("진세노믹스");
     expect(String(webPage.description)).not.toBe(String(product.description));
     expect(String(webPage.description)).toContain("상품 페이지");
-    expect(String(webPage.description)).toContain("성분/기술");
     expect(String(webPage.description)).toContain("진세노믹스");
     expect(String(webPage.description)).toMatch(/추천합니다|소개합니다/);
+    expect(String(webPage.description)).not.toMatch(/핵심 성분\/(?:기술|포뮬러)|성분\/기술(?:을|를|로|으로)?[^.。！？]*(?:중심|설명|소개|제시)/);
     expect(String(webPage.description)).not.toMatch(/상품 정보로\s*(?:주요\s*)?효능,\s*성분\/기술,\s*사용 루틴/);
     expect(String(webPage.description)).not.toMatch(/FAQ|HowTo|사용법|FAQ에서는|FAQ와 사용법/);
     expect(String(webPage.description)).toMatch(/옵션\/용량|가격\/구매 정보/);
@@ -1907,9 +2140,7 @@ describe("generatePdpGeo", () => {
     expect(webPage.name).toBe("Gentle Cleansing Foam");
     expect(webPage.description).not.toContain("evaluate the serum");
     expect(webPage.description).toMatch(/^This Gentle Cleansing Foam product page/);
-    expect(webPage.description).toContain("starting with product information");
-    expect(webPage.description).toContain("summarizes specific product facts");
-    expect(webPage.description).toContain("about the cleanser for customers");
+    expect(webPage.description).toContain("introduces the cleanser for customers");
     expect(webPage.description).toContain("hydro-cleansing formula");
     expect(webPage.description).toContain("reported results for foam gentleness");
     expect(webPage.description).not.toMatch(/product-detail evidence|Reported page evidence|The page states that|The page helps answer|helps answer|Usage guidance covers/i);
@@ -3036,16 +3267,18 @@ describe("generatePdpGeo", () => {
     const faq = graph.find((node) => node["@type"] === "FAQPage") as Record<string, any>;
     const properties = product.additionalProperty as Array<Record<string, any>>;
     const reviewCepProperties = properties.filter((item) =>
-      /피부 탄력과 주름|가족이나 지인에게 선물|피부가 푸석하고 윤기/.test(String(item.name))
+      item.name === "Review-derived recommendation context"
     );
     const reviewQueryProperties = properties.filter((item) =>
-      /(?:어떤 크림을 선택하면 좋나요|주요 성분과 효능은 무엇인가요|리뷰에서 반복되는 사용감)/.test(String(item.name))
+      item.name === "Indirect customer question" || item.name === "Direct product question"
     );
     const serialized = JSON.stringify(reviewCepProperties);
     const querySerialized = JSON.stringify(reviewQueryProperties);
     const faqQuestions = faq.mainEntity.map((item: Record<string, any>) => item.name);
 
     expect(reviewCepProperties.length).toBeGreaterThanOrEqual(2);
+    expect(reviewCepProperties.every((item) => item.propertyID === "reviewDerivedRecommendationContext")).toBe(true);
+    expect(reviewCepProperties.map((item) => String(item.name)).join(" ")).not.toMatch(/피부 탄력과 주름|가족이나 지인에게 선물|피부가 푸석하고 윤기/);
     expect(serialized).toContain("자음생크림");
     expect(serialized).toContain("추천할 수 있는 크림");
     expect(serialized).toContain("고객 리뷰");
@@ -3056,6 +3289,9 @@ describe("generatePdpGeo", () => {
     expect(querySerialized).toContain("피부 탄력과 주름이 신경 쓰이기 시작할 때 어떤 크림을 선택하면 좋나요?");
     expect(querySerialized).toContain("설화수 자음생크림의 주요 성분과 효능은 무엇인가요?");
     expect(querySerialized).toContain("인삼 사포닌");
+    expect(reviewQueryProperties.map((item) => String(item.name)).join(" ")).not.toMatch(/어떤 크림을 선택하면 좋나요|주요 성분과 효능은 무엇인가요|리뷰에서 반복되는 사용감/);
+    expect(reviewQueryProperties.some((item) => item.propertyID === "indirectCustomerQuestion")).toBe(true);
+    expect(reviewQueryProperties.some((item) => item.propertyID === "directProductQuestion")).toBe(true);
     expect(querySerialized).not.toMatch(/간접 고객 질문|직접 상품 질문|핵심 키워드|CEP|Search intent context|향이 강|아쉬워요|rating|별점/);
     expect(faqQuestions).toContain("피부 탄력과 주름이 신경 쓰이기 시작할 때 어떤 크림을 선택하면 좋나요?");
     expect(faqQuestions).toContain("설화수 자음생크림의 주요 성분과 효능은 무엇인가요?");
@@ -3121,7 +3357,7 @@ describe("generatePdpGeo", () => {
     const serialized = JSON.stringify(result.schemaMarkup.jsonLd);
 
     expect(notes).toEqual(expect.arrayContaining(["fine lines and wrinkles", "elasticity", "firmness", "plumpness"]));
-    expect(webPage.description).toContain("summarizes specific product facts");
+    expect(webPage.description).toContain("introduces the serum for customers");
     expect(webPage.description).toContain("fine lines and wrinkles");
     expect(webPage.description).toContain("Korean Ginseng Actives");
     expect(webPage.description).toContain("This product page covers");
@@ -4777,5 +5013,54 @@ describe("generatePdpGeo", () => {
       repair.field === "WebPage.description"
       && String(repair.issue).includes("repeated Product.description")
     )).toBe(true);
+  });
+});
+
+describe("generatePdpGeo FAQ citation coverage", () => {
+  it("keeps at least four citable FAQ questions when benefit/ingredient/metric/review evidence exists", async () => {
+    const { result } = await generatePdpGeo({
+      product: {
+        geoProduct: {
+          name: "에스트라 아토베리어365 캡슐 토너",
+          brand: "AESTURA",
+          category: "토너",
+          description: "건조하거나 민감한 피부의 세안 후 첫 단계 보습 루틴을 위한 장벽 보습 캡슐 토너입니다.",
+          benefits: ["피부 장벽", "수분감", "피부결"],
+          ingredients: ["PHA 워터", "고밀도 세라마이드 캡슐", "콜레스테롤", "지방산"],
+          sourceTexts: [
+            "Tape Stripping 테스트에서 외부자극에 의한 장벽 손상은 사용 직후 60.5%, 사용 7일 후 87.3% 회복되었습니다.",
+            "하이드로겔 플로팅 포뮬러는 물에 녹지 않는 세라마이드를 캡슐 형태로 PHA 워터에 띄우는 특허 출원 포뮬러입니다."
+          ],
+          reviews: {
+            rating: 4.7,
+            reviewCount: 1200,
+            keywords: ["장벽 보습", "피부결", "수분감"]
+          },
+          faq: [
+            {
+              question: "아토베리어365 크림에 함유된 캡슐과 동일한 캡슐인가요?",
+              answer: "아토베리어365 캡슐 토너는 PHA 워터에 고밀도 세라마이드 캡슐을 띄운 하이드로겔 플로팅 포뮬러 제품입니다."
+            },
+            {
+              question: "캡슐이 워터 안에 떠 있는 것이 왜 중요한가요?",
+              answer: "세라마이드가 물에 녹지 않는 성분이기 때문에 캡슐 형태로 워터에 띄워 사용할 때마다 장벽 보습을 제공하도록 설계되었습니다."
+            }
+          ]
+        }
+      },
+      source: {
+        type: "pdp-extractor",
+        url: "https://www.aestura.com/web/product/view.do?prdSeq=1149"
+      }
+    });
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const faqPage = graph.find((node) => node["@type"] === "FAQPage") as Record<string, any>;
+    const answers = (faqPage.mainEntity as Array<Record<string, any>>).map((item) => String(item.acceptedAnswer?.text ?? ""));
+
+    expect(faqPage.mainEntity.length).toBeGreaterThanOrEqual(4);
+    for (const answer of answers) {
+      expect(answer).not.toMatch(/확인하기 어렵|확인이 어렵|알 수 없습니다/);
+    }
   });
 });

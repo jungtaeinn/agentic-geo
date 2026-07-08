@@ -42,11 +42,25 @@ export function evaluateGeoCitationReadiness(input: {
       message: "Body should include a compact summary section with at least two bullet-style answer chunks."
     },
     {
+      id: "tldr-position",
+      label: "TL;DR near the top",
+      passed: tldrNearTop(input.artifact.bodyMarkdown),
+      weight: 0.6,
+      message: "The TL;DR/short-version block should appear within the first part of the body so readers and answer engines can extract it without scrolling."
+    },
+    {
       id: "claim-evidence-language",
       label: "Claim/evidence language",
       passed: evidencePattern.test(text),
       weight: 1,
       message: "Body should use explicit supported/evidence/verify/review/source language so answer engines can identify grounded claims."
+    },
+    {
+      id: "quotation-or-statistic",
+      label: "Direct quotation or statistic",
+      passed: quotationOrStatisticPasses(input.artifact.bodyMarkdown, input.brief),
+      weight: 0.7,
+      message: "When quotable evidence or source-backed statistics are available, the body should include a verbatim quote or a concrete number — both improve citation visibility."
     },
     {
       id: "source-type-separation",
@@ -136,6 +150,21 @@ function createRequiredKeywords(product: GeoCitationNormalizedProduct, brief: Ge
   ])
     .filter((keyword) => keyword.length >= 3)
     .slice(0, 14);
+}
+
+function tldrNearTop(bodyMarkdown: string): boolean {
+  const markerIndex = bodyMarkdown.search(/short version|tl;dr|요약/i);
+  return markerIndex >= 0 && markerIndex <= Math.max(500, Math.floor(bodyMarkdown.length / 3));
+}
+
+function quotationOrStatisticPasses(bodyMarkdown: string, brief: GeoCitationContentBrief): boolean {
+  const evidenceAvailable = brief.quotableEvidence.length > 0 || brief.statisticsHighlights.length > 0;
+  if (!evidenceAvailable) {
+    return true;
+  }
+  const hasBlockquote = /^\s*>\s*["“].+["”]/m.test(bodyMarkdown);
+  const hasStatistic = /\d+(?:\.\d+)?\s*(?:%|percent|점|명|주|week|day|hour|rating)/i.test(bodyMarkdown);
+  return hasBlockquote || hasStatistic;
 }
 
 function mentionsPrimaryEntity(title: string, product: GeoCitationNormalizedProduct): boolean {

@@ -3,6 +3,7 @@ import { refinePdpGeoCopy } from "./copy-refiner";
 import { normalizeProductReviewKeywords } from "./keyword-normalizer";
 import { normalizePdpProduct } from "./normalize";
 import { normalizePdpProductWithAgent } from "./product-normalizer";
+import { compilePdpGeoPolicyChecklist } from "./rag/policy-compiler";
 import { readPdpGeoGeneratorRagProfile } from "./rag/profile";
 import { createPdpGeoReasoning } from "./rag/reasoning";
 import { createPdpGeoRagQueryPlan, resolvePdpGeoRagSettings, retrievePdpGeoRagChunks } from "./rag/retrieval";
@@ -184,7 +185,11 @@ export async function generatePdpGeo(
     },
     ...(ragSettings.documents ?? [])
   ]);
-  process.done("rag-load", `${ragDocuments.length}개 RAG 문서를 로드했습니다.`);
+  const policyChecklist = compilePdpGeoPolicyChecklist(ragDocuments, ragSettings.policyChecklist);
+  process.done(
+    "rag-load",
+    `${ragDocuments.length}개 RAG 문서를 로드하고 ${policyChecklist.coverage.totalRules}개 정책 규칙을 컴파일했습니다 (프롬프트 주입 ${policyChecklist.coverage.injectedRules}개, critical ${policyChecklist.coverage.injectedCriticalRules}/${policyChecklist.coverage.criticalRules}개).`
+  );
 
   process.start("chunk", ragSettings.mode === "managed-vector-store-rag" ? "Managed vector store의 색인 chunk를 사용합니다." : "로컬 RAG 문서를 chunk로 분할합니다.");
   process.done("chunk", ragSettings.mode === "managed-vector-store-rag" ? "Managed vector store chunk 구성을 선택했습니다." : "로컬 RAG chunk 구성을 준비했습니다.");
@@ -296,7 +301,8 @@ export async function generatePdpGeo(
       content: generated.content,
       ragChunks: selectedRagChunks,
       hydratedRagDocuments,
-      reasoning
+      reasoning,
+      policyRules: policyChecklist.injectedRules
     },
     options
   );
@@ -357,6 +363,7 @@ export async function generatePdpGeo(
     ],
     selectedRagChunks,
     hydratedRagDocuments,
+    policyCoverage: policyChecklist.coverage,
     reasoning,
     ragQueryPlan: queryPlan,
     ragUsage,

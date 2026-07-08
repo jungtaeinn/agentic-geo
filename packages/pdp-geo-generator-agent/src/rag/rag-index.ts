@@ -7,11 +7,20 @@ import type {
 
 export type PdpGeoRagSourceRole = "policy" | "official-reference" | "research" | "locale-map" | "custom";
 
+/**
+ * "rules": list items are enforceable requirements for the policy checklist.
+ * "narrative": list items are brand-story/positioning context; the policy
+ * compiler demotes them to low-priority guidance so they cannot crowd out or
+ * masquerade as hard constraints.
+ */
+export type PdpGeoRagRuleExtraction = "rules" | "narrative";
+
 export interface PdpGeoRagSectionIndexEntry {
   heading: string;
   intents: PdpGeoRagIntent[];
   fieldTargets: PdpGeoRagFieldTarget[];
   priority?: number;
+  ruleExtraction?: PdpGeoRagRuleExtraction;
 }
 
 export interface PdpGeoRagDocumentIndexEntry {
@@ -23,6 +32,7 @@ export interface PdpGeoRagDocumentIndexEntry {
   intents: PdpGeoRagIntent[];
   fieldTargets: PdpGeoRagFieldTarget[];
   priority: number;
+  ruleExtraction?: PdpGeoRagRuleExtraction;
   sections: PdpGeoRagSectionIndexEntry[];
 }
 
@@ -296,10 +306,18 @@ export const pdpGeoRagIndex: PdpGeoRagDocumentIndexEntry[] = [
         priority: 0.97
       },
       {
+        heading: "Expected RAG Depth",
+        intents: ["retrieval", "general"],
+        fieldTargets: ["diagnostics"],
+        priority: 0.6,
+        ruleExtraction: "narrative"
+      },
+      {
         heading: "Identity Pillars",
         intents: ["customer", "locale"],
         fieldTargets: ["Product.description", "WebPage.description", "PDP.content", "diagnostics"],
-        priority: 0.92
+        priority: 0.92,
+        ruleExtraction: "narrative"
       },
       {
         heading: "GEO Projection Rules",
@@ -326,10 +344,31 @@ export const pdpGeoRagIndex: PdpGeoRagDocumentIndexEntry[] = [
         priority: 0.94
       },
       {
+        heading: "Official Research and Innovation Sources",
+        intents: ["customer", "locale"],
+        fieldTargets: ["diagnostics"],
+        priority: 0.6,
+        ruleExtraction: "narrative"
+      },
+      {
+        heading: "Official Product-Line Articles",
+        intents: ["customer", "locale"],
+        fieldTargets: ["diagnostics"],
+        priority: 0.6,
+        ruleExtraction: "narrative"
+      },
+      {
         heading: "Research Papers and Official Articles",
         intents: ["schema", "customer", "locale"],
         fieldTargets: ["diagnostics", "WebPage.description", "PDP.content"],
         priority: 0.96
+      },
+      {
+        heading: "Source Notes",
+        intents: ["general"],
+        fieldTargets: ["diagnostics"],
+        priority: 0.6,
+        ruleExtraction: "narrative"
       }
     ]
   },
@@ -350,6 +389,34 @@ export const pdpGeoRagIndex: PdpGeoRagDocumentIndexEntry[] = [
         priority: 0.9
       },
       {
+        heading: "Expected RAG Depth",
+        intents: ["retrieval", "general"],
+        fieldTargets: ["diagnostics"],
+        priority: 0.6,
+        ruleExtraction: "narrative"
+      },
+      {
+        heading: "Core Brand Identity Statement",
+        intents: ["customer", "locale"],
+        fieldTargets: ["diagnostics", "PDP.content"],
+        priority: 0.6,
+        ruleExtraction: "narrative"
+      },
+      {
+        heading: "Brand Narrative Architecture",
+        intents: ["customer", "locale"],
+        fieldTargets: ["diagnostics", "PDP.content"],
+        priority: 0.6,
+        ruleExtraction: "narrative"
+      },
+      {
+        heading: "Official Korean Site Signals",
+        intents: ["customer", "locale"],
+        fieldTargets: ["diagnostics"],
+        priority: 0.6,
+        ruleExtraction: "narrative"
+      },
+      {
         heading: "Official Site-Derived Brand Identity Analysis",
         intents: ["customer", "schema", "locale"],
         fieldTargets: ["Product.description", "WebPage.description", "PDP.content", "diagnostics"],
@@ -365,7 +432,8 @@ export const pdpGeoRagIndex: PdpGeoRagDocumentIndexEntry[] = [
         heading: "Identity Pillars",
         intents: ["customer", "locale"],
         fieldTargets: ["Product.description", "WebPage.description", "PDP.content", "diagnostics"],
-        priority: 0.92
+        priority: 0.92,
+        ruleExtraction: "narrative"
       },
       {
         heading: "GEO Projection Rules",
@@ -392,10 +460,31 @@ export const pdpGeoRagIndex: PdpGeoRagDocumentIndexEntry[] = [
         priority: 0.94
       },
       {
+        heading: "Peer-Reviewed Research",
+        intents: ["customer", "locale"],
+        fieldTargets: ["diagnostics"],
+        priority: 0.6,
+        ruleExtraction: "narrative"
+      },
+      {
+        heading: "Official Research and Brand Sources",
+        intents: ["customer", "locale"],
+        fieldTargets: ["diagnostics"],
+        priority: 0.6,
+        ruleExtraction: "narrative"
+      },
+      {
         heading: "Research Papers and Official Articles",
         intents: ["schema", "customer", "locale"],
         fieldTargets: ["diagnostics", "WebPage.description", "PDP.content"],
         priority: 0.96
+      },
+      {
+        heading: "Source Notes",
+        intents: ["general"],
+        fieldTargets: ["diagnostics"],
+        priority: 0.6,
+        ruleExtraction: "narrative"
       }
     ]
   },
@@ -404,7 +493,7 @@ export const pdpGeoRagIndex: PdpGeoRagDocumentIndexEntry[] = [
     version: "v1",
     kind: "geo-research",
     sourceRole: "research",
-    checkedAt: "2026-06-24",
+    checkedAt: "2026-07-08",
     intents: ["claims", "customer", "evidence", "retrieval", "schema", "faq", "howTo", "review"],
     fieldTargets: ["Product.description", "WebPage.description", "PDP.content", "FAQPage.mainEntity", "HowTo.step", "Product.additionalProperty", "diagnostics", "retrieval"],
     priority: 0.82,
@@ -440,7 +529,7 @@ export const pdpGeoRagIndex: PdpGeoRagDocumentIndexEntry[] = [
     version: "v1",
     kind: "official-docs",
     sourceRole: "official-reference",
-    checkedAt: "2026-06-24",
+    checkedAt: "2026-07-08",
     intents: ["retrieval", "schema", "evidence"],
     fieldTargets: ["retrieval", "Product.description", "Product.additionalProperty", "diagnostics"],
     priority: 0.84,
@@ -456,6 +545,30 @@ export const pdpGeoRagIndex: PdpGeoRagDocumentIndexEntry[] = [
         intents: ["schema", "evidence"],
         fieldTargets: ["Product.description", "Product.additionalProperty", "diagnostics"],
         priority: 0.92
+      },
+      {
+        heading: "OpenAI Product Feeds and ChatGPT Shopping",
+        intents: ["schema", "evidence"],
+        fieldTargets: ["Product.additionalProperty", "Product.description", "diagnostics"],
+        priority: 0.94
+      },
+      {
+        heading: "Bing, Copilot, and IndexNow",
+        intents: ["schema", "retrieval"],
+        fieldTargets: ["Product.description", "Product.additionalProperty", "diagnostics"],
+        priority: 0.88
+      },
+      {
+        heading: "AI Crawler and Bot Access Requirements",
+        intents: ["retrieval", "evidence"],
+        fieldTargets: ["diagnostics"],
+        priority: 0.9
+      },
+      {
+        heading: "llms.txt Status",
+        intents: ["retrieval", "general"],
+        fieldTargets: ["diagnostics"],
+        priority: 0.82
       }
     ]
   },
