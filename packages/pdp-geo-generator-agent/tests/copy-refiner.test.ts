@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { refinePdpGeoCopy } from "../src/copy-refiner";
+import { isVolumeOrLabelOnlyReviewText, refinePdpGeoCopy } from "../src/copy-refiner";
 import type {
   PdpGeoCopyRefinementRequest,
   PdpGeoCopyRefinementResult,
@@ -290,5 +290,18 @@ describe("FAQ generative-intent recomposition", () => {
     expect(mainEntity.some((item) => String(item.name).includes("동일한 캡슐"))).toBe(true);
     expect(mainEntity.some((item) => String(item.name).includes("주요 성분과 효능"))).toBe(true);
     expect(result.warnings.some((warning) => warning.includes("does not match an existing FAQ question"))).toBe(true);
+  });
+});
+
+describe("isVolumeOrLabelOnlyReviewText", () => {
+  it("does not classify real ultra-short reviews with no digits as volume/label-only", () => {
+    expect(isVolumeOrLabelOnlyReviewText("좋아요")).toBe(false);
+    expect(isVolumeOrLabelOnlyReviewText("촉촉함")).toBe(false);
+    expect(isVolumeOrLabelOnlyReviewText("만족")).toBe(false);
+  });
+
+  it("still classifies digit/unit-only label strings as volume/label-only", () => {
+    expect(isVolumeOrLabelOnlyReviewText("300정")).toBe(true);
+    expect(isVolumeOrLabelOnlyReviewText("10.14 fl. oz. / 300 mL")).toBe(true);
   });
 });

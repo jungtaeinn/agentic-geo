@@ -2670,7 +2670,9 @@ describe("generatePdpGeo", () => {
             keywords: ["장벽 보습"],
             items: [
               { body: "10.14 fl. oz. / 300 mL" },
-              { body: "촉촉하고 장벽 보습이 잘 느껴져요." }
+              { body: "촉촉하고 장벽 보습이 잘 느껴져요." },
+              { body: "좋아요" },
+              { body: "300정" }
             ]
           },
           breadcrumbs: [],
@@ -2721,6 +2723,7 @@ describe("generatePdpGeo", () => {
       expect(input).toContain("피부가 많이 건조하고 당김이 느껴질 때");
       expect(input).not.toContain("10.14 fl. oz. / 300 mL");
       expect(input).toContain("촉촉하고 장벽 보습이 잘 느껴져요.");
+      expect(input).not.toContain("300정");
     } finally {
       vi.unstubAllGlobals();
     }

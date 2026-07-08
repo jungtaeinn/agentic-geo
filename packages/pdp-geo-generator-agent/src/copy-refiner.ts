@@ -1027,9 +1027,13 @@ function containsRawVolumeFragment(text: string): boolean {
   return rawVolumeFragmentPattern.test(text);
 }
 
-function isVolumeOrLabelOnlyReviewText(value: string): boolean {
-  const stripped = cleanText(value)
-    .replace(/\d+(?:\.\d+)?\s*(?:fl\.?\s*oz\.?|m[lL]|g|kg|ea|매|개입|정|호)\b/gi, " ")
+export function isVolumeOrLabelOnlyReviewText(value: string): boolean {
+  const text = cleanText(value);
+  if (!/[0-9０-９]/.test(text)) {
+    return false;
+  }
+  const stripped = text
+    .replace(/\d+(?:\.\d+)?\s*(?:fl\.?\s*oz\.?|m[lL]|g|kg|ea|매|개입|정|호)(?![A-Za-z0-9가-힣])/gi, " ")
     .replace(/[\d\s.,/×xX*+·-]+/g, " ")
     .replace(/\b(?:oz|ml)\b/gi, " ")
     .trim();
