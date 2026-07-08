@@ -387,6 +387,75 @@ export interface ProductExtractionResult {
   ragProfile: string;
 }
 
+/** Per-image OCR pipeline outcome kept for QA review and re-run feedback. */
+export interface OcrTargetDiagnostic {
+  imageUrl: string;
+  /** Whether the tall-image pre-pass split this target into vertical slices. */
+  sliced: boolean;
+  sliceCount?: number;
+  status: "extracted" | "empty" | "failed";
+  /** Total transcription length collected for this image (all slices combined). */
+  textLength: number;
+  /** Lowest model-reported transcription confidence across this image's slices. */
+  confidence?: number;
+  textPreview?: string;
+  /** Human-readable review points, e.g. low confidence or extraction failure. */
+  issues: string[];
+}
+
+/** OCR text that was collected but excluded somewhere in the pipeline, with the reason. */
+export interface OcrDroppedTextDiagnostic {
+  imageUrl: string;
+  reason: string;
+  textPreview: string;
+}
+
+/**
+ * End-to-end OCR pipeline trace: which images were read, how their texts were
+ * combined, how classification behaved, and how much of the OCR evidence made
+ * it into the public result. Designed so a reviewer can locate weak spots and
+ * feed this block back into a follow-up improvement run.
+ */
+export interface OcrDiagnostics {
+  provider: string;
+  /** Product-detail images selected for vision OCR. */
+  targetsConsidered: number;
+  /** Actual image inputs sent to the model after tall-image slicing. */
+  inputsSent: number;
+  targets: OcrTargetDiagnostic[];
+  combination: {
+    /** Candidates entering the merge stage (vision texts + attribute texts, post noise filter). */
+    candidatesIn: number;
+    /** Exact/contained duplicates absorbed into a longer candidate. */
+    duplicatesAbsorbed: number;
+    /** Boundary-overlap joins performed (sliced images, srcset variants). */
+    overlapJoins: number;
+    /** Candidates dropped before merging as non-product evidence. */
+    droppedCandidates: OcrDroppedTextDiagnostic[];
+    /** Final merged evidence candidates passed to classification. */
+    candidatesOut: number;
+  };
+  classification: {
+    batches: number;
+    failedBatches: number;
+    providerKeywords: number;
+    sentenceInsights: number;
+    confidence: number;
+  };
+  utilization: {
+    /** OCR evidence texts that survived into the public geoProduct output. */
+    textBlocksInResult: number;
+    /** Keywords attached to OCR evidence texts. */
+    keywordsAttached: number;
+    sentenceInsightsByCategory: Record<string, number>;
+    ragChunksFromOcr: number;
+    /** Extracted texts excluded from the public output, with reasons. */
+    unusedTexts: OcrDroppedTextDiagnostic[];
+  };
+  /** Aggregated review points across all stages, ordered by severity. */
+  issues: string[];
+}
+
 /** Runtime diagnostics kept outside of the final product artifact. */
 export interface ProductExtractionDiagnostics {
   source: string;
@@ -396,6 +465,7 @@ export interface ProductExtractionDiagnostics {
   warnings: AgentWarning[];
   runtimeUsage?: RuntimePipelineUsage;
   ragUsage?: ProductExtractorRagUsageDiagnostic[];
+  ocr?: OcrDiagnostics;
   generatedAt: string;
   ragProfile: string;
 }

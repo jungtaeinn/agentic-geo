@@ -1,5 +1,10 @@
 import { load } from "cheerio";
 import { createKeywordClassifier } from "./llm/providers";
+import {
+  prepareImageOcrInputs,
+  stripSliceFragment,
+  type ImageOcrInput
+} from "./llm/providers/image-slicing";
 import type { AzureRoleDeployments, EmbeddingRuntimeConfig, RerankerRuntimeConfig } from "./llm/types";
 import { normalizeExtractorProductProfileWithAgent } from "./product-normalizer";
 import { defaultProductExtractorRagProfile } from "./rag/default-profile";
@@ -23,7 +28,10 @@ import {
   type GeoSemanticMetricClaim,
   type GeoSemanticIngredientBenefitLink,
   type KeywordCategory,
+  type OcrDiagnostics,
+  type OcrDroppedTextDiagnostic,
   type OcrExtraction,
+  type OcrTargetDiagnostic,
   type ProductContentCategory,
   type ProductContentSection,
   type ProductExtractorRagUsageDiagnostic,
@@ -69,7 +77,16 @@ export interface ProductExtractorOptions {
 }
 
 const OCR_EVIDENCE_LIMIT = 80;
-const IMAGE_OCR_BATCH_SIZE = 10;
+/**
+ * Images per vision OCR request. Normal remote URLs can be batched more
+ * aggressively, while sliced/data-url inputs stay small because they are dense
+ * text crops and are more prone to cross-image mixing.
+ */
+const IMAGE_OCR_URL_BATCH_SIZE = 8;
+const IMAGE_OCR_SLICE_BATCH_SIZE = 4;
+const IMAGE_OCR_PREPARE_CONCURRENCY = 6;
+/** Character budget per OCR classification call before the evidence is split into batches. */
+const CLASSIFICATION_BATCH_CHAR_LIMIT = 14_000;
 const MAX_IMAGE_OCR_TARGETS = 24;
 const MAX_SCRIPT_ONLY_IMAGE_OCR_TARGETS = 12;
 const MIN_CONTEXTUAL_IMAGE_OCR_SCORE = 8;
@@ -322,9 +339,10 @@ export async function extractProductFromHtml(
   process.done("extract", createExtractionNormalizeMessage(productBase.name, "상품 기본정보", productBaseNormalization));
 
   process.start("ocr", "이미지 OCR과 이미지 대체 텍스트 후보를 문장/키워드 근거로 분류합니다.");
+  const ocrDiagnosticsCollector = createOcrDiagnosticsCollector(resolveProviderConfig(runtimeOptions).provider);
   const ocr = await extractOcrKeywords($, source, productBase.name, productBase.images, runtimeOptions, warnings, runtimeSteps, (message) => {
     process.start("ocr", message);
-  });
+  }, ocrDiagnosticsCollector);
   const sectionBuckets = createProductSectionBuckets(pageTextBlocks);
   process.done("ocr", `${ocr.imagesScanned}개 이미지 OCR/대체 텍스트 후보에서 OCR 문장과 키워드를 분류했습니다.`);
 
@@ -381,6 +399,8 @@ export async function extractProductFromHtml(
 
   const semanticFacts = semanticFactsFromExtraction(product, ocr);
   const ragChunks = await createRagChunks(source, product, resultReviews, ocr, runtimeOptions, runtimeSteps);
+  const ocrDiagnostics = finalizeOcrDiagnostics(ocrDiagnosticsCollector, ocr, ragChunks);
+  evidence.push(createOcrPipelineEvidence(ocrDiagnostics));
   process.done("rag", `${ragChunks.length}개 RAG chunk를 생성했습니다.`);
   process.start("json", "최종 JSON 결과를 직렬화합니다.");
   const generatedAt = new Date().toISOString();
@@ -404,6 +424,7 @@ export async function extractProductFromHtml(
       warnings,
       runtimeUsage: createExtractorRuntimeUsage(runtimeOptions, runtimeSteps),
       ragUsage: createProductExtractorRagUsageDiagnostics(ragChunks),
+      ocr: ocrDiagnostics,
       generatedAt,
       ragProfile: result.ragProfile
     }
@@ -506,25 +527,30 @@ async function extractProductFromApiPayload(
   process.done("extract", createExtractionNormalizeMessage(product.name, `${payloadLabel} 상품정보`, productProfileNormalization));
 
   process.start("ocr", `${payloadLabel}이 제공한 상품 상세 텍스트를 OCR 문장/키워드 근거로 분류합니다.`);
-  const imageTexts = mergeOcrCandidates([
+  const ocrDiagnosticsCollector = createOcrDiagnosticsCollector(resolveProviderConfig(runtimeOptions).provider);
+  const rawOcrCandidates = [
     ...arrayValues(productSource.ocrTexts).map((text, index) => ({
       imageUrl: product.images[index] ?? `${source}#image-${index + 1}`,
       text
     })),
     ...apiTextCandidates
-  ]).slice(0, OCR_EVIDENCE_LIMIT);
-  const classified = await classifyOcrCandidates(source, product.name, imageTexts, runtimeOptions, warnings, runtimeSteps);
+  ];
+  const imageTexts = mergeOcrCandidates(rawOcrCandidates, ocrDiagnosticsCollector.mergeStats).slice(0, OCR_EVIDENCE_LIMIT);
+  ocrDiagnosticsCollector.candidatesIn = rawOcrCandidates.length;
+  ocrDiagnosticsCollector.candidatesOut = imageTexts.length;
+  const classified = await classifyOcrCandidates(source, product.name, imageTexts, runtimeOptions, warnings, runtimeSteps, ocrDiagnosticsCollector);
   const ocr: OcrExtraction = {
     imagesScanned: imageTexts.length,
     extractedTexts: imageTexts.map((item) => {
       const keywords = mergeKeywords(
-        classified.keywords.filter((keyword) => item.text.toLowerCase().includes(keyword.keyword.toLowerCase())),
+        classified.keywords.filter((keyword) => includesKeyword(item.text, keyword.keyword)),
         keywordsFromTextAcrossCategories(item.text, "ocr")
       ).slice(0, 16);
 
       return {
-        ...item,
-        confidence: classified.confidence,
+        imageUrl: item.imageUrl,
+        text: item.text,
+        confidence: item.confidence ?? classified.confidence,
         keywords,
         sentenceInsights: sentenceInsightsForCandidate(item, classified.sentenceInsights, keywords, classified.confidence)
       };
@@ -576,6 +602,8 @@ async function extractProductFromApiPayload(
   process.start("rag", "API 상품/리뷰/OCR 근거를 RAG chunk로 구성합니다.");
   const semanticFacts = semanticFactsFromExtraction(enrichedProduct, ocr, classified.semanticFacts);
   const ragChunks = await createRagChunks(source, enrichedProduct, reviews, ocr, runtimeOptions, runtimeSteps);
+  const ocrDiagnostics = finalizeOcrDiagnostics(ocrDiagnosticsCollector, ocr, ragChunks);
+  evidence.push(createOcrPipelineEvidence(ocrDiagnostics));
   process.done("rag", `${ragChunks.length}개 RAG chunk를 생성했습니다.`);
   process.start("json", "최종 JSON 결과를 직렬화합니다.");
   const generatedAt = new Date().toISOString();
@@ -599,6 +627,7 @@ async function extractProductFromApiPayload(
       warnings,
       runtimeUsage: createExtractorRuntimeUsage(runtimeOptions, runtimeSteps),
       ragUsage: createProductExtractorRagUsageDiagnostics(ragChunks),
+      ocr: ocrDiagnostics,
       generatedAt,
       ragProfile: result.ragProfile
     }
@@ -629,6 +658,8 @@ interface ProductSectionBuckets {
 interface OcrTextCandidate {
   imageUrl: string;
   text: string;
+  /** Vision-model transcription confidence (0-1) when the provider reports one. */
+  confidence?: number;
 }
 
 interface ImageOcrTargetCandidate {
@@ -2324,7 +2355,7 @@ function isProductEvidenceCandidate(title: string, text: string): boolean {
 
 function isNonProductCommerceText(text: string): boolean {
   const value = cleanText(text);
-  const hardCommercePattern = /(레이어|장바구니|구매하기|바로구매|제품 수량|상품 수량|수량 감소|수량 증가|총 상품가|혜택 적용가|네이버페이|뷰티포인트|적립 제외|사용 제외|재입고|알림 신청|레이어 닫기|판매자 정보|상품정보제공 고시|배송\/교환\/반품|배송지역|배송기간|배송비|교환\/반품|반품\/교환|청약철회|고객센터|택배기사|회수 상품|반송 주소|구매안전서비스|에스크로|KG이니시스|무료배송|첫 구매 혜택|혜택보기|cart|checkout|shipping|returns?|refund|subscribe|newsletter)/i;
+  const hardCommercePattern = /(레이어\s*(?:열기|닫기)|장바구니|구매하기|바로구매|제품 수량|상품 수량|수량 감소|수량 증가|총 상품가|혜택 적용가|네이버페이|뷰티포인트|적립 제외|사용 제외|재입고|알림 신청|레이어 닫기|판매자 정보|상품정보제공 고시|배송\/교환\/반품|배송지역|배송기간|배송비|교환\/반품|반품\/교환|청약철회|고객센터|택배기사|회수 상품|반송 주소|구매안전서비스|에스크로|KG이니시스|무료배송|첫 구매 혜택|혜택보기|cart|checkout|shipping|returns?|refund|subscribe|newsletter)/i;
   const policyPattern = /(배송|교환|반품|환불|주문취소|청약철회|고객변심|택배|반송|회수|미성년자|법정대리인|이용약관|도서지역|사서함|배송비|판매자|고시)/i;
 
   if (hardCommercePattern.test(value)) {
@@ -2557,6 +2588,16 @@ function stripSourceSectionLabel(text: string): string {
 
 function normalizeFingerprint(text: string): string {
   return cleanText(text).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").slice(0, 260);
+}
+
+/**
+ * Full-length, whitespace-free normalization for OCR text comparison. Unlike
+ * normalizeFingerprint it never truncates (so long transcriptions compare on
+ * their whole content, not a shared prefix) and drops separators entirely (so
+ * Korean spacing variants like "피부 장벽" and "피부장벽" compare equal).
+ */
+function normalizeOcrComparisonText(text: string): string {
+  return cleanText(text).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
 function isSectionHeadingText(text: string): boolean {
@@ -2887,35 +2928,52 @@ async function extractOcrKeywords(
   options: ProductExtractorOptions,
   warnings: AgentWarning[],
   runtimeSteps: RuntimePipelineStep[],
-  onProgress?: (message: string) => void
+  onProgress?: (message: string) => void,
+  collector?: OcrDiagnosticsCollector
 ): Promise<OcrExtraction> {
   const visionTargets = collectImageOcrTargets($, source, imageUrls, productName);
-  const visionOcrTexts = await extractVisionOcrCandidates(visionTargets, source, productName, options, warnings, runtimeSteps, onProgress);
-  const imageTexts = mergeOcrCandidates([
+  const visionOcrTexts = await extractVisionOcrCandidates(visionTargets, source, productName, options, warnings, runtimeSteps, onProgress, collector);
+  const rawCandidates = [
     ...visionOcrTexts,
     ...collectImageTextCandidates($, source)
-  ])
-    .filter((item) => isProductEvidenceCandidate("", item.text))
-    .slice(0, OCR_EVIDENCE_LIMIT);
+  ];
+  const evidenceCandidates = rawCandidates.filter((item) => {
+    if (isProductEvidenceCandidate("", item.text)) {
+      return true;
+    }
+    collector?.droppedCandidates.push({
+      imageUrl: item.imageUrl,
+      reason: "Filtered out as non-product/commerce text before merging.",
+      textPreview: ocrTextPreview(item.text)
+    });
+    return false;
+  });
+  const imageTexts = mergeOcrCandidates(evidenceCandidates, collector?.mergeStats).slice(0, OCR_EVIDENCE_LIMIT);
+
+  if (collector) {
+    collector.candidatesIn = evidenceCandidates.length;
+    collector.candidatesOut = imageTexts.length;
+  }
 
   if (imageTexts.length === 0) {
     return { imagesScanned: 0, extractedTexts: [] };
   }
 
   onProgress?.(`${imageTexts.length}개 OCR 텍스트 후보를 reasoning 모델로 의미 분석/문장/키워드 분류 중입니다.`);
-  const classified = await classifyOcrCandidates(source, productName, imageTexts, options, warnings, runtimeSteps);
+  const classified = await classifyOcrCandidates(source, productName, imageTexts, options, warnings, runtimeSteps, collector);
 
   return {
     imagesScanned: imageTexts.length,
     extractedTexts: imageTexts.map((item) => {
       const keywords = mergeKeywords(
-        classified.keywords.filter((keyword) => item.text.toLowerCase().includes(keyword.keyword.toLowerCase())),
+        classified.keywords.filter((keyword) => includesKeyword(item.text, keyword.keyword)),
         keywordsFromTextAcrossCategories(item.text, "ocr")
       ).slice(0, 16);
 
       return {
-        ...item,
-        confidence: classified.confidence,
+        imageUrl: item.imageUrl,
+        text: item.text,
+        confidence: item.confidence ?? classified.confidence,
         keywords,
         sentenceInsights: sentenceInsightsForCandidate(item, classified.sentenceInsights, keywords, classified.confidence)
       };
@@ -2930,7 +2988,8 @@ async function extractVisionOcrCandidates(
   options: ProductExtractorOptions,
   warnings: AgentWarning[],
   runtimeSteps: RuntimePipelineStep[],
-  onProgress?: (message: string) => void
+  onProgress?: (message: string) => void,
+  collector?: OcrDiagnosticsCollector
 ): Promise<OcrTextCandidate[]> {
   const providerConfig = resolveProviderConfig(options);
 
@@ -2958,30 +3017,56 @@ async function extractVisionOcrCandidates(
     return [];
   }
 
+  const preparedInputs = await prepareVisionOcrInputs(targets, warnings, onProgress, collector);
   const extractedTexts: OcrTextCandidate[] = [];
   const failures: string[] = [];
   let quotaOrBillingFailure = false;
 
-  for (let index = 0; index < targets.length; index += IMAGE_OCR_BATCH_SIZE) {
-    const batch = targets.slice(index, index + IMAGE_OCR_BATCH_SIZE);
-    const batchStart = index + 1;
-    const batchEnd = Math.min(index + batch.length, targets.length);
+  const batches = createVisionOcrBatches(preparedInputs);
+  let processedInputCount = 0;
+
+  for (const batch of batches) {
+    const batchStart = processedInputCount + 1;
+    const batchEnd = processedInputCount + batch.length;
+    processedInputCount = batchEnd;
     try {
-      onProgress?.(`${targets.length}개 OCR 이미지 중 ${batchStart}-${batchEnd}번 이미지를 OCR 모델로 추출 중입니다.`);
+      onProgress?.(`${preparedInputs.length}개 OCR 이미지 입력 중 ${batchStart}-${batchEnd}번을 OCR 모델로 추출 중입니다.`);
       const extracted = await classifier.extractImageTexts({
         source,
         productName,
-        imageUrls: batch
+        imageUrls: batch.map((input) => input.displayUrl),
+        imageInputs: batch
       });
-      onProgress?.(`${batchStart}-${batchEnd}번 OCR 이미지에서 ${extracted.images.length}개 텍스트 후보를 수신했습니다.`);
-      runtimeSteps.push(createModelRuntimeStep("ocr", "OCR/structure extraction", options, "ocr", extracted.usage, `${batch.length} product-detail images sent for visible text extraction.`));
+      onProgress?.(`${batchStart}-${batchEnd}번 OCR 이미지 입력에서 ${extracted.images.length}개 텍스트 후보를 수신했습니다.`);
+      runtimeSteps.push(createModelRuntimeStep("ocr", "OCR/structure extraction", options, "ocr", extracted.usage, `${batch.length} product-detail image inputs sent for visible text extraction.`));
 
-      extractedTexts.push(...extracted.images.map((image) => ({
-        imageUrl: image.imageUrl,
-        text: normalizeOcrText(image.text)
-      })).filter((item) => item.text.length >= 8));
+      const batchTexts = extracted.images.map((image) => ({
+        imageUrl: stripSliceFragment(image.imageUrl),
+        text: normalizeOcrText(image.text),
+        confidence: image.confidence
+      })).filter((item) => item.text.length >= 8);
+      extractedTexts.push(...batchTexts);
+
+      if (collector) {
+        for (const item of batchTexts) {
+          const targetDiagnostic = ocrTargetDiagnostic(collector, item.imageUrl);
+          targetDiagnostic.status = "extracted";
+          targetDiagnostic.textLength += item.text.length;
+          targetDiagnostic.confidence = minDefinedConfidence(targetDiagnostic.confidence, item.confidence);
+          targetDiagnostic.textPreview ??= ocrTextPreview(item.text);
+        }
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Image OCR provider failed.";
+      if (collector) {
+        for (const input of batch) {
+          const targetDiagnostic = ocrTargetDiagnostic(collector, stripSliceFragment(input.displayUrl));
+          if (targetDiagnostic.status !== "extracted") {
+            targetDiagnostic.status = "failed";
+          }
+          targetDiagnostic.issues.push(`Image OCR request failed: ${message}`);
+        }
+      }
       onProgress?.(`${batchStart}-${batchEnd}번 OCR 이미지 추출이 실패했습니다: ${message}`);
       runtimeSteps.push(createModelRuntimeStep(
         "ocr",
@@ -3008,7 +3093,7 @@ async function extractVisionOcrCandidates(
     });
   }
 
-  const merged = mergeOcrCandidates(extractedTexts);
+  const merged = mergeOcrCandidates(extractedTexts, collector?.mergeStats);
 
   if (merged.length === 0 && failures.length === 0) {
     warnings.push({
@@ -3018,6 +3103,258 @@ async function extractVisionOcrCandidates(
   }
 
   return merged;
+}
+
+interface OcrMergeStats {
+  duplicatesAbsorbed: number;
+  overlapJoins: number;
+}
+
+/** Mutable trace filled in while the OCR pipeline runs; finalized into OcrDiagnostics. */
+interface OcrDiagnosticsCollector {
+  provider: string;
+  targetsConsidered: number;
+  inputsSent: number;
+  targets: Map<string, OcrTargetDiagnostic>;
+  mergeStats: OcrMergeStats;
+  candidatesIn: number;
+  candidatesOut: number;
+  droppedCandidates: OcrDroppedTextDiagnostic[];
+  classification: OcrDiagnostics["classification"];
+}
+
+function createOcrDiagnosticsCollector(provider: string): OcrDiagnosticsCollector {
+  return {
+    provider,
+    targetsConsidered: 0,
+    inputsSent: 0,
+    targets: new Map(),
+    mergeStats: { duplicatesAbsorbed: 0, overlapJoins: 0 },
+    candidatesIn: 0,
+    candidatesOut: 0,
+    droppedCandidates: [],
+    classification: { batches: 0, failedBatches: 0, providerKeywords: 0, sentenceInsights: 0, confidence: 0 }
+  };
+}
+
+function ocrTargetDiagnostic(collector: OcrDiagnosticsCollector, imageUrl: string): OcrTargetDiagnostic {
+  const existing = collector.targets.get(imageUrl);
+  if (existing) {
+    return existing;
+  }
+
+  const created: OcrTargetDiagnostic = {
+    imageUrl,
+    sliced: false,
+    status: "empty",
+    textLength: 0,
+    issues: []
+  };
+  collector.targets.set(imageUrl, created);
+  return created;
+}
+
+function ocrTextPreview(text: string): string {
+  return cleanText(text).slice(0, 160);
+}
+
+const LOW_OCR_CONFIDENCE_THRESHOLD = 0.6;
+
+/**
+ * Turns the collected OCR trace plus the final extraction output into the
+ * diagnostics block reviewers use to audit OCR quality and to hand problem
+ * spots back into a follow-up improvement run.
+ */
+function finalizeOcrDiagnostics(
+  collector: OcrDiagnosticsCollector,
+  ocr: OcrExtraction,
+  ragChunks: RagChunk[]
+): OcrDiagnostics {
+  const publicEvidence = ocr.extractedTexts.filter((item) => isProductEvidenceCandidate("", item.text));
+  const publicSet = new Set(publicEvidence);
+  const unusedTexts: OcrDroppedTextDiagnostic[] = ocr.extractedTexts
+    .filter((item) => !publicSet.has(item))
+    .map((item) => ({
+      imageUrl: item.imageUrl,
+      reason: "Excluded from the public geoProduct output as non-product evidence.",
+      textPreview: ocrTextPreview(item.text)
+    }));
+  const sentenceInsightsByCategory: Record<string, number> = {};
+  for (const insight of publicEvidence.flatMap((item) => item.sentenceInsights)) {
+    sentenceInsightsByCategory[insight.category] = (sentenceInsightsByCategory[insight.category] ?? 0) + 1;
+  }
+
+  const targets = Array.from(collector.targets.values());
+  for (const target of targets) {
+    if (target.status === "empty" && target.issues.length === 0) {
+      target.issues.push("No readable text was returned for this image.");
+    }
+    if (target.status === "extracted" && target.confidence !== undefined && target.confidence < LOW_OCR_CONFIDENCE_THRESHOLD) {
+      target.issues.push(`Low transcription confidence (${target.confidence}). Consider re-running OCR for this image.`);
+    }
+  }
+
+  const issues = unique<string>([
+    ...targets.filter((target) => target.status === "failed").map((target) => `Image OCR failed: ${target.imageUrl}`),
+    ...targets.filter((target) => target.status === "empty").map((target) => `No readable text extracted: ${target.imageUrl}`),
+    ...targets
+      .filter((target) => target.status === "extracted" && target.confidence !== undefined && target.confidence < LOW_OCR_CONFIDENCE_THRESHOLD)
+      .map((target) => `Low OCR confidence (${target.confidence}): ${target.imageUrl}`),
+    collector.classification.failedBatches > 0
+      ? `${collector.classification.failedBatches} of ${collector.classification.batches} OCR classification batch(es) failed; keywords from those batches were replaced by heuristics.`
+      : undefined,
+    collector.droppedCandidates.length > 0
+      ? `${collector.droppedCandidates.length} OCR text candidate(s) were dropped as non-product/commerce text before merging (see combination.droppedCandidates).`
+      : undefined,
+    unusedTexts.length > 0
+      ? `${unusedTexts.length} extracted OCR text(s) were excluded from the public output (see utilization.unusedTexts).`
+      : undefined
+  ]);
+
+  return {
+    provider: collector.provider,
+    targetsConsidered: collector.targetsConsidered,
+    inputsSent: collector.inputsSent,
+    targets,
+    combination: {
+      candidatesIn: collector.candidatesIn,
+      duplicatesAbsorbed: collector.mergeStats.duplicatesAbsorbed,
+      overlapJoins: collector.mergeStats.overlapJoins,
+      droppedCandidates: collector.droppedCandidates.slice(0, 20),
+      candidatesOut: collector.candidatesOut
+    },
+    classification: collector.classification,
+    utilization: {
+      textBlocksInResult: unique(publicEvidence.map((item) => item.text)).length,
+      keywordsAttached: ocr.extractedTexts.reduce((sum, item) => sum + item.keywords.length, 0),
+      sentenceInsightsByCategory,
+      ragChunksFromOcr: ragChunks.filter((chunk) => chunk.kind === "ocr").length,
+      unusedTexts: unusedTexts.slice(0, 20)
+    },
+    issues
+  };
+}
+
+function createOcrPipelineEvidence(diagnostics: OcrDiagnostics): ExtractionEvidence {
+  return {
+    field: "ocr.pipeline",
+    source: "ocr",
+    value: `${diagnostics.targetsConsidered} image target(s) -> ${diagnostics.inputsSent} OCR input(s) -> ${diagnostics.combination.candidatesOut} merged candidate(s) (${diagnostics.combination.overlapJoins} overlap join(s), ${diagnostics.combination.duplicatesAbsorbed} duplicate(s) absorbed) -> ${diagnostics.utilization.textBlocksInResult} public text block(s), ${diagnostics.utilization.ragChunksFromOcr} OCR RAG chunk(s). ${diagnostics.issues.length} issue(s) flagged.`
+  };
+}
+
+/**
+ * Probes each OCR target and expands tall scroll images into overlapping
+ * vertical slices so vision models read the copy at usable resolution instead
+ * of a downscaled whole. Non-tall or unprobeable targets pass through as-is.
+ */
+async function prepareVisionOcrInputs(
+  targets: string[],
+  warnings: AgentWarning[],
+  onProgress?: (message: string) => void,
+  collector?: OcrDiagnosticsCollector
+): Promise<ImageOcrInput[]> {
+  const inputs: ImageOcrInput[] = [];
+  const unavailableReasons: string[] = [];
+  let slicedImageCount = 0;
+  let sliceCount = 0;
+
+  if (collector) {
+    collector.targetsConsidered = targets.length;
+  }
+
+  const preparedTargets = await mapWithConcurrency(targets, IMAGE_OCR_PREPARE_CONCURRENCY, async (target) => ({
+    target,
+    prepared: await prepareImageOcrInputs(target)
+  }));
+
+  for (const { target, prepared } of preparedTargets) {
+    const targetDiagnostic = collector ? ocrTargetDiagnostic(collector, target) : undefined;
+
+    if (prepared.sliced) {
+      slicedImageCount += 1;
+      sliceCount += prepared.inputs.length;
+      if (targetDiagnostic) {
+        targetDiagnostic.sliced = true;
+        targetDiagnostic.sliceCount = prepared.inputs.length;
+      }
+    }
+    if (prepared.slicingUnavailableReason) {
+      unavailableReasons.push(prepared.slicingUnavailableReason);
+      targetDiagnostic?.issues.push(`Tall image detected but slicing was unavailable, so it was sent whole: ${prepared.slicingUnavailableReason}`);
+    }
+    inputs.push(...prepared.inputs);
+  }
+
+  if (collector) {
+    collector.inputsSent = inputs.length;
+  }
+
+  if (slicedImageCount > 0) {
+    onProgress?.(`세로형 상세 이미지 ${slicedImageCount}장을 ${sliceCount}개 오버랩 조각으로 분할해 고해상도 OCR을 수행합니다.`);
+  }
+  if (unavailableReasons.length > 0) {
+    warnings.push({
+      code: "IMAGE_SLICING_UNAVAILABLE",
+      message: `${unavailableReasons.length} tall product-detail image(s) were detected but could not be sliced, so they were sent whole and small text may be lost: ${unique(unavailableReasons)[0] ?? ""}`
+    });
+  }
+
+  return inputs;
+}
+
+function createVisionOcrBatches(inputs: ImageOcrInput[]): ImageOcrInput[][] {
+  const batches: ImageOcrInput[][] = [];
+  let current: ImageOcrInput[] = [];
+  let currentLimit = IMAGE_OCR_URL_BATCH_SIZE;
+  let currentIsSlice = false;
+
+  const flush = () => {
+    if (current.length > 0) {
+      batches.push(current);
+      current = [];
+    }
+  };
+
+  for (const input of inputs) {
+    const inputIsSlice = isSliceOrInlineImageOcrInput(input);
+    const inputLimit = inputIsSlice ? IMAGE_OCR_SLICE_BATCH_SIZE : IMAGE_OCR_URL_BATCH_SIZE;
+
+    if (current.length > 0 && (inputIsSlice !== currentIsSlice || current.length >= currentLimit)) {
+      flush();
+    }
+
+    current.push(input);
+    currentIsSlice = inputIsSlice;
+    currentLimit = inputLimit;
+  }
+
+  flush();
+  return batches;
+}
+
+function isSliceOrInlineImageOcrInput(input: ImageOcrInput): boolean {
+  return input.inputUrl.startsWith("data:") || /#ocr-slice-\d+of\d+$/i.test(input.displayUrl);
+}
+
+async function mapWithConcurrency<T, R>(
+  values: T[],
+  concurrency: number,
+  worker: (value: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(values.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, concurrency), values.length);
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await worker(values[index]!, index);
+    }
+  }));
+
+  return results;
 }
 
 function hasOcrProviderWarning(warnings: AgentWarning[]): boolean {
@@ -3038,47 +3375,56 @@ async function classifyOcrCandidates(
   imageTexts: OcrTextCandidate[],
   options: ProductExtractorOptions,
   warnings: AgentWarning[],
-  runtimeSteps: RuntimePipelineStep[]
+  runtimeSteps: RuntimePipelineStep[],
+  collector?: OcrDiagnosticsCollector
 ): Promise<{ keywords: ClassifiedKeyword[]; sentenceInsights: ClassifiedSentenceInsight[]; semanticFacts?: Partial<GeoSemanticFacts>; confidence: number }> {
   if (imageTexts.length === 0) {
     return { keywords: [], sentenceInsights: [], confidence: 0 };
   }
 
-  try {
-    const classifier = createKeywordClassifier(resolveProviderConfig(options));
-    const classified = await classifier.classifyKeywords(await createKeywordClassificationRequest(source, productName, imageTexts, options, runtimeSteps));
-    runtimeSteps.push(createModelRuntimeStep("final", "Semantic OCR classification/reasoning", options, "reasoning", classified.usage, `${imageTexts.length} OCR text candidates semantically classified.`));
-    const sentenceInsights = imageTexts.flatMap((item) =>
-      sentenceInsightsForCandidate(
-        item,
-        classified.sentenceInsights ?? [],
-        mergeKeywords(
-          classified.keywords.filter((keyword) => item.text.toLowerCase().includes(keyword.keyword.toLowerCase())),
-          keywordsFromTextAcrossCategories(item.text, "ocr")
-        ).slice(0, 16),
-        0.72
-      )
-    );
+  const classifier = createKeywordClassifier(resolveProviderConfig(options));
+  const batches = splitClassificationBatches(imageTexts);
+  const batchKeywords: ClassifiedKeyword[][] = [];
+  const providerInsights: ClassifiedSentenceInsight[] = [];
+  const semanticFactsParts: Array<Partial<GeoSemanticFacts> | undefined> = [];
+  let classifiedBatchCount = 0;
+  let lastError: unknown;
 
-    return {
-      keywords: classified.keywords,
-      sentenceInsights: mergeSentenceInsights(sentenceInsights),
-      semanticFacts: classified.semanticFacts,
-      confidence: 0.72
-    };
-  } catch (error) {
-    runtimeSteps.push(createModelRuntimeStep(
-      "final",
-      "Semantic OCR classification/reasoning",
-      options,
-      "reasoning",
-      undefined,
-      `OCR text classification was called for ${imageTexts.length} candidates but failed: ${error instanceof Error ? error.message : "OCR keyword provider failed."}`
-    ));
+  for (const [batchIndex, batch] of batches.entries()) {
+    const batchLabel = batches.length > 1 ? ` (batch ${batchIndex + 1}/${batches.length})` : "";
+    try {
+      const classified = await classifier.classifyKeywords(await createKeywordClassificationRequest(source, productName, batch, options, runtimeSteps));
+      runtimeSteps.push(createModelRuntimeStep("final", "Semantic OCR classification/reasoning", options, "reasoning", classified.usage, `${batch.length} OCR text candidates semantically classified${batchLabel}.`));
+      batchKeywords.push(classified.keywords ?? []);
+      providerInsights.push(...(classified.sentenceInsights ?? []));
+      semanticFactsParts.push(classified.semanticFacts);
+      classifiedBatchCount += 1;
+    } catch (error) {
+      lastError = error;
+      runtimeSteps.push(createModelRuntimeStep(
+        "final",
+        "Semantic OCR classification/reasoning",
+        options,
+        "reasoning",
+        undefined,
+        `OCR text classification was called for ${batch.length} candidates${batchLabel} but failed: ${error instanceof Error ? error.message : "OCR keyword provider failed."}`
+      ));
+    }
+  }
+
+  if (collector) {
+    collector.classification.batches = batches.length;
+    collector.classification.failedBatches = batches.length - classifiedBatchCount;
+  }
+
+  if (classifiedBatchCount === 0) {
     warnings.push({
       code: "OCR_PROVIDER_FAILED",
-      message: error instanceof Error ? error.message : "OCR keyword provider failed."
+      message: lastError instanceof Error ? lastError.message : "OCR keyword provider failed."
     });
+    if (collector) {
+      collector.classification.confidence = 0.54;
+    }
     const keywords = mergeKeywords(...imageTexts.map((item) => keywordsFromTextAcrossCategories(item.text, "ocr")));
     return {
       keywords,
@@ -3086,13 +3432,74 @@ async function classifyOcrCandidates(
         sentenceInsightsForCandidate(
           item,
           [],
-          mergeKeywords(keywords.filter((keyword) => item.text.toLowerCase().includes(keyword.keyword.toLowerCase())), keywordsFromTextAcrossCategories(item.text, "ocr")),
+          mergeKeywords(keywords.filter((keyword) => includesKeyword(item.text, keyword.keyword)), keywordsFromTextAcrossCategories(item.text, "ocr")),
           0.54
         )
       ),
       confidence: 0.54
     };
   }
+
+  if (classifiedBatchCount < batches.length) {
+    warnings.push({
+      code: "OCR_PROVIDER_PARTIAL",
+      message: `${batches.length - classifiedBatchCount} of ${batches.length} OCR classification batch(es) failed; keywords and sentence insights were merged from the successful batches.`
+    });
+  }
+
+  const keywords = mergeKeywords(...batchKeywords);
+  const sentenceInsights = imageTexts.flatMap((item) =>
+    sentenceInsightsForCandidate(
+      item,
+      providerInsights,
+      mergeKeywords(
+        keywords.filter((keyword) => includesKeyword(item.text, keyword.keyword)),
+        keywordsFromTextAcrossCategories(item.text, "ocr")
+      ).slice(0, 16),
+      0.72
+    )
+  );
+
+  if (collector) {
+    collector.classification.providerKeywords = keywords.length;
+    collector.classification.sentenceInsights = providerInsights.length;
+    collector.classification.confidence = 0.72;
+  }
+
+  return {
+    keywords,
+    sentenceInsights: mergeSentenceInsights(sentenceInsights),
+    semanticFacts: semanticFactsParts.some(Boolean) ? mergeSemanticFacts(...semanticFactsParts) : undefined,
+    confidence: 0.72
+  };
+}
+
+/**
+ * Splits classification evidence into character-budgeted batches so one giant
+ * prompt cannot push the model into dropping candidates or truncating output.
+ * Candidate order is preserved to keep reading order intact within a batch.
+ */
+function splitClassificationBatches(imageTexts: OcrTextCandidate[]): OcrTextCandidate[][] {
+  const batches: OcrTextCandidate[][] = [];
+  let current: OcrTextCandidate[] = [];
+  let currentChars = 0;
+
+  for (const item of imageTexts) {
+    const itemChars = item.text.length + item.imageUrl.length + 24;
+    if (current.length > 0 && currentChars + itemChars > CLASSIFICATION_BATCH_CHAR_LIMIT) {
+      batches.push(current);
+      current = [];
+      currentChars = 0;
+    }
+    current.push(item);
+    currentChars += itemChars;
+  }
+
+  if (current.length > 0) {
+    batches.push(current);
+  }
+
+  return batches;
 }
 
 function sentenceInsightsForCandidate(
@@ -3172,7 +3579,7 @@ function providerSentenceInsightBelongsToCandidate(
   const candidateFingerprint = normalizeFingerprint(candidate.text);
   const directKeywordSupport = unique([
     ...insight.keywords,
-    ...candidateKeywords.map((keyword) => keyword.keyword).filter((keyword) => insight.text.toLowerCase().includes(keyword.toLowerCase()))
+    ...candidateKeywords.map((keyword) => keyword.keyword).filter((keyword) => includesKeyword(insight.text, keyword))
   ])
     .map(normalizeSupportTerm)
     .filter((term) => term.length >= 2 && !isWeakSemanticSupportTerm(term))
@@ -3531,8 +3938,18 @@ function sentenceBelongsToCandidate(sentence: string, candidateText: string): bo
   return candidateKey.includes(sentenceKey.slice(0, 120)) || sentenceKey.includes(candidateKey.slice(0, 120));
 }
 
+/**
+ * Case-insensitive keyword containment with a normalized-fingerprint fallback
+ * so Korean spacing/particle variants (e.g. "피부 장벽" vs "피부장벽") still match
+ * the OCR candidate they came from.
+ */
 function includesKeyword(text: string, keyword: string): boolean {
-  return text.toLowerCase().includes(keyword.toLowerCase());
+  if (text.toLowerCase().includes(keyword.toLowerCase())) {
+    return true;
+  }
+
+  const normalizedKeyword = normalizeOcrComparisonText(keyword);
+  return normalizedKeyword.length >= 2 && normalizeOcrComparisonText(text).includes(normalizedKeyword);
 }
 
 function normalizeKeywordCategory(category: KeywordCategory): KeywordCategory | undefined {
@@ -3932,26 +4349,115 @@ function scoreImageOcrTarget(value: string, context?: ImageOcrContext, productNa
   return productEvidenceSection + productNameBoost + strongSignals + productImageSignals + weakSignals + negativePenalty + productConflictPenalty;
 }
 
-function mergeOcrCandidates(candidates: OcrTextCandidate[]): OcrTextCandidate[] {
-  const seen = new Set<string>();
-  const merged: OcrTextCandidate[] = [];
+/**
+ * Merges OCR text candidates with overlap awareness. Exact and contained
+ * duplicates collapse onto the longer text, and candidates whose boundary
+ * lines overlap (sliced tall images, adjacent srcset variants) are joined so
+ * sentences crossing a slice boundary survive with the duplication removed.
+ */
+function mergeOcrCandidates(candidates: OcrTextCandidate[], stats?: OcrMergeStats): OcrTextCandidate[] {
+  const merged: Array<OcrTextCandidate & { fingerprint: string }> = [];
 
   for (const candidate of candidates) {
     const text = normalizeOcrText(candidate.text);
-    const fingerprint = normalizeFingerprint(text).slice(0, 220);
 
-    if (text.length === 0 || seen.has(fingerprint)) {
+    if (text.length === 0) {
       continue;
     }
 
-    seen.add(fingerprint);
-    merged.push({
-      imageUrl: candidate.imageUrl,
-      text
-    });
+    const fingerprint = normalizeOcrComparisonText(text);
+    let absorbed = false;
+
+    for (const [index, existing] of merged.entries()) {
+      if (existing.fingerprint === fingerprint || existing.fingerprint.includes(fingerprint)) {
+        existing.confidence = minDefinedConfidence(existing.confidence, candidate.confidence);
+        if (stats) {
+          stats.duplicatesAbsorbed += 1;
+        }
+        absorbed = true;
+        break;
+      }
+      if (fingerprint.includes(existing.fingerprint)) {
+        merged[index] = {
+          imageUrl: existing.imageUrl,
+          text,
+          confidence: minDefinedConfidence(existing.confidence, candidate.confidence),
+          fingerprint
+        };
+        if (stats) {
+          stats.duplicatesAbsorbed += 1;
+        }
+        absorbed = true;
+        break;
+      }
+
+      const joined = joinOverlappingOcrTexts(existing.text, text) ?? joinOverlappingOcrTexts(text, existing.text);
+      if (joined) {
+        merged[index] = {
+          imageUrl: existing.imageUrl,
+          text: joined,
+          confidence: minDefinedConfidence(existing.confidence, candidate.confidence),
+          fingerprint: normalizeOcrComparisonText(joined)
+        };
+        if (stats) {
+          stats.overlapJoins += 1;
+        }
+        absorbed = true;
+        break;
+      }
+    }
+
+    if (!absorbed) {
+      merged.push({
+        imageUrl: candidate.imageUrl,
+        text,
+        confidence: candidate.confidence,
+        fingerprint
+      });
+    }
   }
 
-  return merged.sort((a, b) => scoreProductText(b.text, "") - scoreProductText(a.text, "") || b.text.length - a.text.length);
+  return merged
+    .sort((a, b) => scoreProductText(b.text, "") - scoreProductText(a.text, "") || b.text.length - a.text.length)
+    .map(({ fingerprint: _fingerprint, confidence, ...candidate }) => ({
+      ...candidate,
+      ...(confidence !== undefined ? { confidence } : {})
+    }));
+}
+
+function minDefinedConfidence(left: number | undefined, right: number | undefined): number | undefined {
+  if (left === undefined) {
+    return right;
+  }
+  if (right === undefined) {
+    return left;
+  }
+  return Math.min(left, right);
+}
+
+/**
+ * Joins two OCR texts when the trailing lines of the first repeat as the
+ * leading lines of the second, which happens when one visual block is captured
+ * by overlapping image slices. Requires a meaningful overlap (>= 20 normalized
+ * characters) so short generic lines cannot chain unrelated blocks together.
+ */
+function joinOverlappingOcrTexts(first: string, second: string): string | undefined {
+  const firstLines = first.split("\n");
+  const secondLines = second.split("\n");
+  const maxOverlapLines = Math.min(12, firstLines.length, secondLines.length);
+
+  for (let overlap = maxOverlapLines; overlap >= 1; overlap -= 1) {
+    const tailFingerprint = normalizeOcrComparisonText(firstLines.slice(-overlap).join("\n"));
+
+    if (tailFingerprint.length < 20) {
+      continue;
+    }
+    if (tailFingerprint === normalizeOcrComparisonText(secondLines.slice(0, overlap).join("\n"))) {
+      return [...firstLines, ...secondLines.slice(overlap)].join("\n");
+    }
+  }
+
+  return undefined;
 }
 
 function imageUrlFromNode($: ReturnType<typeof load>, node: CheerioInput, source: string): string | undefined {

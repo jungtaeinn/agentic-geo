@@ -79,6 +79,15 @@ export interface ImageTextExtractionRequest {
   source: string;
   productName?: string;
   imageUrls: string[];
+  /**
+   * Optional prepared inputs (e.g. tall-image slices). displayUrl labels the
+   * image in prompts and result mapping; inputUrl is what the model reads and
+   * may be a base64 data URL. When present it takes precedence over imageUrls.
+   */
+  imageInputs?: Array<{
+    displayUrl: string;
+    inputUrl: string;
+  }>;
 }
 
 /** Text extracted from product images before semantic classification. */
@@ -86,6 +95,8 @@ export interface ImageTextExtractionResponse {
   images: Array<{
     imageUrl: string;
     text: string;
+    /** Model-reported 0-1 legibility/completeness confidence for this transcription. */
+    confidence?: number;
   }>;
   rawText?: string;
   usage?: AiTokenUsage;

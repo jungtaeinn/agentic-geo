@@ -132,6 +132,10 @@ importers:
       vitest:
         specifier: 4.1.9
         version: 4.1.9(@types/node@25.9.3)(vite@8.0.16(@types/node@25.9.3)(esbuild@0.28.1)(tsx@4.22.4))
+    optionalDependencies:
+      sharp:
+        specifier: 0.34.5
+        version: 0.34.5
 
   packages/pdp-geo-generator-agent:
     dependencies:

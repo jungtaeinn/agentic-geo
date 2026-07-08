@@ -83,6 +83,7 @@ export const POST = createProductExtractorRestHandler({
 | `diagnostics.process` | UI와 REST 응답에서 공유하는 단계별 진행 로그 |
 | `diagnostics.evidence` | 어떤 원문/필드에서 추출했는지 남기는 근거 |
 | `diagnostics.warnings` | 누락, 추론, fallback 처리 등 검토가 필요한 항목 |
+| `diagnostics.ocr` | OCR 파이프라인 전 단계 추적: 이미지별 추출 결과, 조합/병합 통계, 분류 배치 상태, 최종 활용도, 리뷰 포인트 |
 
 ## 처리 파이프라인
 
@@ -262,6 +263,29 @@ console.log(refinement.summary);
 - `azure-openai` (UI에서는 `Azure API`로 표시)
 
 `mock`은 외부 API 호출 없이 구조와 테스트 흐름을 확인할 때 사용합니다. 실제 키워드 분류와 분석 품질 검증은 OpenAI, Gemini, Azure API provider를 사용합니다.
+
+### OCR/분류 품질 정책
+
+- 모든 provider의 OCR 전사와 키워드 분류 호출은 구조화 출력(JSON Schema)을 강제합니다. OpenAI Responses는 `text.format`, Azure/AIStudio는 `response_format`, Gemini는 `responseSchema`를 사용하고, 스키마를 지원하지 않는 배포 모델에서는 자동으로 스키마 없이 한 번 재시도합니다. 스키마는 `src/llm/schemas.ts`에서 공유합니다.
+- vision OCR은 전사(transcription)와 의미 분류(classification)를 분리한 2-pass 구조입니다. 전사 프롬프트는 잘린 텍스트 완성 금지, 읽기순서 유지, 표 행 유지, 이미지별 confidence 보고를 요구하며 `src/llm/prompt.ts`의 `createImageOcrPrompt`로 공유합니다.
+- OCR 이미지 요청은 4장 단위 배치로 전송하고 1-based index로 앵커링해 이미지와 텍스트의 오귀속을 방지합니다. OpenAI/Azure는 `detail: "high"`로 고해상도 판독을 사용하고, Gemini는 이미지를 다운로드해 inline base64로 전달합니다.
+- 세로형 초장 상세 이미지(세로/가로 비율 3:1 초과, 세로 2,048px 초과)는 vision 모델의 자동 다운스케일로 글씨가 뭉개지므로, 헤더 프로브로 크기를 확인한 뒤 세로 1,400px·15% 오버랩 조각으로 분할해 전송합니다(`src/llm/providers/image-slicing.ts`). 조각별 전사 결과는 경계 라인 오버랩 병합이 하나의 연속 텍스트로 복원합니다. 분할에는 optional dependency인 `sharp`를 사용하며, sharp가 없는 환경에서는 분할 없이 통짜 전송으로 폴백하고 `IMAGE_SLICING_UNAVAILABLE` 경고를 남깁니다.
+- OCR 후보 병합은 전체 지문 기반 포함관계 중복 제거와 경계 라인 오버랩 병합을 수행해, 슬라이스된 세로형 상세 이미지나 srcset 변형에서 문장이 유실되거나 중복되지 않게 합니다.
+- 분류 입력이 문자 예산(14,000자)을 넘으면 배치로 분할해 호출하고 keywords/sentenceInsights/semanticFacts를 병합합니다. 일부 배치 실패는 `OCR_PROVIDER_PARTIAL` 경고로 남기고 성공 배치 결과를 사용합니다.
+
+### OCR 품질 추적 (`diagnostics.ocr`)
+
+OCR이 잘 추출·활용되었는지 사후 검증하고, 문제 지점을 다음 개선 실행에 넘길 수 있도록 실행마다 `diagnostics.ocr`에 전 단계 추적을 남깁니다.
+
+| 필드 | 내용 |
+| --- | --- |
+| `targets[]` | 이미지별 결과: `status`(extracted/empty/failed), 슬라이싱 여부·조각 수, 전사 길이, 모델 confidence, 텍스트 미리보기, 이미지별 `issues` |
+| `combination` | 병합 통계: 입력 후보 수, 중복 흡수 수, 오버랩 병합 수, 노이즈 필터로 드롭된 후보(사유·미리보기 포함), 최종 후보 수 |
+| `classification` | 분류 배치 수/실패 수, provider 키워드·문장 인사이트 수, confidence |
+| `utilization` | 공개 결과 활용도: 최종 textBlocks 수, 부착 키워드 수, 카테고리별 문장 인사이트 분포, OCR 유래 RAG chunk 수, 공개 출력에서 제외된 텍스트(사유 포함) |
+| `issues[]` | 추출 실패/빈 결과/저신뢰(0.6 미만)/분류 실패/드롭·미활용 텍스트를 요약한 리뷰 포인트 |
+
+`diagnostics.evidence`의 `ocr.pipeline` 항목에는 `대상 → 입력 → 병합 → 활용` 흐름의 한 줄 요약이 남습니다. QA 시에는 `issues`가 비어 있는지 먼저 확인하고, 문제가 있으면 해당 `targets`/`droppedCandidates`/`unusedTexts` 항목을 근거로 이미지·필터·프롬프트를 조정한 뒤 재실행해 비교하는 흐름을 권장합니다.
 
 옵션 예시:
 

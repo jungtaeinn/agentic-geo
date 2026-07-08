@@ -494,7 +494,13 @@ function repairGraphNode(
   if (node["@type"] === "HowTo" && Array.isArray(node.step)) {
     let nextPosition = 1;
     const seenStepKeys = new Set<string>();
-    node.step = node.step.filter(isRecord).flatMap((item) => {
+    const stepCandidates: Array<{
+      item: Record<string, unknown>;
+      part: string;
+      repairedText: string;
+    }> = [];
+
+    for (const item of node.step.filter(isRecord)) {
       const text = stringValue(item.text);
       if (!text) {
         addRepair(warnings, repairs, {
@@ -506,7 +512,7 @@ function repairGraphNode(
           after: null,
           evidence: ["HowTo.step.text"]
         }, "Invalid HowTo step without text was removed.");
-        return [];
+        continue;
       }
       const repairedText = repairGeneratedText(text, locale, "HowTo.step.text", warnings, repairs);
       const usageStepParts = splitHowToStepUsageText(repairedText, locale);
@@ -532,34 +538,56 @@ function repairGraphNode(
           after: null,
           evidence: ["RAG Field Evidence Contract", "HowTo.step requires actionable usage evidence"]
         }, "HowTo step was removed because it was not actionable usage content.");
-        return [];
+        continue;
       }
 
-      return validParts.flatMap((part) => {
-        const stepKey = howToStepDedupeKey(part);
-        if (stepKey && seenStepKeys.has(stepKey)) {
-          addRepair(warnings, repairs, {
-            field: "HowTo.step.text",
-            source: "field-contract-validator",
-            issue: "HowTo.step duplicated the same actionable usage direction with different surface wording.",
-            action: "Removed the duplicate HowTo step so usage directions remain concise and non-repetitive.",
-            before: toJsonValue(item),
-            after: null,
-            evidence: ["HowTo.step", "actionable usage dedupe"]
-          }, "Duplicate HowTo usage step was removed during field contract validation.");
-          return [];
-        }
-        if (stepKey) {
-          seenStepKeys.add(stepKey);
-        }
-        const position = nextPosition++;
-        return [{
-          "@type": "HowToStep",
-          position,
-          name: createValidatedHowToStepName(locale, position),
-          text: part
-        }];
-      });
+      for (const part of validParts) {
+        stepCandidates.push({ item, part, repairedText });
+      }
+    }
+
+    const redundantCompoundIndexes = findRedundantKoreanCompoundHowToStepIndexes(
+      stepCandidates.map((candidate) => candidate.part),
+      locale
+    );
+
+    node.step = stepCandidates.flatMap((candidate, candidateIndex) => {
+      const { item, part, repairedText } = candidate;
+      if (redundantCompoundIndexes.has(candidateIndex)) {
+        addRepair(warnings, repairs, {
+          field: "HowTo.step.text",
+          source: "field-contract-validator",
+          issue: "HowTo.step repeated a broader compound usage direction already covered by more specific neighboring steps.",
+          action: "Removed the broader overlapping HowTo step so each usage action appears once.",
+          before: repairedText,
+          after: null,
+          evidence: ["HowTo.step", "actionable usage overlap dedupe"]
+        }, "Overlapping compound HowTo usage step was removed during field contract validation.");
+        return [];
+      }
+      const stepKey = howToStepDedupeKey(part);
+      if (stepKey && seenStepKeys.has(stepKey)) {
+        addRepair(warnings, repairs, {
+          field: "HowTo.step.text",
+          source: "field-contract-validator",
+          issue: "HowTo.step duplicated the same actionable usage direction with different surface wording.",
+          action: "Removed the duplicate HowTo step so usage directions remain concise and non-repetitive.",
+          before: toJsonValue(item),
+          after: null,
+          evidence: ["HowTo.step", "actionable usage dedupe"]
+        }, "Duplicate HowTo usage step was removed during field contract validation.");
+        return [];
+      }
+      if (stepKey) {
+        seenStepKeys.add(stepKey);
+      }
+      const position = nextPosition++;
+      return [{
+        "@type": "HowToStep",
+        position,
+        name: createValidatedHowToStepName(locale, position),
+        text: part
+      }];
     });
   }
 
@@ -3343,6 +3371,7 @@ function repairHowToStepUsageText(value: string): string {
     .replace(/^(?:[\p{L}\p{N}™®().,'\s-]{0,100})?(?:사용\s*방법|사용법)\s*\d*[:.]?\s*/iu, "")
     .replace(/^(?:[\p{L}\p{N}™®().,'\s-]{0,100})?(?:how\s*to\s*use|directions?)\s*\d*[:.]?\s*/iu, "")
     .replace(usageMeasurementLeadPattern(), "")
+    .replace(/([가-힣])\s*[.。]\s*(?=(?:두드려|흡수|펴\s*바르|펴\s*발라|마사지|문지르|헹구|닦아))/gu, "$1 ")
     .replace(/\s+\d+\s+(?=(?:미온수|물|깨끗|충분|헹구|다음|이후))/gu, " ")
     .replace(/\s+/g, " ")
     .trim())));
@@ -3363,10 +3392,11 @@ function splitKoreanCompoundHowToStep(value: string): string[] {
     .replace(/\s+\d+\s+(?=(?:미온수|물|깨끗|충분|헹구|다음|이후))/gu, " ")
     .trim();
   const signatures = koreanHowToActionSignatures(text);
-  if (signatures.length <= 1) {
+  const splitSignatures = signatures.filter((signature) => signature !== "dispense");
+  if (splitSignatures.length <= 1) {
     return [text];
   }
-  if (!signatures.includes("foam") && !signatures.includes("rinse")) {
+  if (!splitSignatures.includes("foam") && !splitSignatures.includes("rinse")) {
     return [text];
   }
 
@@ -3403,13 +3433,45 @@ function splitKoreanCompoundHowToStep(value: string): string[] {
 function koreanHowToActionSignatures(value: string): string[] {
   const text = value.trim();
   return [
+    /(?:덜어|취해|펌핑|적당량의?\s*(?:내용물|제품)?)/u.test(text) ? "dispense" : undefined,
     /거품/u.test(text) ? "foam" : undefined,
     /(?:마사지|문지르)/u.test(text) ? "massage" : undefined,
     /(?:미온수|헹구)/u.test(text) ? "rinse" : undefined,
     /(?:화장솜|닦아?내|닦아냅|피부결을\s*따라\s*닦)/u.test(text) ? "wipe" : undefined,
-    /(?:펴\s*바르|펴\s*발라|바릅|바른\s*뒤|도포)/u.test(text) ? "apply" : undefined,
+    /(?:펴\s*바르|펴\s*발라|바릅|바른\s*(?:뒤|후)|도포)/u.test(text) ? "apply" : undefined,
     /(?:흡수|두드려|톡톡)/u.test(text) ? "absorb" : undefined
   ].filter((signature): signature is string => Boolean(signature));
+}
+
+function findRedundantKoreanCompoundHowToStepIndexes(values: string[], locale: PdpGeoLocale): Set<number> {
+  if (locale !== "ko-KR") {
+    return new Set();
+  }
+  const signaturesByIndex = values.map((value) => koreanHowToActionSignatures(value));
+  const redundant = new Set<number>();
+
+  signaturesByIndex.forEach((signatures, index) => {
+    if (signatures.length < 3) {
+      return;
+    }
+    const covered = new Set<string>();
+    let coveringStepCount = 0;
+    signaturesByIndex.forEach((otherSignatures, otherIndex) => {
+      if (otherIndex === index || otherSignatures.length === 0 || otherSignatures.length >= signatures.length) {
+        return;
+      }
+      if (!otherSignatures.every((signature) => signatures.includes(signature))) {
+        return;
+      }
+      coveringStepCount += 1;
+      otherSignatures.forEach((signature) => covered.add(signature));
+    });
+    if (coveringStepCount >= 2 && signatures.every((signature) => covered.has(signature))) {
+      redundant.add(index);
+    }
+  });
+
+  return redundant;
 }
 
 function createKoreanFoamHowToStep(value: string): string | undefined {
@@ -3456,7 +3518,7 @@ function createKoreanWipeHowToStep(value: string): string | undefined {
 }
 
 function createKoreanApplyHowToStep(value: string): string | undefined {
-  if (!/(?:펴\s*바르|펴\s*발라|바릅|바른\s*뒤|도포)/u.test(value)) {
+  if (!/(?:펴\s*바르|펴\s*발라|바릅|바른\s*(?:뒤|후)|도포)/u.test(value)) {
     return undefined;
   }
   const palm = /손바닥|손에/u.test(value) ? "손바닥에 덜어 " : "";
@@ -3486,7 +3548,7 @@ function createValidatedHowToStepName(locale: PdpGeoLocale, position: number): s
 function stripLeadingKoreanUsageParticle(value: string): string {
   return value
     .trim()
-    .replace(/^(?:은|는|이|가|을|를|의)\s+(?=(?:화장솜|손바닥|손에|적당량|얼굴|피부|피부결|토너|제품|내용물|양손|물과|미온수))/u, "")
+    .replace(/^(?:은|는|이|가|을|를|의)\s+(?=(?:아침|저녁|매일|데일리|세안|화장솜|손바닥|손에|적당량|얼굴|피부|피부결|토너|제품|내용물|양손|물과|미온수))/u, "")
     .trim();
 }
 
@@ -3499,20 +3561,28 @@ function koreanHowToSemanticDedupeKey(value: string): string | undefined {
     return undefined;
   }
   const signatures = koreanHowToActionSignatures(value);
-  if (signatures.length !== 1) {
-    return undefined;
+  if (signatures.length === 1) {
+    const signature = signatures[0];
+    if (signature !== "dispense" && signature !== "foam" && signature !== "massage" && signature !== "rinse" && signature !== "wipe") {
+      return undefined;
+    }
+    return `ko-action:${signature}`;
   }
-  const signature = signatures[0];
-  if (signature !== "foam" && signature !== "massage" && signature !== "rinse" && signature !== "wipe") {
-    return undefined;
+  if (signatures.includes("foam") && signatures.every((signature) => signature === "dispense" || signature === "foam")) {
+    return "ko-action:foam";
   }
-  return `ko-action:${signature}`;
+  const signatureKey = signatures.join("+");
+  if (signatureKey === "apply+absorb" || signatureKey === "dispense+apply+absorb") {
+    return `ko-actions:${signatureKey}`;
+  }
+  return undefined;
 }
 
 function normalizeHowToStepSurfaceForDedupe(value: string): string {
   return normalizeKoreanHowToInstructionText(stripLeadingKoreanUsageParticle(value))
     .replace(/닦아내는\s*방식입니다$/u, "닦아냅니다")
     .replace(/닦아내는\s*방법입니다$/u, "닦아냅니다")
+    .replace(/흡수시켜\s*줍니다$/u, "흡수시켜 줍니다")
     .replace(/흡수시키는\s*방식입니다$/u, "흡수시켜 줍니다")
     .replace(/흡수시키는\s*방법입니다$/u, "흡수시켜 줍니다")
     .replace(/헹구어\s*냅니다$/u, "헹굽니다")
@@ -3544,6 +3614,7 @@ function normalizeKoreanHowToInstructionText(value: string): string {
     .replace(/헹구어\s*냅니다$/u, "헹구어 냅니다")
     .replace(/닦아내는\s*것(?:이다|입니다)$/u, "닦아냅니다")
     .replace(/닦아낸다$/u, "닦아냅니다")
+    .replace(/흡수시켜\s*줍니다$/u, "흡수시켜 줍니다")
     .replace(/흡수시키는\s*것(?:이다|입니다)$/u, "흡수시켜 줍니다")
     .replace(/흡수시킨다$/u, "흡수시켜 줍니다")
     .replace(/펴\s*바르는\s*것(?:이다|입니다)$/u, "펴 바릅니다")

@@ -4594,6 +4594,84 @@ describe("generatePdpGeo", () => {
 		    expect(repaired.validationRepairs.some((repair) => repair.source === "field-contract-validator" && repair.field === "HowTo.step.text" && /duplicated/.test(repair.issue))).toBe(true);
 		  });
 
+		  it("removes overlapping Korean toner HowTo compound steps covered by following steps", () => {
+		    const repaired = validateAndRepairPdpGeoArtifacts({
+		      locale: "ko-KR",
+		      fallbackProductName: "에스트라 아토베리어365 캡슐 토너",
+		      fallbackDescription: "에스트라 아토베리어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다.",
+		      schemaMarkup: {
+		        jsonLd: {
+		          "@context": "https://schema.org",
+		          "@graph": [
+		            {
+		              "@type": "Product",
+		              name: "에스트라 아토베리어365 캡슐 토너",
+		              description: "에스트라 아토베리어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다."
+		            },
+		            {
+		              "@type": "HowTo",
+		              name: "에스트라 아토베리어365 캡슐 토너 사용 방법",
+		              step: [
+		                {
+		                  "@type": "HowToStep",
+		                  position: 1,
+		                  name: "1단계",
+		                  text: "은 아침과 저녁 세안 후 적당량을 덜어 캡슐을 부드럽게 녹이듯 골고루 펴 바른 뒤 가볍게 두드려 흡수시키는 방식이다"
+		                },
+		                {
+		                  "@type": "HowToStep",
+		                  position: 2,
+		                  name: "2단계",
+		                  text: "아침, 저녁 세안 후, 적당량의 내용물을 덜어줍니다"
+		                },
+		                {
+		                  "@type": "HowToStep",
+		                  position: 3,
+		                  name: "3단계",
+		                  text: "캡슐을 부드럽게 녹이듯 골고루 펴 바른 후 가볍게 두드려 흡수시켜줍니다"
+		                },
+		                {
+		                  "@type": "HowToStep",
+		                  position: 4,
+		                  name: "4단계",
+		                  text: "골고루 펴 바른 후 가볍게. 두드려 흡수시켜줍니다"
+		                }
+		              ]
+		            }
+		          ]
+		        },
+		        scriptTag: ""
+		      },
+		      content: {
+		        sections: {
+		          productName: "에스트라 아토베리어365 캡슐 토너",
+		          description: "에스트라 아토베리어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다.",
+		          quickFacts: "핵심 정보",
+		          benefits: "보습",
+		          ingredients: "고밀도 세라마이드 캡슐",
+		          howToUse: "아침과 저녁 세안 후 적당량을 덜어 캡슐을 부드럽게 녹이듯 골고루 펴 바른 뒤 가볍게 두드려 흡수시킵니다",
+		          faq: "Q. 어떤 제품인가요?\nA. 민감 피부를 위한 보습 토너입니다."
+		        },
+		        html: "<div class=\"geo-content-accordion\"></div>"
+		      }
+		    });
+
+		    const graph = repaired.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+		    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
+		    const steps = howTo.step as Array<Record<string, any>>;
+		    const stepText = JSON.stringify(steps);
+
+		    expect(steps.map((step) => step.position)).toEqual([1, 2]);
+		    expect(steps.map((step) => step.name)).toEqual(["1단계", "2단계"]);
+		    expect(steps.map((step) => step.text)).toEqual([
+		      "아침, 저녁 세안 후, 적당량의 내용물을 덜어줍니다",
+		      "캡슐을 부드럽게 녹이듯 골고루 펴 바른 후 가볍게 두드려 흡수시켜 줍니다"
+		    ]);
+		    expect(stepText).not.toMatch(/"text":"은\s|흡수시키는 방식이다|가볍게\./);
+		    expect(repaired.validationRepairs.some((repair) => repair.source === "field-contract-validator" && repair.field === "HowTo.step.text" && /broader compound/.test(repair.issue))).toBe(true);
+		    expect(repaired.validationRepairs.some((repair) => repair.source === "field-contract-validator" && repair.field === "HowTo.step.text" && /duplicated/.test(repair.issue))).toBe(true);
+		  });
+
 			  it("splits and deduplicates Korean cleanser HowTo compound steps", () => {
 			    const repaired = validateAndRepairPdpGeoArtifacts({
 		      locale: "ko-KR",

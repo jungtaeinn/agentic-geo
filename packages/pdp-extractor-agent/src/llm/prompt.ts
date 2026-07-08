@@ -1,4 +1,28 @@
-import type { KeywordClassificationRequest } from "./types";
+import type { ImageTextExtractionRequest, KeywordClassificationRequest } from "./types";
+
+/**
+ * Shared vision OCR transcription prompt. Transcription is intentionally kept
+ * separate from semantic classification: the OCR pass only copies visible text
+ * faithfully, and the later classification pass interprets it. Mixing the two
+ * in one call measurably increases omissions and hallucinated claims.
+ */
+export function createImageOcrPrompt(request: ImageTextExtractionRequest): string {
+  return [
+    "Transcribe visible text from product detail page images for a GEO product extraction pipeline.",
+    "Return strict JSON only: {\"images\":[{\"index\":1,\"imageUrl\":\"\",\"text\":\"\",\"confidence\":0.0}]}",
+    "index is the 1-based image number exactly as labeled below. imageUrl is the labeled URL for that image. Never swap text between images.",
+    "Transcribe every piece of readable text faithfully in natural reading order (top to bottom, left to right; finish one column before the next).",
+    "Do not summarize, rewrite, translate, or infer claims. Keep the original language: Korean text stays Korean.",
+    "Never complete text that is cut off, truncated, or hidden. Transcribe only what is actually visible; if a word is partially legible, transcribe the legible part only.",
+    "Preserve visible line order, percentages, numeric values, units, footnote markers, row/column labels, and short headings as plain text lines.",
+    "For tables, ingredient charts, clinical result images, and comparison blocks, keep each row's label and value together on one line.",
+    "If an image has no readable product text, return an empty string for that image.",
+    "Set confidence between 0 and 1 for each image: how legible and complete the transcription is (small, blurry, or partially cropped text lowers it).",
+    `Source: ${request.source}`,
+    `Product name: ${request.productName ?? "unknown"}`,
+    ...request.imageUrls.map((imageUrl, index) => `Image ${index + 1}: ${imageUrl}`)
+  ].join("\n");
+}
 
 export interface KeywordClassificationPromptParts {
   system: string;

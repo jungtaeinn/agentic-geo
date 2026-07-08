@@ -55,7 +55,7 @@ describe("OpenAIKeywordClassifier image OCR", () => {
     expect(result.keywords[0]?.keyword).toBe("피부 자생력");
   });
 
-  it("sends Responses image inputs without an unsupported detail field", async () => {
+  it("sends Responses image inputs with high-detail vision resolution", async () => {
     const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) =>
       new Response(JSON.stringify({
         output_text: JSON.stringify({
@@ -85,8 +85,10 @@ describe("OpenAIKeywordClassifier image OCR", () => {
 
     expect(imagePart).toEqual({
       type: "input_image",
-      image_url: "https://example.com/detail.jpg"
+      image_url: "https://example.com/detail.jpg",
+      detail: "high"
     });
+    expect(body.text?.format?.type).toBe("json_schema");
     expect(result.images[0]?.text).toContain("AFTER 6 WEEKS");
   });
 
@@ -97,7 +99,7 @@ describe("OpenAIKeywordClassifier image OCR", () => {
       if (href === "https://api.openai.com/v1/responses") {
         const responseCallCount = fetchMock.mock.calls.filter(([calledUrl]) => String(calledUrl) === href).length;
 
-        if (responseCallCount < 3) {
+        if (responseCallCount < 2) {
           return new Response(JSON.stringify({
             error: {
               message: "invalid image_url"
@@ -137,9 +139,11 @@ describe("OpenAIKeywordClassifier image OCR", () => {
     const finalOpenAiCall = fetchMock.mock.calls
       .filter(([url]) => String(url) === "https://api.openai.com/v1/responses")
       .at(-1);
+    const openAiCalls = fetchMock.mock.calls.filter(([url]) => String(url) === "https://api.openai.com/v1/responses");
     const finalBody = JSON.parse(String(finalOpenAiCall?.[1]?.body));
     const finalImagePart = finalBody.input[0].content.find((part: { type: string }) => part.type === "input_image");
 
+    expect(openAiCalls).toHaveLength(2);
     expect(finalImagePart.image_url).toMatch(/^data:image\/jpeg;base64,/);
     expect(result.images[0]).toEqual({
       imageUrl: "https://cdn.example.com/detail.jpg",
@@ -156,7 +160,7 @@ describe("OpenAIKeywordClassifier image OCR", () => {
       if (href === "https://api.openai.com/v1/responses") {
         openAiCallCount += 1;
 
-        if (openAiCallCount <= 2) {
+        if (openAiCallCount === 1) {
           return new Response(JSON.stringify({
             output_text: JSON.stringify({ images: [] })
           }), { status: 200 });
@@ -194,9 +198,11 @@ describe("OpenAIKeywordClassifier image OCR", () => {
     const finalOpenAiCall = fetchMock.mock.calls
       .filter(([url]) => String(url) === "https://api.openai.com/v1/responses")
       .at(-1);
+    const openAiCalls = fetchMock.mock.calls.filter(([url]) => String(url) === "https://api.openai.com/v1/responses");
     const finalBody = JSON.parse(String(finalOpenAiCall?.[1]?.body));
     const finalImagePart = finalBody.input[0].content.find((part: { type: string }) => part.type === "input_image");
 
+    expect(openAiCalls).toHaveLength(2);
     expect(finalImagePart.image_url).toMatch(/^data:image\/jpeg;base64,/);
     expect(result.images[0]).toEqual({
       imageUrl,

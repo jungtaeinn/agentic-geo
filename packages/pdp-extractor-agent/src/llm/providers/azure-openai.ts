@@ -1,4 +1,8 @@
-import { createKeywordClassificationPromptParts } from "../prompt";
+import { createImageOcrPrompt, createKeywordClassificationPromptParts } from "../prompt";
+import {
+  chatCompletionsImageOcrResponseFormat,
+  chatCompletionsKeywordClassificationResponseFormat
+} from "../schemas";
 import type {
   ImageTextExtractionRequest,
   ImageTextExtractionResponse,
@@ -8,6 +12,21 @@ import type {
   LlmProviderConfig
 } from "../types";
 import type { AiTokenUsage } from "../../types";
+import {
+  downloadImageAsDataUrl,
+  extractJsonObjectText,
+  fetchWithTimeout,
+  isUnsupportedStructuredOutputError,
+  mergeTokenUsages,
+  numberField,
+  parseImageOcrPayloadText,
+  resolveImageInputs,
+  responseErrorSuffix,
+  sumOptional,
+  temperatureBody
+} from "./shared";
+
+export { temperatureBody } from "./shared";
 
 type ChatCompletionsPayload = {
   choices?: Array<{ message?: { content?: string } }>;
@@ -15,7 +34,6 @@ type ChatCompletionsPayload = {
 };
 
 const CHAT_COMPLETIONS_TIMEOUT_MS = 300_000;
-const IMAGE_DOWNLOAD_TIMEOUT_MS = 60_000;
 
 /** Azure API adapter using deployment-scoped chat completions. */
 export class AzureApiKeywordClassifier implements KeywordClassifier {
@@ -49,13 +67,14 @@ export class AzureApiKeywordClassifier implements KeywordClassifier {
           { role: "system", content: prompt.system },
           { role: "user", content: prompt.user }
         ],
+        response_format: chatCompletionsKeywordClassificationResponseFormat,
         ...temperatureBody(this.config.temperature)
       },
       "Azure keyword classification"
     );
     const rawText = payload.choices?.[0]?.message?.content ?? "";
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-    const result = jsonMatch ? JSON.parse(jsonMatch[0]) as KeywordClassificationResponse : { keywords: [], summary: "No parseable JSON returned.", rawText };
+    const jsonText = extractJsonObjectText(rawText);
+    const result = jsonText ? JSON.parse(jsonText) as KeywordClassificationResponse : { keywords: [], summary: "No parseable JSON returned.", rawText };
     return {
       ...result,
       usage: tokenUsageFromChatCompletions(payload.usage)
@@ -68,23 +87,20 @@ export class AzureApiKeywordClassifier implements KeywordClassifier {
       throw new Error("API key, endpoint, and an OCR deployment/model id are required for image OCR.");
     }
 
-    const directImages = request.imageUrls.map((imageUrl) => ({
-      displayUrl: imageUrl,
-      inputUrl: imageUrl
-    }));
+    const directImages = resolveImageInputs(request);
 
     try {
       const direct = await this.requestImageOcr(request, directImages, deployment);
-      const missingImageUrls = imageUrlsWithoutExtractedText(request.imageUrls, direct.images);
+      const missingInputs = imageInputsWithoutExtractedText(directImages, direct.images);
 
-      if (missingImageUrls.length === 0) {
+      if (missingInputs.length === 0) {
         return direct;
       }
 
       const fallback = await this.extractImageTextsWithDownloadedImages(
-        { ...request, imageUrls: missingImageUrls },
+        { ...request, imageUrls: missingInputs.map((input) => input.displayUrl), imageInputs: missingInputs },
         deployment,
-        new Error(`${missingImageUrls.length} remote image OCR result(s) returned no readable text.`)
+        new Error(`${missingInputs.length} remote image OCR result(s) returned no readable text.`)
       );
 
       return fallback.images.length > 0
@@ -120,12 +136,13 @@ export class AzureApiKeywordClassifier implements KeywordClassifier {
             }, images)
           }
         ],
+        response_format: chatCompletionsImageOcrResponseFormat,
         ...temperatureBody(this.config.temperature)
       },
       "Azure image OCR"
     );
     return {
-      ...parseImageOcrJson(payload.choices?.[0]?.message?.content ?? "", images.map((image) => image.displayUrl)),
+      ...parseImageOcrPayloadText(payload.choices?.[0]?.message?.content ?? "", images.map((image) => image.displayUrl)),
       usage: tokenUsageFromChatCompletions(payload.usage)
     };
   }
@@ -139,10 +156,10 @@ export class AzureApiKeywordClassifier implements KeywordClassifier {
     const errors: string[] = [];
     const usages: AiTokenUsage[] = [];
 
-    for (const imageUrl of request.imageUrls) {
+    for (const input of resolveImageInputs(request)) {
       try {
-        const dataUrl = await downloadImageAsDataUrl(imageUrl);
-        const extracted = await this.requestImageOcr(request, [{ displayUrl: imageUrl, inputUrl: dataUrl }], deployment);
+        const dataUrl = input.inputUrl.startsWith("data:") ? input.inputUrl : await downloadImageAsDataUrl(input.inputUrl);
+        const extracted = await this.requestImageOcr(request, [{ displayUrl: input.displayUrl, inputUrl: dataUrl }], deployment);
         images.push(...extracted.images);
         if (extracted.usage) {
           usages.push(extracted.usage);
@@ -161,20 +178,6 @@ export class AzureApiKeywordClassifier implements KeywordClassifier {
       usage: mergeTokenUsages(usages)
     };
   }
-}
-
-function createImageOcrPrompt(request: ImageTextExtractionRequest): string {
-  return [
-    "Extract visible text from product detail page images for a GEO product extraction pipeline.",
-    "Return strict JSON only: {\"images\":[{\"imageUrl\":\"\",\"text\":\"\"}]}",
-    "Do not summarize, rewrite, translate, or infer claims.",
-    "Preserve visible line order, percentages, footnote markers, row/column labels, and short headings as plain text.",
-    "For tables, ingredient charts, clinical result images, and comparison blocks, keep each row together.",
-    "If an image has no readable product text, return an empty string for that image.",
-    `Source: ${request.source}`,
-    `Product name: ${request.productName ?? "unknown"}`,
-    ...request.imageUrls.map((imageUrl, index) => `Image ${index + 1}: ${imageUrl}`)
-  ].join("\n");
 }
 
 function createImageOcrContent(
@@ -205,34 +208,12 @@ function createImageOcrContent(
   ];
 }
 
-function parseImageOcrJson(text: string, imageUrls: string[]): ImageTextExtractionResponse {
-  const jsonMatch = String(text).match(/\{[\s\S]*\}/);
-
-  if (!jsonMatch) {
-    return { images: [], rawText: text };
-  }
-
-  const payload = JSON.parse(jsonMatch[0]) as {
-    images?: Array<{
-      imageUrl?: string;
-      text?: string;
-    }>;
-  };
-
-  return {
-    images: (payload.images ?? [])
-      .map((image, index) => ({
-        imageUrl: image.imageUrl || imageUrls[index] || "",
-        text: image.text ?? ""
-      }))
-      .filter((image) => image.imageUrl.length > 0 && image.text.trim().length > 0),
-    rawText: text
-  };
-}
-
-function imageUrlsWithoutExtractedText(requestedImageUrls: string[], extractedImages: ImageTextExtractionResponse["images"]): string[] {
+function imageInputsWithoutExtractedText(
+  requestedInputs: Array<{ displayUrl: string; inputUrl: string }>,
+  extractedImages: ImageTextExtractionResponse["images"]
+): Array<{ displayUrl: string; inputUrl: string }> {
   const extractedUrls = new Set(extractedImages.map((image) => image.imageUrl));
-  return requestedImageUrls.filter((imageUrl) => !extractedUrls.has(imageUrl));
+  return requestedInputs.filter((input) => !extractedUrls.has(input.displayUrl));
 }
 
 function mergeImageTextExtractionResponses(
@@ -256,40 +237,49 @@ function mergeImageTextExtractionResponses(
   };
 }
 
-/**
- * Builds the optional `temperature` portion of a chat-completions body.
- * Returns an empty object when no temperature is configured so the request omits
- * the field entirely, letting models that only accept their default value (e.g. gpt-5.5) succeed.
- */
-export function temperatureBody(temperature: number | undefined): { temperature?: number } {
-  return typeof temperature === "number" && Number.isFinite(temperature) ? { temperature } : {};
-}
-
 async function requestChatCompletionsJson(
   url: string,
   authHeaders: Record<string, string>,
   body: Record<string, unknown>,
   failureLabel: string
 ): Promise<ChatCompletionsPayload> {
-  const response = await postChatCompletions(url, authHeaders, body, failureLabel);
+  let currentBody = body;
+  let response = await postChatCompletions(url, authHeaders, currentBody, failureLabel);
 
-  if (response.ok) {
-    return response.json() as Promise<ChatCompletionsPayload>;
+  if (!response.ok) {
+    const suffix = await responseErrorSuffix(response);
+
+    if (currentBody.response_format !== undefined && isUnsupportedStructuredOutputError(suffix)) {
+      const { response_format: _responseFormat, ...retryBody } = currentBody;
+      currentBody = retryBody;
+      response = await postChatCompletions(url, authHeaders, currentBody, failureLabel);
+    } else if (currentBody.temperature !== undefined && isUnsupportedTemperatureError(suffix)) {
+      const { temperature: _temperature, ...retryBody } = currentBody;
+      currentBody = retryBody;
+      response = await postChatCompletions(url, authHeaders, currentBody, failureLabel);
+    } else {
+      throw new Error(`${failureLabel} failed: ${response.status}${suffix}`);
+    }
   }
 
-  const suffix = await responseErrorSuffix(response);
-  if (body.temperature !== undefined && isUnsupportedTemperatureError(suffix)) {
-    const { temperature: _temperature, ...retryBody } = body;
-    const retryResponse = await postChatCompletions(url, authHeaders, retryBody, failureLabel);
+  if (!response.ok) {
+    const suffix = await responseErrorSuffix(response);
 
-    if (retryResponse.ok) {
-      return retryResponse.json() as Promise<ChatCompletionsPayload>;
+    if (currentBody.temperature !== undefined && isUnsupportedTemperatureError(suffix)) {
+      const { temperature: _temperature, ...retryBody } = currentBody;
+      const retryResponse = await postChatCompletions(url, authHeaders, retryBody, failureLabel);
+
+      if (retryResponse.ok) {
+        return retryResponse.json() as Promise<ChatCompletionsPayload>;
+      }
+
+      throw new Error(`${failureLabel} failed: ${retryResponse.status}${await responseErrorSuffix(retryResponse)}`);
     }
 
-    throw new Error(`${failureLabel} failed: ${retryResponse.status}${await responseErrorSuffix(retryResponse)}`);
+    throw new Error(`${failureLabel} failed: ${response.status}${suffix}`);
   }
 
-  throw new Error(`${failureLabel} failed: ${response.status}${suffix}`);
+  return response.json() as Promise<ChatCompletionsPayload>;
 }
 
 function postChatCompletions(
@@ -319,108 +309,8 @@ function tokenUsageFromChatCompletions(value: unknown): AiTokenUsage | undefined
   const usage = value as Record<string, unknown>;
   const inputTokens = numberField(usage.prompt_tokens) ?? numberField(usage.input_tokens);
   const outputTokens = numberField(usage.completion_tokens) ?? numberField(usage.output_tokens);
-  return compactTokenUsage({
-    inputTokens,
-    outputTokens,
-    totalTokens: numberField(usage.total_tokens) ?? sumOptional(inputTokens, outputTokens)
-  });
-}
-
-function mergeTokenUsages(usages: AiTokenUsage[]): AiTokenUsage | undefined {
-  const merged = usages.reduce<AiTokenUsage>((total, usage) => ({
-    inputTokens: sumOptional(total.inputTokens, usage.inputTokens),
-    outputTokens: sumOptional(total.outputTokens, usage.outputTokens),
-    totalTokens: sumOptional(total.totalTokens, usage.totalTokens)
-  }), {});
-  return compactTokenUsage(merged);
-}
-
-function compactTokenUsage(usage: AiTokenUsage): AiTokenUsage | undefined {
-  return usage.inputTokens !== undefined || usage.outputTokens !== undefined || usage.totalTokens !== undefined ? usage : undefined;
-}
-
-function sumOptional(left: number | undefined, right: number | undefined): number | undefined {
-  if (left === undefined && right === undefined) {
-    return undefined;
-  }
-  return (left ?? 0) + (right ?? 0);
-}
-
-function numberField(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-async function downloadImageAsDataUrl(imageUrl: string): Promise<string> {
-  const response = await fetchWithTimeout(imageUrl, {
-    headers: {
-      Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
-    }
-  }, IMAGE_DOWNLOAD_TIMEOUT_MS, "Image download for OCR");
-
-  if (!response.ok) {
-    throw new Error(`Image download failed: ${response.status}${await responseErrorSuffix(response)}`);
-  }
-
-  const contentType = response.headers.get("content-type")?.split(";")[0]?.trim() || "image/jpeg";
-
-  if (!contentType.startsWith("image/")) {
-    throw new Error(`Image download returned non-image content-type: ${contentType}`);
-  }
-
-  const buffer = Buffer.from(await response.arrayBuffer());
-  const maxBytes = 10 * 1024 * 1024;
-
-  if (buffer.byteLength > maxBytes) {
-    throw new Error(`Image is too large for OCR fallback: ${buffer.byteLength} bytes`);
-  }
-
-  return `data:${contentType};base64,${buffer.toString("base64")}`;
-}
-
-async function responseErrorSuffix(response: Response): Promise<string> {
-  const text = await response.text().catch(() => "");
-  const cleaned = text.replace(/\s+/g, " ").trim();
-  return cleaned ? ` - ${cleaned.slice(0, 500)}` : "";
-}
-
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, label: string): Promise<Response> {
-  const { signal, cancel } = createTimeoutSignal(timeoutMs);
-
-  try {
-    return await fetch(url, {
-      ...init,
-      signal
-    });
-  } catch (error) {
-    if (isAbortError(error)) {
-      throw new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s.`);
-    }
-    throw error;
-  } finally {
-    cancel();
-  }
-}
-
-function createTimeoutSignal(timeoutMs: number): { signal: AbortSignal; cancel: () => void } {
-  if (typeof AbortSignal.timeout === "function") {
-    return {
-      signal: AbortSignal.timeout(timeoutMs),
-      cancel: () => {}
-    };
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  return {
-    signal: controller.signal,
-    cancel: () => clearTimeout(timeout)
-  };
-}
-
-function isAbortError(error: unknown): boolean {
-  return typeof error === "object"
-    && error !== null
-    && "name" in error
-    && (error as { name?: unknown }).name === "AbortError";
+  const totalTokens = numberField(usage.total_tokens) ?? sumOptional(inputTokens, outputTokens);
+  return inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined
+    ? { inputTokens, outputTokens, totalTokens }
+    : undefined;
 }

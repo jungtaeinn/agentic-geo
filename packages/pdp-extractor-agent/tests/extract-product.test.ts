@@ -780,7 +780,7 @@ elasticity and resilience helping to diminish visible signs of aging"
     );
 
     expect(imageBatches).toHaveLength(3);
-    expect(imageBatches.every((batch) => batch.length <= 10)).toBe(true);
+    expect(imageBatches.every((batch) => batch.length <= 8)).toBe(true);
     expect(imageBatches.flat()).toHaveLength(24);
     expect(imageBatches.flat()).toEqual(expect.arrayContaining([detailImages[0], detailImages[12], detailImages[23]]));
     expect(imageBatches.flat()).not.toContain(detailImages[24]);

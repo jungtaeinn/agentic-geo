@@ -193,5 +193,89 @@ describe("tall image slicing through the extraction pipeline", () => {
     expect(joined.match(/구간 2 경계 문장/g)).toHaveLength(1);
     expect(geo.sourceExtraction.ocr.imageTexts[0]?.imageUrl).toBe(imageUrl);
     expect(diagnostics.warnings.some((warning) => warning.code === "IMAGE_SLICING_UNAVAILABLE")).toBe(false);
+
+    const ocrDiagnostics = diagnostics.ocr;
+    expect(ocrDiagnostics).toBeDefined();
+    expect(ocrDiagnostics?.targetsConsidered).toBe(1);
+    expect(ocrDiagnostics?.inputsSent).toBe(5);
+    expect(ocrDiagnostics?.targets[0]).toMatchObject({
+      imageUrl,
+      sliced: true,
+      sliceCount: 5,
+      status: "extracted",
+      confidence: 0.9
+    });
+    expect(ocrDiagnostics?.combination.overlapJoins).toBeGreaterThanOrEqual(4);
+    expect(ocrDiagnostics?.combination.candidatesOut).toBe(1);
+    expect(ocrDiagnostics?.classification.batches).toBe(1);
+    expect(ocrDiagnostics?.classification.failedBatches).toBe(0);
+    expect(ocrDiagnostics?.utilization.textBlocksInResult).toBe(1);
+    expect(ocrDiagnostics?.utilization.ragChunksFromOcr).toBeGreaterThan(0);
+    expect(diagnostics.evidence.some((item) => item.field === "ocr.pipeline")).toBe(true);
+  });
+
+  it("flags failed and empty OCR targets in diagnostics for later review", async () => {
+    const goodImage = "https://cdn.example.com/pdp/technical-description/ingredient-detail.png";
+    const emptyImage = "https://cdn.example.com/pdp/technical-description/no-text-visual.png";
+
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const href = String(url);
+
+      if (href === "https://api.openai.com/v1/responses") {
+        const body = JSON.parse(String(init?.body ?? "{}"));
+
+        if (Array.isArray(body.input)) {
+          const content: Array<{ type?: string; text?: string }> = body.input[0]?.content ?? [];
+          const requestedUrls = content
+            .filter((part) => part.type === "input_text" && /^Image \d+: /.test(part.text ?? ""))
+            .map((part) => String(part.text).replace(/^Image \d+: /, ""));
+          return new Response(JSON.stringify({
+            output_text: JSON.stringify({
+              images: requestedUrls
+                .map((requestedUrl, index) => ({
+                  index: index + 1,
+                  imageUrl: requestedUrl,
+                  text: requestedUrl === goodImage ? "세라마이드 성분이 피부 장벽 보습을 돕습니다" : "",
+                  confidence: requestedUrl === goodImage ? 0.45 : 0
+                }))
+            })
+          }), { status: 200 });
+        }
+
+        return new Response(JSON.stringify({
+          output_text: JSON.stringify({ keywords: [], sentenceInsights: [], summary: "ok" })
+        }), { status: 200 });
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { diagnostics } = await extractProductFromHtml(
+      `
+        <main>
+          <h1>Barrier Cream</h1>
+          <section class="product-detail technical-description">
+            <h2>Ingredients and effects</h2>
+            <img data-src="${goodImage}" alt="ingredient technology detail" />
+            <img data-src="${emptyImage}" alt="ingredient technology detail" />
+          </section>
+        </main>
+      `,
+      "https://brand.example.com/products/barrier-cream",
+      { provider: "openai", apiKey: "test-key", model: "gpt-5-mini" }
+    );
+
+    const ocrDiagnostics = diagnostics.ocr;
+    expect(ocrDiagnostics?.targetsConsidered).toBe(2);
+
+    const goodTarget = ocrDiagnostics?.targets.find((target) => target.imageUrl === goodImage);
+    const emptyTarget = ocrDiagnostics?.targets.find((target) => target.imageUrl === emptyImage);
+    expect(goodTarget?.status).toBe("extracted");
+    expect(goodTarget?.confidence).toBe(0.45);
+    expect(goodTarget?.issues.some((issue) => issue.includes("Low transcription confidence"))).toBe(true);
+    expect(emptyTarget?.status).toBe("empty");
+    expect(ocrDiagnostics?.issues.some((issue) => issue.includes("No readable text extracted"))).toBe(true);
+    expect(ocrDiagnostics?.issues.some((issue) => issue.includes("Low OCR confidence"))).toBe(true);
   });
 });
