@@ -17,7 +17,7 @@
     "product-content",
     "validation"
   ],
-  "packageManager": "pnpm@10.30.0",
+  "packageManager": "pnpm@11.11.0",
   "scripts": {
     "build": "turbo run build",
     "build:pages": "NEXT_PUBLIC_DEPLOY_TARGET=github-pages turbo run build --filter=@agentic-geo/geo-generator",
@@ -33,7 +33,7 @@
   },
   "devDependencies": {
     "@changesets/cli": "2.31.0",
-    "turbo": "2.9.18",
+    "turbo": "2.10.4",
     "typescript": "6.0.3"
   }
 }
