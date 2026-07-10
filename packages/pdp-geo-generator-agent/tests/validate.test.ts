@@ -179,16 +179,14 @@ describe("validateAndRepairPdpGeoArtifacts", () => {
     });
 
     const graph = repaired.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
-    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
+    const howTo = graph.find((node) => node["@type"] === "HowTo");
     const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
-    const steps = howTo.step as Array<Record<string, any>>;
 
-    expect(steps.map((step) => step.text)).toEqual([
-      "손바닥에 적당량을 덜어 피부결을 따라 부드럽게 펴 바릅니다"
-    ]);
-    expect(JSON.stringify(steps)).not.toMatch(/하이드로퀄|포뮬러 기술을 사용|PHA 워터에 고밀도 세라마이드 캡슐/);
-    expect(JSON.stringify(steps)).not.toMatch(/피부 장벽 유사 성분|바르는 순간|세라마이드 캡슐 세라마이드/);
-    expect(JSON.stringify(steps)).not.toMatch(/끈적임 없이|마무리감 테스트|피부결이 부드러운/);
+    expect(howTo).toBeUndefined();
+    expect(repaired.content.sections.howToUse).toBe("1. 손바닥에 적당량을 덜어 피부결을 따라 부드럽게 펴 바릅니다");
+    expect(repaired.content.sections.howToUse).not.toMatch(/하이드로퀄|포뮬러 기술을 사용|PHA 워터에 고밀도 세라마이드 캡슐/);
+    expect(repaired.content.sections.howToUse).not.toMatch(/피부 장벽 유사 성분|바르는 순간|세라마이드 캡슐 세라마이드/);
+    expect(repaired.content.sections.howToUse).not.toMatch(/끈적임 없이|마무리감 테스트|피부결이 부드러운/);
     expect((product.additionalProperty as Array<Record<string, any>> | undefined)?.some((item) => item.name === "Usage")).not.toBe(true);
     expect(repaired.validationRepairs.some((repair) => repair.field === "HowTo.step.text")).toBe(true);
   });
@@ -247,13 +245,11 @@ describe("validateAndRepairPdpGeoArtifacts", () => {
     });
 
     const graph = repaired.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
-    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
-    const steps = howTo.step as Array<Record<string, any>>;
+    const howTo = graph.find((node) => node["@type"] === "HowTo");
 
-    expect(steps.map((step) => step.text)).toEqual([
-      "手のひらに適量を取り、肌になじませます"
-    ]);
-    expect(JSON.stringify(steps)).not.toMatch(/ハイドロクオールフローティングフォーミュラ|処方を使用/);
+    expect(howTo).toBeUndefined();
+    expect(repaired.content.sections.howToUse).toBe("1. 手のひらに適量を取り、肌になじませます");
+    expect(repaired.content.sections.howToUse).not.toMatch(/ハイドロクオールフローティングフォーミュラ|処方を使用/);
     expect(repaired.validationRepairs.some((repair) => repair.field === "HowTo.step.text")).toBe(true);
   });
 

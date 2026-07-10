@@ -179,6 +179,8 @@ export interface PdpGeoGeneratorOptions {
   customProductNormalizer?: PdpGeoProductNormalizer;
   keywordNormalization?: PdpGeoKeywordNormalizationSettings;
   customKeywordNormalizer?: PdpGeoKeywordNormalizer;
+  contentPlanning?: PdpGeoContentPlanningSettings;
+  customContentPlanner?: PdpGeoContentPlanner;
   copyRefinement?: PdpGeoCopyRefinementSettings;
   customCopyRefiner?: PdpGeoCopyRefiner;
 }
@@ -542,6 +544,132 @@ export interface PdpGeoKeywordNormalizationSettings {
   maxKeywords?: number;
 }
 
+/** The semantic role of one source-backed atomic fact available to the planner. */
+export type PdpGeoEvidenceRole =
+  | "identity"
+  | "description"
+  | "benefit"
+  | "effect"
+  | "ingredient"
+  | "audience"
+  | "usage"
+  | "metric"
+  | "faq"
+  | "review"
+  | "commerce"
+  | "source";
+
+/**
+ * A stable, atomic source fact. Public copy must cite these IDs instead of
+ * relying on an untraceable flattened product string.
+ */
+export interface PdpGeoAtomicEvidence {
+  id: string;
+  role: PdpGeoEvidenceRole;
+  text: string;
+  sourcePath: string;
+  locale: PdpGeoLocale;
+  productScope: "product";
+  confidence: number;
+}
+
+export interface PdpGeoPlannedField {
+  include: boolean;
+  text: string;
+  intent: string;
+  evidenceIds: string[];
+  confidence: number;
+  omitReason: string;
+}
+
+export interface PdpGeoPlannedFaqItem {
+  include: boolean;
+  question: string;
+  answer: string;
+  intent: string;
+  cep: string;
+  evidenceIds: string[];
+  confidence: number;
+  omitReason: string;
+}
+
+export interface PdpGeoPlannedHowToStep {
+  position: number;
+  name: string;
+  text: string;
+  evidenceIds: string[];
+}
+
+export interface PdpGeoPlannedHowTo {
+  eligible: boolean;
+  ordered: boolean;
+  goal: string;
+  steps: PdpGeoPlannedHowToStep[];
+  evidenceIds: string[];
+  confidence: number;
+  omitReason: string;
+}
+
+export interface PdpGeoPlannedCep {
+  situation: string;
+  need: string;
+  constraint: string;
+  evidenceIds: string[];
+  confidence: number;
+}
+
+/** Evidence-bound semantic plan used as the single source for public copy and schema eligibility. */
+export interface PdpGeoContentPlan {
+  mode: "model" | "conservative";
+  locale: PdpGeoLocale;
+  productDescription: PdpGeoPlannedField;
+  webPageDescription: PdpGeoPlannedField;
+  faq: PdpGeoPlannedFaqItem[];
+  howTo: PdpGeoPlannedHowTo;
+  cep: PdpGeoPlannedCep[];
+  warnings: string[];
+}
+
+export interface PdpGeoContentPlanningRequest {
+  product: PdpProductSignal;
+  locale: PdpGeoLocale;
+  market?: string;
+  hints?: PdpGeoGenerationHints;
+  evidenceLedger: PdpGeoAtomicEvidence[];
+  ragChunks: PdpGeoRetrievedChunk[];
+  /** Compact compiled policy constraints; guidance only, never product evidence. */
+  policyRules?: PdpGeoPolicyRule[];
+  /** First-pass plan supplied only for a model-backed evidence-entailment audit. */
+  candidatePlan?: Omit<PdpGeoContentPlan, "mode">;
+  planningFeedback?: Array<{
+    field: string;
+    reason: string;
+  }>;
+}
+
+export interface PdpGeoContentPlanningResult {
+  plan?: Omit<PdpGeoContentPlan, "mode">;
+  warnings?: string[];
+  rawText?: string;
+  usage?: PdpGeoTokenUsage;
+}
+
+export interface PdpGeoContentPlanner {
+  planContent(request: PdpGeoContentPlanningRequest): Promise<PdpGeoContentPlanningResult> | PdpGeoContentPlanningResult;
+}
+
+export interface PdpGeoContentPlanningSettings {
+  enabled?: boolean;
+  provider?: PdpGeoProviderId;
+  apiKey?: string;
+  model?: string;
+  endpoint?: string;
+  deployment?: string;
+  apiVersion?: string;
+  maxEvidenceItems?: number;
+  maxRagChunks?: number;
+}
+
 export interface PdpGeoCopyRefinementRequest {
   product: PdpProductSignal;
   locale: PdpGeoLocale;
@@ -702,6 +830,8 @@ export interface PdpGeoInferredSearchQueryDiagnostic {
 
 export interface PdpGeoDiagnostics {
   normalizedProduct: PdpProductSignal;
+  evidenceLedger?: PdpGeoAtomicEvidence[];
+  contentPlan?: PdpGeoContentPlan;
   ocrSentences: PdpGeoOcrSentenceDiagnostic[];
   recommendations: PdpGeoRecommendation[];
   evidence: PdpGeoEvidence[];

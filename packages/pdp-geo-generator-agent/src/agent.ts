@@ -1,5 +1,6 @@
 import { generatePdpGeoArtifacts } from "./generate";
 import { refinePdpGeoCopy } from "./copy-refiner";
+import { createPdpGeoEvidenceLedger, planPdpGeoContent } from "./content-planner";
 import { normalizeProductReviewKeywords } from "./keyword-normalizer";
 import { normalizePdpProduct } from "./normalize";
 import { normalizePdpProductWithAgent } from "./product-normalizer";
@@ -279,6 +280,19 @@ export async function generatePdpGeo(
   process.done("rerank", `${selectedRagChunks.length}개 chunk를 최종 컨텍스트로 선택하고 ${reasoning.principles.length}개 RAG+상품근거 판단을 구성했습니다.`);
 
   process.start("generate", "GEO 최적화 schema markup과 PDP content를 생성합니다.");
+  const evidenceLedger = createPdpGeoEvidenceLedger(normalized.product, normalized.locale);
+  if (shouldReportContentPlanningCall(options)) {
+    process.start("generate", `${runtimeProviderLabel(options.contentPlanning?.provider ?? options.provider)} evidence-bound content/schema planning 모델을 호출합니다.`);
+  }
+  const contentPlanning = await planPdpGeoContent({
+    product: normalized.product,
+    locale: normalized.locale,
+    market: normalized.market,
+    hints: parsed.hints,
+    evidenceLedger,
+    ragChunks: selectedRagChunks,
+    policyRules: policyChecklist.injectedRules
+  }, options);
   let generated = generatePdpGeoArtifacts({
     product: normalized.product,
     locale: normalized.locale,
@@ -287,50 +301,67 @@ export async function generatePdpGeo(
     hints: parsed.hints,
     ragChunks: selectedRagChunks,
     ragDocuments,
-    reasoning
+    reasoning,
+    contentPlan: contentPlanning.plan
   });
-  if (shouldReportCopyRefinementCall(options)) {
+  const shouldRunCopyRefinement = !contentPlanning.applied
+    || options.copyRefinement?.enabled === true;
+  if (shouldRunCopyRefinement && shouldReportCopyRefinementCall(options)) {
     process.start("generate", `${runtimeProviderLabel(options.copyRefinement?.provider ?? options.provider)} final reasoning/copy refinement 모델을 호출합니다.`);
   }
-  const copyRefinement = await refinePdpGeoCopy(
-    {
-      product: normalized.product,
-      locale: normalized.locale,
-      market: normalized.market,
-      schemaMarkup: generated.schemaMarkup,
-      content: generated.content,
-      ragChunks: selectedRagChunks,
-      hydratedRagDocuments,
-      reasoning,
-      policyRules: policyChecklist.injectedRules,
-      inferredSearchQueries: generated.inferredSearchQueries
-    },
-    options
-  );
+  const copyRefinement = shouldRunCopyRefinement
+    ? await refinePdpGeoCopy(
+      {
+        product: normalized.product,
+        locale: normalized.locale,
+        market: normalized.market,
+        schemaMarkup: generated.schemaMarkup,
+        content: generated.content,
+        ragChunks: selectedRagChunks,
+        hydratedRagDocuments,
+        reasoning,
+        policyRules: policyChecklist.injectedRules,
+        inferredSearchQueries: generated.inferredSearchQueries
+      },
+      options
+    )
+    : {
+        schemaMarkup: generated.schemaMarkup,
+        content: generated.content,
+        evidence: [],
+        warnings: [],
+        called: false,
+        applied: false,
+        rejections: []
+      };
   generated = {
     ...generated,
     schemaMarkup: copyRefinement.schemaMarkup,
     content: copyRefinement.content,
     evidence: [
       ...generated.evidence,
+      ...contentPlanning.evidence,
       ...copyRefinement.evidence
     ]
   };
   process.done(
     "generate",
-    copyRefinement.applied
-      ? "Product, FAQPage, HowTo, BreadcrumbList, WebPage와 HTML 섹션을 생성하고 Gen AI 문장 refinement를 적용했습니다."
-      : "Product, FAQPage, HowTo, BreadcrumbList, WebPage와 HTML 섹션을 생성했습니다."
+    contentPlanning.applied
+      ? "근거 ID 기반 Content/Schema Plan으로 적합한 Product, WebPage, FAQ, HowTo와 가시 콘텐츠를 생성했습니다."
+      : copyRefinement.applied
+        ? "보수적 스키마 적합성 판단 후 Gen AI 문장 refinement를 적용했습니다."
+        : "보수적 스키마 적합성 판단으로 근거가 확인된 산출물을 생성했습니다."
   );
 
   process.start("validate", "JSON-LD와 HTML 문법을 검증합니다.");
-  const repaired = validateAndRepairPdpGeoArtifacts({
+  const validated = validateAndRepairPdpGeoArtifacts({
     schemaMarkup: generated.schemaMarkup,
     content: generated.content,
     fallbackProductName: generated.content.sections.productName,
     fallbackDescription: generated.content.sections.description,
     locale: normalized.locale
   });
+  const repaired = validated;
   process.done("validate", createValidationStepMessage(repaired.validationWarnings, repaired.validationRepairs));
 
   process.start("repair", "검증 경고에 대한 안전 보정을 적용합니다.");
@@ -343,6 +374,8 @@ export async function generatePdpGeo(
     productNormalizationUsage: productNormalization.usage,
     productNormalizationCalled: productNormalization.called,
     keywordNormalizationUsage: keywordNormalization.usage,
+    contentPlanningUsage: contentPlanning.usage,
+    contentPlanningCalled: contentPlanning.called,
     copyRefinementUsage: copyRefinement.usage,
     copyRefinementCalled: copyRefinement.called,
     retrievedCount: retrieved.length,
@@ -351,6 +384,8 @@ export async function generatePdpGeo(
   });
   const diagnostics: PdpGeoDiagnostics = {
     normalizedProduct: normalized.product,
+    evidenceLedger,
+    contentPlan: contentPlanning.plan,
     ocrSentences: normalized.ocrSentences,
     recommendations: generated.recommendations,
     evidence: [
@@ -906,6 +941,8 @@ function createGeneratorRuntimeUsage(
     productNormalizationUsage?: PdpGeoTokenUsage;
     productNormalizationCalled?: boolean;
     keywordNormalizationUsage?: PdpGeoTokenUsage;
+    contentPlanningUsage?: PdpGeoTokenUsage;
+    contentPlanningCalled?: boolean;
     copyRefinementUsage?: PdpGeoTokenUsage;
     copyRefinementCalled?: boolean;
     retrievedCount: number;
@@ -914,17 +951,31 @@ function createGeneratorRuntimeUsage(
   }
 ): PdpGeoRuntimeUsage {
   const provider = runtimeProviderLabel(options.provider);
-  const finalDeployment = options.deployments?.reasoning ?? options.deployment;
+  const finalSettings = context.copyRefinementCalled
+    ? options.copyRefinement
+    : context.contentPlanningCalled
+      ? options.contentPlanning
+      : context.keywordNormalizationUsage
+        ? options.keywordNormalization
+        : context.productNormalizationCalled
+          ? options.productNormalization
+          : undefined;
+  const finalProviderId = finalSettings?.provider ?? options.provider;
+  const finalProvider = runtimeProviderLabel(finalProviderId);
+  const finalModel = finalSettings?.model ?? options.model;
+  const finalDeployment = finalSettings?.deployment ?? options.deployments?.reasoning ?? options.deployment;
   const embeddingProvider = options.embedding?.provider ?? ragSettings.embeddingProvider;
   const rerankerProvider = options.reranker?.provider ?? ragSettings.rerankerProvider;
   const finalTokenUsage = mergeTokenUsages([
     context.productNormalizationUsage,
     context.keywordNormalizationUsage,
+    context.contentPlanningUsage,
     context.copyRefinementUsage
   ].filter((usage): usage is PdpGeoTokenUsage => Boolean(usage)));
   const finalDetails = [
     context.productNormalizationCalled ? "Model-backed product signal normalization was called before keyword normalization." : undefined,
     context.keywordNormalizationUsage ? "Model-backed keyword normalization was called during product normalization." : undefined,
+    context.contentPlanningCalled ? "Evidence-bound content/schema planning was called before artifact rendering." : undefined,
     context.copyRefinementCalled ? "Model-backed copy refinement was called after deterministic schema/content generation." : undefined
   ].filter(Boolean).join(" ");
   const steps: PdpGeoRuntimePipelineStep[] = [
@@ -987,11 +1038,11 @@ function createGeneratorRuntimeUsage(
     {
       stage: "final",
       label: "Final classification/reasoning",
-      provider,
-      service: deploymentServiceLabel(options.provider) ?? provider,
-      model: usesDeployments(options.provider) ? undefined : options.model,
-      deployment: usesDeployments(options.provider) ? finalDeployment : undefined,
-      called: Boolean(context.productNormalizationCalled || context.keywordNormalizationUsage || context.copyRefinementCalled),
+      provider: finalProvider,
+      service: deploymentServiceLabel(finalProviderId) ?? finalProvider,
+      model: usesDeployments(finalProviderId) ? undefined : finalModel,
+      deployment: usesDeployments(finalProviderId) ? finalDeployment : undefined,
+      called: Boolean(context.productNormalizationCalled || context.keywordNormalizationUsage || context.contentPlanningCalled || context.copyRefinementCalled),
       tokenUsage: finalTokenUsage,
       details: finalDetails || "Schema/content reasoning is deterministic in the current generator path; no final model usage metadata was returned."
     }
@@ -1080,6 +1131,19 @@ function shouldReportCopyRefinementCall(options: PdpGeoGeneratorOptions): boolea
   return Boolean((explicitEnabled ?? (provider !== "mock" && provider !== "custom" && Boolean(settings?.apiKey ?? options.apiKey)))
     && provider !== "mock"
     && provider !== "custom");
+}
+
+function shouldReportContentPlanningCall(options: PdpGeoGeneratorOptions): boolean {
+  if (options.contentPlanning?.enabled === false) {
+    return false;
+  }
+  if (options.customContentPlanner) {
+    return true;
+  }
+  const settings = options.contentPlanning;
+  const provider = settings?.provider ?? options.provider ?? "mock";
+  const enabled = settings?.enabled ?? (provider !== "mock" && provider !== "custom" && Boolean(settings?.apiKey ?? options.apiKey));
+  return Boolean(enabled && provider !== "mock" && provider !== "custom");
 }
 
 function createRagUsageDiagnostics(

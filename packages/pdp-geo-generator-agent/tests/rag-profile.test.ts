@@ -246,7 +246,8 @@ describe("readPdpGeoGeneratorRagProfile", () => {
     expect(defaultPdpGeoGeneratorRagProfile.analysisPrompt).toContain("classified OCR sentences");
     expect(bestPractice?.content).toContain("Public Wording Guardrails");
     expect(bestPractice?.content).toContain("Schema.org + GEO Description Direction");
-    expect(bestPractice?.content).toContain("Reconstruct FAQPage questions");
+    expect(bestPractice?.content).toContain("FAQPage has no quota");
+    expect(bestPractice?.content).toContain("at least two distinct actions");
     expect(bestPractice?.content).toContain("OCR Sentence Diagnostics and English RAG Use");
     expect(bestPractice?.content).toContain("natural English commerce language");
     expect(bestPractice?.content).toContain("Do not reuse the same text for WebPage.description and Product.description");

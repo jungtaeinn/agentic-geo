@@ -99,7 +99,7 @@ Generative Engine Optimization, or GEO, focuses on improving how useful, visible
 ### 4.6 FAQ and HowTo Answerability
 
 - Generate FAQ only when both the question intent and answer evidence exist.
-- Generate HowTo only when source usage instructions are present or safely inferable from ordered source usage text.
+- Generate HowTo only when source usage contains an explicit ordered sequence with at least two distinct actions and a concrete goal. Never infer a HowTo from one general usage note.
 - Phrase answers so they directly answer customer questions instead of repeating marketing labels.
 - HowTo steps are field-specific action content, not a place for benefit, metric, review, or ingredient evidence. A sentence that says a product "delivers hydration", "shows clinical results", or "contains an ingredient" can support descriptions or evidence fields, but it is not a usage step unless it also gives an action the customer performs.
 
@@ -158,7 +158,7 @@ Generative Engine Optimization, or GEO, focuses on improving how useful, visible
 
 ### 6.4 `HowTo.step`
 
-- Convert source usage instructions into complete ordered actions with amount, timing, and routine sequence when present.
+- Convert source usage instructions into complete ordered actions only when at least two actions and their sequence are source-backed; otherwise retain them as ordinary visible usage guidance.
 - Do not invent usage warnings or contraindications.
 
 ### 6.5 `Product.additionalProperty` and `Product.positiveNotes`

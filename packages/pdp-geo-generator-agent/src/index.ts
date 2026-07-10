@@ -1,5 +1,11 @@
 export { generatePdpGeo } from "./agent";
 export { ModelBackedCopyRefiner, refinePdpGeoCopy } from "./copy-refiner";
+export {
+  createPdpGeoEvidenceLedger,
+  ModelBackedContentPlanner,
+  pdpGeoContentPlanJsonSchema,
+  planPdpGeoContent
+} from "./content-planner";
 export { ModelBackedProductNormalizer, normalizePdpProductWithAgent } from "./product-normalizer";
 export { createPdpGeoGeneratorRestHandler, type PdpGeoGeneratorRestConfig, type PdpGeoGeneratorRestRequest } from "./rest";
 export { pdpGeoGeneratorRagManifest } from "./rag/manifest";
@@ -28,8 +34,14 @@ export {
 export type {
   JsonObject,
   JsonValue,
+  PdpGeoAtomicEvidence,
   PdpGeoBreadcrumbItem,
   PdpGeoContentArtifact,
+  PdpGeoContentPlan,
+  PdpGeoContentPlanner,
+  PdpGeoContentPlanningRequest,
+  PdpGeoContentPlanningResult,
+  PdpGeoContentPlanningSettings,
   PdpGeoContentSections,
   PdpGeoCopyRefinementRequest,
   PdpGeoCopyRefinementResult,
@@ -38,6 +50,7 @@ export type {
   PdpGeoDiagnostics,
   PdpGeoEmbeddingProvider,
   PdpGeoEvidence,
+  PdpGeoEvidenceRole,
   PdpGeoFaqItem,
   PdpGeoFieldMapping,
   PdpGeoGenerationHints,
@@ -61,6 +74,11 @@ export type {
   PdpGeoPolicyRule,
   PdpGeoPolicyRuleExtraction,
   PdpGeoPolicyRuleSeverity,
+  PdpGeoPlannedCep,
+  PdpGeoPlannedFaqItem,
+  PdpGeoPlannedField,
+  PdpGeoPlannedHowTo,
+  PdpGeoPlannedHowToStep,
   PdpGeoProviderId,
   PdpGeoProductNormalizationRequest,
   PdpGeoProductNormalizationResult,

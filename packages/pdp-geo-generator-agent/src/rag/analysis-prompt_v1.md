@@ -25,7 +25,7 @@ Return two user-facing artifacts: schema markup as JSON-LD and grouped HTML cont
 ## 3.1 Field Evidence Contract
 
 - Treat field routing as a reasoning task before copywriting. First decide whether each source sentence is primarily product identity, benefit/effect, ingredient/technology, usage direction, review/customer expression, metric/evidence, FAQ, commerce, or page chrome.
-- `HowTo.step` and `howToUse` may use only actionable usage directions: operation, order, amount, body area, timing, routine position, warning, or compatibility. Do not place benefit claims, clinical metrics, ingredient explanations, review summaries, or product-result sentences in HowTo even when they mention the current product.
+- `HowTo.step` may be emitted only for an ordered procedure with at least two distinct source-backed actions and a concrete goal. A single direction, frequency, amount, routine position, warning, or compatibility note remains in visible `howToUse`/usage properties but is not HowTo. Do not place benefit claims, clinical metrics, ingredient explanations, review summaries, or product-result sentences in HowTo.
 - `ingredients` may use only ingredient names, formula technologies, INCI/full-ingredient lists, and source-backed ingredient-role explanations. Do not place customer review language, routine context, search-intent phrases, benefit summaries, or clinical result text in the ingredient section.
 - `benefits` and `positiveNotes` may use benefits, effects, representative review-backed positives, and concise evidence topics. Do not copy full clinical sentences into benefit bullets; route full metrics to `Reported details` or evidence FAQ.
 - `FAQPage.mainEntity` may use product-detail evidence such as benefits, ingredients/technology, usage, suitability, comparisons, metrics, and repeated positive or neutral review use-feel language. Do not create FAQ questions or answers from negative reviews, fragrance complaints, ratings, reviewer metadata, or raw review snippets.
@@ -37,9 +37,9 @@ Return two user-facing artifacts: schema markup as JSON-LD and grouped HTML cont
 ## 4. Entity Separation
 
 - Separate schema descriptions by entity role without making either description superficial: WebPage.description should introduce the product page for the target customer and name concrete benefits, ingredients/technologies, high-level routine/comparison/review context, and reported results when supported, while Product.description should describe the product entity in the order target customer -> product identity -> ingredients/technology -> benefit/effect or citation-ready metric -> high-level usage/comparison/review context.
-- FAQPage mainEntity questions must be reconstructed from GEO question intent, product facts, selected RAG guidance, and positive review-intent language when useful; do not expose page FAQ questions, raw reviews, reviewer metadata, negative reviews, or review-only answers verbatim.
+- Treat complete visible PDP FAQ as primary Q/A evidence: preserve direct, natural source items, and rewrite only when the intent and cited evidence remain unchanged. New FAQ must be distinct and directly answerable; never expose raw reviews, reviewer metadata, negative reviews, or review-only answers as FAQ.
 - Direct and indirect query candidates must be inferred from customer situation, category, brand/product entity, benefits, and ingredients. Indirect queries omit product and brand names; direct queries include the product or brand. Preserve the query kind, keywords, and answer basis in diagnostics.
-- Benefit/effect and HowToUse sections must also be rewritten from product facts plus GEO RAG guidance, not copied from visible PDP labels or source section text.
+- Benefit/effect and visible usage sections should preserve source meaning and may retain already-natural source sentences; remove section labels and artifacts without inventing extra claims or actions.
 
 ## 5. OCR and Missing Evidence
 

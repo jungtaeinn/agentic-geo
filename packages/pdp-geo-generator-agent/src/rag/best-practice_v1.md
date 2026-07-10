@@ -192,9 +192,9 @@ The language may change, but the structure must remain fact-first.
 ## FAQ Best Practice
 
 Generate FAQ from customer intent and product evidence. Mix factual questions with shopping-decision questions.
-Do not copy visible PDP FAQ questions and answers into `FAQPage.mainEntity` as-is. Treat page FAQ as one evidence source, then reconstruct the final question set from GEO intent patterns, product benefit/effect facts, ingredient or technology facts, usage context, positive or neutral review use-feel language, and selected RAG guidance. Review-intent FAQ may summarize repeated positive use-feel signals, but do not create FAQ items from raw customer reviews, negative reviewer sentiment, ratings, reviewer metadata, or scent complaints.
+Treat visible PDP FAQ as the strongest question-and-answer evidence. Preserve it when it is already direct and natural; rewrite it only when the meaning and evidence remain unchanged. New FAQ may be proposed from product benefit/effect facts, ingredient or technology facts, usage context, and repeated positive or neutral review use-feel language, but every final item must be visible, distinct, and answerable from cited product evidence. Do not create FAQ items from raw customer reviews, negative reviewer sentiment, ratings, reviewer metadata, or scent complaints.
 
-BestPractice depth is usually 8-14 questions for a rich beauty PDP. A thin 4-question FAQ often misses the citation surface that AI Search systems need for query fan-out, comparison, and follow-up questions. Keep the set smaller only when the source truly lacks evidence.
+FAQ has no target or minimum count. Zero questions is valid when the source does not support a useful, direct answer. Select only the distinct customer intents that materially help a buying or usage decision; schema presence and question volume are not citation guarantees.
 
 Recommended FAQ types:
 
@@ -213,16 +213,15 @@ Recommended FAQ types:
 
 Answers should contain concise, reusable product facts with varied benefit, ingredient, and use-context wording. Include metrics only when they exist in the input evidence. Do not invent study populations, durations, rankings, or regulatory claims.
 
-FAQ answers should start with the direct answer, then add one short evidence or comparison detail. Choose the FAQ count by search-intent coverage rather than a fixed number: 4-6 for thin products, 6-10 for normal beauty PDPs with ingredient/effect/usage/option evidence, and up to 8-12 when BestPractice-level evidence covers clinical results, ingredient technology, option comparison, sensitive skin, routine synergy, gift or purchase context. Quality-gate FAQ first and cap at 12: if only 7 answers are source-backed and distinct, use 7. Avoid observer phrasing such as "the product page says" unless the question is explicitly about what the page contains. The best answer unit should still make sense when ChatGPT, Gemini, or Google AI quotes it outside the original page.
+FAQ answers should start with the direct answer, then add one short cited evidence or comparison detail. Choose items by evidence sufficiency, intent value, and non-overlap rather than a fixed count. Avoid observer phrasing such as "the product page says" unless the question is explicitly about page coverage. The answer unit should still make sense when quoted outside the original page.
 
 - Never publish a FAQ answer that opens with a non-answer such as "동일 여부는 확인하기 어렵습니다", "알 수 없습니다", "미공개입니다", "cannot be confirmed", or "is unclear". Answer engines cite standalone answer sentences, and a cannot-confirm lead makes the whole Q/A uncitable. When evidence cannot answer the asked comparison, answer the underlying intent with this product's supported fact; when no supported fact exists, drop the question entirely.
 - Do not let the same measured value, metric clause, or list item appear twice in one answer, description sentence, or property value. Duplicated clauses read as generation noise and lower citation trust.
-- When intent overlap suppresses generated FAQ candidates (for example a benefit question already covered by Product.additionalProperty queries), FAQPage must still keep at least 4 citable questions whenever benefit, ingredient, usage, review, or metric evidence exists; re-admit the strongest suppressed candidates rather than shipping a thin FAQ.
+- When intent overlap suppresses FAQ candidates, keep the strongest direct answer for that intent and omit the rest. Never re-admit weak candidates to meet a quota.
 
 ## HowTo Best Practice
 
-HowTo steps must be complete actions, not keyword fragments.
-Rewrite source usage text into answer-ready steps. Remove source section labels such as "How to use", deduplicate repeated instructions, and add benefit, key active, texture, or routine details only when they improve search/answer usefulness without making every step repetitive.
+Create HowTo only when the source describes an ordered multi-action procedure for achieving a concrete result. A frequency note, warning, amount, routine position, or single application sentence remains visible usage guidance but is not HowTo. Every HowTo requires at least two distinct source-backed actions. Remove source section labels such as "How to use" and deduplicate repeated instructions; do not add benefits, ingredients, or texture claims to a procedural step.
 
 Good step shape:
 
@@ -283,14 +282,14 @@ For every generated sentence:
 1. Anchor the sentence in the current product, current source facts, or current customer review evidence.
 2. Use only the field where that evidence belongs.
 3. Rewrite for answerability and citation clarity instead of copying source fragments.
-4. Vary phrasing across description, FAQ, quick facts, benefits, ingredients, and HowTo so schema markup exposes multiple useful answer surfaces.
+4. Keep each fact in its appropriate field and avoid duplicating it merely to create more answer surfaces.
 5. Keep unsupported claims soft or omit them.
 
 ## Korean Reference Artifact Usage
 
 Korean or bilingual reference artifacts can help with structure, locale terminology, and quality level, but they must be normalized before retrieval.
 
-- Keep the information architecture pattern: `WebSite`, locale-aware `WebPage`, canonical `Product`, rich `additionalProperty`, high-intent `FAQPage`, and complete `HowTo`.
+- Keep the required entity pattern: locale-aware `WebPage` and canonical `Product`; add `FAQPage`, `HowTo`, `BreadcrumbList`, and other optional nodes only when visible source content and schema applicability support them.
 - Keep the sentence quality pattern: product identity first, evidence basis second, benefit or use case third, and source-supported detail last.
 - Rewrite Korean expressions into natural English commerce language when the output locale is English.
 - Keep `WebPage.description` and `Product.description` distinct.

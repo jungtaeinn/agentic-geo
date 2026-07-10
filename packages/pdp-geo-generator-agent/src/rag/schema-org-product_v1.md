@@ -16,7 +16,7 @@ Use schema.org JSON-LD to help machines identify PDP entities and cite grounded 
 ## 4. WebPage and Product Descriptions
 
 - Keep `WebPage.description` and `Product.description` distinct and detailed. Use `WebPage.description` for page-level coverage of benefits, ingredients, high-level usage/comparison/review context, reported results, and target-customer decision context. Use `Product.description` for the product entity itself in the order target customer, product identity, key ingredients or technologies, product-specific benefits or supported metrics, then high-level usage/comparison/review context.
-- `WebPage.description` should describe the PDP as the content source connected to the product through `mainEntity` or `about`; it may say that the page covers benefits, ingredients, usage, reviews, FAQ, HowTo, offers, variants, and reported results.
+- `WebPage.description` should describe the PDP as the content source connected to the product through `mainEntity` or `about`; mention FAQ, HowTo, offers, variants, or reported results only when the final visible page actually contains them.
 - `Product.description` should describe the product item itself; it should answer who the product is for, what product type it is, what ingredients or technologies matter, what benefits/effects or supported metrics apply, and only then add high-level routine, comparison, or representative review context.
 - `Product.name` should use the GEO-recommended product name, not an overstuffed keyword phrase.
 - `Product.description` should be concise, factual, aligned with visible PDP content, and written as complete product-entity sentences. Do not include mid-sentence ellipses or page-level phrases such as "product page" in Product descriptions.
@@ -30,8 +30,8 @@ Use schema.org JSON-LD to help machines identify PDP entities and cite grounded 
 
 ## 6. FAQPage, HowTo, and BreadcrumbList
 
-- Use `FAQPage.mainEntity` only when both question and answer are available.
-- Use `HowTo.step` for explicit ordered usage instructions. If usage is short and unordered, keep it in `additionalProperty` and HTML content too.
+- Use `FAQPage.mainEntity` only for final question-and-answer pairs that are also visible and directly supported by product evidence. There is no minimum item count; omit the node when no item passes.
+- Use `HowTo.step` only for an explicit ordered sequence with at least two distinct source-backed actions and a concrete goal. If usage is a single note or unordered, keep it in `additionalProperty` and visible HTML content and omit HowTo.
 - Use `BreadcrumbList` when URL, brand, category, or product hierarchy exists.
 
 ## 7. Public Safety

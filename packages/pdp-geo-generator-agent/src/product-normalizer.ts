@@ -122,6 +122,8 @@ export class ModelBackedProductNormalizer implements PdpGeoProductNormalizer {
         return this.normalizeWithGemini(request);
       case "azure-openai":
         return this.normalizeWithAzureApi(request);
+      case "aistudio":
+        return this.normalizeWithAistudio(request);
       case "custom":
       case "mock":
       default:
@@ -219,6 +221,42 @@ export class ModelBackedProductNormalizer implements PdpGeoProductNormalizer {
 
     if (!response.ok) {
       throw new Error(`Azure product normalization failed: ${response.status}`);
+    }
+
+    const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }>; usage?: unknown };
+    return {
+      ...parseProductNormalizationJson(payload.choices?.[0]?.message?.content ?? ""),
+      usage: tokenUsageFromChatCompletions(payload.usage)
+    };
+  }
+
+  private async normalizeWithAistudio(request: PdpGeoProductNormalizationRequest): Promise<PdpGeoProductNormalizationResult> {
+    if (!this.config.apiKey || !this.config.endpoint || !this.config.deployment) {
+      throw new Error("AI Studio endpoint, API key, and reasoning model id are required for product normalization.");
+    }
+
+    const endpoint = this.config.endpoint.replace(/\/$/, "");
+    const apiVersion = this.config.apiVersion?.trim();
+    const query = apiVersion ? `?api-version=${encodeURIComponent(apiVersion)}` : "";
+    const url = `${endpoint}/openai/deployments/${this.config.deployment}/chat/completions${query}`;
+    const prompt = createProductNormalizationPrompt(request, this.config.maxSourceCharacters);
+    const response = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.config.apiKey}`
+      },
+      body: JSON.stringify({
+        messages: [
+          { role: "system", content: prompt.system },
+          { role: "user", content: prompt.user }
+        ],
+        ...temperatureBody(this.config.temperature)
+      })
+    }, PRODUCT_NORMALIZATION_TIMEOUT_MS, "AI Studio product normalization");
+
+    if (!response.ok) {
+      throw new Error(`AI Studio product normalization failed: ${response.status}`);
     }
 
     const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }>; usage?: unknown };

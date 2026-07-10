@@ -12,9 +12,10 @@ import type {
 export interface PdpGeoGeneratorRestRequest extends Omit<PdpGeoGenerationInput, "product"> {
   product?: unknown;
   products?: unknown[];
-  llm?: Partial<Pick<PdpGeoGeneratorRestConfig, "provider" | "apiKey" | "model" | "endpoint" | "deployment" | "deployments" | "apiVersion" | "temperature" | "embedding" | "reranker" | "productNormalization" | "copyRefinement">>;
+  llm?: Partial<Pick<PdpGeoGeneratorRestConfig, "provider" | "apiKey" | "model" | "endpoint" | "deployment" | "deployments" | "apiVersion" | "temperature" | "embedding" | "reranker" | "productNormalization" | "contentPlanning" | "copyRefinement">>;
   productNormalization?: PdpGeoGeneratorRestConfig["productNormalization"];
   keywordNormalization?: PdpGeoGeneratorRestConfig["keywordNormalization"];
+  contentPlanning?: PdpGeoGeneratorRestConfig["contentPlanning"];
   copyRefinement?: PdpGeoGeneratorRestConfig["copyRefinement"];
 }
 
@@ -35,6 +36,7 @@ export function createPdpGeoGeneratorRestHandler(config: PdpGeoGeneratorRestConf
 
     try {
       const body = await request.json() as PdpGeoGeneratorRestRequest;
+      assertSafeRestEndpointOverrides(config, body);
       const products = Array.isArray(body.products) ? body.products : body.product !== undefined ? [body.product] : [];
       const runtimeConfig: PdpGeoGeneratorRestConfig = {
         ...config,
@@ -54,6 +56,13 @@ export function createPdpGeoGeneratorRestHandler(config: PdpGeoGeneratorRestConf
           ? {
               ...config.keywordNormalization,
               ...body.keywordNormalization
+            }
+          : undefined,
+        contentPlanning: config.contentPlanning || body.contentPlanning || body.llm?.contentPlanning
+          ? {
+              ...config.contentPlanning,
+              ...body.llm?.contentPlanning,
+              ...body.contentPlanning
             }
           : undefined,
         copyRefinement: config.copyRefinement || body.copyRefinement || body.llm?.copyRefinement
@@ -121,10 +130,63 @@ export function createPdpGeoGeneratorRestHandler(config: PdpGeoGeneratorRestConf
         {
           error: error instanceof Error ? error.message : "PDP GEO generation failed."
         },
-        500
+        error instanceof RestRequestConfigurationError ? 400 : 500
       );
     }
   };
+}
+
+class RestRequestConfigurationError extends Error {}
+
+function assertSafeRestEndpointOverrides(
+  config: PdpGeoGeneratorRestConfig,
+  body: PdpGeoGeneratorRestRequest
+): void {
+  assertRestEndpointPair("llm.endpoint", body.llm?.endpoint, body.llm?.apiKey, config.endpoint, config.apiKey);
+  const checks = [
+    {
+      label: "productNormalization.endpoint",
+      requested: { ...body.llm?.productNormalization, ...body.productNormalization },
+      configured: config.productNormalization
+    },
+    {
+      label: "contentPlanning.endpoint",
+      requested: { ...body.llm?.contentPlanning, ...body.contentPlanning },
+      configured: config.contentPlanning
+    },
+    {
+      label: "copyRefinement.endpoint",
+      requested: { ...body.llm?.copyRefinement, ...body.copyRefinement },
+      configured: config.copyRefinement
+    }
+  ];
+  for (const check of checks) {
+    const serverEndpoint = check.configured?.endpoint ?? config.endpoint;
+    const serverApiKey = check.configured?.apiKey ?? config.apiKey;
+    assertRestEndpointPair(check.label, check.requested.endpoint, check.requested.apiKey ?? body.llm?.apiKey, serverEndpoint, serverApiKey);
+  }
+}
+
+function assertRestEndpointPair(
+  label: string,
+  requestEndpoint: string | undefined,
+  requestApiKey: string | undefined,
+  serverEndpoint: string | undefined,
+  serverApiKey: string | undefined
+): void {
+  if (!requestEndpoint || requestApiKey || !serverApiKey) return;
+  if (serverEndpoint && restEndpointOrigin(serverEndpoint) === restEndpointOrigin(requestEndpoint)) return;
+  throw new RestRequestConfigurationError(
+    `${label} cannot override the configured provider origin while using a server-managed API key.`
+  );
+}
+
+function restEndpointOrigin(value: string): string {
+  try {
+    return new URL(value).origin;
+  } catch {
+    throw new RestRequestConfigurationError(`Invalid provider endpoint URL: ${value}`);
+  }
 }
 
 function createFailureDiagnostics(error: string): Partial<PdpGeoDiagnostics> {

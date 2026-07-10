@@ -1,4 +1,5 @@
 import type { JsonObject, JsonValue, PdpGeoContentArtifact, PdpGeoContentSections, PdpGeoLocale, PdpGeoSchemaMarkup, PdpGeoValidationRepair } from "./types";
+import { captureStructuredContentSnapshot, repairPdpSchemaGraphIntegrity, synchronizeStructuredContentWithGraph } from "./graph-integrity";
 
 interface ValidateAndRepairInput {
   schemaMarkup: PdpGeoSchemaMarkup;
@@ -28,6 +29,10 @@ export function validateAndRepairPdpGeoArtifacts(input: ValidateAndRepairInput):
   const validationWarnings: string[] = [];
   const validationRepairs: PdpGeoValidationRepair[] = [];
   const locale = input.locale ?? "en-US";
+  const rawGraph: Array<Record<string, unknown>> = Array.isArray(input.schemaMarkup.jsonLd["@graph"])
+    ? input.schemaMarkup.jsonLd["@graph"].flatMap((node) => isRecord(node) ? [node] : [])
+    : [];
+  const structuredContentSnapshot = captureStructuredContentSnapshot(rawGraph);
   const fallbackProductName = repairGeneratedText(input.fallbackProductName, locale, "fallbackProductName", validationWarnings, validationRepairs);
   const fallbackDescription = repairGeneratedText(input.fallbackDescription, locale, "fallbackDescription", validationWarnings, validationRepairs);
   const jsonLd = repairJsonLd(input.schemaMarkup.jsonLd, fallbackProductName, fallbackDescription, locale, validationWarnings, validationRepairs);
@@ -35,7 +40,19 @@ export function validateAndRepairPdpGeoArtifacts(input: ValidateAndRepairInput):
     jsonLd,
     scriptTag: `<script type="application/ld+json">${escapeScriptJson(JSON.stringify(jsonLd, null, 2))}</script>`
   };
-  const sections = repairContentSections(input.content.sections, locale, validationWarnings, validationRepairs);
+  const repairedSections = repairContentSections(input.content.sections, locale, validationWarnings, validationRepairs);
+  const validatedGraph: Array<Record<string, unknown>> = Array.isArray(jsonLd["@graph"])
+    ? jsonLd["@graph"].flatMap((node) => isRecord(node) ? [node] : [])
+    : [];
+  const parity = synchronizeStructuredContentWithGraph({
+    sections: repairedSections,
+    graph: validatedGraph,
+    snapshot: structuredContentSnapshot
+  });
+  for (const repair of parity.repairs) {
+    addRepair(validationWarnings, validationRepairs, repair, repair.action);
+  }
+  const sections = parity.sections;
   const sanitizedHtml = sanitizeAccordionHtml(input.content.html, validationWarnings, validationRepairs);
   const content = {
     ...input.content,
@@ -153,12 +170,17 @@ function repairJsonLd(
     }
   }
 
-  repairSchemaEvidenceConsistency(graph, locale, warnings, repairs);
-  repairSchemaDescriptionRoleSeparation(graph, fallbackProductName, fallbackDescription, locale, warnings, repairs);
+  const integrity = repairPdpSchemaGraphIntegrity(graph, locale);
+  for (const repair of integrity.repairs) {
+    addRepair(warnings, repairs, repair, repair.action);
+  }
+
+  repairSchemaEvidenceConsistency(integrity.graph, locale, warnings, repairs);
+  repairSchemaDescriptionRoleSeparation(integrity.graph, fallbackProductName, fallbackDescription, locale, warnings, repairs);
 
   return cleanJson({
     ...root,
-    "@graph": graph
+    "@graph": integrity.graph
   }) as JsonObject;
 }
 
@@ -1628,7 +1650,11 @@ function repairSectionByFieldContract(
   }
 
   const kept = lines.filter((line) => isValidSectionLineForField(line, field));
-  const repairedLines = field === "content.sections.howToUse" ? repairHowToUseSectionLines(kept, locale) : kept;
+  const repairedLines = field === "content.sections.howToUse"
+    ? kept.every((line) => isFallbackSectionLine(stripListMarker(line)))
+      ? []
+      : repairHowToUseSectionLines(kept, locale)
+    : kept;
   const removedInvalidLines = kept.length !== lines.length;
   const changedHowToLines = !arraysEqual(repairedLines, kept);
   if (!removedInvalidLines && !changedHowToLines) {
@@ -1693,7 +1719,7 @@ function sectionLines(value: string): string[] {
 
 function fieldContractFallback(field: string, locale: PdpGeoLocale): string {
   if (field === "content.sections.howToUse") {
-    return locale === "ko-KR" ? "상품 JSON에서 확인된 사용법 정보가 충분하지 않습니다." : locale === "ja-JP" ? "商品JSONから確認できる使用方法が十分ではありません。" : "The product JSON does not include enough usage instructions.";
+    return "";
   }
   if (field === "content.sections.ingredients") {
     return locale === "ko-KR" ? "상품 JSON에서 확인된 성분 정보가 충분하지 않습니다." : locale === "ja-JP" ? "商品JSONから確認できる成分情報が十分ではありません。" : "The product JSON does not include enough ingredient details.";
@@ -2491,16 +2517,17 @@ function extractKoreanComparisonQuestionTarget(question: string): string | undef
 }
 
 function extractKoreanFaqProductNameFromAnswer(answer: string): string | undefined {
-  const possessive = answer.match(/((?:에스트라\s*)?[가-힣A-Za-z0-9·\s]+?(?:토너|크림|세럼|로션|앰플|에센스))(?:의|은|는)\s*캡슐/u);
+  const possessive = answer.match(/([가-힣A-Za-z0-9·®™\s]+?(?:토너|크림|세럼|로션|앰플|에센스))(?:의|은|는)\s*캡슐/u);
   return possessive?.[1] ? normalizeKoreanRepairPhrase(possessive[1]) : undefined;
 }
 
 function extractKoreanCapsuleDescription(answer: string): string | undefined {
-  const capsule = answer.match(/((?:PHA\s*워터에\s*띄워진\s*)?(?:아토베리어365\s*)?고밀도\s*세라마이드\s*캡슐|아토베리어365\s*세라마이드\s*캡슐)/iu)?.[1];
+  const capsule = answer.match(/((?:[가-힣A-Za-z0-9·®™]+\s*){0,5}(?:세라마이드|리피드|지질|retinol|ceramide|lipid)\s*캡슐)/iu)?.[1];
   if (!capsule) {
     return undefined;
   }
   return normalizeKoreanRepairPhrase(capsule)
+    .replace(/^(?:캡슐은\s*)+/u, "")
     .replace(/\s*특허\s*출원\s*포뮬러$/u, "")
     .replace(/\s*특허\s*성분$/u, "")
     .trim();
@@ -2700,7 +2727,7 @@ function extractKoreanPositiveReviewUseFeelSignals(value: string): string[] {
 
 function extractKoreanProductNameFromFaqText(value: string): string | undefined {
   const text = normalizeKoreanRepairPhrase(value);
-  const match = text.match(/((?:에스트라\s*)?[가-힣A-Za-z0-9·®™\s]{2,}?(?:클렌징폼|폼\s*클렌저|폼클렌저|클렌저|토너|크림|세럼|로션|앰플|에센스|선\s*크림|선크림|쿠션|마스크|팩|샴푸|바디워시|바디로션))(?:은|는|의|을|를|에서|,|\.|\s)/u);
+  const match = text.match(/([가-힣A-Za-z0-9·®™\s]{2,}?(?:클렌징폼|폼\s*클렌저|폼클렌저|클렌저|토너|크림|세럼|로션|앰플|에센스|선\s*크림|선크림|쿠션|마스크|팩|샴푸|바디워시|바디로션))(?:은|는|의|을|를|에서|,|\.|\s)/u);
   return match?.[1] ? normalizeKoreanRepairPhrase(match[1]) : undefined;
 }
 
@@ -4217,8 +4244,9 @@ function createAccordionHtml(sections: PdpGeoContentSections, locale: PdpGeoLoca
     ["howToUse", sections.howToUse],
     ["faq", sections.faq]
   ];
+  const visibleEntries = entries.filter(([key, value]) => (key !== "howToUse" && key !== "faq") || value.trim().length > 0);
 
-  const items = entries.map(([key, value], index) => `
+  const items = visibleEntries.map(([key, value], index) => `
     <div class="geo-content-accordion__item">
       <button class="geo-content-accordion__trigger" type="button" aria-expanded="${index === 0 ? "true" : "false"}">
         ${escapeHtml(labels[key])}

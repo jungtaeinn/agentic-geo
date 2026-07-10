@@ -9,9 +9,12 @@ import type {
 import { generatePdpGeo } from "@agentic-geo/pdp-geo-generator-agent";
 import { readPdpGeoGeneratorRagProfile } from "@agentic-geo/pdp-geo-generator-agent/rag-profile";
 import type {
+  PdpGeoContentPlanningSettings,
   PdpGeoGenerationInput,
   PdpGeoGenerationResult,
-  PdpGeoGenerationStep
+  PdpGeoGenerationStep,
+  PdpGeoProviderId,
+  PdpGeoProductNormalizationSettings
 } from "@agentic-geo/pdp-geo-generator-agent/types";
 
 type Provider = "mock" | "openai" | "gemini" | "azure-openai" | "aistudio";
@@ -56,7 +59,18 @@ interface GeoGeneratorRequest {
       semanticConfiguration?: string;
       queryLanguage?: string;
     };
+    /**
+     * Optional per-request override. When omitted, source-backed semantic
+     * normalization is enabled for a configured non-mock LLM.
+     */
+    productNormalization?: PdpGeoProductNormalizationSettings;
+    /** Optional semantic content/schema planning override. */
+    contentPlanning?: PdpGeoContentPlanningSettings;
   };
+  /** Top-level override takes precedence over llm.productNormalization. */
+  productNormalization?: PdpGeoProductNormalizationSettings;
+  /** Top-level override takes precedence over llm.contentPlanning. */
+  contentPlanning?: PdpGeoContentPlanningSettings;
   rag?: PdpGeoGenerationInput["rag"];
   extractorRag?: {
     analysisPrompt?: string;
@@ -113,6 +127,7 @@ const envAzureOpenAiTemperature = optionalNumber(process.env.AZURE_OPENAI_TEMPER
 export async function POST(request: Request): Promise<Response> {
   try {
     const body = await request.json() as GeoGeneratorRequest;
+    assertSafeRequestEndpoints(body, body.llm?.provider ?? provider);
     if (body.stream) {
       return streamGeoGenerator(body);
     }
@@ -129,13 +144,23 @@ export async function POST(request: Request): Promise<Response> {
       {
         error: error instanceof Error ? error.message : "PDP GEO generation failed."
       },
-      500
+      error instanceof RequestConfigurationError ? 400 : 500
     );
   }
 }
 
 async function runGeoGenerator(body: GeoGeneratorRequest, emitProgress?: ProgressEmitter): Promise<GeoGeneratorResponsePayload> {
     const runtimeProvider = body.llm?.provider ?? provider;
+    const runtimeApiKey = body.llm?.apiKey ?? resolveProviderApiKey(runtimeProvider);
+    const runtimeModel = body.llm?.model ?? resolveProviderModel(runtimeProvider);
+    const runtimeDeployment = body.llm?.deployments?.reasoning
+      ?? body.llm?.deployment
+      ?? (runtimeProvider === "aistudio" ? body.llm?.model : undefined)
+      ?? resolveProviderDeployment(runtimeProvider);
+    const runtimeDeployments = body.llm?.deployments
+      ?? (runtimeProvider === "aistudio" && body.llm?.model ? { reasoning: body.llm.model } : resolveProviderDeployments(runtimeProvider));
+    const runtimeProductNormalization = resolveProductNormalization(body, runtimeProvider, runtimeApiKey);
+    const runtimeContentPlanning = resolveContentPlanning(body, runtimeProvider, runtimeApiKey);
     const [extractorRagProfile, generatorRagProfile] = await Promise.all([
       readProductExtractorRagProfile().catch(() => undefined),
       readPdpGeoGeneratorRagProfile().catch(() => undefined)
@@ -162,16 +187,12 @@ async function runGeoGenerator(body: GeoGeneratorRequest, emitProgress?: Progres
           },
           {
             provider: runtimeProvider,
-            apiKey: body.llm?.apiKey ?? process.env.OPENAI_API_KEY ?? process.env.GEMINI_API_KEY ?? process.env.AZURE_OPENAI_API_KEY,
-            model: body.llm?.model ?? process.env.OPENAI_MODEL ?? process.env.GEMINI_MODEL,
-            endpoint: body.llm?.endpoint ?? process.env.AZURE_OPENAI_ENDPOINT,
-            deployment: body.llm?.deployments?.reasoning ?? body.llm?.deployment ?? process.env.AZURE_OPENAI_REASONING_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
-            deployments: body.llm?.deployments ?? {
-              ocr: process.env.AZURE_OPENAI_OCR_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
-              reasoning: process.env.AZURE_OPENAI_REASONING_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
-              embedding: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT
-            },
-            apiVersion: body.llm?.apiVersion ?? process.env.AZURE_OPENAI_API_VERSION,
+            apiKey: runtimeApiKey,
+            model: runtimeModel,
+            endpoint: body.llm?.endpoint ?? resolveProviderEndpoint(runtimeProvider),
+            deployment: runtimeDeployment,
+            deployments: runtimeDeployments,
+            apiVersion: body.llm?.apiVersion ?? resolveProviderApiVersion(runtimeProvider),
             temperature: body.llm?.temperature ?? envAzureOpenAiTemperature,
             embedding: body.llm?.embedding ?? {
               provider: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT ? "azure-openai" : "local",
@@ -195,6 +216,8 @@ async function runGeoGenerator(body: GeoGeneratorRequest, emitProgress?: Progres
               content: document.content,
               version: document.version
             })),
+            productNormalization: runtimeProductNormalization,
+            contentPlanning: runtimeContentPlanning,
             onProgress: (step) => emitProgress?.({
               type: "progress",
               group: "generator",
@@ -240,16 +263,12 @@ async function runGeoGenerator(body: GeoGeneratorRequest, emitProgress?: Progres
           },
           {
             provider: runtimeProvider,
-            apiKey: body.llm?.apiKey ?? process.env.OPENAI_API_KEY ?? process.env.GEMINI_API_KEY ?? process.env.AZURE_OPENAI_API_KEY,
-            model: body.llm?.model ?? process.env.OPENAI_MODEL ?? process.env.GEMINI_MODEL,
-            endpoint: body.llm?.endpoint ?? process.env.AZURE_OPENAI_ENDPOINT,
-            deployment: body.llm?.deployments?.reasoning ?? body.llm?.deployment ?? process.env.AZURE_OPENAI_REASONING_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
-            deployments: body.llm?.deployments ?? {
-              ocr: process.env.AZURE_OPENAI_OCR_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
-              reasoning: process.env.AZURE_OPENAI_REASONING_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
-              embedding: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT
-            },
-            apiVersion: body.llm?.apiVersion ?? process.env.AZURE_OPENAI_API_VERSION,
+            apiKey: runtimeApiKey,
+            model: runtimeModel,
+            endpoint: body.llm?.endpoint ?? resolveProviderEndpoint(runtimeProvider),
+            deployment: runtimeDeployment,
+            deployments: runtimeDeployments,
+            apiVersion: body.llm?.apiVersion ?? resolveProviderApiVersion(runtimeProvider),
             temperature: body.llm?.temperature ?? envAzureOpenAiTemperature,
             embedding: body.llm?.embedding ?? {
               provider: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT ? "azure-openai" : "local",
@@ -296,16 +315,12 @@ async function runGeoGenerator(body: GeoGeneratorRequest, emitProgress?: Progres
           },
           {
             provider: runtimeProvider,
-            apiKey: body.llm?.apiKey ?? process.env.OPENAI_API_KEY ?? process.env.GEMINI_API_KEY ?? process.env.AZURE_OPENAI_API_KEY,
-            model: body.llm?.model ?? process.env.OPENAI_MODEL ?? process.env.GEMINI_MODEL,
-            endpoint: body.llm?.endpoint ?? process.env.AZURE_OPENAI_ENDPOINT,
-            deployment: body.llm?.deployments?.reasoning ?? body.llm?.deployment ?? process.env.AZURE_OPENAI_REASONING_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
-            deployments: body.llm?.deployments ?? {
-              ocr: process.env.AZURE_OPENAI_OCR_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
-              reasoning: process.env.AZURE_OPENAI_REASONING_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
-              embedding: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT
-            },
-            apiVersion: body.llm?.apiVersion ?? process.env.AZURE_OPENAI_API_VERSION,
+            apiKey: runtimeApiKey,
+            model: runtimeModel,
+            endpoint: body.llm?.endpoint ?? resolveProviderEndpoint(runtimeProvider),
+            deployment: runtimeDeployment,
+            deployments: runtimeDeployments,
+            apiVersion: body.llm?.apiVersion ?? resolveProviderApiVersion(runtimeProvider),
             temperature: body.llm?.temperature ?? envAzureOpenAiTemperature,
             embedding: body.llm?.embedding ?? {
               provider: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT ? "azure-openai" : "local",
@@ -329,6 +344,8 @@ async function runGeoGenerator(body: GeoGeneratorRequest, emitProgress?: Progres
               content: document.content,
               version: document.version
             })),
+            productNormalization: runtimeProductNormalization,
+            contentPlanning: runtimeContentPlanning,
             onProgress: (step) => emitProgress?.({
               type: "progress",
               group: "generator",
@@ -420,6 +437,209 @@ function withRuntimeRagDefaults(rag: PdpGeoGenerationInput["rag"]): PdpGeoGenera
     ...rag,
     vectorStoreId: rag.vectorStoreId ?? process.env.OPENAI_VECTOR_STORE_ID
   };
+}
+
+function resolveProductNormalization(
+  body: GeoGeneratorRequest,
+  runtimeProvider: Provider,
+  runtimeApiKey: string | undefined
+): PdpGeoProductNormalizationSettings {
+  const nestedSettings = body.llm?.productNormalization;
+  const topLevelSettings = body.productNormalization;
+  const mergedSettings = {
+    ...nestedSettings,
+    ...topLevelSettings
+  };
+  const normalizationProvider = mergedSettings.provider ?? runtimeProvider;
+  const normalizationApiKey = mergedSettings.apiKey ?? (
+    normalizationProvider === runtimeProvider
+      ? runtimeApiKey
+      : normalizationProvider === "custom"
+        ? undefined
+        : resolveProviderApiKey(normalizationProvider)
+  );
+  const explicitlyEnabled = topLevelSettings?.enabled ?? nestedSettings?.enabled;
+  const enabled = explicitlyEnabled ?? (
+    normalizationProvider !== "mock"
+    && normalizationProvider !== "custom"
+    && Boolean(normalizationApiKey)
+  );
+
+  return {
+    ...mergedSettings,
+    enabled,
+    provider: normalizationProvider,
+    apiKey: normalizationApiKey,
+    model: mergedSettings.model ?? resolveProviderModel(normalizationProvider),
+    endpoint: mergedSettings.endpoint ?? resolveProviderEndpoint(normalizationProvider),
+    deployment: mergedSettings.deployment
+      ?? (normalizationProvider === "aistudio" ? mergedSettings.model : undefined)
+      ?? resolveProviderDeployment(normalizationProvider),
+    apiVersion: mergedSettings.apiVersion ?? resolveProviderApiVersion(normalizationProvider)
+  };
+}
+
+function resolveContentPlanning(
+  body: GeoGeneratorRequest,
+  runtimeProvider: Provider,
+  runtimeApiKey: string | undefined
+): PdpGeoContentPlanningSettings {
+  const nestedSettings = body.llm?.contentPlanning;
+  const topLevelSettings = body.contentPlanning;
+  const mergedSettings = {
+    ...nestedSettings,
+    ...topLevelSettings
+  };
+  const planningProvider = mergedSettings.provider ?? runtimeProvider;
+  const planningApiKey = mergedSettings.apiKey ?? (
+    planningProvider === runtimeProvider
+      ? runtimeApiKey
+      : planningProvider === "custom"
+        ? undefined
+        : resolveProviderApiKey(planningProvider)
+  );
+  const explicitlyEnabled = topLevelSettings?.enabled ?? nestedSettings?.enabled;
+  const enabled = explicitlyEnabled ?? (
+    planningProvider !== "mock"
+    && planningProvider !== "custom"
+    && Boolean(planningApiKey)
+  );
+
+  return {
+    ...mergedSettings,
+    enabled,
+    provider: planningProvider,
+    apiKey: planningApiKey,
+    model: mergedSettings.model ?? resolveProviderModel(planningProvider),
+    endpoint: mergedSettings.endpoint ?? resolveProviderEndpoint(planningProvider),
+    deployment: mergedSettings.deployment
+      ?? (planningProvider === "aistudio" ? mergedSettings.model : undefined)
+      ?? resolveProviderDeployment(planningProvider),
+    apiVersion: mergedSettings.apiVersion ?? resolveProviderApiVersion(planningProvider)
+  };
+}
+
+class RequestConfigurationError extends Error {}
+
+function assertSafeRequestEndpoints(body: GeoGeneratorRequest, runtimeProvider: Provider): void {
+  assertEndpointCredentialPair({
+    label: "llm.endpoint",
+    provider: runtimeProvider,
+    endpoint: body.llm?.endpoint,
+    requestApiKey: body.llm?.apiKey
+  });
+
+  const normalization = {
+    ...body.llm?.productNormalization,
+    ...body.productNormalization
+  };
+  const normalizationProvider = normalization.provider ?? runtimeProvider;
+  assertEndpointCredentialPair({
+    label: "productNormalization.endpoint",
+    provider: normalizationProvider,
+    endpoint: normalization.endpoint,
+    requestApiKey: normalization.apiKey ?? (normalizationProvider === runtimeProvider ? body.llm?.apiKey : undefined)
+  });
+
+  const planning = {
+    ...body.llm?.contentPlanning,
+    ...body.contentPlanning
+  };
+  const planningProvider = planning.provider ?? runtimeProvider;
+  assertEndpointCredentialPair({
+    label: "contentPlanning.endpoint",
+    provider: planningProvider,
+    endpoint: planning.endpoint,
+    requestApiKey: planning.apiKey ?? (planningProvider === runtimeProvider ? body.llm?.apiKey : undefined)
+  });
+}
+
+function assertEndpointCredentialPair(input: {
+  label: string;
+  provider: PdpGeoProviderId;
+  endpoint?: string;
+  requestApiKey?: string;
+}): void {
+  if (!input.endpoint || input.requestApiKey || !resolveProviderApiKey(input.provider)) return;
+  const configuredEndpoint = resolveProviderEndpoint(input.provider);
+  if (configuredEndpoint && endpointOrigin(configuredEndpoint) === endpointOrigin(input.endpoint)) return;
+  throw new RequestConfigurationError(
+    `${input.label} cannot override the configured provider origin while using a server-managed API key. Supply the matching request API key or use the configured endpoint.`
+  );
+}
+
+function endpointOrigin(value: string): string {
+  try {
+    return new URL(value).origin;
+  } catch {
+    throw new RequestConfigurationError(`Invalid provider endpoint URL: ${value}`);
+  }
+}
+
+function resolveProviderApiKey(runtimeProvider: PdpGeoProviderId): string | undefined {
+  switch (runtimeProvider) {
+    case "openai":
+      return process.env.OPENAI_API_KEY;
+    case "gemini":
+      return process.env.GEMINI_API_KEY;
+    case "azure-openai":
+      return process.env.AZURE_OPENAI_API_KEY;
+    case "aistudio":
+      return process.env.AISTUDIO_API_KEY;
+    case "mock":
+    default:
+      return undefined;
+  }
+}
+
+function resolveProviderModel(runtimeProvider: PdpGeoProviderId): string | undefined {
+  switch (runtimeProvider) {
+    case "openai":
+      return process.env.OPENAI_MODEL;
+    case "gemini":
+      return process.env.GEMINI_MODEL;
+    case "azure-openai":
+      return process.env.AZURE_OPENAI_REASONING_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT;
+    case "aistudio":
+      return process.env.AISTUDIO_MODEL;
+    case "mock":
+    default:
+      return undefined;
+  }
+}
+
+function resolveProviderEndpoint(runtimeProvider: PdpGeoProviderId): string | undefined {
+  if (runtimeProvider === "azure-openai") return process.env.AZURE_OPENAI_ENDPOINT;
+  if (runtimeProvider === "aistudio") return process.env.AISTUDIO_ENDPOINT;
+  return undefined;
+}
+
+function resolveProviderDeployment(runtimeProvider: PdpGeoProviderId): string | undefined {
+  if (runtimeProvider === "azure-openai") {
+    return process.env.AZURE_OPENAI_REASONING_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT;
+  }
+  if (runtimeProvider === "aistudio") return process.env.AISTUDIO_MODEL;
+  return undefined;
+}
+
+function resolveProviderDeployments(runtimeProvider: PdpGeoProviderId): { ocr?: string; reasoning?: string; embedding?: string } | undefined {
+  if (runtimeProvider === "azure-openai") {
+    return {
+      ocr: process.env.AZURE_OPENAI_OCR_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
+      reasoning: process.env.AZURE_OPENAI_REASONING_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
+      embedding: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT
+    };
+  }
+  if (runtimeProvider === "aistudio") {
+    return { reasoning: process.env.AISTUDIO_MODEL };
+  }
+  return undefined;
+}
+
+function resolveProviderApiVersion(runtimeProvider: PdpGeoProviderId): string | undefined {
+  if (runtimeProvider === "azure-openai") return process.env.AZURE_OPENAI_API_VERSION;
+  if (runtimeProvider === "aistudio") return process.env.AISTUDIO_API_VERSION;
+  return undefined;
 }
 
 function optionalNumber(value: string | undefined): number | undefined {

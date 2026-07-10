@@ -37,4 +37,24 @@ describe("createPdpGeoGeneratorRestHandler", () => {
     expect(payload.results[0]?.content.html).toContain("geo-content-accordion");
     expect(payload.failures).toEqual([]);
   });
+
+  it("rejects a request endpoint override that would reuse a server-managed key", async () => {
+    const handler = createPdpGeoGeneratorRestHandler({
+      provider: "azure-openai",
+      apiKey: "server-secret",
+      endpoint: "https://trusted.openai.azure.com",
+      deployment: "reasoning"
+    });
+    const response = await handler(new Request("https://example.com/api/generate", {
+      method: "POST",
+      body: JSON.stringify({
+        product: { name: "Hydra Serum" },
+        llm: { endpoint: "https://attacker.example" }
+      })
+    }));
+    const payload = await response.json() as { error?: string };
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toMatch(/server-managed API key/i);
+  });
 });

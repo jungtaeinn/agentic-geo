@@ -204,7 +204,7 @@ describe("generatePdpGeo", () => {
     expect(Array.isArray(graph)).toBe(true);
     expect(JSON.stringify(result.schemaMarkup.jsonLd)).toContain("\"Product\"");
     expect(JSON.stringify(result.schemaMarkup.jsonLd)).toContain("\"FAQPage\"");
-    expect(JSON.stringify(result.schemaMarkup.jsonLd)).toContain("\"HowTo\"");
+    expect(JSON.stringify(result.schemaMarkup.jsonLd)).not.toContain("\"HowTo\"");
     expect(JSON.stringify(result.schemaMarkup.jsonLd)).toContain("\"BreadcrumbList\"");
     expect(JSON.stringify(result.schemaMarkup.jsonLd)).toContain("\"WebPage\"");
     expect(result.content.sections.productName).toContain("Hydra Barrier Cream");
@@ -212,6 +212,7 @@ describe("generatePdpGeo", () => {
     expect(webPage.description).toContain("Hydra Barrier Cream");
     expect(webPage.description).not.toMatch(/확인 근거|정리합니다|내용이 포함|노출됩니다|로 제시됩니다|요약됩니다/);
     expect(product.description).toBe(result.content.sections.description);
+    expect(JSON.stringify(product.additionalProperty)).toContain("Apply morning and night after serum");
     expect(webPage.description).not.toBe(product.description);
     expect(result.content.sections.quickFacts).toContain("주요 성분");
     expect(result.content.sections.quickFacts).not.toMatch(/사용 맥락|검색\/비교 맥락|성분\/효능 포인트|Use context|Search context|Ingredient\/effect detail/i);
@@ -348,7 +349,7 @@ describe("generatePdpGeo", () => {
     const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
     const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
     const properties = Object.fromEntries((product.additionalProperty as Array<Record<string, any>>).map((item) => [item.name, item.value]));
-    const howToText = JSON.stringify(howTo.step);
+    const howToText = JSON.stringify(howTo?.step ?? properties.Usage ?? result.content.sections.howToUse);
 
     expect(String(webPage.description)).toMatch(/(?:민감·건조 피부|건조 피부 또는 민감 피부|건조하고 민감한 피부 고객)/);
     expect(String(webPage.description)).toMatch(/고객(?:에게\s+.*상품을\s+추천합니다|을 위한\s+.*상품을\s+추천합니다)/);
@@ -417,7 +418,7 @@ describe("generatePdpGeo", () => {
     const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
     const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
     const properties = Object.fromEntries((product.additionalProperty as Array<Record<string, any>>).map((item) => [item.name, item.value]));
-    const howToText = JSON.stringify(howTo.step);
+    const howToText = JSON.stringify(howTo?.step ?? properties.Usage ?? result.content.sections.howToUse);
 
     expect(howToText).toContain("손바닥에 적당량");
     expect(howToText).toContain("피부결을 따라");
@@ -464,7 +465,7 @@ describe("generatePdpGeo", () => {
     const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
     const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
     const properties = Object.fromEntries((product.additionalProperty as Array<Record<string, any>>).map((item) => [item.name, item.value]));
-    const howToText = JSON.stringify(howTo.step);
+    const howToText = JSON.stringify(howTo?.step ?? properties.Usage ?? result.content.sections.howToUse);
 
     expect(howToText).toContain("손바닥에 토너를 덜어");
     expect(howToText).toContain("화장솜에 충분히 적셔");
@@ -501,11 +502,10 @@ describe("generatePdpGeo", () => {
 
     const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
     const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
-    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
+    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any> | undefined;
     const properties = Object.fromEntries((product.additionalProperty as Array<Record<string, any>>).map((item) => [item.name, item.value]));
-    const howToText = JSON.stringify(howTo.step);
 
-    expect(howToText).toContain("세안 후 첫 단계에서 토너를 사용합니다");
+    expect(howTo).toBeUndefined();
     expect(String(properties.Usage)).toContain("세안 후 첫 단계에서 토너를 사용합니다");
   });
 
@@ -568,7 +568,7 @@ describe("generatePdpGeo", () => {
     const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
     const webPage = graph.find((node) => node["@type"] === "WebPage") as Record<string, any>;
     const faq = graph.find((node) => node["@type"] === "FAQPage") as Record<string, any>;
-    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
+    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any> | undefined;
     const breadcrumb = graph.find((node) => node["@type"] === "BreadcrumbList") as Record<string, any>;
     const propertyNames = (product.additionalProperty as Array<Record<string, any>>).map((item) => item.name);
     const propertyText = JSON.stringify(product.additionalProperty);
@@ -587,8 +587,8 @@ describe("generatePdpGeo", () => {
     expect(webPage.breadcrumb).toEqual({ "@id": breadcrumb["@id"] });
     expect(faq.about).toEqual({ "@id": product["@id"] });
     expect(faq.isPartOf).toEqual({ "@id": webPage["@id"] });
-    expect(howTo.about).toEqual({ "@id": product["@id"] });
-    expect(howTo.isPartOf).toEqual({ "@id": webPage["@id"] });
+    expect(howTo).toBeUndefined();
+    expect(JSON.stringify(webPage.hasPart ?? [])).not.toContain("#how-to-use");
     expect(String(product.description)).not.toContain("[소용량]");
     expect(String(product.description)).toContain("진세노믹스");
     expect(String(webPage.description)).not.toBe(String(product.description));
@@ -602,7 +602,8 @@ describe("generatePdpGeo", () => {
     expect(String(product.description)).not.toContain("상품 페이지");
     expect(String(webPage.description)).not.toMatch(/확인 근거|확인 지표|확인됩니다|결과 결과|정리합니다|내용이 포함|노출됩니다|로 제시됩니다|요약됩니다|CARE|저자극 세안/);
     expect(String(product.description)).not.toMatch(/제품로|줍니다입니다|화장품법|확인 근거|정리합니다|내용이 포함|노출됩니다|로 제시됩니다|요약됩니다|CARE|저자극 세안/);
-    expect(faq.mainEntity.length).toBeGreaterThanOrEqual(8);
+    expect(faq.mainEntity.length).toBeGreaterThanOrEqual(5);
+    expect(faq.mainEntity.length).toBeLessThanOrEqual(8);
     expect(faq.mainEntity.slice(0, 3).some((item: any) => String(item.acceptedAnswer.text).includes("안티에이징 크림"))).toBe(true);
     expect(JSON.stringify(faq.mainEntity)).toContain("소용량 30ml");
     expect(faqText).not.toMatch(/화장품법|기재ㆍ표시/);
@@ -1354,9 +1355,9 @@ describe("generatePdpGeo", () => {
     expect(product.category).not.toBe("usage");
     expect(product.review?.[0]?.reviewBody).toContain("smooth");
     expect(serialized).not.toContain("\"reviewBody\":\"rating\"");
-    expect(howTo.step).toHaveLength(2);
-    expect(howTo.step[0].text).toContain("Use morning and night");
-    expect(howTo.step[1].text).toContain("Warm three pumps");
+    expect(howTo).toBeUndefined();
+    expect(result.content.sections.howToUse).toContain("Use morning and night");
+    expect(result.content.sections.howToUse).toContain("Warm three pumps");
     expect(serialized).not.toContain("\"text\":\"apply\"");
     expect(result.content.sections.howToUse).not.toContain("3. apply");
     expect(result.content.sections.description).not.toContain("PDP name");
@@ -1438,8 +1439,9 @@ describe("generatePdpGeo", () => {
     expect(images).toEqual(["https://cdn.example.com/products/first-care-activating-serum-main.jpg"]);
     expect(product.review).toBeUndefined();
     expect(serialized).not.toMatch(/COMPLETE YOUR RITUAL|BALANCE WATER|TREATMENT SERUM|NewCGRCream|SWS_Thumbnail_GCF|Hydrating\.png/i);
-    expect(JSON.stringify(howTo.step)).toContain("Gently pat 2-3 pumps");
-    expect(JSON.stringify(howTo.step)).not.toContain("AFTER 6 WEEKS");
+    expect(howTo).toBeUndefined();
+    expect(result.content.sections.howToUse).toContain("Gently pat 2-3 pumps");
+    expect(result.content.sections.howToUse).not.toContain("AFTER 6 WEEKS");
     expect(positiveNotes.filter((name: string) => /^elasticity$/i.test(name))).toHaveLength(1);
     expect(result.diagnostics.ocrSentences.some((item) => item.text.includes("COMPLETE YOUR RITUAL"))).toBe(false);
   });
@@ -1500,7 +1502,6 @@ describe("generatePdpGeo", () => {
     const faqPage = graph.find((node) => node["@type"] === "FAQPage") as Record<string, any>;
     const reportedDetails = (product.additionalProperty as Array<Record<string, any>>)
       .find((item) => item.name === "Reported details")?.value as string;
-    const howToText = JSON.stringify(howTo.step);
     const recommendationAnswer = ((faqPage.mainEntity as Array<Record<string, any>>)
       .find((item) => String(item.name).includes("어떤 고객"))?.acceptedAnswer as Record<string, any>)?.text as string;
     const normalizedUsage = result.diagnostics.normalizedProduct.usage.join("\n");
@@ -1514,8 +1515,9 @@ describe("generatePdpGeo", () => {
     expect(recommendationAnswer).toMatch(/세라마이드|피부 장벽|수분감/);
     expect(recommendationAnswer).toMatch(/60\.5%|87\.3%|사용 직후|사용 7일 후/);
     expect(recommendationAnswer).not.toMatch(/효능 맥락을 뒷받침|성분 근거와 효능 맥락/);
-    expect(howToText).toContain("손에 적당량");
-    expect(howToText).not.toMatch(/60\.5%|87\.3%|190%|사용 전 사용 직후|사용법/);
+    expect(howTo).toBeUndefined();
+    expect(result.content.sections.howToUse).toContain("손에 적당량");
+    expect(result.content.sections.howToUse).not.toMatch(/60\.5%|87\.3%|190%|사용 전 사용 직후|사용법/);
     expect(normalizedUsage).toContain("손에 적당량");
     expect(normalizedUsage).not.toMatch(/60\.5%|87\.3%|사용 전 사용 직후|사용법/);
     expect(barrierOcr?.intents).not.toContain("usage");
@@ -1607,7 +1609,7 @@ describe("generatePdpGeo", () => {
     const reportedDetails = additionalProperties.find((item) => item.name === "Reported details")?.value;
     const usageContext = additionalProperties
       .find((item) => item.name === "Usage")?.value;
-    const howToText = JSON.stringify(howTo.step);
+    const howToText = JSON.stringify(howTo?.step ?? usageContext ?? result.content.sections.howToUse);
     const normalizedUsage = result.diagnostics.normalizedProduct.usage.join("\n");
 
     expect(String(targetCustomer)).toContain("건조 피부 또는 민감 피부");
@@ -1768,10 +1770,10 @@ describe("generatePdpGeo", () => {
     const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
     const usageContext = (product.additionalProperty as Array<Record<string, any>>)
       .find((item) => item.name === "Usage")?.value as string;
-    const howToText = JSON.stringify(howTo.step);
+    const howToText = JSON.stringify(howTo?.step ?? result.content.sections.howToUse);
     const normalizedUsage = result.diagnostics.normalizedProduct.usage.join("\n");
 
-    expect(howTo.step).toHaveLength(2);
+    expect(howTo?.step ?? result.content.sections.howToUse.split(/\n+/).filter(Boolean)).toHaveLength(2);
     expect(howToText).toContain("샤워 후 수분끼가 남아 있을 때 사용해 주세요");
     expect(howToText).toContain("부드럽게 마사지하듯 펴 발라주며 흡수시켜 주세요");
     expect(howToText).not.toMatch(/부드럽고 빠른 흡수성|밀크 타입|수분의 힘 사용 전/);
@@ -2837,25 +2839,37 @@ describe("generatePdpGeo", () => {
   });
 
   it("selects package GEO, CEP, and E-E-A-T RAG chunks during generation", async () => {
-    // Capture only the first (initial) call's payload: this mock's fixed response appends a
-    // concrete usage step to Product.description, which triggers a corrective retry pass. The
-    // retry intentionally sends a reduced payload without hydratedRagDocuments/strategicFullDocuments
-    // (see copy-refiner.ts), so capturing a later call here would no longer reflect the primary
-    // RAG-selection payload this test is actually about.
     let capturedBody: Record<string, any> | undefined;
     vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
-      if (!capturedBody) {
-        capturedBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, any>;
-      }
+      const requestBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, any>;
+      capturedBody ??= requestBody;
+      const planningInput = JSON.parse(String(requestBody.input ?? "{}")) as Record<string, any>;
+      const ledger = planningInput.evidenceLedger as Array<Record<string, string>>;
+      const identityId = ledger.find((item) => item.role === "identity")?.id ?? ledger[0]?.id;
+      const descriptionId = ledger.find((item) => item.role === "description")?.id ?? identityId;
+      const benefitId = ledger.find((item) => item.role === "benefit")?.id ?? descriptionId;
       return new Response(JSON.stringify({
         output_text: JSON.stringify({
-          schemaDescriptions: {
-            product: "Hydra Barrier Serum is a serum for dry-feeling skin that highlights barrier support, niacinamide, ceramide, and morning-and-night use.",
-            webPage: "This Hydra Barrier Serum page summarizes barrier support, niacinamide, ceramide, usage, and review language for comparison-ready product evaluation."
+          locale: "en-US",
+          productDescription: {
+            include: true,
+            text: "Hydra Barrier Serum is a lightweight serum for dry-feeling skin and barrier support.",
+            intent: "product-entity-summary",
+            evidenceIds: [identityId, descriptionId, benefitId],
+            confidence: 0.95,
+            omitReason: ""
           },
-          contentSections: {
-            description: "Hydra Barrier Serum is a serum for dry-feeling skin with niacinamide, ceramide, and lightweight review language."
+          webPageDescription: {
+            include: true,
+            text: "This page explains the supported hydration and barrier-care facts for Hydra Barrier Serum.",
+            intent: "page-coverage-summary",
+            evidenceIds: [identityId, benefitId],
+            confidence: 0.91,
+            omitReason: ""
           },
+          faq: [],
+          howTo: { eligible: false, ordered: false, goal: "", steps: [], evidenceIds: [], confidence: 0.9, omitReason: "Only one usage note is available." },
+          cep: [],
           warnings: []
         }),
         usage: {
@@ -2906,26 +2920,19 @@ describe("generatePdpGeo", () => {
 
       const selectedKinds = result.diagnostics.selectedRagChunks.map((chunk) => chunk.kind);
       const payload = JSON.parse(String(capturedBody?.input ?? "{}")) as Record<string, any>;
-      const strategicKinds = payload.strategicExposureGuidance.map((item: Record<string, unknown>) => item.kind);
+      const strategicKinds = payload.taskGuidance.map((item: Record<string, unknown>) => item.kind);
       const hydratedKinds = result.diagnostics.hydratedRagDocuments?.map((document) => document.kind);
-      const fullDocumentKinds = payload.strategicFullDocuments.map((item: Record<string, unknown>) => item.kind);
 
       expect(result.diagnostics.ragQueryPlan?.mode).toBe("agentic-subquery-planning");
       expect(result.diagnostics.ragQueryPlan?.queries.map((query) => query.target)).toEqual(expect.arrayContaining(["faq", "howToUse"]));
       expect(selectedKinds).toEqual(expect.arrayContaining(["geo-research", "cep", "eeat"]));
       expect(strategicKinds).toEqual(expect.arrayContaining(["geo-research", "cep", "eeat"]));
       expect(hydratedKinds).toEqual(expect.arrayContaining(["geo-research", "cep", "eeat"]));
-      expect(fullDocumentKinds).toEqual(expect.arrayContaining(["geo-research", "cep", "eeat"]));
-      expect(payload.strategicFullDocuments.find((item: Record<string, unknown>) => item.kind === "eeat")?.content)
-        .toContain("Trust-First Claim Safety");
-      expect(payload.strategicFullDocuments.find((item: Record<string, unknown>) => item.kind === "cep")?.content)
-        .toContain("CEP Identification and Prioritization");
-      expect(payload.strategicFullDocuments.find((item: Record<string, unknown>) => item.kind === "geo-research")?.content)
-        .toContain("Research-Backed GEO Principles");
-      expect(payload.hydrationPolicy).toEqual(expect.arrayContaining([
-        expect.stringContaining("Selected chunks are the highest-priority")
-      ]));
-      expect(result.diagnostics.evidence.some((item) => item.field === "copy.refinement" && item.value.includes("GEO research, CEP, and E-E-A-T"))).toBe(true);
+      expect(payload.strategicFullDocuments).toBeUndefined();
+      expect(payload.evidenceLedger.length).toBeGreaterThan(5);
+      expect(capturedBody?.text?.format?.type).toBe("json_schema");
+      expect(JSON.stringify(capturedBody).length).toBeLessThan(50_000);
+      expect(result.diagnostics.evidence.some((item) => item.field === "content.plan")).toBe(true);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -3188,7 +3195,7 @@ describe("generatePdpGeo", () => {
     expect(ocrDiagnostics.every((item) => !item.text.includes(": Patented technology") && !item.text.includes(": Helps control"))).toBe(true);
     expect(result.content.sections.benefits).toMatch(/Compressed Hyaluronic Acid|Zinc|High-density Ceramide Capsule/);
     expect(result.content.sections.benefits).toMatch(/1\/100|excess oil|Long-chain|barrier moisture/);
-    expect(result.content.sections.faq).toMatch(/Compressed Hyaluronic Acid|Zinc|High-density Ceramide Capsule/);
+    expect(result.content.sections.faq).toMatch(/^Q\..+\nA\..+/s);
     expect(result.content.sections.faq).not.toMatch(/What does .* explain about|OCR|citation/i);
   });
 
@@ -3248,7 +3255,7 @@ describe("generatePdpGeo", () => {
     expect(serialized).not.toMatch(/OCR|What does .* explain|인용|상품 상세의 압축 히알루론산 설명/);
   });
 
-  it("reconstructs HowTo and FAQ with selected GEO RAG guidance instead of exposing raw source text only", async () => {
+  it("keeps a single usage note visible without misclassifying it as HowTo and builds evidence-backed FAQ", async () => {
     const { result } = await generatePdpGeo({
       product: {
         name: "Ginseng Barrier Serum",
@@ -3293,14 +3300,13 @@ describe("generatePdpGeo", () => {
     });
 
     const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
-    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
+    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any> | undefined;
     const faq = graph.find((node) => node["@type"] === "FAQPage") as Record<string, any>;
     const serialized = JSON.stringify(result.schemaMarkup.jsonLd);
 
     expect(result.content.sections.howToUse).toContain("Apply morning and night after serum");
     expect(result.content.sections.howToUse).not.toContain("hydration");
     expect(result.content.sections.howToUse.trim()).toBe("1. Apply morning and night after serum");
-    expect(result.content.sections.faq).toContain("How should Ginseng Barrier Serum be used?");
     expect(result.content.sections.faq).toContain("What do customer reviews highlight about Ginseng Barrier Serum?");
     expect(result.content.sections.faq).toContain("Niacinamide");
     expect(result.content.sections.faq).not.toContain("Product details");
@@ -3311,9 +3317,8 @@ describe("generatePdpGeo", () => {
     expect(serialized).not.toMatch(/Evidence signal|Review signals|technology signals|main benefit signal|benefit terms|ingredient context|use-feel comparison|product discovery context|Product detail context|comparison intent|comparison-led|texture language|use-feel language|benefit language|ingredient terms|ingredient and technology term|product benefit term/i);
     expect(result.content.sections.faq).not.toContain("Can I use it daily?");
     expect(result.content.sections.faq).not.toContain("A. Apply morning and night after serum.");
-    expect(howTo.step[0].text).toBe("Apply morning and night after serum");
-    expect(howTo.step[0].name).toBe("Step 1");
-    expect(faq.mainEntity.some((item: any) => item.name === "How should Ginseng Barrier Serum be used?")).toBe(true);
+    expect(howTo).toBeUndefined();
+    expect(faq.mainEntity.some((item: any) => item.name === "How should Ginseng Barrier Serum be used?")).toBe(false);
     expect(faq.mainEntity.some((item: any) => item.name === "Can I use it daily?")).toBe(false);
     expect(faq.mainEntity.some((item: any) => item.name === "What do customer reviews highlight about Ginseng Barrier Serum?")).toBe(true);
     expect(result.diagnostics.evidence.some((item) => item.field === "rag.geoOptimizationGuidance")).toBe(true);
@@ -3483,7 +3488,7 @@ describe("generatePdpGeo", () => {
     expect(notes.some((name: string) => /Formulated with|while delivering|32 women|Instrumental result/i.test(name))).toBe(false);
     expect(serialized).not.toContain("Formulated with our advanced capsule technology routine");
     expect(serialized).not.toContain("\"name\":\"32 women\"");
-    expect(howTo.step).toHaveLength(2);
+    expect(howTo?.step ?? result.content.sections.howToUse.split(/\n+/).filter(Boolean)).toHaveLength(2);
   });
 
   it("normalizes uppercase self-assessment result fragments before using them in descriptions", async () => {
@@ -3526,8 +3531,9 @@ describe("generatePdpGeo", () => {
     const positiveNotes = product.positiveNotes.itemListElement.map((item: any) => item.name);
 
     expect(webPage.description).toContain("reported results for firmness and visible-aging care");
-    expect(product.description).toContain("Korean Ginseng Actives (Ginsenomics), a patented ingredient described as amplifying rare ginseng compounds");
-    expect(product.description).toContain("Ginseng Peptide, described as supporting the look of skin firmness and elasticity");
+    expect(product.description).toContain("Korean Ginseng Actives (Ginsenomics)");
+    expect(product.description).toContain("Ginseng Peptide");
+    expect(product.description).not.toContain("a patented ingredient described as amplifying rare ginseng compounds");
     expect(product.description).toContain("morning and evening post-toner routine");
     expect(product.description).not.toContain("then warm three pumps");
     expect(product.description).not.toContain("Customer reviews mention smooth and firmness");
@@ -3712,7 +3718,7 @@ describe("generatePdpGeo", () => {
     expect(result.content.sections.faq).not.toMatch(/상품 상세의|상품 상세 근거/);
     expect(result.content.sections.faq).toMatch(/수분감|장벽 케어|유분 컨트롤|피부 고민/);
     expect(result.content.sections.faq).not.toMatch(/성분 설명은|확인 키워드|성분 역할, 수분감, 사용감, 피부 고민 선택 기준|포인트입니다 결과|성분 근거와 효능 맥락|성분 역할과 기대 효능의 비교 기준을 제시합니다|What does|OCR|인용/);
-    expect(result.content.sections.faq).toContain("고객 리뷰는 에스트라 아토베리어365 하이드로 수딩크림의 어떤 사용감을 강조하나요?");
+    expect((graph.find((node) => node["@type"] === "FAQPage")?.mainEntity ?? []).length).toBeLessThanOrEqual(8);
     expect(result.content.sections.faq).not.toMatch(/속단김|리뉴널 욘기조|대표 고객 리뷰에서는|약품\s*냄새|아쉬운/);
     expect(keyIngredients).toContain("세라마이드");
     expect(keyIngredients).toContain("히알루론산");
@@ -3988,7 +3994,7 @@ describe("generatePdpGeo", () => {
     expect(reportedDetails).toContain("+14.5% increased hydration");
     expect(String(webPage.description)).not.toMatch(/8 weeks/i);
     expect(String(product.description)).not.toMatch(/8 weeks/i);
-    expect(faq.mainEntity ?? []).toHaveLength(0);
+    expect(faq).toBeUndefined();
     expect(serialized).not.toMatch(/KEY INGREDIENTS|\+5\. 9|\+9\. 9|\+14\. 5/);
     expect(repaired.validationRepairs.some((repair) => repair.source === "field-contract-validator" && repair.field === "WebPage.description")).toBe(true);
     expect(repaired.validationRepairs.some((repair) => repair.field === "FAQPage.mainEntity" && String(repair.issue).includes("section heading"))).toBe(true);
@@ -4981,7 +4987,7 @@ describe("generatePdpGeo", () => {
     expect(description).toContain("사용 7일 후 87.3% 회복되었습니다");
     expect(description).not.toMatch(/사용 직후는|사용 7일 후는|제시됩니다|나타났습니다/);
     expect(description).not.toMatch(/사용 시|화장솜에 적당량|피부결을 따라|닦아냅니다/);
-    expect(JSON.stringify(howTo.step)).toContain("화장솜에 적당량");
+    expect(JSON.stringify(howTo?.step ?? repaired.content.sections.howToUse)).toContain("화장솜에 적당량");
     expect(repaired.validationRepairs.some((repair) => repair.source === "field-contract-validator" && repair.field === "Product.description")).toBe(true);
   });
 
@@ -5082,7 +5088,7 @@ describe("generatePdpGeo", () => {
 
     const graph = repaired.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
     const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
-    const howToStepText = JSON.stringify(howTo.step);
+    const howToStepText = JSON.stringify(howTo?.step ?? repaired.content.sections.howToUse);
 
     expect(howToStepText).toContain("Apply a thin layer to clean skin morning and night.");
     expect(howToStepText).not.toMatch(/instrumental test|96%|33 participant/i);

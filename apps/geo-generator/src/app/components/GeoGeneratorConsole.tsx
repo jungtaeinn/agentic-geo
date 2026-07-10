@@ -7818,8 +7818,25 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
     ...collectSchemaFaqQuestions(faqNode),
     ...collectSectionFaqQuestions(sections.faq)
   ];
-  const faqCount = Math.max(faqQuestions.length, countTextItems(sections.faq));
-  const howToCount = Math.max(countSchemaItems(howToNode?.["step"]), countTextItems(sections.howToUse));
+  const schemaFaqCount = countSchemaItems(faqNode?.["mainEntity"]);
+  const visibleFaqCount = countTextItems(sections.faq);
+  const schemaHowToCount = countSchemaItems(howToNode?.["step"]);
+  const visibleHowToCount = countTextItems(sections.howToUse);
+  const faqCount = Math.max(faqQuestions.length, visibleFaqCount);
+  const howToCount = Math.max(schemaHowToCount, visibleHowToCount);
+  // Visible usage/Q&A may legitimately exist without optional structured data.
+  // Parity is required only when an FAQPage or HowTo node is actually emitted.
+  const faqSchemaVisibleParity = schemaFaqCount === 0 || normalizedArraysEqual(
+    collectSchemaFaqPairs(faqNode),
+    collectSectionFaqPairs(sections.faq)
+  );
+  const howToSchemaVisibleParity = schemaHowToCount === 0 || normalizedArraysEqual(
+    collectSchemaHowToSteps(howToNode),
+    collectSectionHowToSteps(sections.howToUse)
+  );
+  const faqStructureValid = !faqNode || countValidSchemaFaqItems(faqNode) === schemaFaqCount && schemaFaqCount > 0;
+  const howToStructureValid = !howToNode || countValidHowToSteps(howToNode) === schemaHowToCount && schemaHowToCount >= 2;
+  const danglingLocalReferences = countDanglingLocalSchemaReferences(graph);
   const imageCount = Math.max(countSchemaItems(productNode?.["image"]), diagnostics.normalizedProduct.images.length);
   const offerCount = countSchemaItems(productNode?.["offers"]);
   const breadcrumbCount = Math.max(countSchemaItems(breadcrumbNode?.["itemListElement"]), diagnostics.normalizedProduct.breadcrumbs.length);
@@ -7827,6 +7844,7 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
   const positiveNotesCount = countSchemaItems(productNode?.["positiveNotes"]);
   const validationRepairs = diagnostics.validationRepairs?.length ?? 0;
   const validationWarnings = Math.max(0, diagnostics.validationWarnings.length - validationRepairs);
+  const hasCleanValidation = validationWarnings === 0 && validationRepairs === 0;
   const validationDetailLines = collectValidationDetailLines(diagnostics, copy);
   const validationImprovementDirections = validationWarnings > 0 ? collectValidationImprovementLines(diagnostics, copy, validationRepairs) : [];
   const artifactHits = collectPublicArtifactHits(publicText, faqQuestions, language);
@@ -7841,7 +7859,35 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
     || usage.references.some((reference) => reference.kind === "cep" || reference.fieldTargets.includes("Product.positiveNotes"))
   )).length;
   const evidenceBackedUsage = diagnostics.ragUsage.some((usage) => usage.enabled && usage.principle === "evidence-backed claims");
-  const hasClaimMetrics = /(?:\+\d+(?:\.\d+)?%|\b\d{2,3}%\b)/.test(publicText);
+  const sourceEvidence = diagnostics.evidence.filter((item) => (
+    item.source === "input"
+    || item.source === "fieldMapping"
+    || item.source === "rag"
+    || item.source === "terminology"
+  ));
+  const sourceEvidenceTypes = new Set(sourceEvidence.map((item) => item.source)).size;
+  const evidenceLedger = diagnostics.evidenceLedger ?? [];
+  const evidenceLedgerIds = new Set(evidenceLedger.map((item) => item.id));
+  const contentPlan = diagnostics.contentPlan;
+  const modelContentPlan = contentPlan?.mode === "model" ? contentPlan : undefined;
+  const plannedEvidenceUnits = modelContentPlan ? [
+    ...(modelContentPlan.productDescription.include ? [modelContentPlan.productDescription.evidenceIds] : []),
+    ...(modelContentPlan.webPageDescription.include ? [modelContentPlan.webPageDescription.evidenceIds] : []),
+    ...modelContentPlan.faq.filter((item) => item.include).map((item) => item.evidenceIds),
+    ...(modelContentPlan.howTo.eligible ? modelContentPlan.howTo.steps.map((step) => step.evidenceIds) : []),
+    ...modelContentPlan.cep.map((item) => item.evidenceIds)
+  ] : [];
+  const atomicallyCoveredPlanUnits = plannedEvidenceUnits.filter((evidenceIds) => (
+    evidenceIds.length > 0 && evidenceIds.every((id) => evidenceLedgerIds.has(id))
+  )).length;
+  const invalidPlannedEvidenceRefs = new Set(
+    plannedEvidenceUnits.flat().filter((id) => !evidenceLedgerIds.has(id))
+  ).size;
+  const hasAtomicEvidenceCoverage = evidenceLedger.length > 0 && plannedEvidenceUnits.length > 0;
+  const plannedFaqCount = modelContentPlan?.faq.filter((item) => item.include).length;
+  const faqPlanConsistent = !modelContentPlan || schemaFaqCount === plannedFaqCount;
+  const howToPlanConsistent = !modelContentPlan || Boolean(howToNode) === modelContentPlan.howTo.eligible;
+  const hasClaimMetrics = /(?:\+?\d+(?:\.\d+)?\s*[%％])/.test(publicText);
   const hasStudySample = /\b\d{2,4}\s+(?:women|men|participants|subjects|users|respondents|people)\b/i.test(publicText)
     || /(?:^|[^\d])\d{2,4}\s*(?:명|인|참여자|대상|사용자|응답자|여성|남성)(?=$|[^\p{L}\p{N}])/u.test(publicText);
   const hasSampleScopeDisclosure = hasReportedSampleScopeDisclosure(publicText);
@@ -7853,58 +7899,71 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
   const hasReportedDetails = /\b(?:reported details|clinical|instrumental|home usage|survey|self-assessment|participants|subjects)\b/i.test(publicText)
     || /(?:확인 지표|임상|인체\s*적용|자가\s*평가|테스트|시험|참여자|대상|사용자)/.test(publicText);
   const hasProductDescription = Boolean(productNode && getRecordString(productNode, "description").trim().length > 0) || sections.description.trim().length > 0;
-  const hasCoreSchema = Boolean(productNode && webPageNode && faqNode && howToNode && breadcrumbNode);
+  const hasProductIdentity = Boolean(productNode
+    && getRecordString(productNode, "@id").trim()
+    && getRecordString(productNode, "name").trim());
+  const hasWebPageIdentity = Boolean(webPageNode
+    && getRecordString(webPageNode, "@id").trim()
+    && getRecordString(webPageNode, "name").trim());
+  const ingredientBenefitBridgeApplicable = ingredientCount > 0 && benefitCount > 0;
 
+  // These are conservative lint-style diagnostics, not citation-probability
+  // estimates. Optional FAQ/HowTo nodes never add points; they can only expose
+  // structure/parity problems when the generator chose to emit them.
   const geoScore = clampQualityScore(
-    48
-    + (productNode ? 7 : 0)
-    + (webPageNode ? 6 : 0)
-    + (faqCount > 0 ? 5 : 0)
-    + (howToCount > 0 ? 5 : 0)
-    + (breadcrumbCount > 0 ? 4 : 0)
-    + (imageCount > 0 ? 4 : 0)
-    + (offerCount > 0 ? 4 : 0)
-    + (hasProductDescription ? 4 : 0)
-    + (additionalPropertyCount > 0 ? 3 : 0)
-    + (positiveNotesCount > 0 ? 3 : 0)
-    + (validationRepairs > 0 ? 2 : 0)
-    + (hasCoreSchema ? 5 : 0)
-    - Math.min(12, artifactHits.length * 6)
-    - Math.min(8, validationWarnings * 2)
+    90
+    - (!hasProductIdentity ? 18 : 0)
+    - (!hasWebPageIdentity ? 14 : 0)
+    - (!hasProductDescription ? 10 : 0)
+    - Math.min(16, danglingLocalReferences * 8)
+    - (!faqSchemaVisibleParity ? 8 : 0)
+    - (!howToSchemaVisibleParity ? 8 : 0)
+    - (!faqStructureValid ? 8 : 0)
+    - (!howToStructureValid ? 8 : 0)
+    - (!faqPlanConsistent ? 10 : 0)
+    - (!howToPlanConsistent ? 10 : 0)
+    - Math.min(16, artifactHits.length * 8)
+    - Math.min(15, validationWarnings * 3)
+    - Math.min(10, validationRepairs * 2)
   );
   const cepScore = clampQualityScore(
-    38
-    + Math.min(10, ingredientCount * 3)
-    + Math.min(12, benefitCount * 2)
-    + (hasIngredientBenefitBridge ? 12 : 0)
-    + (hasCustomerCue ? 8 : 0)
-    + (hasSelectionCue ? 8 : 0)
-    + (faqCount > 0 ? 4 : 0)
-    + (howToCount > 0 ? 4 : 0)
-    + (cepRagUsage > 0 ? 4 : 0)
-    - Math.min(10, artifactHits.length * 4)
+    85
+    - (!hasCustomerCue ? 24 : 0)
+    - (!hasSelectionCue ? 20 : 0)
+    - (ingredientBenefitBridgeApplicable && !hasIngredientBenefitBridge ? 24 : 0)
+    - (ingredientCount === 0 && benefitCount === 0 ? 12 : 0)
+    - Math.min(16, contentPlan ? contentPlan.cep.filter((item) => item.evidenceIds.length === 0).length * 8 : 0)
+    - Math.min(12, artifactHits.length * 6)
+    - Math.min(8, validationWarnings * 2)
+    - Math.min(8, validationRepairs)
   );
   const eeatScore = clampQualityScore(
-    50
-    + Math.min(10, diagnostics.evidence.length)
-    + Math.min(8, diagnostics.selectedRagChunks.length)
-    + (hasClaimMetrics ? 8 : 0)
-    + (hasStudySample ? 8 : hasSampleScopeDisclosure ? 4 : 0)
-    + (hasTimeScope ? 5 : 0)
+    60
+    + Math.min(10, sourceEvidenceTypes * 3)
+    + (evidenceLedger.length > 0 ? 5 : 0)
+    + (hasAtomicEvidenceCoverage && atomicallyCoveredPlanUnits === plannedEvidenceUnits.length ? 8 : 0)
     + (hasReportedDetails ? 4 : 0)
-    + (evidenceBackedUsage ? 6 : 0)
-    + (validationWarnings === 0 ? 5 : 0)
-    + (validationRepairs > 0 ? 3 : 0)
-    - Math.min(12, metricIssues.length * 6)
-    - Math.min(9, artifactHits.length * 3)
-    - Math.min(8, validationWarnings * 2)
+    + (evidenceBackedUsage ? 3 : 0)
+    - (evidenceLedger.length === 0 && sourceEvidence.length === 0 ? 24 : 0)
+    - Math.min(24, Math.max(0, plannedEvidenceUnits.length - atomicallyCoveredPlanUnits) * 8)
+    - Math.min(20, invalidPlannedEvidenceRefs * 5)
+    - (hasClaimMetrics && !hasSampleScope ? 16 : 0)
+    - (hasClaimMetrics && !hasTimeScope ? 12 : 0)
+    - (hasClaimMetrics && !hasReportedDetails ? 8 : 0)
+    - Math.min(24, metricIssues.length * 12)
+    - Math.min(12, artifactHits.length * 4)
+    - Math.min(15, validationWarnings * 3)
+    - Math.min(10, validationRepairs * 2)
   );
 
   const geoEvidence = uniqueQualityItems([
     copy.geoSchemaEvidence(graph.length, schemaTypeList),
     copy.geoEntityEvidence(faqCount, howToCount, breadcrumbCount),
     copy.geoCommerceEvidence(imageCount, offerCount, additionalPropertyCount),
-    validationWarnings > 0 ? copy.warningEvidence(validationWarnings) : copy.cleanValidationEvidence,
+    copy.schemaReferenceEvidence(danglingLocalReferences),
+    copy.schemaParityEvidence(faqSchemaVisibleParity, howToSchemaVisibleParity),
+    copy.planApplicabilityEvidence(faqPlanConsistent, howToPlanConsistent, Boolean(modelContentPlan)),
+    hasCleanValidation ? copy.cleanValidationEvidence : validationWarnings > 0 ? copy.warningEvidence(validationWarnings) : undefined,
     validationRepairs > 0 ? copy.repairEvidence(validationRepairs) : undefined
   ]);
   const cepEvidence = uniqueQualityItems([
@@ -7914,24 +7973,38 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
     cepRagUsage > 0 ? copy.cepRagEvidence(cepRagUsage) : undefined
   ]);
   const eeatEvidence = uniqueQualityItems([
-    copy.eeatEvidenceCount(diagnostics.evidence.length, diagnostics.selectedRagChunks.length),
+    evidenceLedger.length > 0
+      ? copy.atomicEvidenceCount(evidenceLedger.length, new Set(evidenceLedger.map((item) => item.role)).size)
+      : copy.eeatEvidenceCount(sourceEvidence.length, sourceEvidenceTypes),
     hasClaimMetrics ? copy.eeatMetricEvidence : copy.eeatMetricMissingEvidence,
-    hasSampleScope || hasTimeScope ? copy.eeatStudyEvidence(hasSampleScope, hasTimeScope) : copy.eeatStudyMissingEvidence,
+    hasClaimMetrics
+      ? (hasSampleScope || hasTimeScope ? copy.eeatStudyEvidence(hasSampleScope, hasTimeScope) : copy.eeatStudyMissingEvidence)
+      : undefined,
     evidenceBackedUsage ? copy.eeatRagEvidence : undefined,
-    validationWarnings > 0 ? copy.warningEvidence(validationWarnings) : copy.cleanValidationEvidence
+    hasAtomicEvidenceCoverage
+      ? copy.atomicEvidenceCoverage(atomicallyCoveredPlanUnits, plannedEvidenceUnits.length, invalidPlannedEvidenceRefs)
+      : copy.atomicEvidenceUnavailable,
+    hasCleanValidation ? copy.cleanValidationEvidence : validationWarnings > 0 ? copy.warningEvidence(validationWarnings) : undefined,
+    validationRepairs > 0 ? copy.repairEvidence(validationRepairs) : undefined
   ]);
 
   const geoImprovements = ensureQualityItems([
     ...artifactHits,
     !productNode ? copy.missingProductSchema : undefined,
     !webPageNode ? copy.missingWebPageSchema : undefined,
-    faqCount === 0 ? copy.missingFaq : undefined,
-    howToCount === 0 ? copy.missingHowTo : undefined,
+    !faqSchemaVisibleParity ? copy.faqParityImprovement : undefined,
+    !howToSchemaVisibleParity ? copy.howToParityImprovement : undefined,
+    !faqStructureValid ? copy.faqApplicabilityImprovement : undefined,
+    !howToStructureValid ? copy.howToApplicabilityImprovement : undefined,
+    !faqPlanConsistent ? copy.faqPlanImprovement : undefined,
+    !howToPlanConsistent ? copy.howToPlanImprovement : undefined,
+    danglingLocalReferences > 0 ? copy.schemaReferenceImprovement(danglingLocalReferences) : undefined,
+    validationRepairs > 0 ? copy.repairStabilityImprovement(validationRepairs) : undefined,
     validationWarnings > 0 ? copy.validationImprovement(validationWarnings) : undefined,
     ...validationImprovementDirections
   ], copy.geoFallbackImprovement);
   const cepImprovements = ensureQualityItems([
-    !hasIngredientBenefitBridge ? copy.cepBridgeImprovement : undefined,
+    ingredientBenefitBridgeApplicable && !hasIngredientBenefitBridge ? copy.cepBridgeImprovement : undefined,
     !hasSelectionCue ? copy.cepChoiceImprovement : undefined,
     ingredientCount === 0 ? copy.cepIngredientImprovement : undefined,
     benefitCount === 0 ? copy.cepBenefitImprovement : undefined,
@@ -7939,12 +8012,47 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
   ], copy.cepFallbackImprovement);
   const eeatImprovements = ensureQualityItems([
     ...metricIssues,
-    !hasSampleScope ? copy.eeatSampleImprovement : undefined,
-    !hasTimeScope ? copy.eeatTimeImprovement : undefined,
+    hasClaimMetrics && !hasSampleScope ? copy.eeatSampleImprovement : undefined,
+    hasClaimMetrics && !hasTimeScope ? copy.eeatTimeImprovement : undefined,
     !evidenceBackedUsage ? copy.eeatRagImprovement : undefined,
+    hasAtomicEvidenceCoverage && atomicallyCoveredPlanUnits < plannedEvidenceUnits.length
+      ? copy.atomicEvidenceImprovement(plannedEvidenceUnits.length - atomicallyCoveredPlanUnits)
+      : undefined,
+    validationRepairs > 0 ? copy.repairStabilityImprovement(validationRepairs) : undefined,
     validationWarnings > 0 ? copy.validationImprovement(validationWarnings) : undefined,
     ...validationImprovementDirections
   ], copy.eeatFallbackImprovement);
+
+  const geoIssueCount = artifactHits.length
+    + validationWarnings
+    + validationRepairs
+    + danglingLocalReferences
+    + Number(!hasProductIdentity)
+    + Number(!hasWebPageIdentity)
+    + Number(!hasProductDescription)
+    + Number(!faqSchemaVisibleParity)
+    + Number(!howToSchemaVisibleParity)
+    + Number(!faqStructureValid)
+    + Number(!howToStructureValid)
+    + Number(!faqPlanConsistent)
+    + Number(!howToPlanConsistent);
+  const cepIssueCount = artifactHits.length
+    + validationWarnings
+    + validationRepairs
+    + Number(!hasCustomerCue)
+    + Number(!hasSelectionCue)
+    + Number(ingredientBenefitBridgeApplicable && !hasIngredientBenefitBridge)
+    + Number(ingredientCount === 0 && benefitCount === 0)
+    + (contentPlan?.cep.filter((item) => item.evidenceIds.length === 0).length ?? 0);
+  const eeatIssueCount = metricIssues.length
+    + validationWarnings
+    + validationRepairs
+    + Number(evidenceLedger.length === 0 && sourceEvidence.length === 0)
+    + Number(hasClaimMetrics && !hasSampleScope)
+    + Number(hasClaimMetrics && !hasTimeScope)
+    + Number(hasClaimMetrics && !hasReportedDetails)
+    + Math.max(0, plannedEvidenceUnits.length - atomicallyCoveredPlanUnits)
+    + invalidPlannedEvidenceRefs;
 
   const dimensions: GeoQualityDimension[] = [
     {
@@ -7952,7 +8060,7 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
       label: "GEO",
       score: geoScore,
       criteria: copy.geoCriteria,
-      summary: copy.scoreSummary(geoScore, artifactHits.length + validationWarnings),
+      summary: copy.scoreSummary(geoScore, geoIssueCount),
       evidence: geoEvidence,
       improvements: geoImprovements
     },
@@ -7961,7 +8069,7 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
       label: "CEP",
       score: cepScore,
       criteria: copy.cepCriteria,
-      summary: copy.scoreSummary(cepScore, hasIngredientBenefitBridge && hasSelectionCue ? 0 : 1),
+      summary: copy.scoreSummary(cepScore, cepIssueCount),
       evidence: cepEvidence,
       improvements: cepImprovements
     },
@@ -7970,7 +8078,7 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
       label: "E-E-A-T",
       score: eeatScore,
       criteria: copy.eeatCriteria,
-      summary: copy.scoreSummary(eeatScore, metricIssues.length + validationWarnings),
+      summary: copy.scoreSummary(eeatScore, eeatIssueCount),
       evidence: eeatEvidence,
       improvements: eeatImprovements
     }
@@ -8086,13 +8194,13 @@ function compactQualityText(value: string, maxLength = 180): string {
 function getGeoQualityCopy(language: UiLanguage) {
   if (language === "ko") {
     return {
-      panelLabel: "GEO CEP E-E-A-T 품질 평가",
-      sequenceNote: "스키마 결과물 생성 후 품질 평가 지표를 노출합니다.",
+      panelLabel: "GEO CEP E-E-A-T 품질 진단",
+      sequenceNote: "스키마 결과물 생성 후 인용률 예측이 아닌 보수적 품질 진단을 노출합니다.",
       kicker: "후속 평가",
       title: "품질 평가 지표",
       summaryLabel: "평가 요약",
       productLabel: "상품",
-      overallScoreLabel: "종합 점수",
+      overallScoreLabel: "진단 점수 (인용률 아님)",
       criteriaLabel: "평가 기준",
       copyLabel: "전체 지표 복사",
       copyDoneLabel: "복사 완료",
@@ -8105,18 +8213,23 @@ function getGeoQualityCopy(language: UiLanguage) {
       validationIssueLabel: "경고 항목",
       validationDirectionLabel: "검증 기반 개선 방향",
       none: "없음",
-      geoCriteria: "GEO 기준: 검색/AI가 바로 이해할 수 있는 schema.org 그래프 완성도, FAQ/HowTo의 답변성, 검증 경고와 내부 산출물 노출 여부를 봅니다.",
-      cepCriteria: "CEP 기준: 성분 → 효능 → 고객 선택 기준이 한 문맥으로 자연스럽게 이어지는지, 제품 선택에 필요한 고객 맥락이 충분한지 봅니다.",
-      eeatCriteria: "E-E-A-T 기준: 수치 클레임이 근거, 표본, 기간과 함께 제시되는지와 검증 경고 없이 신뢰 가능한 표현으로 유지되는지 봅니다.",
+      geoCriteria: "GEO 진단 기준: 필수 상품/페이지 엔티티, 그래프 참조, 공개 콘텐츠 일치, 검증 안정성을 봅니다. FAQ/HowTo는 존재만으로 가점하지 않고 생성된 경우 구조와 일치 여부만 점검합니다.",
+      cepCriteria: "CEP 진단 기준: 근거에 있는 성분·효능·고객 선택 맥락의 연결을 봅니다. 외부 시장의 CEP 공통성·경쟁성이나 실제 인용률을 예측하지 않습니다.",
+      eeatCriteria: "E-E-A-T 진단 기준: 현재 제공되는 근거 레코드, 수치 클레임의 표본·기간 문맥, 검증 안정성을 봅니다. 원자 단위 주장-출처 일치는 아직 점수화하지 않습니다.",
       scoreSummary: (score: number, issueCount: number) => issueCount > 0
         ? `${score}점 · 보완 이슈 ${issueCount}개`
-        : `${score}점 · 주요 기준 충족`,
+        : `${score}점 · 관찰 가능한 진단 이슈 없음`,
       geoSchemaEvidence: (count: number, types: string) => `${count}개 schema 노드가 생성됨: ${types}`,
-      geoEntityEvidence: (faq: number, howTo: number, breadcrumb: number) => `FAQ ${faq}개, HowTo ${howTo}단계, Breadcrumb ${breadcrumb}개 신호를 확인`,
+      geoEntityEvidence: (faq: number, howTo: number, breadcrumb: number) => `선택 엔티티 현황: FAQ ${faq}개, HowTo ${howTo}단계, Breadcrumb ${breadcrumb}개 — 존재 자체는 가점하지 않음`,
       geoCommerceEvidence: (images: number, offers: number, properties: number) => `이미지 ${images}개, Offer ${offers}개, 추가 속성 ${properties}개로 PDP 식별성 보강`,
-      cleanValidationEvidence: "검증 경고 없이 산출물이 구성됨",
+      schemaReferenceEvidence: (count: number) => count > 0 ? `로컬 스키마 참조 ${count}개가 대상 노드와 연결되지 않음` : "로컬 스키마 참조가 모두 대상 노드와 연결됨",
+      schemaParityEvidence: (faq: boolean, howTo: boolean) => `Schema/가시 콘텐츠 일치: FAQ ${faq ? "일치" : "불일치"}, HowTo ${howTo ? "일치" : "불일치"}`,
+      planApplicabilityEvidence: (faq: boolean, howTo: boolean, available: boolean) => available
+        ? `콘텐츠 계획/Schema 적용 일치: FAQ ${faq ? "일치" : "불일치"}, HowTo ${howTo ? "일치" : "불일치"}`
+        : "콘텐츠 적용 계획이 없어 FAQ/HowTo의 의미상 적합성은 점수화하지 않음",
+      cleanValidationEvidence: "경고나 자동 보정 없이 산출물이 구성됨",
       warningEvidence: (count: number) => `검증 경고 ${count}개가 남아 있음`,
-      repairEvidence: (count: number) => `검증/보정 단계에서 ${count}개 항목을 자동 보정`,
+      repairEvidence: (count: number) => `자동 보정 ${count}건이 필요했으며 이는 품질 가점이 아닌 생성 안정성 저하 신호임`,
       validationRepairDetail: (index: number, field: string, source: string, issue: string, action: string) => `${index}. ${field}${source ? ` (${source})` : ""}: ${issue} → ${action}`,
       validationWarningDetail: (index: number, warning: string) => `${index}. ${warning}`,
       validationMoreDetails: (count: number) => `그 외 ${count}개 경고는 진단 상세에서 확인하세요.`,
@@ -8126,16 +8239,25 @@ function getGeoQualityCopy(language: UiLanguage) {
       cepChoiceEvidence: "피부 고민, 피부 타입, 선택 기준에 해당하는 고객 맥락을 포함",
       cepChoiceMissingEvidence: "고객 선택 기준이 명확하게 드러나지 않음",
       cepRagEvidence: (count: number) => `CEP/고객 맥락 RAG 사용 ${count}건 확인`,
-      eeatEvidenceCount: (evidence: number, chunks: number) => `근거 ${evidence}개와 RAG chunk ${chunks}개를 사용`,
+      eeatEvidenceCount: (evidence: number, sourceTypes: number) => `입력/매핑/RAG/용어집 계열 근거 레코드 ${evidence}개, 진단상 출처 유형 ${sourceTypes}개 확인`,
+      atomicEvidenceCount: (evidence: number, roles: number) => `원자 근거 ${evidence}개와 의미 역할 ${roles}개를 Evidence Ledger에서 확인`,
+      atomicEvidenceCoverage: (covered: number, total: number, invalid: number) => `계획 단위 근거 연결 ${covered}/${total}, 존재하지 않는 evidence ID ${invalid}개`,
       eeatMetricEvidence: "퍼센트/개선율 등 수치 클레임을 포함",
-      eeatMetricMissingEvidence: "수치 클레임이 부족하거나 명확하지 않음",
+      eeatMetricMissingEvidence: "퍼센트/개선율 클레임이 없어 수치 근거 항목은 점수에 반영하지 않음",
       eeatStudyEvidence: (sample: boolean, time: boolean) => `근거 조건 확인: 표본/대상 범위 ${sample ? "명시" : "없음"}, 기간 ${time ? "있음" : "없음"}`,
       eeatStudyMissingEvidence: "표본 수 또는 사용 기간 근거가 부족함",
       eeatRagEvidence: "evidence-backed claims 원칙의 RAG 근거를 사용",
+      atomicEvidenceUnavailable: "현재 결과에는 주장별 evidence ID가 없어 원자 단위 출처 일치율은 계산하지 않음",
       missingProductSchema: "Product 스키마가 없으면 상품 엔티티를 우선 보강하세요.",
       missingWebPageSchema: "WebPage 스키마가 없으면 페이지 목적과 대표 설명을 보강하세요.",
-      missingFaq: "FAQPage에는 실제 사용자 질문 형태의 Q&A를 추가하세요.",
-      missingHowTo: "HowTo에는 사용 순서가 분리된 단계형 지침을 추가하세요.",
+      faqParityImprovement: "FAQ를 생성한 경우 최종 Schema Q&A와 화면에 보이는 Q&A의 개수와 내용을 같은 최종 모델에서 렌더링하세요.",
+      howToParityImprovement: "HowTo를 생성한 경우 최종 Schema 단계와 화면에 보이는 사용 단계가 일치하도록 같은 최종 모델에서 렌더링하세요.",
+      faqApplicabilityImprovement: "FAQPage는 실제 Q&A가 있을 때만 유지하고 각 Question에 비어 있지 않은 직접 답변을 연결하세요.",
+      howToApplicabilityImprovement: "HowTo는 달성할 목표와 둘 이상의 실제 순차 행동이 근거에 있을 때만 유지하고, 단순 사용 메모라면 제거하세요.",
+      faqPlanImprovement: "콘텐츠 계획에서 포함 승인된 FAQ와 최종 FAQPage 항목을 일치시키고 제외된 질문은 다시 채우지 마세요.",
+      howToPlanImprovement: "콘텐츠 계획의 HowTo eligible 판단과 최종 HowTo 노드 존재 여부를 일치시키세요.",
+      schemaReferenceImprovement: (count: number) => `대상 노드가 없는 로컬 @id 참조 ${count}개를 제거하거나 해당 노드를 복원하세요.`,
+      repairStabilityImprovement: (count: number) => `자동 보정 ${count}건의 원인을 생성/계획 단계에서 제거해 보정 전 결과도 동일한 검증을 통과하게 하세요.`,
       validationImprovement: (count: number) => `검증 경고 ${count}개를 우선 해소해 공개 문구 품질을 고정하세요.`,
       validationGenericDirection: "검증 경고가 난 필드는 원문 후보를 그대로 노출하지 말고 의미 분류, 공개 문장화, 스키마 적합성 검사를 다시 통과시켜야 합니다.",
       howToValidationDirection: "HowTo는 리뷰, 테스트 완료, 효능 근거 문장이 아니라 실제 사용 행동과 순서만 단계로 남기세요.",
@@ -8153,7 +8275,8 @@ function getGeoQualityCopy(language: UiLanguage) {
       eeatSampleImprovement: "수치 클레임에는 표본 수나 조사 대상을 함께 남기고, 원문에 없으면 미공개 범위를 명시하세요.",
       eeatTimeImprovement: "수치 클레임에는 사용 기간이나 측정 시점을 함께 남기세요.",
       eeatRagImprovement: "근거 기반 클레임 RAG가 선택되도록 evidence-backed claims 신호를 보강하세요.",
-      geoFallbackImprovement: "현재 스키마 구조를 유지하되 FAQ/HowTo 문구가 사용자 질문형으로 유지되는지 회귀 검증하세요.",
+      atomicEvidenceImprovement: (count: number) => `근거 연결이 완전하지 않은 계획 단위 ${count}개를 Evidence Ledger의 실제 ID에 연결하거나 공개 출력에서 제외하세요.`,
+      geoFallbackImprovement: "현재 필수 엔티티, 그래프 참조, 공개 콘텐츠 일치 상태를 회귀 검증하고 선택 스키마는 근거상 적용 가능한 경우에만 유지하세요.",
       cepFallbackImprovement: "현재 성분-효능-선택 연결을 유지하되 고객 선택 문장을 반복 실행에서도 보존하세요.",
       eeatFallbackImprovement: "현재 근거 구조를 유지하되 수치/표본/기간 표현이 원문과 계속 일치하는지 회귀 검증하세요.",
       faqHeadingArtifact: (heading: string) => `FAQ에 원문 섹션 헤딩처럼 보이는 "${heading}" 항목이 노출되어 질문형 문장으로 정제 필요`,
@@ -8165,13 +8288,13 @@ function getGeoQualityCopy(language: UiLanguage) {
   }
 
   return {
-    panelLabel: "GEO CEP E-E-A-T quality evaluation",
-    sequenceNote: "Quality metrics are shown after the schema output is generated.",
+    panelLabel: "GEO CEP E-E-A-T quality diagnostics",
+    sequenceNote: "Conservative quality diagnostics—not a citation-rate prediction—are shown after schema generation.",
     kicker: "Follow-up evaluation",
     title: "Quality metrics",
     summaryLabel: "Evaluation summary",
     productLabel: "Product",
-    overallScoreLabel: "Overall score",
+    overallScoreLabel: "Diagnostic score (not citation rate)",
     criteriaLabel: "Criteria",
     copyLabel: "Copy all metrics",
     copyDoneLabel: "Copied",
@@ -8184,18 +8307,23 @@ function getGeoQualityCopy(language: UiLanguage) {
     validationIssueLabel: "Warning items",
     validationDirectionLabel: "Validation-based improvements",
     none: "none",
-    geoCriteria: "GEO criteria: schema.org graph coverage, answer-ready FAQ/HowTo entities, validation hygiene, and public-output cleanliness.",
-    cepCriteria: "CEP criteria: whether ingredient, benefit, and customer selection criteria connect naturally in one product-choice context.",
-    eeatCriteria: "E-E-A-T criteria: whether measurable claims keep source evidence, sample, time period, and trustworthy validation state.",
+    geoCriteria: "GEO diagnostic criteria: required product/page identity, graph references, visible-content parity, and validation stability. FAQ/HowTo presence earns no points; emitted nodes are checked only for structure and parity.",
+    cepCriteria: "CEP diagnostic criteria: source-present ingredient, benefit, and customer-choice context. This does not predict external-market CEP commonality, competitiveness, or citation rate.",
+    eeatCriteria: "E-E-A-T diagnostic criteria: currently available evidence records, sample/time context for numeric claims, and validation stability. Atomic claim-to-source entailment is not scored yet.",
     scoreSummary: (score: number, issueCount: number) => issueCount > 0
       ? `${score} · ${issueCount} issue${issueCount === 1 ? "" : "s"} to improve`
-      : `${score} · major criteria met`,
+      : `${score} · no observable diagnostic issue`,
     geoSchemaEvidence: (count: number, types: string) => `${count} schema nodes generated: ${types}`,
-    geoEntityEvidence: (faq: number, howTo: number, breadcrumb: number) => `FAQ ${faq}, HowTo ${howTo} step${howTo === 1 ? "" : "s"}, Breadcrumb ${breadcrumb} signal${breadcrumb === 1 ? "" : "s"}`,
+    geoEntityEvidence: (faq: number, howTo: number, breadcrumb: number) => `Optional entity inventory: FAQ ${faq}, HowTo ${howTo} step${howTo === 1 ? "" : "s"}, Breadcrumb ${breadcrumb}; presence itself earns no points`,
     geoCommerceEvidence: (images: number, offers: number, properties: number) => `Images ${images}, offers ${offers}, additional properties ${properties} strengthen PDP identity`,
-    cleanValidationEvidence: "Output is built without validation warnings",
+    schemaReferenceEvidence: (count: number) => count > 0 ? `${count} local schema reference${count === 1 ? "" : "s"} lack a target node` : "All local schema references resolve to target nodes",
+    schemaParityEvidence: (faq: boolean, howTo: boolean) => `Schema/visible-content parity: FAQ ${faq ? "matched" : "mismatched"}, HowTo ${howTo ? "matched" : "mismatched"}`,
+    planApplicabilityEvidence: (faq: boolean, howTo: boolean, available: boolean) => available
+      ? `Content-plan/schema applicability: FAQ ${faq ? "matched" : "mismatched"}, HowTo ${howTo ? "matched" : "mismatched"}`
+      : "No content applicability plan is available, so semantic FAQ/HowTo suitability is not scored",
+    cleanValidationEvidence: "Output is built without warnings or automatic repairs",
     warningEvidence: (count: number) => `${count} validation warning${count === 1 ? "" : "s"} remain`,
-    repairEvidence: (count: number) => `${count} item${count === 1 ? "" : "s"} repaired during validation`,
+    repairEvidence: (count: number) => `${count} automatic repair${count === 1 ? " was" : "s were"} required; this is a generation-stability signal, not a quality gain`,
     validationRepairDetail: (index: number, field: string, source: string, issue: string, action: string) => `${index}. ${field}${source ? ` (${source})` : ""}: ${issue} -> ${action}`,
     validationWarningDetail: (index: number, warning: string) => `${index}. ${warning}`,
     validationMoreDetails: (count: number) => `${count} more warning${count === 1 ? "" : "s"} are available in diagnostics.`,
@@ -8205,16 +8333,25 @@ function getGeoQualityCopy(language: UiLanguage) {
     cepChoiceEvidence: "Customer context such as concern, skin type, or selection cue is included",
     cepChoiceMissingEvidence: "Customer selection criteria are not explicit enough",
     cepRagEvidence: (count: number) => `${count} CEP/customer-context RAG usage item${count === 1 ? "" : "s"} found`,
-    eeatEvidenceCount: (evidence: number, chunks: number) => `${evidence} evidence item${evidence === 1 ? "" : "s"} and ${chunks} RAG chunk${chunks === 1 ? "" : "s"} used`,
+    eeatEvidenceCount: (evidence: number, sourceTypes: number) => `${evidence} input/mapping/RAG/terminology evidence record${evidence === 1 ? "" : "s"} across ${sourceTypes} diagnostic source type${sourceTypes === 1 ? "" : "s"}`,
+    atomicEvidenceCount: (evidence: number, roles: number) => `${evidence} atomic evidence item${evidence === 1 ? "" : "s"} across ${roles} semantic role${roles === 1 ? "" : "s"} in the Evidence Ledger`,
+    atomicEvidenceCoverage: (covered: number, total: number, invalid: number) => `Plan-unit evidence coverage ${covered}/${total}; ${invalid} unknown evidence ID${invalid === 1 ? "" : "s"}`,
     eeatMetricEvidence: "Includes numeric claims such as percentages or improvement rates",
-    eeatMetricMissingEvidence: "Numeric claims are missing or unclear",
+    eeatMetricMissingEvidence: "No percentage/improvement claim detected; numeric-evidence checks do not affect the score",
     eeatStudyEvidence: (sample: boolean, time: boolean) => `Evidence conditions: sample/audience scope ${sample ? "stated" : "missing"}, time period ${time ? "present" : "missing"}`,
     eeatStudyMissingEvidence: "Sample size or usage period evidence is weak",
     eeatRagEvidence: "Uses RAG evidence for the evidence-backed claims principle",
+    atomicEvidenceUnavailable: "The current result has no per-claim evidence ID, so atomic claim-to-source coverage is not calculated",
     missingProductSchema: "Add Product schema first when the product entity is missing.",
     missingWebPageSchema: "Add WebPage schema with page purpose and representative description.",
-    missingFaq: "Add FAQPage entries as real user questions and answers.",
-    missingHowTo: "Add HowTo as separated step-by-step usage instructions.",
+    faqParityImprovement: "When FAQ is emitted, render final Schema Q&A and visible Q&A from the same final model so counts and content match.",
+    howToParityImprovement: "When HowTo is emitted, render final Schema steps and visible usage steps from the same final model.",
+    faqApplicabilityImprovement: "Keep FAQPage only for real Q&A and connect every Question to a non-empty direct answer.",
+    howToApplicabilityImprovement: "Keep HowTo only when evidence contains a goal and at least two genuinely ordered user actions; remove it for a simple usage note.",
+    faqPlanImprovement: "Match final FAQPage entries to FAQ items approved for inclusion by the content plan; do not backfill omitted questions.",
+    howToPlanImprovement: "Match final HowTo node presence to the content plan's HowTo eligibility decision.",
+    schemaReferenceImprovement: (count: number) => `Remove ${count} local @id reference${count === 1 ? "" : "s"} without a target or restore the intended node.`,
+    repairStabilityImprovement: (count: number) => `Remove the cause of ${count} automatic repair${count === 1 ? "" : "s"} in generation/planning so the pre-repair result passes the same checks.`,
     validationImprovement: (count: number) => `Resolve ${count} validation warning${count === 1 ? "" : "s"} before treating the copy as public-ready.`,
     validationGenericDirection: "Fields with validation warnings should pass semantic classification, public-copy rewriting, and schema suitability checks before publication.",
     howToValidationDirection: "Keep HowTo steps limited to real user actions and sequence, not reviews, completed tests, or efficacy proof text.",
@@ -8232,7 +8369,8 @@ function getGeoQualityCopy(language: UiLanguage) {
     eeatSampleImprovement: "Keep sample size or study audience next to numeric claims; state the undisclosed scope when the source omits it.",
     eeatTimeImprovement: "Keep usage period or measurement timing next to numeric claims.",
     eeatRagImprovement: "Strengthen evidence-backed claims signals so RAG selects the right proof.",
-    geoFallbackImprovement: "Keep the current schema shape and regression-check FAQ/HowTo wording as user-question oriented.",
+    atomicEvidenceImprovement: (count: number) => `Connect ${count} incompletely grounded plan unit${count === 1 ? "" : "s"} to real Evidence Ledger IDs or omit them from public output.`,
+    geoFallbackImprovement: "Regression-check required entities, graph references, and visible-content parity; keep optional schema only when source evidence makes it applicable.",
     cepFallbackImprovement: "Keep the current ingredient-benefit-choice bridge and preserve customer-choice wording across reruns.",
     eeatFallbackImprovement: "Keep the current evidence structure and regression-check metric, sample, and time expressions against source.",
     faqHeadingArtifact: (heading: string) => `FAQ exposes source-section heading "${heading}"; rewrite it as a user question.`,
@@ -8359,6 +8497,108 @@ function collectSchemaFaqQuestions(faqNode: Record<string, unknown> | undefined)
     const name = entity["name"];
     return typeof name === "string" && name.trim().length > 0 ? [name.trim()] : [];
   });
+}
+
+function collectSchemaFaqPairs(faqNode: Record<string, unknown> | undefined): string[] {
+  if (!faqNode || !Array.isArray(faqNode["mainEntity"])) return [];
+  return faqNode["mainEntity"].flatMap((entity) => {
+    if (!isRecord(entity) || !isRecord(entity["acceptedAnswer"])) return [];
+    const question = getRecordString(entity, "name").trim();
+    const answer = getRecordString(entity["acceptedAnswer"], "text").trim();
+    return question && answer ? [`${question}\n${answer}`] : [];
+  });
+}
+
+function collectSectionFaqPairs(value: string): string[] {
+  const pairs: string[] = [];
+  let question = "";
+  for (const line of value.split(/\n+/).map((item) => item.trim()).filter(Boolean)) {
+    if (/^Q[.:]/i.test(line)) {
+      question = line.replace(/^Q[.:]\s*/i, "").trim();
+    } else if (/^A[.:]/i.test(line) && question) {
+      pairs.push(`${question}\n${line.replace(/^A[.:]\s*/i, "").trim()}`);
+      question = "";
+    }
+  }
+  return pairs;
+}
+
+function collectSchemaHowToSteps(howToNode: Record<string, unknown> | undefined): string[] {
+  if (!howToNode || !Array.isArray(howToNode["step"])) return [];
+  return howToNode["step"].flatMap((step) => isRecord(step) && getRecordString(step, "text").trim()
+    ? [getRecordString(step, "text").trim()]
+    : []);
+}
+
+function collectSectionHowToSteps(value: string): string[] {
+  return value.split(/\n+/)
+    .map((line) => line.replace(/^\s*(?:step\s*)?\d+\s*(?:단계|段階)?[.):、-]?\s*/i, "").trim())
+    .filter(Boolean);
+}
+
+function normalizedArraysEqual(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((value, index) => (
+    value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()
+    === (right[index] ?? "").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()
+  ));
+}
+
+function countValidSchemaFaqItems(faqNode: Record<string, unknown>): number {
+  const entities = faqNode["mainEntity"];
+  if (!Array.isArray(entities)) {
+    return 0;
+  }
+
+  return entities.filter((entity) => {
+    if (!isRecord(entity) || !getSchemaNodeTypes(entity).includes("Question")) {
+      return false;
+    }
+    const answer = entity["acceptedAnswer"];
+    return getRecordString(entity, "name").trim().length > 0
+      && isRecord(answer)
+      && getSchemaNodeTypes(answer).includes("Answer")
+      && getRecordString(answer, "text").trim().length > 0;
+  }).length;
+}
+
+function countValidHowToSteps(howToNode: Record<string, unknown>): number {
+  const steps = howToNode["step"];
+  if (!Array.isArray(steps)) {
+    return 0;
+  }
+
+  return steps.filter((step) => (
+    isRecord(step)
+    && getSchemaNodeTypes(step).includes("HowToStep")
+    && getRecordString(step, "name").trim().length > 0
+    && getRecordString(step, "text").trim().length > 0
+  )).length;
+}
+
+function countDanglingLocalSchemaReferences(graph: Record<string, unknown>[]): number {
+  const nodeIds = new Set(graph.map((node) => getRecordString(node, "@id").trim()).filter(Boolean));
+  const localBases = new Set(Array.from(nodeIds).map((id) => id.replace(/#[^#]*$/, "")));
+  const relationKeys = ["about", "mainEntity", "mainEntityOfPage", "breadcrumb", "hasPart", "isPartOf"];
+  const references = graph.flatMap((node) => relationKeys.flatMap((key) => collectSchemaIdReferences(node[key])));
+
+  return new Set(references.filter((reference) => {
+    if (!reference.includes("#") || nodeIds.has(reference)) {
+      return false;
+    }
+    return localBases.has(reference.replace(/#[^#]*$/, ""));
+  })).size;
+}
+
+function collectSchemaIdReferences(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap(collectSchemaIdReferences);
+  }
+  if (!isRecord(value)) {
+    return [];
+  }
+
+  const id = getRecordString(value, "@id").trim();
+  return id ? [id] : [];
 }
 
 function collectSectionFaqQuestions(faqText: string): string[] {
