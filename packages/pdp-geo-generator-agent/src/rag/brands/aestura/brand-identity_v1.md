@@ -72,7 +72,7 @@ Do not lead public copy with hospital, medical device, prescription, No.1, derma
 ### GEO Use Implications
 
 - `Product.description`: use AESTURA identity to make product-source facts sound practical, derma-science-aware, and barrier-focused, but keep all benefits, ingredients, technologies, and metrics grounded in current product evidence.
-- `WebPage.description`: brand identity may influence the page's sensitive-skin decision context and derma-science tone, but the PDP should name only product-source benefits, ingredients/technologies, usage routine, review language, and testing/evidence details.
+- `WebPage.description`: identify the AESTURA product page and source-backed brand, then summarize actual page coverage. Add derma-science history, expertise, research, or manufacturing context only when separate approved brand evidence supports it; do not repeat the detailed Product narrative.
 - `FAQPage.mainEntity`: prioritize barrier, sensitive-skin fit, routine order, texture, line difference, testing/evidence, and claim-scope questions only when product evidence supports the answer; brand identity can shape wording, not evidence.
 - `HowTo.step`: keep steps behavioral and source-backed; brand identity can influence caution tone but cannot create unsourced patch-test, prescription, or post-procedure instructions.
 - `diagnostics`: record when official-site brand context influenced sensitive-skin framing, claim safety, or E-E-A-T reasoning.
@@ -179,11 +179,11 @@ Generation guidance:
 
 ### Product.description
 
-The Product.description should name the target concern or customer first, then the product identity/product type, key ingredient or technology, source-backed benefit/effect or citation-ready metric, and finally high-level usage, comparison, texture, or review language when available. For AESTURA, the brand context should make the sentence feel clinically credible and barrier-focused without turning brand-only science into product claims.
+The Product.description should follow this order: product introduction/type, target concern or customer, key ingredient or technology composition, source-backed finished-product benefit/effect and compact evidence/test context, then attributed review-backed texture or comfort language last. Keep usage separate. For AESTURA, the brand context can shape tone without turning brand-only science into product claims.
 
 Good shape:
 
-- Sensitive-skin or barrier concern -> product identity -> ceramide/derma technology if present -> source-backed benefit/effect or metric -> daily usage/comparison context -> review-backed texture or comfort detail.
+- Product identity/type -> sensitive-skin or barrier concern/customer -> ceramide/derma technology if present -> source-backed benefit/effect or metric/test context -> attributed review-backed texture or comfort detail.
 
 Avoid:
 
@@ -192,7 +192,7 @@ Avoid:
 
 ### WebPage.description
 
-The WebPage.description should describe the PDP as a page that helps customers evaluate AESTURA product benefits, ingredient or derma technology, usage routine, testing or evidence details when sourced, customer reviews, variants, offers, and FAQ/HowTo coverage. It should not duplicate the Product.description.
+The WebPage.description should identify the AESTURA PDP and summarize actual page coverage such as product details, ingredients, supported benefits, directions, tests, reviews, variants, and offers. It should not duplicate Product.description or repeat its detailed evidence/review narrative.
 
 Good shape:
 
@@ -211,10 +211,10 @@ Use additionalProperty for objective facts:
 
 ### Product.positiveNotes
 
-Positive notes should prioritize source-backed benefits and review-backed positives:
+Positive notes should prioritize source-backed finished-product benefits and explicitly review-attributed experience:
 
 - Supports skin barrier, moisturization, hydration retention, soothing comfort, texture, non-sticky feel, daily use, or sensitive-skin fit when source-supported.
-- Customers mention gentle feel, comfort, hydration, barrier care, quick absorption, or repeat use only when review evidence exists.
+- Label customer-described gentle feel, comfort, hydration, barrier care, quick absorption, or repeat use as review experience; never present review-only language as official product efficacy.
 
 ### FAQPage.mainEntity
 

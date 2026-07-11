@@ -12,6 +12,7 @@ import {
   type PdpGeoContentPlanningRequest,
   type PdpGeoContentPlanningResult,
   type PdpGeoCopyRefinementRequest,
+  type PdpGeoLocale,
   type PdpProductSignal
 } from "../src/index";
 
@@ -48,7 +49,7 @@ describe("evidence-bound content planning", () => {
     expect(new Set(first.map((item) => item.id)).size).toBe(first.length);
   });
 
-  it("keeps a single or unordered note out of HowTo in conservative mode", async () => {
+  it("keeps non-actionable unordered notes out of HowTo in conservative mode", async () => {
     const unordered = {
       ...product,
       usage: ["매일 사용할 수 있습니다.", "외용으로만 사용하세요."]
@@ -62,6 +63,41 @@ describe("evidence-bound content planning", () => {
     expect(result.plan.howTo.steps).toEqual([]);
   });
 
+  it("keeps one polite Korean application direction as a single source-backed step", async () => {
+    const direction = "세럼을 얼굴에 고르게 바릅니다.";
+    const result = await planPdpGeoContent(planningRequest({
+      ...product,
+      usage: [direction]
+    }), {});
+
+    expect(result.plan.howTo.eligible).toBe(true);
+    expect(result.plan.howTo.steps.map((step) => step.text)).toEqual([direction]);
+    expect(result.plan.howTo.steps[0]?.position).toBe(1);
+    expect(result.plan.howTo.steps[0]?.evidenceIds).not.toHaveLength(0);
+  });
+
+  it("keeps one polite Korean application direction through validation as a single HowTo step", async () => {
+    const direction = "세럼을 얼굴에 고르게 바릅니다.";
+    const run = await generatePdpGeo({
+      product: {
+        ...product,
+        usage: [direction]
+      },
+      hints: { locale: "ko-KR" }
+    });
+    const graph = run.result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
+
+    expect(howTo).toBeDefined();
+    expect(howTo.step).toHaveLength(1);
+    expect(howTo.step[0]).toMatchObject({
+      "@type": "HowToStep",
+      position: 1,
+      text: direction.replace(/\.$/, "")
+    });
+    expect(run.result.content.sections.howToUse).toBe(`1. ${direction.replace(/\.$/, "")}`);
+  });
+
   it("does not treat two unrelated actions as an ordered procedure", async () => {
     const result = await planPdpGeoContent(planningRequest({
       ...product,
@@ -70,6 +106,36 @@ describe("evidence-bound content planning", () => {
 
     expect(result.plan.howTo.eligible).toBe(false);
     expect(result.plan.howTo.steps).toEqual([]);
+  });
+
+  it("does not infer a multi-step procedure from unmarked action-stage progression", async () => {
+    const result = await planPdpGeoContent(planningRequest({
+      ...product,
+      usage: [
+        "Dispense one pump into the hand.",
+        "Apply the serum to the face.",
+        "Massage gently until absorbed."
+      ]
+    }, "en-US"), {});
+
+    expect(result.plan.howTo.eligible).toBe(false);
+    expect(result.plan.howTo.steps).toEqual([]);
+  });
+
+  it("preserves an explicitly sequential First-Then source procedure", async () => {
+    const usage = [
+      "First, dispense one pump into the hand.",
+      "Then, apply the serum evenly to the face.",
+      "Finally, press gently until absorbed."
+    ];
+    const result = await planPdpGeoContent(planningRequest({
+      ...product,
+      usage
+    }, "en-US"), {});
+
+    expect(result.plan.howTo.eligible).toBe(true);
+    expect(result.plan.howTo.steps.map((step) => step.text)).toEqual(usage);
+    expect(result.plan.howTo.steps.map((step) => step.position)).toEqual([1, 2, 3]);
   });
 
   it("honours an explicit contentPlanning disable even when a custom planner is present", async () => {
@@ -91,7 +157,10 @@ describe("evidence-bound content planning", () => {
   it("lets the model add evidence-backed FAQ and decide schema applicability before rendering", async () => {
     let copyRefinerCalled = false;
     const run = await generatePdpGeo({
-      product,
+      product: {
+        ...product,
+        usage: ["세럼을 얼굴에 고르게 바릅니다."]
+      },
       hints: { locale: "ko-KR" }
     }, {
       customContentPlanner: {
@@ -143,21 +212,25 @@ describe("evidence-bound content planning", () => {
 
     const graph = run.result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, unknown>>;
     const faq = graph.find((node) => node["@type"] === "FAQPage") as Record<string, unknown>;
+    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
     const productNode = graph.find((node) => node["@type"] === "Product") as Record<string, unknown>;
     const webPage = graph.find((node) => node["@type"] === "WebPage") as Record<string, unknown>;
 
     expect(copyRefinerCalled).toBe(false);
     expect(productNode.description).toContain("건조한 피부에 수분을 공급");
-    expect(webPage.description).toContain("이 페이지에서는");
+    expect(webPage.description).toContain("하이드라 세럼 상품 페이지");
+    expect(webPage.description).toMatch(/주요 성분·기술은 세라마이드.*효능·효과는 수분 케어/u);
     expect((faq.mainEntity as Array<Record<string, unknown>>).length).toBeGreaterThanOrEqual(1);
     expect(JSON.stringify(faq.mainEntity)).toContain("하이드라 세럼은 어떤 피부 고민에 적합한가요");
-    expect(graph.some((node) => node["@type"] === "HowTo")).toBe(false);
+    expect(howTo.step).toHaveLength(1);
+    expect(String(howTo.step[0]?.text)).toContain("세럼을 얼굴에 고르게 바릅니다");
     expect(run.result.diagnostics.contentPlan?.mode).toBe("model");
     expect(run.result.diagnostics.evidenceLedger?.length).toBeGreaterThan(5);
   });
 
-  it("fails closed when planned FAQ or HowTo cites unknown evidence", async () => {
-    const request = planningRequest(product);
+  it("drops an unknown planned FAQ and replaces contaminated HowTo with the source usage plan", async () => {
+    const directUsage = ["세럼을 얼굴에 고르게 바릅니다."];
+    const request = planningRequest({ ...product, usage: directUsage });
     const result = await planPdpGeoContent(request, {
       customContentPlanner: {
         planContent: () => ({
@@ -187,18 +260,20 @@ describe("evidence-bound content planning", () => {
     });
 
     expect(result.plan.faq).toEqual([]);
-    expect(result.plan.howTo.eligible).toBe(false);
+    expect(result.plan.howTo.eligible).toBe(true);
+    expect(result.plan.howTo.steps.map((step) => step.text)).toEqual(directUsage);
+    expect(result.plan.howTo.steps.every((step) => !step.evidenceIds.includes("ev-unknown"))).toBe(true);
     expect(result.warnings.join(" ")).toMatch(/omitted/i);
     expect(result.warnings.join(" ")).toMatch(/failed checks:.*known-evidence-ids/iu);
     expect(result.warnings.join(" ")).toContain("검증되지 않은 인증이 있나요?");
     expect(result.warnings.join(" ")).toMatch(/retained evidence IDs: none/iu);
   });
 
-  it("does not publish a planned HowTo without ordered source provenance", async () => {
+  it("replaces a polluted planned HowTo with the normalized source usage plan", async () => {
     const rejectedStep = "세라마이드는 포뮬러의 핵심 성분입니다.";
     const acceptedStep = "세럼을 얼굴에 고르게 바릅니다.";
     const run = await generatePdpGeo({
-      product,
+      product: { ...product, usage: [acceptedStep] },
       hints: { locale: "ko-KR" }
     }, {
       customContentPlanner: {
@@ -215,7 +290,7 @@ describe("evidence-bound content planning", () => {
                 omitReason: "",
                 steps: [
                   { position: 1, name: "성분 설명", text: rejectedStep, evidenceIds: [usageEvidence[0]!.id] },
-                  { position: 2, name: "바르기", text: acceptedStep, evidenceIds: [usageEvidence[1]!.id] }
+                  { position: 2, name: "바르기", text: acceptedStep, evidenceIds: [usageEvidence[0]!.id] }
                 ]
               }
             })
@@ -227,10 +302,13 @@ describe("evidence-bound content planning", () => {
     const graph = run.result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
     const howTo = graph.find((node) => node["@type"] === "HowTo");
 
-    expect(howTo).toBeUndefined();
+    expect(howTo).toBeDefined();
+    expect(JSON.stringify(howTo)).not.toContain(rejectedStep);
+    expect(JSON.stringify(howTo)).toContain(acceptedStep.replace(/\.$/, ""));
+    expect((howTo?.step as Array<Record<string, unknown>>)).toHaveLength(1);
     expect(run.result.content.sections.howToUse).not.toContain(rejectedStep);
     expect(run.result.content.html).not.toContain(rejectedStep);
-    expect(run.result.diagnostics.contentPlan?.howTo.eligible).toBe(false);
+    expect(run.result.diagnostics.contentPlan?.howTo.eligible).toBe(true);
   });
 
   it("retries a rejected field with explicit evidence-gate feedback", async () => {
@@ -619,6 +697,44 @@ describe("provider-native structured output", () => {
     expect(result.usage?.totalTokens).toBe(14);
     expect(result.evidence.some((item) => /DEGRADED_MODE/u.test(item.value))).toBe(false);
   });
+
+  it("preserves one bootstrap usage boundary when a custom normalizer tries to split it", async () => {
+    const sourceUsage = "Apply one pump to the face and gently pat until absorbed.";
+    const bootstrapProduct: PdpProductSignal = {
+      ...product,
+      name: "Hydra Serum",
+      description: "A hydrating serum.",
+      brand: "Test Lab",
+      category: "Serum",
+      benefits: ["hydration"],
+      ingredients: ["Ceramide"],
+      usage: [sourceUsage],
+      sourceTexts: [sourceUsage]
+    };
+    const result = await normalizePdpProductWithAgent({
+      rawProduct: bootstrapProduct,
+      bootstrapProduct,
+      locale: "en-US",
+      market: "US",
+      ragDocuments: []
+    }, {
+      customProductNormalizer: {
+        normalizeProduct: () => ({
+          product: {
+            usage: [
+              "Apply one pump to the face.",
+              "Gently pat until absorbed."
+            ]
+          },
+          warnings: []
+        })
+      }
+    });
+
+    expect(result.product.usage).toEqual([sourceUsage]);
+    expect(result.product.usage).toHaveLength(1);
+    expect(result.warnings).toContain("Model usage normalization was ignored to preserve source instruction boundaries and order.");
+  });
 });
 
 describe("model-backed evidence-role routing", () => {
@@ -725,11 +841,11 @@ describe("copy-refinement query-hypothesis boundary", () => {
   });
 });
 
-function planningRequest(value: PdpProductSignal): PdpGeoContentPlanningRequest {
+function planningRequest(value: PdpProductSignal, locale: PdpGeoLocale = "ko-KR"): PdpGeoContentPlanningRequest {
   return {
     product: value,
-    locale: "ko-KR",
-    evidenceLedger: createPdpGeoEvidenceLedger(value, "ko-KR"),
+    locale,
+    evidenceLedger: createPdpGeoEvidenceLedger(value, locale),
     ragChunks: []
   };
 }

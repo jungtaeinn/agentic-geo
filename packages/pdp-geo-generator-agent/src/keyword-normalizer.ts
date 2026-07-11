@@ -331,6 +331,7 @@ function resolveKeywordNormalizer(options: PdpGeoGeneratorOptions): { normalizer
   }
 
   const provider = settings.provider ?? options.provider ?? "mock";
+  const mayInheritProviderSettings = settings.provider === undefined || settings.provider === options.provider;
   if (provider === "mock" || provider === "custom") {
     return { warning: `${provider} keyword normalization requires customKeywordNormalizer.` };
   }
@@ -338,11 +339,11 @@ function resolveKeywordNormalizer(options: PdpGeoGeneratorOptions): { normalizer
   return {
     normalizer: new ModelBackedKeywordNormalizer({
       provider,
-      apiKey: settings.apiKey ?? options.apiKey,
-      model: settings.model ?? options.model,
-      endpoint: settings.endpoint ?? options.endpoint,
-      deployment: settings.deployment ?? options.deployment,
-      apiVersion: settings.apiVersion ?? options.apiVersion,
+      apiKey: settings.apiKey ?? (mayInheritProviderSettings ? options.apiKey : undefined),
+      model: settings.model ?? (mayInheritProviderSettings ? options.model : undefined),
+      endpoint: settings.endpoint ?? (mayInheritProviderSettings ? options.endpoint : undefined),
+      deployment: settings.deployment ?? (mayInheritProviderSettings ? options.deployment : undefined),
+      apiVersion: settings.apiVersion ?? (mayInheritProviderSettings ? options.apiVersion : undefined),
       temperature: options.temperature
     })
   };

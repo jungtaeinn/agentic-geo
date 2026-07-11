@@ -4,7 +4,7 @@
 
 Use this document as a versioned connector map to official provider docs for retrieval, embeddings, grounding, structured data eligibility, and citation diagnostics.
 
-- Official sources checked on 2026-07-08: OpenAI retrieval, OpenAI file search, OpenAI embeddings, OpenAI crawlers/Search bot docs, ChatGPT Search help, OpenAI commerce product feed spec, ChatGPT shopping help, Google Search Central Product structured data, Google Search Product variants structured data, Google Search generative AI optimization guidance, Google AI features and your website, Gemini embeddings, Gemini grounding with Google Search, Perplexity Search API docs, Bing Webmaster AI Performance and IndexNow docs, Azure AI Search hybrid retrieval, and Azure agentic retrieval docs.
+- Official sources checked on 2026-07-11: OpenAI retrieval, OpenAI file search, OpenAI embeddings, OpenAI crawlers/Search bot docs, ChatGPT Search help, OpenAI commerce product feed spec, ChatGPT shopping help, Google Search Central Product structured data, Google Search Product variants structured data, Google AI features and your website, Google structured-data policies and update log, Gemini embeddings, Gemini grounding with Google Search, Perplexity Search API docs, Bing Webmaster AI Performance and IndexNow docs, Azure AI Search hybrid retrieval, and Azure agentic retrieval docs.
 - Prefer official provider docs over blog posts or third-party summaries when deciding adapter behavior or generation constraints.
 - Keep generated PDP claims grounded in product/source facts. Provider docs can guide retrieval and citation strategy, but they must not create new product benefits.
 
@@ -28,6 +28,7 @@ Use this document as a versioned connector map to official provider docs for ret
 - Variant, offer, review, rating, and organization policy markup should be generated only when the input contains reliable evidence.
 - Structured data must represent content visible to users on the page and must not add hidden or unsupported claims. Treat schema as a clarification layer over the PDP, not a separate claim channel.
 - When variants are present and source data distinguishes size, color, scent, SKU, price, availability, or URL, prefer explicit variant modeling. Use ProductGroup or separate variant Product/Offer structures only when the required variant evidence is complete enough to keep each offer trustworthy.
+- Google stopped showing FAQ rich results on 2026-05-07. `FAQPage` can remain schema.org-valid, visible Q/A semantics for other consumers, but it is not a current Google FAQ rich-result tactic and does not guarantee inclusion in AI features.
 
 ## 4. Google Generative AI Search Guidance
 
@@ -36,6 +37,7 @@ Use this document as a versioned connector map to official provider docs for ret
 - Build helpful, crawlable, well-structured, people-first PDP content with clear sections, source-backed product facts, and high-quality media.
 - Do not treat artificial AI-only files, artificial chunking pages, or inauthentic mentions as Google AI Search hacks. In this project, typed RAG metadata, hybrid retrieval, reranking, and provenance diagnostics are the maintained orchestration mechanism.
 - Do not over-focus on special AI markup or artificial page chunking. Google guidance frames AI Search optimization as good SEO: useful content, clear organization, crawlability, visible facts, and structured data where it accurately represents page content.
+- Google explicitly says there is no special schema.org markup required for AI Overviews or AI Mode. Product/FAQ/HowTo markup in this project clarifies visible entities and fields; it must not be described as a direct GenAI citation trigger.
 - Query fan-out means a PDP can be retrieved for many reformulated intents. Generate content units that answer ingredient, efficacy, usage, review, comparison, safety, variant, and purchase-context questions with complete facts rather than one generic product summary.
 
 ## 5. Gemini Embeddings and Grounding

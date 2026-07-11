@@ -61,17 +61,17 @@ Generation guidance:
 
 - Preserve concrete sensory evidence such as rich cream, silky serum, nourishing texture, herbal scent, quick absorption, or night ritual when present.
 - For HowTo, write complete routine steps. Do not turn ritual language into vague commands.
-- For reviews, summarize repeated customer language rather than inventing first-person praise.
+- For reviews, summarize observed customer language rather than inventing first-person praise; describe it as repeated only when multiple reviews support that statement.
 
 ## GEO Projection Rules
 
 ### Product.description
 
-The Product.description should name the target skin concern or customer first, then the product identity/product type, key ingredient or technology, source-backed benefit/effect or citation-ready metric, and finally high-level usage, comparison, representative review, or sensory language when available. For Sulwhasoo, refined heritage or ritual language can support the tone after concrete product facts, but brand-only science should not become a product claim.
+The Product.description should follow this order: product introduction/type, target skin concern or customer, key ingredient or technology composition, source-backed finished-product benefit/effect and compact evidence/test context, then attributed representative review or sensory language last. Keep usage separate. For Sulwhasoo, refined heritage can shape tone after concrete product facts, but brand-only science must not become a product claim.
 
 Good shape:
 
-- Target skin concern or customer -> product identity -> ginseng or herbal technology if present -> source-backed benefit/effect or metric -> high-level usage/comparison context -> review-backed texture or sensory detail.
+- Product identity/type -> target skin concern or customer -> ginseng or herbal technology if present -> source-backed benefit/effect or metric/test context -> attributed review-backed texture or sensory detail.
 
 Avoid:
 
@@ -80,7 +80,7 @@ Avoid:
 
 ### WebPage.description
 
-The WebPage.description should describe the PDP as a page that helps customers evaluate Sulwhasoo product benefits, formula story, routine placement, customer reviews, variants, offers, and usage details. It should not duplicate the Product.description.
+The WebPage.description should identify the Sulwhasoo PDP and summarize actual page coverage such as product details, formula information, directions, reviews, variants, and offers. Separately supported brand heritage may be mentioned at page level, but the description must not duplicate Product.description.
 
 Good shape:
 
@@ -98,10 +98,10 @@ Use additionalProperty for objective facts:
 
 ### Product.positiveNotes
 
-Positive notes should prioritize source-backed benefits and review-backed positives:
+Positive notes should prioritize source-backed finished-product benefits and explicitly review-attributed experience:
 
 - Helps skin look firmer, more radiant, smoother, plumper, hydrated, resilient, or balanced when source-supported.
-- Customers mention refined texture, nourishing feel, absorption, ritual satisfaction, premium giftability, or repeat purchase only when review evidence exists.
+- Label customer-described texture, nourishing feel, absorption, ritual satisfaction, premium giftability, or repeat purchase as review experience; never present review-only language as official product efficacy.
 
 ### FAQPage.mainEntity
 

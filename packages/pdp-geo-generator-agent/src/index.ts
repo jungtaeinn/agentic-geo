@@ -1,6 +1,21 @@
 export { generatePdpGeo } from "./agent";
 export { ModelBackedCopyRefiner, refinePdpGeoCopy } from "./copy-refiner";
 export {
+  finalProofreadPdpGeoArtifacts,
+  createPdpGeoPublicCopyProvenance,
+  ModelBackedFinalProofreader,
+  pdpGeoFinalProofreadingJsonSchema,
+  type PdpGeoFinalProofreadingApplication,
+  type PdpGeoFinalProofreadingApplicationInput
+} from "./final-proofreader";
+export {
+  validateAndRepairPdpGeoArtifacts,
+  validatePdpGeoArtifacts,
+  type ValidateAndRepairInput,
+  type ValidateAndRepairOutput,
+  type ValidatePdpGeoArtifactsOutput
+} from "./validate";
+export {
   createPdpGeoEvidenceLedger,
   ModelBackedContentPlanner,
   pdpGeoContentPlanJsonSchema,
@@ -57,6 +72,17 @@ export type {
   PdpGeoEmbeddingProvider,
   PdpGeoEvidence,
   PdpGeoEvidenceRole,
+  PdpGeoFinalProofreader,
+  PdpGeoFinalProofreadingAcceptedEdit,
+  PdpGeoFinalProofreadingDiagnostics,
+  PdpGeoFinalProofreadingEdit,
+  PdpGeoFinalProofreadingField,
+  PdpGeoFinalProofreadingFieldPath,
+  PdpGeoFinalProofreadingIssueCode,
+  PdpGeoFinalProofreadingRequest,
+  PdpGeoFinalProofreadingResult,
+  PdpGeoFinalProofreadingSettings,
+  PdpGeoFinalProofreadingSkippedField,
   PdpGeoFaqItem,
   PdpGeoFieldMapping,
   PdpGeoGenerationHints,
@@ -80,6 +106,8 @@ export type {
   PdpGeoPolicyRule,
   PdpGeoPolicyRuleExtraction,
   PdpGeoPolicyRuleSeverity,
+  PdpGeoPublicCopyProvenance,
+  PdpGeoPublicCopySentenceProvenance,
   PdpGeoPlannedCep,
   PdpGeoPlannedFaqItem,
   PdpGeoPlannedField,
@@ -119,5 +147,6 @@ export type {
   PdpGeoSourceInfo,
   PdpGeoTerminologyDiagnostics,
   PdpGeoValidationRepair,
+  PdpGeoValidationFinding,
   PdpProductSignal
 } from "./types";

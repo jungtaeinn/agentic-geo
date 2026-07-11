@@ -11,7 +11,9 @@
 
 이 패키지는 UI에 의존하지 않습니다. 내부 CMS, 백오피스, batch job, REST API, Next.js Route Handler에서 독립적으로 사용할 수 있고, 전체 Agentic GEO 흐름에서는 `pdp-extractor-agent` 이후의 생성/검증 단계를 담당합니다.
 
-현재 생성 경로는 정규화된 상품 신호를 원자 단위 `Evidence Ledger`로 만든 뒤, 모델이 evidence ID를 참조하는 `Content/Schema Plan`에서 설명·FAQ·CEP·HowTo 적합성을 먼저 결정합니다. FAQ는 최소 개수를 채우지 않으며, HowTo는 근거가 있는 순차적 다단계 절차일 때만 생성됩니다. 특정 브랜드/상품 문장을 고치는 예외 대신 evidence role, locale, graph integrity 계약으로 결과를 검증합니다.
+> 구조화 데이터는 상품과 페이지의 의미를 명확히 하고 검색 기능의 적격성을 높이는 수단이지, ChatGPT·Gemini·Perplexity 또는 Google 검색의 인용·노출을 보장하는 장치가 아닙니다. [Google 공식 가이드](https://developers.google.com/search/docs/fundamentals/ai-optimization-guide)는 AI Overviews/AI Mode를 위한 별도 특수 스키마가 없다고 안내하며, 구조화 데이터와 사용자에게 보이는 본문이 일치해야 합니다. [Google FAQ rich result는 2026-05-07부터 더 이상 표시되지 않으므로](https://developers.google.com/search/updates), 이 패키지의 `FAQPage`는 가시적인 상품 Q&A를 표현하는 schema.org 의미 계층으로만 사용합니다. ChatGPT Search 검색 대상이 되려면 [운영 페이지에서 `OAI-SearchBot` 접근도 허용](https://help.openai.com/en/articles/12627856-publishers-and-developers-faq)해야 합니다.
+
+현재 생성 경로는 정규화된 상품 신호를 원자 단위 `Evidence Ledger`로 만든 뒤, 모델이 evidence ID를 참조하는 `Content/Schema Plan`에서 설명·FAQ·CEP·HowTo 적합성을 먼저 결정합니다. FAQ는 최소 개수를 채우지 않습니다. HowTo는 원문에 구체적인 사용 행동이 있을 때만 생성하며, 하나의 사용 지침은 Step 1 하나로, 원문에 명시된 다단계 절차는 원래 개수와 순서대로 유지합니다. 특정 브랜드/상품 문장을 고치는 예외 대신 evidence role, locale, graph integrity 계약으로 결과를 검증합니다.
 
 ## 빠른 호출 가이드
 
@@ -102,8 +104,9 @@ flowchart TD
   J --> K["10. RAG + 상품 근거 Reasoning"]
   K --> L["11. Schema/HTML 생성"]
   L --> M["12. Gen AI Copy Refinement"]
-  M --> N["13. Validation/Repair"]
-  N --> O["최종 schemaMarkup + content + diagnostics"]
+  M --> N["13. Final Proofreading (optional)<br/>GPT-5.5 권장"]
+  N --> O["14. Read-only Validation"]
+  O --> P["최종 schemaMarkup + content + diagnostics"]
 ```
 
 각 단계의 의미는 다음과 같습니다.
@@ -122,7 +125,8 @@ flowchart TD
 | Reasoning | FAQ, HowTo, claim safety, customer context, review intent별로 어떤 근거를 쓸지 결정합니다. |
 | 생성 | schema.org JSON-LD와 PDP HTML content를 만듭니다. |
 | Copy Refinement | 선택적으로 Gen AI가 Product/WebPage description과 공개 설명 문장을 더 자연스럽고 answer-ready하게 다듬습니다. |
-| Validation/Repair | JSON-LD와 HTML 구조를 검증하고 안전하게 보정합니다. |
+| Final Proofreading | 별도 마지막 LLM 호출이 고정된 Product/WebPage/FAQ/HowTo 문자열의 문법·어색함·중복만 검수합니다. 사실·수치·근거·항목 구조가 바뀌면 제안을 폐기합니다. |
+| Read-only Validation | 최종 JSON-LD와 HTML 구조를 검사하고 findings만 기록하며 공개 문장을 다시 쓰지 않습니다. |
 
 ## RAG 문서 구성
 
@@ -197,7 +201,7 @@ flowchart TD
   DOCS["RAG 문서 로드<br/>(기본 + 브랜드 스코핑)"] --> COMPILE["7. 정책 컴파일<br/>전 문서 -> 원자 규칙 체크리스트<br/>(critical/guidance/brand-context)"]
   DOCS --> CHUNK["2. Contextual Chunking<br/>heading 단위 + metadata"]
   CHUNK --> RETRIEVE["1+3. Query Planning + Hybrid Retrieval<br/>lexical + vector + metadata boost"]
-  RETRIEVE --> RERANK["4. Reranking + 5. Strategic Coverage<br/>eeat/cep/geo-research 보장"]
+  RETRIEVE --> RERANK["4. Reranking + 5. Strategic Coverage<br/>eeat/cep/geo-research 규칙 포함"]
   RERANK --> HYDRATE["6. Full Document Hydration<br/>전략 문서 원문 최대 3개"]
   RERANK --> REASON["Reasoning<br/>5개 원칙 x RAG 근거 x 상품 근거"]
   REASON --> GEN["Deterministic 생성<br/>schema.org JSON-LD + PDP HTML"]
@@ -205,11 +209,12 @@ flowchart TD
   COMPILE --> REFINE
   HYDRATE --> REFINE
   REFINE --> SELFCHECK["모델 자가 검증<br/>ruleCompliance.violatedRuleIds"]
-  SELFCHECK --> VALIDATE["Validate + Repair<br/>field contract 강제 보정"]
-  VALIDATE --> DIAG["Diagnostics<br/>policyCoverage / selectedRagChunks / reasoning / repairs"]
+  SELFCHECK --> PROOFREAD["Final Proofreading<br/>고정 field path + invariant gate"]
+  PROOFREAD --> VALIDATE["Read-only Validation<br/>오류 탐지 전용"]
+  VALIDATE --> DIAG["Diagnostics<br/>policyCoverage / proofreading / validationFindings"]
 ```
 
-핵심은 세 개의 상호 보완 채널입니다: **검색된 chunk**(현재 상품과 가장 관련 높은 지침), **hydrated 원문**(전략 문서의 충돌 해석/맥락), **컴파일된 정책 체크리스트**(검색에서 빠진 문서까지 포함한 전체 요구사항). 어느 한 채널이 놓쳐도 다른 채널이 보완하고, 최종적으로 validate/repair가 결정적으로 강제합니다.
+핵심은 세 개의 상호 보완 채널입니다: **검색된 chunk**(현재 상품과 가장 관련 높은 지침), **hydrated 원문**(전략 문서의 충돌 해석/맥락), **컴파일된 정책 체크리스트**(검색에서 빠진 문서까지 포함한 전체 요구사항). 의미 생성이 끝난 뒤 Final Proofreading은 문장 표면만 다루고, 마지막 validator는 산출물을 수정하지 않고 문제만 보고합니다.
 
 ### 1. Agentic Query Planning
 
@@ -332,11 +337,11 @@ provider API 또는 `customContentPlanner`가 설정되면 public copy를 렌더
 
 - `Product.description`과 `WebPage.description`의 서로 다른 entity role 및 evidence ID
 - FAQ 질문 의도, CEP, 직접 답변, evidence ID, 포함/제외 결정
-- HowTo의 목표·순서성·다단계 적합성 및 각 step의 usage evidence ID
+- HowTo의 구체적 사용 행동 여부, 원문 단계 경계·순서 및 각 step의 usage evidence ID
 - 원문에서 확인되는 CEP 상황·필요·제약
 - 근거 부족 시 `omitReason`
 
-OpenAI Responses, Gemini, Azure OpenAI, AI Studio는 provider-native JSON Schema를 사용합니다. 모델 기반 첫 계획은 동일 schema의 2차 evidence-entailment 감사에서 claim modality, caveat, 번역 의미, evidence ID 연결을 다시 확인합니다. 유효하지 않은 evidence ID, target locale 혼합, 단위가 바뀐 수치, 근거에 없는 효능/성분, 순서 근거가 없거나 2단계 미만인 HowTo는 거절되며 한 번의 교정 결과도 통과하지 못하면 해당 선택 필드를 생략합니다. 모델이 없을 때는 보수적 renderer가 실행되며 선택 스키마를 quota로 채우지 않습니다.
+OpenAI Responses, Gemini, Azure OpenAI, AI Studio는 provider-native JSON Schema를 사용합니다. 모델 기반 첫 계획은 동일 schema의 2차 evidence-entailment 감사에서 claim modality, caveat, 번역 의미, evidence ID 연결을 다시 확인합니다. 유효하지 않은 evidence ID, target locale 혼합, 단위가 바뀐 수치, 근거에 없는 효능/성분, 구체적 행동이 없거나 원문 단계 경계·순서를 바꾼 HowTo는 거절되며 한 번의 교정 결과도 통과하지 못하면 해당 선택 필드를 생략합니다. 모델이 없을 때는 보수적 renderer가 실행되며 선택 스키마를 quota로 채우지 않습니다.
 
 ## Diagnostics로 확인할 수 있는 것
 
@@ -353,8 +358,11 @@ OpenAI Responses, Gemini, Azure OpenAI, AI Studio는 provider-native JSON Schema
 | `diagnostics.reasoning` | 어떤 RAG 원칙과 상품 근거가 연결됐는지 |
 | `diagnostics.ragUsage` | FAQ, HowTo, claim safety 등 원칙별 참조 문서 |
 | `diagnostics.evidence` | 생성/보정/LLM refinement의 적용 또는 거절 근거 |
+| `diagnostics.finalProofreading` | 마지막 교정 호출 여부, 적용 필드, 거절된 변경과 사유 |
+| `diagnostics.finalPublicCopyProvenance` | 최종 공개 문장별 text/hash와 유지된 evidence ID 결합 |
 | `diagnostics.validationWarnings` | JSON-LD/HTML 검증 경고 |
-| `diagnostics.validationRepairs` | 자동 보정 내역 |
+| `diagnostics.validationFindings` | 읽기 전용 검증이 발견한 문제와 제안 조치 |
+| `diagnostics.validationRepairs` | 런타임에서는 빈 배열. legacy 직접 repair API 호환용 필드 |
 
 ## Field Evidence Contract
 
@@ -362,13 +370,13 @@ OpenAI Responses, Gemini, Azure OpenAI, AI Studio는 provider-native JSON Schema
 
 | 필드 | 허용되는 근거 | 제거/보정되는 오염 예시 |
 | --- | --- | --- |
-| `HowTo.step` | 구체적 목표를 위한 순서가 있는 2개 이상의 사용 행동 | 단일 사용 메모, 빈도/양만 있는 문장, 임상 수치, 효능, 성분 설명, 리뷰 요약 |
+| `HowTo.step` | 원문에 있는 구체적 사용 행동. 하나의 지침은 Step 1 하나, 명시된 다단계 절차는 원래 개수와 순서 유지 | 행동 없는 빈도·양·주의 메모, 임상 수치, 효능, 성분 설명, 리뷰 요약, 원문에 없는 단계 분할·병합 |
 | `content.sections.howToUse`, Usage property | 근거가 있는 일반 사용 지침을 포함하며 HowTo가 부적합해도 표시 가능 | 임상 수치, 효능 문장, 성분 설명, 리뷰 요약 |
 | `content.sections.ingredients` | 성분명, formula technology, INCI/full ingredient, 성분 역할 설명 | 리뷰 표현, routine 문장, 검색 의도 문장, 효능 요약 |
 | `content.sections.benefits`, `positiveNotes` | 효능/효과, 고객이 이해할 수 있는 outcome, 짧은 evidence topic | 긴 임상 원문, 내부 diagnostic label, 원시 메트릭 문장 |
 | `Product.additionalProperty` | key ingredient, key benefit, reported detail, usage timing, texture, review context 같은 atomic fact | multiline quick facts, public copy용 문장 덩어리 |
 
-검증 단계에서 이 계약을 어긴 문장은 `field-contract-validator` repair로 기록됩니다. 따라서 특정 상품명이나 특정 문장을 차단하지 않고도, 새 상품이 들어왔을 때 같은 RAG 원칙으로 필드 오염을 줄일 수 있습니다.
+읽기 전용 검증 단계에서 이 계약을 어긴 문장은 `validationFindings`에 기록되며 최종 문장을 자동으로 다시 쓰지 않습니다. 따라서 생성·교정 단계의 근거 계약을 보존한 채 새 상품의 필드 오염을 추적할 수 있습니다.
 
 ## Basic Usage
 
@@ -483,6 +491,31 @@ const run = await generatePdpGeo(input, {
 });
 ```
 
+## Final Proofreading (GPT-5.5 권장)
+
+`finalProofreading`은 의미 생성과 legacy copy refinement가 모두 끝난 뒤 선택적으로 실행되는 독립적인 마지막 LLM 호출입니다. Product/WebPage description, FAQ 질문·답변, HowTo step text 중에서 최종 렌더링 문장·source hash·유효한 evidence ID가 정확히 결합된 필드만 전달합니다. copy refinement가 문장을 바꾸고 새 근거 결합을 만들지 않았다면 해당 필드는 호출 전에 제외합니다. 숫자·단위·상품명·브랜드명·성분명·claim 강도·리뷰 귀속·문장 유형·FAQ/HowTo 구조가 바뀌면 제안을 적용하지 않고 원본을 유지합니다.
+
+자동 적용 범위는 구두점·공백, 인접한 동일 단어/문장의 중복 제거와 폐쇄형 의미 보존 문법 교정입니다. 영문은 `a/an`, 동일 시제의 주어-동사 일치, 제한된 현재형 claim 동사 일치, FAQ 보조동사 도치만 허용하고, 국문은 동일 문법 역할의 조사 이형태와 제한된 문장 종결 활용만 허용합니다. 전치사·시제·태·claim modality·내용어 순서·한국어 조사 역할이 달라지는 변경은 거절합니다. HowTo는 계속 구두점·공백만 수정할 수 있습니다. 허용 목록으로 설명할 수 없는 어색함은 원문을 유지하고 warning으로 기록합니다. 승인된 문장은 최종 text/hash와 기존 evidence ID를 다시 결합해 `finalPublicCopyProvenance`에 남깁니다.
+
+라이브러리에서는 추가 비용과 지연을 소급하지 않도록 opt-in입니다. 메인 앱은 non-mock provider와 API key가 있으면 이를 활성화하며, Azure에서는 `AZURE_OPENAI_PROOFREADING_DEPLOYMENT`를 우선 사용하고 없으면 reasoning deployment를 사용합니다.
+
+```ts
+const run = await generatePdpGeo(input, {
+  provider: "azure-openai",
+  apiKey: process.env.AZURE_OPENAI_API_KEY,
+  endpoint: process.env.AZURE_OPENAI_ENDPOINT,
+  apiVersion: process.env.AZURE_OPENAI_API_VERSION,
+  finalProofreading: {
+    enabled: true,
+    deployment: process.env.AZURE_OPENAI_PROOFREADING_DEPLOYMENT,
+    maxOutputTokens: 4000
+  }
+});
+
+console.log(run.diagnostics.finalProofreading);
+console.log(run.diagnostics.validationFindings);
+```
+
 ## RAG 설정 예시
 
 ```ts
@@ -567,7 +600,9 @@ export const POST = createPdpGeoGeneratorRestHandler({
 | `diagnostics.recommendations` | GEO/schema/content 개선 제안 |
 | `diagnostics.evidence` | 입력, RAG, terminology, validator, repair, LLM refinement 근거 |
 | `diagnostics.terminology` | locale별 적용/회피 용어 결정 |
-| `diagnostics.validationWarnings` | 검증과 보정 과정에서 남긴 경고 |
+| `diagnostics.finalProofreading` | 마지막 fluency-only 호출의 적용·거절 내역 |
+| `diagnostics.validationWarnings` | 읽기 전용 검증에서 남긴 경고 |
+| `diagnostics.validationFindings` | 최종 산출물을 변경하지 않는 검증 결과 |
 | `process` | UI/REST 로그에 표시할 stage별 진행 상태 |
 
 ## 주요 파일
@@ -580,7 +615,8 @@ export const POST = createPdpGeoGeneratorRestHandler({
 | `src/content-planner.ts` | Evidence Ledger, strict structured-output Content/Schema Plan, evidence/locale gate, corrective retry |
 | `src/generate.ts` | schema.org JSON-LD와 HTML content 생성 |
 | `src/copy-refiner.ts` | Gen AI 기반 public copy refinement와 provider adapter |
-| `src/validate.ts` | JSON-LD/HTML 검증과 repair |
+| `src/final-proofreader.ts` | GPT-5.5 final fluency-only 교정, strict output, 불변성 gate, fail-safe |
+| `src/validate.ts` | 런타임 read-only 검증과 legacy repair API |
 | `src/graph-integrity.ts` | 빈 선택 노드 제거, dangling reference 정리, schema/visible content parity |
 | `src/rag/rag-index.ts` | RAG 문서/섹션의 typed metadata source of truth |
 | `src/rag/retrieval.ts` | contextual chunking, local hybrid retrieval, lightweight reranking, managed retrieval adapter |

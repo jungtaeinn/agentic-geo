@@ -475,6 +475,7 @@ function resolveProductNormalizer(options: PdpGeoGeneratorOptions): { normalizer
   }
 
   const provider = settings.provider ?? options.provider ?? "mock";
+  const mayInheritProviderSettings = settings.provider === undefined || settings.provider === options.provider;
   if (provider === "mock" || provider === "custom") {
     return { warning: `${provider} product normalization requires customProductNormalizer.` };
   }
@@ -482,11 +483,11 @@ function resolveProductNormalizer(options: PdpGeoGeneratorOptions): { normalizer
   return {
     normalizer: new ModelBackedProductNormalizer({
       provider,
-      apiKey: settings.apiKey ?? options.apiKey,
-      model: settings.model ?? options.model,
-      endpoint: settings.endpoint ?? options.endpoint,
-      deployment: settings.deployment ?? options.deployments?.reasoning ?? options.deployment,
-      apiVersion: settings.apiVersion ?? options.apiVersion,
+      apiKey: settings.apiKey ?? (mayInheritProviderSettings ? options.apiKey : undefined),
+      model: settings.model ?? (mayInheritProviderSettings ? options.model : undefined),
+      endpoint: settings.endpoint ?? (mayInheritProviderSettings ? options.endpoint : undefined),
+      deployment: settings.deployment ?? (mayInheritProviderSettings ? options.deployments?.reasoning ?? options.deployment : undefined),
+      apiVersion: settings.apiVersion ?? (mayInheritProviderSettings ? options.apiVersion : undefined),
       temperature: options.temperature,
       maxSourceCharacters: settings.maxSourceCharacters
     })
@@ -504,6 +505,7 @@ function createProductNormalizationPrompt(request: PdpGeoProductNormalizationReq
       "Use source product data only. Do not invent claims, ingredients, effects, prices, reviews, metrics, awards, or certifications.",
       "Prefer complete source-backed sentences over isolated tokens. Keep ingredient, benefit, effect, usage, FAQ, review, metric, and sourceTexts fields separated.",
       "Route fields by evidence role before returning ProductSignal: usage must be actionable customer directions, ingredients must be ingredient/formula/full-INCI evidence, benefits/effects must be outcomes or supported results, reviews must be customer language, and metrics must be measured or countable evidence.",
+      "Preserve usage structure from bootstrapProduct. If bootstrap usage already contains actionable directions, leave product.usage null instead of splitting, merging, reordering, paraphrasing, or replacing those items. semanticFacts.usageSteps must keep the same source boundaries; one source instruction remains one item and an explicit source sequence keeps its count and order.",
       "An ingredient is a named substance, INCI entry, identifiable complex, or proprietary formula/technology. Do not classify attributes or outcomes such as absorption, retention, persistence, texture, skin type, efficacy, or a research duration as ingredients.",
       "Do not put a product-result sentence, clinical metric, review summary, or ingredient explanation into usage just because it mentions timing, application, use, or the current product. Test application and measured post-application results are evidence, not customer directions.",
       "Normalize product identity into a representative product entity and a SKU/variant layer: preserve source-backed bracketed names, small-size labels, volume, option names, and SKU names in originalName/options/sourceTexts; keep the main product name concise when the source clearly separates brand, representative product, and variant.",
@@ -515,7 +517,7 @@ function createProductNormalizationPrompt(request: PdpGeoProductNormalizationReq
       "Classify each atomic evidence unit before routing it. Use one primary role among ingredient, benefit, effect, audience, usage, safety, review, metric, FAQ, commerce, or source; add a secondary role only when the same sentence explicitly supports it. Do not infer a role from a nearby heading alone.",
       "Separate source assertions, source-backed synthesis, and query hypotheses before normalization. ProductSignal fields and semanticFacts may contain only source assertions or lossless normalization of them. A plausible customer question, common category convention, seasonal/weather association, time-of-day assumption, occasion, or general market belief is a non-evidentiary query hypothesis; if it is useful, put it only in warnings prefixed QUERY_HYPOTHESIS_ONLY and never route it into product facts.",
       "Do not create a causal or suitability relationship from co-occurrence. Two facts appearing on the same page, in neighboring sections, or in separate array entries do not prove that one causes, supports, is recommended for, or is used during the other. Record a relation only when one source sentence or structured source fact explicitly connects the current product, context, and outcome.",
-      "When a sentence explicitly links a named ingredient or technology to an outcome, keep the named entity in ingredients, keep the outcome in benefits/effects, and record the source-backed relation in semanticFacts.ingredientBenefitLinks. Do not place the full explanatory sentence or the outcome phrase in the ingredient-name list.",
+      "When a sentence explicitly links a named ingredient or technology to an outcome, keep the named entity in ingredients and record the source-backed relation in semanticFacts.ingredientBenefitLinks. Do not copy that ingredient outcome into product benefits/effects unless a separate source assertion explicitly makes it a finished-product claim. Do not place the full explanatory sentence or the outcome phrase in the ingredient-name list.",
       "Classify completed safety, dermatology, sensitive-skin, allergy, eye-irritation, paediatric, non-comedogenic, and similar product tests into semanticFacts.safetyTests as separate atomic source-backed test names. Do not merge them into efficacy metrics, ingredients, benefits, or usage, and do not infer an unlisted test from a related certification label.",
       "Treat outcome-like words inside a standalone proper ingredient, complex, blend, technology, or formula name as part of that name, not as a benefit/effect or causal relation. Require an explicit source assertion outside the name before adding an outcome role.",
       "Review bodies, review keywords, ratings, testimonials, and customer-experience sections have review provenance. Do not promote terms found only in those sources into product benefits, effects, ingredients, or ingredient-outcome relations; a non-review product-fact source must independently support that role.",
@@ -595,7 +597,18 @@ function applyProductNormalization(
   applyStringArrayField(next, "benefits", incoming.benefits, productFactCorpus, changedFields, warnings, { authoritative: true });
   applyStringArrayField(next, "effects", incoming.effects, productFactCorpus, changedFields, warnings, { authoritative: true });
   applyStringArrayField(next, "ingredients", incoming.ingredients, productFactCorpus, changedFields, warnings, { authoritative: true });
-  applyStringArrayField(next, "usage", incoming.usage, sourceCorpus, changedFields, warnings);
+  const bootstrapUsage = filterValuesByEvidenceRole(bootstrapProduct.usage, "usage");
+  if (bootstrapUsage.length > 0) {
+    next.usage = bootstrapUsage;
+    if (Array.isArray(incoming.usage)) {
+      const acceptedIncomingUsage = sourceBackedStringArray(incoming.usage, sourceCorpus);
+      if (normalizeEvidenceText(acceptedIncomingUsage.join("\n")) !== normalizeEvidenceText(bootstrapUsage.join("\n"))) {
+        warnings.push("Model usage normalization was ignored to preserve source instruction boundaries and order.");
+      }
+    }
+  } else {
+    applyStringArrayField(next, "usage", incoming.usage, sourceCorpus, changedFields, warnings);
+  }
   applyStringArrayField(next, "metrics", incoming.metrics, sourceCorpus, changedFields, warnings);
   applyStringArrayField(next, "sourceTexts", incoming.sourceTexts, sourceCorpus, changedFields, warnings);
   applySemanticFacts(next, incoming.semanticFacts, sourceCorpus, productFactCorpus, changedFields, warnings);
@@ -755,20 +768,28 @@ function applySemanticFacts(
   };
   const sanitizedBase = sanitizePdpSemanticFacts(candidate);
   const explicitlyVettedLinks = candidate.ingredientBenefitLinks ?? [];
+  const linkOutcomeKeys = new Set(explicitlyVettedLinks
+    .flatMap((link) => [link.benefit, link.effect])
+    .filter((item): item is string => Boolean(item))
+    .map(normalizeEvidenceText));
+  const bootstrapOutcomeKeys = new Set([
+    ...product.benefits,
+    ...product.effects,
+    ...(product.semanticFacts?.benefits ?? []),
+    ...(product.semanticFacts?.effects ?? [])
+  ].map(normalizeEvidenceText));
+  const isIndependentFinishedProductOutcome = (value: string): boolean => {
+    const key = normalizeEvidenceText(value);
+    return !linkOutcomeKeys.has(key) || bootstrapOutcomeKeys.has(key);
+  };
   const sanitized: PdpSemanticFacts = {
     ...sanitizedBase,
     ingredients: unique([
       ...sanitizedBase.ingredients,
       ...explicitlyVettedLinks.map((link) => link.ingredient ?? "")
     ]).slice(0, 24),
-    benefits: unique([
-      ...sanitizedBase.benefits,
-      ...explicitlyVettedLinks.map((link) => link.benefit ?? "")
-    ]).slice(0, 24),
-    effects: unique([
-      ...sanitizedBase.effects,
-      ...explicitlyVettedLinks.map((link) => link.effect ?? "")
-    ]).slice(0, 24),
+    benefits: unique(sanitizedBase.benefits.filter(isIndependentFinishedProductOutcome)).slice(0, 24),
+    effects: unique(sanitizedBase.effects.filter(isIndependentFinishedProductOutcome)).slice(0, 24),
     ingredientBenefitLinks: uniqueBy(
       [...sanitizedBase.ingredientBenefitLinks, ...explicitlyVettedLinks],
       (link) => normalizeEvidenceText([link.ingredient, link.benefit, link.effect, link.sourceText, link.sentence].filter(Boolean).join(" "))

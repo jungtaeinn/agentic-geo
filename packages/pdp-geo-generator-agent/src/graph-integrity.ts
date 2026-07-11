@@ -126,9 +126,8 @@ export function repairPdpSchemaGraphIntegrity(
 
 /**
  * Uses retained schema nodes as the source of truth for their visible FAQ and
- * HowTo copy. Visible usage may remain without HowTo markup when fewer than two
- * procedural steps survive; structured data does not need to cover every
- * visible sentence.
+ * HowTo copy. A single source-backed application instruction is a valid
+ * one-step HowTo; structured data and visible usage must retain the same count.
  */
 export function synchronizeStructuredContentWithGraph(input: {
   sections: PdpGeoContentSections;
@@ -216,7 +215,7 @@ function hasValidFaqItems(value: unknown): boolean {
 }
 
 function hasValidHowToSteps(value: unknown): boolean {
-  return collectionItems(value).filter((item) => Boolean(stringValue(item.text))).length >= 2;
+  return collectionItems(value).filter((item) => Boolean(stringValue(item.text))).length >= 1;
 }
 
 function collectionItems(value: unknown): SchemaNode[] {

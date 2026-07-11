@@ -1,8 +1,8 @@
-import type { JsonObject, JsonValue, PdpGeoContentArtifact, PdpGeoContentSections, PdpGeoLocale, PdpGeoSchemaMarkup, PdpGeoValidationRepair } from "./types";
+import type { JsonObject, JsonValue, PdpGeoContentArtifact, PdpGeoContentSections, PdpGeoLocale, PdpGeoSchemaMarkup, PdpGeoValidationFinding, PdpGeoValidationRepair } from "./types";
 import { captureStructuredContentSnapshot, repairPdpSchemaGraphIntegrity, synchronizeStructuredContentWithGraph } from "./graph-integrity";
 import { isNegativeReviewSignalText } from "./review-sentiment";
 
-interface ValidateAndRepairInput {
+export interface ValidateAndRepairInput {
   schemaMarkup: PdpGeoSchemaMarkup;
   content: PdpGeoContentArtifact;
   fallbackProductName: string;
@@ -10,11 +10,16 @@ interface ValidateAndRepairInput {
   locale?: PdpGeoLocale;
 }
 
-interface ValidateAndRepairOutput {
+export interface ValidateAndRepairOutput {
   schemaMarkup: PdpGeoSchemaMarkup;
   content: PdpGeoContentArtifact;
   validationWarnings: string[];
   validationRepairs: PdpGeoValidationRepair[];
+}
+
+export interface ValidatePdpGeoArtifactsOutput {
+  validationWarnings: string[];
+  validationFindings: PdpGeoValidationFinding[];
 }
 
 interface PropertyValueNameRepair {
@@ -78,6 +83,54 @@ export function validateAndRepairPdpGeoArtifacts(input: ValidateAndRepairInput):
     validationWarnings,
     validationRepairs
   };
+}
+
+/**
+ * Read-only runtime validator. The legacy repair engine is executed against a
+ * deep clone solely to discover issues; its candidate artifacts are never
+ * returned or applied to the public result.
+ */
+export function validatePdpGeoArtifacts(input: ValidateAndRepairInput): ValidatePdpGeoArtifactsOutput {
+  const isolatedInput = JSON.parse(JSON.stringify(input)) as ValidateAndRepairInput;
+  const dryRun = validateAndRepairPdpGeoArtifacts(isolatedInput);
+  const validationFindings: PdpGeoValidationFinding[] = dryRun.validationRepairs.map((repair) => ({
+    field: repair.field,
+    source: repair.source,
+    issue: repair.issue,
+    suggestedAction: `Not applied; suggested only: ${repair.action}`,
+    before: repair.before,
+    suggestedAfter: repair.after,
+    evidence: repair.evidence
+  }));
+  const validationWarnings = validationFindings.map((finding) => `${finding.field}: ${finding.issue}`);
+
+  if (!scriptTagMatchesJsonLd(input.schemaMarkup)) {
+    const issue = "schemaMarkup.scriptTag does not serialize the same JSON-LD object as schemaMarkup.jsonLd.";
+    validationWarnings.push(issue);
+    validationFindings.push({
+      field: "schemaMarkup.scriptTag",
+      source: "schema-validator",
+      issue,
+      suggestedAction: "Re-serialize scriptTag deterministically from schemaMarkup.jsonLd before publishing.",
+      before: input.schemaMarkup.scriptTag,
+      evidence: ["schemaMarkup.jsonLd", "schemaMarkup.scriptTag"]
+    });
+  }
+
+  return {
+    validationWarnings: Array.from(new Set(validationWarnings)),
+    validationFindings
+  };
+}
+
+function scriptTagMatchesJsonLd(schemaMarkup: PdpGeoSchemaMarkup): boolean {
+  const match = schemaMarkup.scriptTag.match(/^\s*<script\s+type=["']application\/ld\+json["']\s*>([\s\S]*)<\/script>\s*$/i);
+  if (!match?.[1]) return false;
+  try {
+    return JSON.stringify(JSON.parse(match[1])) === JSON.stringify(schemaMarkup.jsonLd);
+  } catch {
+    return false;
+  }
 }
 
 function repairJsonLd(
@@ -552,19 +605,8 @@ function repairGraphNode(
         continue;
       }
       const repairedText = repairGeneratedText(text, locale, "HowTo.step.text", warnings, repairs);
-      const usageStepParts = splitHowToStepUsageText(repairedText, locale);
-      if (usageStepParts.length > 1) {
-        addRepair(warnings, repairs, {
-          field: "HowTo.step.text",
-          source: "field-contract-validator",
-          issue: "HowTo.step combined multiple actionable usage directions into one step.",
-          action: "Split the compound HowTo step into atomic usage actions before deduplication.",
-          before: repairedText,
-          after: usageStepParts,
-          evidence: ["HowTo.step", "stepwise HowTo contract"]
-        }, "Compound HowTo usage step was split into atomic actions.");
-      }
-      const validParts = usageStepParts.filter((part) => isActionableUsageText(part));
+      const normalizedStep = repairHowToStepUsageText(repairedText);
+      const validParts = normalizedStep && isActionableUsageText(normalizedStep) ? [normalizedStep] : [];
       if (validParts.length === 0) {
         addRepair(warnings, repairs, {
           field: "HowTo.step.text",
@@ -828,7 +870,7 @@ function repairKoreanSkinTypeActorOpening(value: string): string {
     return value;
   }
   const productObject = appendKoreanObjectParticle(ensureKoreanProductIntroNoun(productInfo || "제품"));
-  return `${pageSubject}에서는 ${skinTypes} 고객에게 ${comparisonContext}에 효과적인 ${productObject} 추천합니다.`;
+  return `${pageSubject}에서는 ${skinTypes} 고객이 ${appendKoreanObjectParticle(comparisonContext)} 비교할 때 ${productObject} 확인할 수 있습니다.`;
 }
 
 function ensureKoreanProductIntroNoun(value: string): string {
@@ -1711,7 +1753,7 @@ function repairSectionByFieldContract(
   return next;
 }
 
-function repairHowToUseSectionLines(lines: string[], locale: PdpGeoLocale): string[] {
+function repairHowToUseSectionLines(lines: string[], _locale: PdpGeoLocale): string[] {
   if (lines.every((line) => isFallbackSectionLine(stripListMarker(line)))) {
     return lines;
   }
@@ -1721,7 +1763,8 @@ function repairHowToUseSectionLines(lines: string[], locale: PdpGeoLocale): stri
 
   for (const line of lines) {
     const text = stripListMarker(line);
-    const parts = splitHowToStepUsageText(text, locale).filter((part) => isActionableUsageText(part));
+    const normalizedStep = repairHowToStepUsageText(text);
+    const parts = normalizedStep && isActionableUsageText(normalizedStep) ? [normalizedStep] : [];
     for (const part of parts) {
       const key = howToStepDedupeKey(part);
       if (key && seenKeys.has(key)) {
@@ -1896,6 +1939,11 @@ function isProceduralUsageInstruction(value: string): boolean {
   if (!text) {
     return false;
   }
+  const conciseImperative = /^(?:apply|dispense|massage|lather|rinse|pat|press|spread|smooth|warm|pump|remove|leave)\b/i.test(text)
+    && text.length <= 180;
+  if (conciseImperative) {
+    return true;
+  }
   const proceduralScore = usageProcedureSignalScore(text);
   const descriptiveScore = usageDescriptionSignalScore(text);
   if ((hasDescriptiveApplicationFrame(text) || hasSensoryEvaluationFrame(text)) && proceduralScore < 3) {
@@ -1945,7 +1993,7 @@ function hasSensoryEvaluationFrame(value: string): boolean {
 }
 
 function hasProcedureActionCue(value: string): boolean {
-  return /(?:덜어|적셔|올려두|펴\s*바르|펴\s*발라|두드려|흡수(?!감)|마사지|문지르|헹구|헹굽|거품|도포(?!감)|마무리(?:해|하세요|합니다|하십시오)|사용(?:해|하세요|합니다|하십시오|할\s*수\s*있)|apply|dispense|spread|smooth|pat|press|absorb|massage|lather|rinse|pump|take|use\s+as|なじませ|塗布|すすぎ|マッサージ)/i.test(value);
+  return /(?:덜어|적셔|올려두|펴\s*바르|펴\s*발라|바르(?:고|며|듯|세요|십시오|기|면|는|도록)|바릅|발라(?:주|주세요|줍니다|서|가며)|두드려|흡수(?!감)|마사지|문지르|헹구|헹굽|거품|도포(?!감)|마무리(?:해|하세요|합니다|하십시오)|사용(?:해|하세요|합니다|하십시오|할\s*수\s*있)|apply|dispense|spread|smooth|pat|press|absorb|massage|lather|rinse|pump|take|use\s+as|なじませ|塗布|すすぎ|マッサージ)/i.test(value);
 }
 
 function hasRoutinePlacementCue(value: string): boolean {
@@ -2792,7 +2840,7 @@ function createKoreanPositiveReviewFaqQuestion(question: string, answer: string)
   const productName = extractKoreanProductNameFromFaqText(answer) ?? extractKoreanProductNameFromFaqText(question);
   return productName
     ? `고객 리뷰는 ${productName}의 어떤 사용감을 강조하나요?`
-    : "고객 리뷰에서는 어떤 사용감이 반복되나요?";
+    : "고객 리뷰에서는 어떤 사용감이 언급되나요?";
 }
 
 function createKoreanPositiveReviewFaqAnswer(question: string, answer: string): string {
@@ -2800,7 +2848,7 @@ function createKoreanPositiveReviewFaqAnswer(question: string, answer: string): 
   const subject = productName ? appendKoreanTopicParticle(productName) : "제품은";
   const signals = extractKoreanPositiveReviewUseFeelSignals(`${question} ${answer}`);
   const signalPhrase = formatKoreanListForSentence((signals.length > 0 ? signals : ["긍정적 사용감"]).join(", "));
-  return `${subject} 고객 리뷰 기준으로 ${signalPhrase} 같은 긍정적 사용감이 반복됩니다.`;
+  return `${subject} 고객 리뷰에서 ${signalPhrase} 같은 긍정적 사용감이 언급됩니다.`;
 }
 
 function extractKoreanPositiveReviewUseFeelSignals(value: string): string[] {
@@ -3539,59 +3587,6 @@ function repairHowToStepUsageText(value: string): string {
     .trim())));
 }
 
-function splitHowToStepUsageText(value: string, locale: PdpGeoLocale): string[] {
-  const normalized = repairHowToStepUsageText(value);
-  if (locale !== "ko-KR") {
-    return [normalized];
-  }
-  const split = splitKoreanCompoundHowToStep(normalized);
-  return split.length > 0 ? split : [normalized];
-}
-
-function splitKoreanCompoundHowToStep(value: string): string[] {
-  const text = normalizeKoreanHowToInstructionText(value)
-    .replace(/[.。]+$/u, "")
-    .replace(/\s+\d+\s+(?=(?:미온수|물|깨끗|충분|헹구|다음|이후))/gu, " ")
-    .trim();
-  const signatures = koreanHowToActionSignatures(text);
-  const splitSignatures = signatures.filter((signature) => signature !== "dispense");
-  if (splitSignatures.length <= 1) {
-    return [text];
-  }
-  if (!splitSignatures.includes("foam") && !splitSignatures.includes("rinse")) {
-    return [text];
-  }
-
-  const steps: string[] = [];
-  const foam = createKoreanFoamHowToStep(text);
-  const massage = createKoreanMassageHowToStep(text);
-  const rinse = createKoreanRinseHowToStep(text);
-  const wipe = createKoreanWipeHowToStep(text);
-  const apply = createKoreanApplyHowToStep(text);
-  const absorb = createKoreanAbsorbHowToStep(text);
-
-  if (foam) {
-    steps.push(foam);
-  }
-  if (massage) {
-    steps.push(massage);
-  }
-  if (rinse) {
-    steps.push(rinse);
-  }
-  if (wipe) {
-    steps.push(wipe);
-  }
-  if (apply) {
-    steps.push(apply);
-  }
-  if (absorb) {
-    steps.push(absorb);
-  }
-
-  return dedupeUsagePropertySteps(steps).filter((step) => step.length >= 6);
-}
-
 function koreanHowToActionSignatures(value: string): string[] {
   const text = value.trim();
   return [
@@ -3634,67 +3629,6 @@ function findRedundantKoreanCompoundHowToStepIndexes(values: string[], locale: P
   });
 
   return redundant;
-}
-
-function createKoreanFoamHowToStep(value: string): string | undefined {
-  if (!/거품/u.test(value)) {
-    return undefined;
-  }
-  const amount = /적당량/u.test(value) ? "적당량을 " : "";
-  const dispense = /덜어/u.test(value) ? "덜어 " : "";
-  const water = /물과\s*함께/u.test(value) ? "물과 함께 " : "";
-  return normalizeKoreanHowToInstructionText(`${amount}${dispense}${water}거품을 냅니다`);
-}
-
-function createKoreanMassageHowToStep(value: string): string | undefined {
-  if (!/(?:마사지|문지르)/u.test(value)) {
-    return undefined;
-  }
-  if (/문지르/u.test(value)) {
-    return /마사지/u.test(value) ? "얼굴에 마사지하듯 문지릅니다" : "얼굴에 부드럽게 문지릅니다";
-  }
-  return /부드럽/u.test(value) ? "얼굴에 부드럽게 마사지합니다" : "얼굴에 마사지합니다";
-}
-
-function createKoreanRinseHowToStep(value: string): string | undefined {
-  if (!/(?:미온수|헹구)/u.test(value)) {
-    return undefined;
-  }
-  const water = /미온수/u.test(value) ? "미온수로" : "물로";
-  const clean = /깨끗하게/u.test(value) ? " 깨끗하게" : /깨끗이/u.test(value) ? " 깨끗이" : "";
-  if (/마무리/u.test(value)) {
-    return `${water}${clean} 헹구어 마무리해 주세요`;
-  }
-  return `${water}${clean} 헹굽니다`;
-}
-
-function createKoreanWipeHowToStep(value: string): string | undefined {
-  if (!/(?:화장솜|닦아?내|닦아냅|피부결을\s*따라\s*닦)/u.test(value)) {
-    return undefined;
-  }
-  const amount = /적당량/u.test(value) ? "적당량을 덜어 " : "";
-  const cotton = /화장솜/u.test(value) ? "화장솜에 " : "";
-  const texture = /피부결/u.test(value) ? "피부결을 따라 " : "";
-  const gentle = /부드럽/u.test(value) ? "부드럽게 " : "";
-  return normalizeKoreanHowToInstructionText(`${cotton}${amount}${texture}${gentle}닦아냅니다`);
-}
-
-function createKoreanApplyHowToStep(value: string): string | undefined {
-  if (!/(?:펴\s*바르|펴\s*발라|바릅|바른\s*(?:뒤|후)|도포)/u.test(value)) {
-    return undefined;
-  }
-  const palm = /손바닥|손에/u.test(value) ? "손바닥에 덜어 " : "";
-  const texture = /피부결/u.test(value) ? "피부결을 따라 " : "";
-  const gentle = /부드럽/u.test(value) ? "부드럽게 " : "";
-  return normalizeKoreanHowToInstructionText(`${palm}${texture}${gentle}펴 바릅니다`);
-}
-
-function createKoreanAbsorbHowToStep(value: string): string | undefined {
-  if (!/(?:흡수|두드려|톡톡)/u.test(value)) {
-    return undefined;
-  }
-  const tap = /톡톡|두드/u.test(value) ? "가볍게 두드려 " : "";
-  return normalizeKoreanHowToInstructionText(`${tap}흡수시켜 줍니다`);
 }
 
 function createValidatedHowToStepName(locale: PdpGeoLocale, position: number): string {
@@ -4143,7 +4077,7 @@ function rewriteKoreanMetaNarrationPhrase(phrase: string, mode: "provide" | "des
     return `${comparison[1].trim()} 비교에 필요한 효능, 성분, 사용 정보를 제공합니다`;
   }
   if (/리뷰|후기|사용감|만족도/.test(cleanPhrase)) {
-    return `리뷰에서는 ${formatKoreanListForSentence(cleanPhrase)} 같은 사용감 표현이 반복됩니다`;
+    return `리뷰에서는 ${formatKoreanListForSentence(cleanPhrase)} 같은 사용감 표현이 언급됩니다`;
   }
   if (mode === "describe" && cleanPhrase.length <= 80) {
     return `${cleanPhrase}입니다`;
@@ -4410,7 +4344,7 @@ function createAccordionHtml(sections: PdpGeoContentSections, locale: PdpGeoLoca
 function sectionLabels(locale: PdpGeoLocale): Record<keyof PdpGeoContentSections, string> {
   return {
     productName: locale === "ko-KR" ? "상품명" : locale === "ja-JP" ? "商品名" : "Product name",
-    description: locale === "ko-KR" ? "GEO 설명" : locale === "ja-JP" ? "GEO説明" : "GEO description",
+    description: locale === "ko-KR" ? "상품 설명" : locale === "ja-JP" ? "商品説明" : "Product details",
     quickFacts: locale === "ko-KR" ? "핵심 정보" : locale === "ja-JP" ? "主な情報" : "Quick facts",
     benefits: locale === "ko-KR" ? "효능/효과" : locale === "ja-JP" ? "ベネフィット" : "Benefits",
     ingredients: locale === "ko-KR" ? "성분" : locale === "ja-JP" ? "成分" : "Ingredients",

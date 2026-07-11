@@ -8,9 +8,9 @@ Use E-E-A-T as a trust-first quality lens for generated PDP schema and HTML cont
 
 ### 2.1 Official Search Guidance
 
-- Sources checked on 2026-06-24:
+- Sources checked on 2026-07-11:
   - Google Search Central: https://developers.google.com/search/docs/fundamentals/creating-helpful-content
-  - Google Search Central generative AI guidance: https://developers.google.com/search/docs/fundamentals/ai-optimization-guide
+  - Google Search Central AI features guidance: https://developers.google.com/search/docs/appearance/ai-features
   - Google Product structured data: https://developers.google.com/search/docs/appearance/structured-data/product
 - Google frames helpful content around people-first usefulness, clear sourcing, original value, and E-E-A-T signals. Trust is the primary lens; experience, expertise, and authoritativeness support trust.
 - E-E-A-T is used here as a content quality and risk-control framework. It must not be treated as a direct ranking switch or as permission to fabricate credentials, reviews, citations, awards, clinical claims, or expert endorsements.
@@ -28,7 +28,7 @@ Use E-E-A-T as a trust-first quality lens for generated PDP schema and HTML cont
 1. Use brand-owned product facts, official PDP fields, structured product feeds, package/OCR text, and source product JSON as the strongest product evidence.
 2. Use structured data fields and source IDs to preserve entity consistency, variant identity, offer data, size, ingredient, review, and usage evidence.
 3. Use visible PDP sections, OCR sentences, image text, and long-scroll content as supporting evidence when the content is readable and semantically complete.
-4. Use customer reviews and repeated review keywords as experience evidence, not as universal proof of product effects.
+4. Use observed customer-review language as experience evidence, not as universal proof of product effects. Describe a phrase as repeated only when multiple reviews or a source aggregate supports repetition.
 5. Use RAG policy documents as generation guidance only. They do not create product facts.
 
 ### 3.2 Conflict Handling
@@ -44,7 +44,7 @@ Use E-E-A-T as a trust-first quality lens for generated PDP schema and HTML cont
 
 - Preserve concrete customer-use context when present: routine step, timing, texture, fragrance/scent impression, absorption, finish, comfort, skin/hair type, repeat purchase intent, gifting, and comparison language.
 - Rewrite review language into representative summaries. Do not invent first-person reviews, named customers, star ratings, or review counts.
-- Use positive or neutral reviews to shape PDP benefit phrasing, review summaries, review-derived recommendation context, and reusable review-intent FAQ when repeated review keywords support the intent; exclude negative review complaints, ratings, and raw reviewer snippets.
+- Use positive or neutral reviews to shape attributed review summaries, review-derived recommendation context, and reusable review-intent FAQ when the observed language supports the intent; exclude negative review complaints, ratings, and raw reviewer snippets. One review is one observation, not a repeated pattern or product-efficacy proof.
 
 ### 4.2 PDP Field Mapping
 

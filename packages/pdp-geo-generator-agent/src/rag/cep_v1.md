@@ -8,9 +8,10 @@ Category Entry Points, or CEPs, describe buying, discovery, usage, or memory sit
 
 ### 2.1 Research and Operating Definition
 
-- Sources checked on 2026-06-24:
+- Sources checked on 2026-07-11:
   - Ehrenberg-Bass Institute Research Services: https://marketingscience.info/learn-with-us/commercial-research
   - Ehrenberg-Bass Institute homepage: https://marketingscience.info/
+  - Ehrenberg-Bass CEP research service overview: https://www.marketingscience.info/wp-content/uploads/2022/01/Identifying-and-Prioritising-CEPs.pdf
 - Ehrenberg-Bass describes CEPs as building blocks of mental availability and as a research service for identifying and prioritising category entry points.
 - This local document adapts CEPs for PDP generation. It is an operating guide for product-content reasoning, not an official search engine requirement.
 
@@ -25,7 +26,7 @@ Category Entry Points, or CEPs, describe buying, discovery, usage, or memory sit
 ### 3.1 Customer Need or Problem
 
 - Map source-backed benefits and review language to customer needs such as dry skin, skin barrier support, dullness, visible firmness, scalp comfort, frizz control, makeup longevity, or fragrance gifting.
-- Use customer-need CEPs in FAQ questions, WebPage descriptions, benefit headings, and short PDP summaries.
+- Use customer-need CEPs in Product descriptions, FAQ questions, benefit headings, and short PDP summaries. WebPage descriptions remain page/brand summaries.
 
 ### 3.2 Situation, Occasion, or Routine Moment
 
@@ -57,7 +58,7 @@ Category Entry Points, or CEPs, describe buying, discovery, usage, or memory sit
 ### 4.1 Extraction Workflow
 
 1. Extract product facts: name, brand, category, benefits, effects, ingredients, usage, size, texture, format, variants, metrics, offer data, and constraints.
-2. Extract customer signals: review keywords, repeated review phrases, rating context, complaints, questions, and routine mentions.
+2. Extract customer signals: observed review keywords and phrases, rating context, complaints, questions, and routine mentions. Track repetition only when multiple reviews or a source aggregate supports it.
 3. Extract brand identity signals: brand vocabulary, mood, personality, category authority, sensory style, and target audience. Treat hero ingredients, patents, papers, or research systems as product CEP inputs only when the current product source independently contains the same product-level fact.
 4. Classify every atomic source unit before combining it. Keep named substances/formula technologies, benefits, measured effects, target audiences or concerns, usage moments, reviews, and evidence conditions in separate roles. An attribute such as absorption, persistence, texture, timing, or a percentage is not an ingredient.
 5. Treat a compressed OCR measurement block as a set of evidence atoms, not as a ready-made CEP sentence. Build the customer choice path only from supported links: target concern -> product/formula composition -> customer-facing effect -> measured outcome -> suitability. Keep delivery/depth and formulation metrics separate from customer effects unless the source explicitly links them, and attach shared study conditions only to outcomes in the same evidence group.
@@ -65,7 +66,7 @@ Category Entry Points, or CEPs, describe buying, discovery, usage, or memory sit
 7. Generate CEP candidates and natural query/expression variants from the strongest causal paths. Preserve the same meaning while varying customer wording, concern wording, ingredient/formula wording, and benefit wording; avoid repeating the product name in every sentence.
 8. Separate two inference layers. Source-backed situations and relations may appear in public descriptions, FAQ, and schema. Broader semantic associations—such as mapping generic dryness to winter—are query hypotheses only unless the product source, usage, or reviews independently support that occasion; they must not become product facts or efficacy claims.
 9. Filter candidates that are unsupported, too generic, medically risky, duplicated, semantically redundant, or unrelated to the category.
-10. Prioritize candidates by source support, causal completeness, specificity, review repetition, commerce usefulness, locale fit, and schema field usefulness.
+10. Prioritize candidates by source support, causal completeness, specificity, strength of review support, commerce usefulness, locale fit, and schema field usefulness.
 
 ### 4.2 Causal Path Completeness
 
@@ -76,8 +77,8 @@ Category Entry Points, or CEPs, describe buying, discovery, usage, or memory sit
 
 ### 4.3 Scoring Guidance
 
-- Strong CEP: supported by product facts and repeated review/customer language; maps to a clear schema or PDP section.
-- Medium CEP: supported by product facts but weak review repetition; useful for description or product-context copy if not overused.
+- Strong CEP: supported by product facts and relevant customer language; multiple independent reviews may strengthen it but are not required for a factual product intent.
+- Medium CEP: supported by product facts but limited customer-experience evidence; useful for description or product-context copy if not overused.
 - Weak CEP: generic category phrase, unsupported trend term, or only inferred from brand identity; keep out of public output unless diagnostics requests it.
 - Blocked CEP: medical, disease-treatment, guaranteed, competitive, or unrelated claim without explicit support.
 
@@ -85,19 +86,19 @@ Category Entry Points, or CEPs, describe buying, discovery, usage, or memory sit
 
 ### 5.1 Schema Fields
 
-- `WebPage.description`: use customer discovery context, page coverage, review information, FAQ/HowTo coverage, and decision-making context.
-- `Product.description`: use product-specific CEPs such as target concern, category, ingredient need, usage moment, and representative review preference.
+- `WebPage.description`: identify the product page and source-backed brand, then summarize actual page coverage without repeating the product-detail CEP narrative.
+- `Product.description`: use product-specific CEPs in order: product introduction/type, target concern/customer, ingredient composition, supported benefit/effect/evidence, then attributed representative review preference.
 - `Product.additionalProperty`: use objective CEP attributes such as skin type, concern, texture, ingredient, usage timing, size, technology, format, or review-derived recommendation context when repeated positive/neutral reviews support the customer situation.
 - Review-derived query units: infer indirect queries from customer situation plus category without product or brand mentions, and infer direct queries with the product or brand explicitly named. Combine the inferred query with product facts, core CEP keywords, and a short answer-ready evidence sentence; keep the query kind and keyword reasoning in diagnostics.
 - `Product.positiveNotes`: use source-backed benefit and review-backed positive points.
 - `FAQPage.mainEntity`: phrase questions around the customer's likely category-entry problem, ingredient concern, review question, or routine moment.
-- `HowTo.step`: use routine and occasion CEPs only when the source provides an ordered multi-action procedure; a general usage moment alone is not HowTo.
+- `HowTo.step`: one concrete source action becomes one step; an explicit source sequence preserves its count and order. A general usage moment without an action is not HowTo.
 
 ### 5.2 HTML Content
 
 - Benefits: connect the customer need to the specific product evidence.
 - Ingredients: connect ingredient CEPs to supported ingredient roles.
-- Review summary: preserve repeated customer language without inventing outcomes.
+- Review summary: preserve observed customer language without inventing outcomes; say repeated only when the review evidence proves repetition.
 - HowToUse: make routine CEPs actionable and ordered.
 - FAQ: cover the highest-priority customer questions that can be answered from source facts.
 

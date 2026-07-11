@@ -20,10 +20,26 @@ export async function POST(request: Request): Promise<Response> {
     deployments: {
       ocr: process.env.AZURE_OPENAI_OCR_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
       reasoning: process.env.AZURE_OPENAI_REASONING_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
-      embedding: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT
+      embedding: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT,
+      proofreading: process.env.AZURE_OPENAI_PROOFREADING_DEPLOYMENT
     },
     apiVersion: process.env.AZURE_OPENAI_API_VERSION,
     temperature: envAzureOpenAiTemperature,
+    finalProofreading: {
+      enabled: provider !== "mock" && Boolean(resolveProviderApiKey(provider)),
+      provider,
+      apiKey: resolveProviderApiKey(provider),
+      model: provider === "azure-openai"
+        ? process.env.AZURE_OPENAI_PROOFREADING_DEPLOYMENT ?? resolveProviderModel(provider)
+        : resolveProviderModel(provider),
+      endpoint: process.env.AZURE_OPENAI_ENDPOINT,
+      deployment: provider === "azure-openai"
+        ? process.env.AZURE_OPENAI_PROOFREADING_DEPLOYMENT
+          ?? process.env.AZURE_OPENAI_REASONING_DEPLOYMENT
+          ?? process.env.AZURE_OPENAI_DEPLOYMENT
+        : undefined,
+      apiVersion: process.env.AZURE_OPENAI_API_VERSION
+    },
     embedding: {
       provider: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT ? "azure-openai" : "local",
       apiKey: process.env.AZURE_OPENAI_API_KEY,

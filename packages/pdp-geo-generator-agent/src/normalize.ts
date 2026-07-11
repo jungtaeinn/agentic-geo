@@ -86,32 +86,76 @@ export function normalizePdpProduct(
     ...mapped.strings("usage")
   ].map(cleanSourceSignalText).filter(isUsefulSourceText)).slice(0, 120);
 
-  const description = firstLong([
-    ...mapped.strings("description"),
-    ...textCandidatesByKey(source, /description|desc|summary|body|linePromo/i),
-    ...sourceTexts
-  ]);
+  // An explicitly routed description is authoritative even when it is short.
+  // Falling through to an arbitrary longer `body` used to let nested review
+  // copy replace valid product descriptions such as "A face serum.".
+  const mappedDescriptions = mapped.strings("description");
+  const description = first(mappedDescriptions) ?? firstLong(
+    textCandidatesByKeyOutsideReview(source, /description|desc|summary|linePromo/i)
+  );
   const inferredBrand = first([...mapped.strings("brand"), ...textCandidatesByKey(source, /brand|vendor|maker|manufacturer/i)]);
   const brand = context.hints?.brand ?? normalizeMachinePrefixedBrand(inferredBrand, name, source, context.sourceUrl);
   const category = context.hints?.category ?? first([
     ...mapped.strings("category"),
     ...textCandidatesByKey(source, /categoryName|categoryPath|taxonomy|productType|product_type/i)
   ].filter(isCategorySignal));
-  const benefits = unique([
-    ...normalizeFieldSignals([...semanticFacts.benefits, ...mapped.strings("benefits"), ...sentenceInsightTexts(ocrSentenceInsights, "benefit"), ...sectionTexts(source, categoryKeywords.benefit), ...classifiedProductSections(source, "benefit")], "benefit"),
+  const directBenefitSignals = unique([
+    ...normalizeFieldSignals([...semanticFacts.benefits, ...mapped.strings("benefits")], "benefit"),
     ...selectTrustedMappedRoleSignals(mapped.strings("benefits"), "benefit")
+  ]);
+  const inferredBenefitSignals = normalizeFieldSignals([
+    ...sentenceInsightTexts(ocrSentenceInsights, "benefit"),
+    ...sectionTexts(source, categoryKeywords.benefit),
+    ...classifiedProductSections(source, "benefit")
+  ], "benefit");
+  const benefits = unique([
+    ...directBenefitSignals,
+    ...inferredBenefitSignals.filter((item) => !isIngredientLinkDerivedRoleCandidate(
+      item,
+      semanticFacts.ingredientBenefitLinks,
+      directBenefitSignals,
+      "outcome"
+    ))
   ])
     .filter((item) => isProductScopedOutcomeEvidence(item, name))
     .slice(0, 12);
-  const effects = unique([
-    ...normalizeFieldSignals([...semanticFacts.effects, ...mapped.strings("effects"), ...sentenceInsightTexts(ocrSentenceInsights, "effect"), ...sectionTexts(source, categoryKeywords.effect), ...classifiedProductSections(source, "effect")], "effect"),
+  const directEffectSignals = unique([
+    ...normalizeFieldSignals([...semanticFacts.effects, ...mapped.strings("effects")], "effect"),
     ...selectTrustedMappedRoleSignals(mapped.strings("effects"), "effect")
+  ]);
+  const inferredEffectSignals = normalizeFieldSignals([
+    ...sentenceInsightTexts(ocrSentenceInsights, "effect"),
+    ...sectionTexts(source, categoryKeywords.effect),
+    ...classifiedProductSections(source, "effect")
+  ], "effect");
+  const effects = unique([
+    ...directEffectSignals,
+    ...inferredEffectSignals.filter((item) => !isIngredientLinkDerivedRoleCandidate(
+      item,
+      semanticFacts.ingredientBenefitLinks,
+      directEffectSignals,
+      "outcome"
+    ))
   ])
     .filter((item) => isProductScopedOutcomeEvidence(item, name))
     .slice(0, 12);
-  const ingredients = unique([
-    ...normalizeFieldSignals([...semanticFacts.ingredients, ...mapped.strings("ingredients"), ...sentenceInsightTexts(ocrSentenceInsights, "ingredient"), ...sectionTexts(source, categoryKeywords.ingredient), ...classifiedProductSections(source, "ingredient")], "ingredient"),
+  const directIngredientSignals = unique([
+    ...normalizeFieldSignals([...semanticFacts.ingredients, ...mapped.strings("ingredients")], "ingredient"),
     ...selectTrustedMappedRoleSignals(mapped.strings("ingredients"), "ingredient")
+  ]);
+  const inferredIngredientSignals = normalizeFieldSignals([
+    ...sentenceInsightTexts(ocrSentenceInsights, "ingredient"),
+    ...sectionTexts(source, categoryKeywords.ingredient),
+    ...classifiedProductSections(source, "ingredient")
+  ], "ingredient");
+  const ingredients = unique([
+    ...directIngredientSignals,
+    ...inferredIngredientSignals.filter((item) => !isIngredientLinkDerivedRoleCandidate(
+      item,
+      semanticFacts.ingredientBenefitLinks,
+      directIngredientSignals,
+      "ingredient"
+    ))
   ]).slice(0, 24);
   const usage = normalizeFieldSignals([...semanticFacts.usageSteps, ...mapped.strings("usage"), ...sentenceInsightTexts(ocrSentenceInsights, "usage"), ...sectionTexts(source, categoryKeywords.usage), ...classifiedProductSections(source, "usage")], "usage").slice(0, 8);
   // Preserve a broader evidence pool for semantic FAQ planning. Public FAQ is
@@ -187,6 +231,23 @@ export function normalizePdpProduct(
     evidence,
     ocrSentences
   };
+}
+
+function isIngredientLinkDerivedRoleCandidate(
+  value: string,
+  links: PdpSemanticIngredientBenefitLink[],
+  directRoleSignals: string[],
+  role: "ingredient" | "outcome"
+): boolean {
+  const candidate = normalizeEvidenceEntityText(value);
+  if (!candidate || directRoleSignals.some((signal) => normalizeEvidenceEntityText(signal) === candidate)) {
+    return false;
+  }
+  const linkedValues = links.flatMap((link) => role === "outcome"
+    ? [link.benefit, link.effect, link.sentence, link.sourceText]
+    : [link.benefit, link.effect, link.sentence, link.sourceText]);
+  return linkedValues.some((linkedValue) => Boolean(linkedValue)
+    && normalizeEvidenceEntityText(linkedValue ?? "") === candidate);
 }
 
 function unwrapProductPayload(input: unknown): unknown {
@@ -1819,6 +1880,33 @@ function textCandidatesByKey(source: unknown, pattern: RegExp): string[] {
   return unique(results.map(cleanText).filter((value) => value.length > 0));
 }
 
+function textCandidatesByKeyOutsideReview(source: unknown, pattern: RegExp): string[] {
+  const results: string[] = [];
+  const reviewContainer = /(?:reviews?|reviewItems?|reviewInfo|reviewAnalysis|reviewSignals?|reviewSummar(?:y|ies)|ratingSummary|testimonials?|customerReviews?|customerReviewAnalysis|userReviews?|후기|리뷰)/iu;
+  const visitCandidate = (value: unknown, path: string[], depth: number) => {
+    if (depth > 8) {
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => visitCandidate(item, [...path, String(index)], depth + 1));
+      return;
+    }
+    if (!isRecord(value)) {
+      return;
+    }
+    for (const [key, childValue] of Object.entries(value)) {
+      const nextPath = [...path, key];
+      const insideReview = nextPath.some((part) => reviewContainer.test(part));
+      if (!insideReview && pattern.test(key)) {
+        results.push(...flattenTextValues(childValue));
+      }
+      visitCandidate(childValue, nextPath, depth + 1);
+    }
+  };
+  visitCandidate(source, [], 0);
+  return unique(results.map(cleanText).filter((value) => value.length > 0));
+}
+
 function allStrings(value: unknown): string[] {
   const results: string[] = [];
   visit(value, (node) => {
@@ -2151,7 +2239,7 @@ function hasConcreteKoreanUsageAction(value: string): boolean {
 
 function normalizeSourceUsageInstruction(value: string): string {
   let normalized = stripLeadingUsageMeasurementLabels(cleanSourceSignalText(value)
-    .replace(/\bStep\s+\d+\b\.?/gi, "")
+    .replace(/\bStep\s+\d+\b[.:)]?\s*/gi, "")
     .replace(/^\d+[.)]?\s*/, "")
     .replace(/\s+/g, " ")
     .trim());

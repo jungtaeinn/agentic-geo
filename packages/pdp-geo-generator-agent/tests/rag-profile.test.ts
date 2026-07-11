@@ -234,6 +234,10 @@ describe("readPdpGeoGeneratorRagProfile", () => {
     expect(query).toContain("positive or neutral customer review FAQ intent");
     expect(query).toContain("WebPage/Product description separation");
     expect(query).toContain("public wording without internal diagnostic labels");
+    expect(query).toContain("Product.description order: product introduction and type -> target customer and concrete concern/CEP -> ingredient and formula composition -> supported finished-product benefits/effects and evidence -> concise attributed review summary last");
+    expect(query).toContain("Keep directions out of Product.description");
+    expect(query).toContain("WebPage.description covers the product page, source-backed brand, and actual page-scope information");
+    expect(query).toContain("omits unordered usage notes");
   });
 
   it("keeps default fallback RAG aligned with answer-ready content and public wording guardrails", () => {
@@ -247,7 +251,7 @@ describe("readPdpGeoGeneratorRagProfile", () => {
     expect(bestPractice?.content).toContain("Public Wording Guardrails");
     expect(bestPractice?.content).toContain("Schema.org + GEO Description Direction");
     expect(bestPractice?.content).toContain("FAQPage has no quota");
-    expect(bestPractice?.content).toContain("at least two distinct actions");
+    expect(bestPractice?.content).toContain("one concrete source instruction becomes one HowTo step");
     expect(bestPractice?.content).toContain("OCR Sentence Diagnostics and English RAG Use");
     expect(bestPractice?.content).toContain("natural English commerce language");
     expect(bestPractice?.content).toContain("Do not reuse the same text for WebPage.description and Product.description");
@@ -297,6 +301,43 @@ describe("readPdpGeoGeneratorRagProfile", () => {
     expect(plan.mode).toBe("agentic-subquery-planning");
     expect(plan.queries.some((query) => query.target === "faq" && query.fieldTargets.includes("FAQPage.mainEntity"))).toBe(true);
     expect(plan.queries.some((query) => query.target === "howToUse" && query.fieldTargets.includes("HowTo.step"))).toBe(true);
+    expect(plan.queries.find((query) => query.target === "howToUse")?.query)
+      .toContain("One concrete source instruction becomes exactly Step 1");
+    expect(plan.queries.find((query) => query.target === "howToUse")?.query)
+      .toContain("never infer a routine from action-stage order");
+  });
+
+  it("keeps targeted description retrieval aligned with the Product and WebPage contracts", () => {
+    const product = {
+      name: "Reference Serum",
+      brand: "Reference Lab",
+      benefits: ["hydration"],
+      effects: [],
+      ingredients: ["Niacinamide"],
+      usage: ["Apply after toner."],
+      metrics: [],
+      faq: [],
+      reviews: { keywords: ["lightweight texture"], items: [] },
+      images: [],
+      options: [],
+      breadcrumbs: [],
+      sourceTexts: []
+    };
+    const plan = createPdpGeoRagQueryPlan(product, "en-US", "US", {
+      queryPlanning: {
+        enabled: true,
+        updateTargets: ["productDescription", "webPageDescription"]
+      }
+    });
+    const productQuery = plan.queries.find((query) => query.target === "productDescription")?.query ?? "";
+    const pageQuery = plan.queries.find((query) => query.target === "webPageDescription")?.query ?? "";
+
+    expect(productQuery).toContain("product introduction and type -> target customer and concrete concern/CEP -> ingredient and formula composition");
+    expect(productQuery).toContain("concise attributed customer-review summary last");
+    expect(productQuery).toContain("Keep usage directions separate");
+    expect(pageQuery).toContain("identify the product page and source-backed brand");
+    expect(pageQuery).toContain("actual information scope available on the page");
+    expect(pageQuery).toContain("Do not repeat the Product.description buyer narrative");
   });
 
   it("splits long reference artifacts into bounded local RAG chunks", async () => {

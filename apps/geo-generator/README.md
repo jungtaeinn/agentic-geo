@@ -8,11 +8,11 @@
 
 | 입력 | 실행 흐름 | 결과 |
 | --- | --- | --- |
-| PDP URL | `pdp-extractor-agent` -> `pdp-geo-generator-agent` -> validation/repair | 추출 근거가 포함된 GEO artifact |
-| REST API URL | `pdp-extractor-agent` -> `pdp-geo-generator-agent` -> validation/repair | API 기반 상품 정보로 생성된 GEO artifact |
-| Product JSON | `pdp-geo-generator-agent` -> validation/repair | 내부 상품 JSON을 바로 GEO artifact로 변환 |
+| PDP URL | `pdp-extractor-agent` -> `pdp-geo-generator-agent` -> configured final proofreading -> read-only validation | 추출 근거가 포함된 GEO artifact |
+| REST API URL | `pdp-extractor-agent` -> `pdp-geo-generator-agent` -> configured final proofreading -> read-only validation | API 기반 상품 정보로 생성된 GEO artifact |
+| Product JSON | `pdp-geo-generator-agent` -> configured final proofreading -> read-only validation | 내부 상품 JSON을 바로 GEO artifact로 변환 |
 
-이 앱은 각 agent의 책임을 UI와 API에서 분리해 보여줍니다. Extractor 단계는 source/evidence/log를 만들고, Generator 단계는 normalize/RAG/retrieve/generate/validate/repair/artifact 과정을 기록합니다.
+이 앱은 각 agent의 책임을 UI와 API에서 분리해 보여줍니다. Extractor 단계는 source/evidence/log를 만들고, Generator 단계는 normalize/RAG/retrieve/generate/validate/repair/artifact ID를 유지합니다. 여기서 `repair` stage는 호환용 이름이며 자동 수정 없이 read-only validation findings를 기록합니다.
 
 ## Output
 
@@ -21,7 +21,7 @@
 - `schemaMarkup`: `Product`, `FAQPage`, `HowTo`, `BreadcrumbList`, `WebPage` 기반 JSON-LD와 복사용 script tag
 - `content`: GEO에 맞게 재구성된 PDP HTML accordion content
 
-`content.sections`에는 `productName`, `description`, `quickFacts`, `benefits`, `ingredients`, `howToUse`, `faq`가 포함됩니다. 진단 정보는 `recommendations`, `evidence`, `terminology`, `validationWarnings`, `selectedRagChunks`로 분리됩니다.
+`content.sections`에는 `productName`, `description`, `quickFacts`, `benefits`, `ingredients`, `howToUse`, `faq`가 포함됩니다. 진단 정보는 `recommendations`, `evidence`, `terminology`, `finalProofreading`, `validationWarnings`, `validationFindings`, `selectedRagChunks`로 분리됩니다.
 
 ## Generator Stages
 
@@ -36,9 +36,9 @@
 | `embed` | hash embedding 또는 managed embedding 전략 적용 |
 | `retrieve` | 상품/locale/schema 목표에 맞는 RAG 검색 |
 | `rerank` | schema, locale, terminology, GEO 관련성 기준으로 재정렬 |
-| `generate` | JSON-LD schema markup과 HTML content 생성 |
-| `validate` | JSON-LD와 HTML 구조 검증 |
-| `repair` | 필수 필드와 안전하지 않은 HTML 보정 |
+| `generate` | JSON-LD/HTML 생성 후 non-mock provider/API key가 설정되면 근거가 결합된 필드에 별도 final proofreading 자동 호출 |
+| `validate` | JSON-LD와 HTML 구조를 읽기 전용으로 검증 |
+| `repair` | 호환용 stage ID. 자동 수정 없이 validation findings 기록 |
 | `artifact` | 복사 가능한 최종 산출물 직렬화 |
 
 ## 화면 구성
@@ -100,12 +100,12 @@ GEO generator RAG는 schema.org, E-E-A-T, CEP, BestPractice, GEO paper, locale e
 
 ## Validation Diagnostics
 
-Generator는 산출물을 반환하기 전에 다음 항목을 검증하고 필요한 경우 보정합니다.
+Generator는 산출물을 반환하기 전에 다음 항목을 읽기 전용으로 검증합니다.
 
 - JSON-LD `@context`, `@graph`, `Product` 필수 정보
 - `FAQPage` Question/Answer와 `HowTo` step 구조
-- accordion HTML의 script, inline event, style attribute 제거
-- 보정 내역을 `validationWarnings`와 `evidence`로 기록
+- accordion HTML의 script, inline event, style attribute 문제 탐지
+- 발견 사항과 제안 조치를 `validationWarnings`, `validationFindings`, `evidence`로 기록하며 최종 문장을 validator가 수정하지 않음
 
 ## API Routes
 

@@ -259,6 +259,7 @@ interface ProviderSettings {
   azureDeployment: string;
   azureOcrDeployment: string;
   azureReasoningDeployment: string;
+  azureProofreadingDeployment: string;
   azureEmbeddingDeployment: string;
   azureApiVersion: string;
   azureRerankerProvider: "cohere" | "azure-ai-search-semantic";
@@ -287,6 +288,7 @@ interface RuntimeLlmConfig {
     ocr?: string;
     reasoning?: string;
     embedding?: string;
+    proofreading?: string;
   };
   apiVersion?: string;
   embedding?: {
@@ -385,6 +387,7 @@ const defaultProviderSettings: ProviderSettings = {
   azureDeployment: "",
   azureOcrDeployment: "gpt-5.5",
   azureReasoningDeployment: "gpt-5.5",
+  azureProofreadingDeployment: "gpt-5.5",
   azureEmbeddingDeployment: "text-embedding-3-small",
   azureApiVersion: "2025-04-01-preview",
   azureRerankerProvider: "cohere",
@@ -810,9 +813,9 @@ const generatorStepCopy = {
     embed: ["임베딩 구성", "로컬 또는 managed vector store 임베딩 전략 적용"],
     retrieve: ["RAG 검색", "상품/locale/schema 목표에 맞는 관련 문서 검색"],
     rerank: ["리랭킹", "schema, locale, terminology, GEO 관련성을 기준으로 재정렬"],
-    generate: ["GEO 산출물 생성", "JSON-LD schema markup과 HTML content 생성"],
+    generate: ["GEO 산출물 생성 및 최종 교정", "JSON-LD/HTML 생성 후 설정된 non-mock provider에서 근거가 연결된 필드를 별도 fluency-only 모델로 자동 검수"],
     validate: ["문법 검증", "JSON-LD와 HTML 구조 검증"],
-    repair: ["방어 보정", "누락된 필수 필드와 안전하지 않은 HTML 보정"],
+    repair: ["검증 결과 기록", "자동 수정 없이 validation findings를 diagnostics에 기록"],
     artifact: ["최종 아티팩트 생성", "복사 가능한 schemaMarkup과 content 결과 생성"]
   },
   en: {
@@ -823,9 +826,9 @@ const generatorStepCopy = {
     embed: ["Build embeddings", "Apply local or managed vector store embedding strategy"],
     retrieve: ["Retrieve RAG", "Search relevant guidance for product, locale, and schema targets"],
     rerank: ["Rerank", "Sort by schema, locale, terminology, and GEO relevance"],
-    generate: ["Generate GEO artifacts", "Create JSON-LD schema markup and HTML content"],
+    generate: ["Generate and proofread GEO artifacts", "Create JSON-LD/HTML, then automatically review evidence-bound fields with the configured non-mock fluency model"],
     validate: ["Validate syntax", "Validate JSON-LD and HTML structure"],
-    repair: ["Repair defensively", "Repair missing required fields and unsafe HTML"],
+    repair: ["Record validation findings", "Record diagnostics without mutating the final public copy"],
     artifact: ["Create final artifact", "Create copy-ready schemaMarkup and content output"]
   }
 } satisfies Record<UiLanguage, Record<PdpGeoGenerationStageId, readonly [string, string]>>;
@@ -1983,7 +1986,8 @@ export function GeoGeneratorConsole() {
           ...current,
           azureDeployment: value,
           azureOcrDeployment: current.azureOcrDeployment || value,
-          azureReasoningDeployment: current.azureReasoningDeployment || value
+          azureReasoningDeployment: current.azureReasoningDeployment || value,
+          azureProofreadingDeployment: current.azureProofreadingDeployment || value
         };
       }
       return current;
@@ -4313,6 +4317,7 @@ function createGeneratorProcessPanelDetail(
 
   const stageId = String(step.id);
   const validationRepairs = diagnostics.validationRepairs ?? [];
+  const validationFindings = diagnostics.validationFindings ?? [];
   const stageBase = {
     id: step.id,
     title: step.title,
@@ -4328,31 +4333,32 @@ function createGeneratorProcessPanelDetail(
   };
 
   if (stageId === "validate" || stageId === "repair") {
-    const firstRepair = validationRepairs[0];
+    const firstFinding = validationFindings[0];
     const title = localized.title;
-    const subtitle = firstRepair
-      ? `${validationRepairs.length}개 보정 · ${firstRepair.field}: ${firstRepair.issue}`
+    const subtitle = firstFinding
+      ? `${validationFindings.length}개 진단 · ${firstFinding.field}: ${firstFinding.issue}`
       : diagnostics.validationWarnings.length > 0
         ? `${diagnostics.validationWarnings.length}개 경고 · ${diagnostics.validationWarnings[0]}`
-        : (uiLanguage === "ko" ? "검증/보정 변경 없음" : "No validation or repair change");
+        : (uiLanguage === "ko" ? "읽기 전용 검증 통과" : "Read-only validation passed");
 
     return createPanelDetail("Generator process", title, subtitle, {
       stage: stageBase,
       summary: {
         warningCount: diagnostics.validationWarnings.length,
         repairCount: validationRepairs.length,
-        firstIssue: firstRepair?.issue,
-        firstAction: firstRepair?.action
+        findingCount: validationFindings.length,
+        firstIssue: firstFinding?.issue,
+        firstAction: firstFinding?.suggestedAction
       },
-      brokenDataAndRepairs: validationRepairs.map((repair, index) => ({
+      validationFindings: validationFindings.map((finding, index) => ({
         index: index + 1,
-        field: repair.field,
-        source: repair.source,
-        issue: repair.issue,
-        action: repair.action,
-        before: repair.before,
-        after: repair.after,
-        evidence: repair.evidence ?? []
+        field: finding.field,
+        source: finding.source,
+        issue: finding.issue,
+        suggestedAction: finding.suggestedAction,
+        before: finding.before,
+        suggestedAfter: finding.suggestedAfter,
+        evidence: finding.evidence ?? []
       })),
       warnings: diagnostics.validationWarnings,
       repairEvidence: diagnostics.evidence.filter((item) => item.source === "repair" || item.source === "schema-validator" || item.source === "html-validator"),
@@ -4366,7 +4372,8 @@ function createGeneratorProcessPanelDetail(
     }, {
       ...baseMetadata,
       warnings: diagnostics.validationWarnings.length,
-      repairs: validationRepairs.length
+      repairs: validationRepairs.length,
+      findings: validationFindings.length
     });
   }
 
@@ -4402,6 +4409,7 @@ function createGeneratorProcessPanelDetail(
         ocrSentences: diagnostics.ocrSentences
       },
       generatedEvidence: diagnostics.evidence.filter((item) => item.source === "rag" || item.source === "terminology"),
+      finalProofreading: diagnostics.finalProofreading,
       recommendations: diagnostics.recommendations,
       output: result
         ? {
@@ -4412,7 +4420,8 @@ function createGeneratorProcessPanelDetail(
     }, {
       ...baseMetadata,
       recommendations: diagnostics.recommendations.length,
-      evidence: diagnostics.evidence.length
+      evidence: diagnostics.evidence.length,
+      proofreadEdits: diagnostics.finalProofreading?.acceptedFields.length ?? 0
     });
   }
 
@@ -5273,7 +5282,7 @@ function AzureProviderSettings({
         />
       </div>
       <p className="azureCredentialNote">
-        OCR, Embedding, Final classification/reasoning은 위 Azure API Key와 Endpoint를 함께 사용합니다.
+        OCR, Embedding, Final classification/reasoning, Final proofreading은 위 Azure API Key와 Endpoint를 함께 사용합니다.
       </p>
 
       <section className="azurePipelineBlock">
@@ -5318,6 +5327,15 @@ function AzureProviderSettings({
             value={settings.azureReasoningDeployment}
             placeholder="gpt-5.5"
             onChange={(value) => onChange("azureReasoningDeployment", value)}
+          />
+          <AzureDeploymentStep
+            deploymentListId={deploymentListId}
+            order="5"
+            title="Final proofreading"
+            subtitle="Fluency and duplicate check"
+            value={settings.azureProofreadingDeployment}
+            placeholder="gpt-5.5"
+            onChange={(value) => onChange("azureProofreadingDeployment", value)}
           />
         </div>
       </section>
@@ -5708,6 +5726,7 @@ function createRuntimeLlmConfig(settings: ProviderSettings): RuntimeLlmConfig {
     const apiVersion = settings.azureApiVersion.trim();
     const ocrDeployment = settings.azureOcrDeployment.trim() || settings.azureDeployment.trim();
     const reasoningDeployment = settings.azureReasoningDeployment.trim() || settings.azureDeployment.trim();
+    const proofreadingDeployment = settings.azureProofreadingDeployment.trim() || reasoningDeployment;
     const embeddingDeployment = settings.azureEmbeddingDeployment.trim();
     const cohereSelected = settings.azureRerankerProvider === "cohere";
 
@@ -5719,7 +5738,8 @@ function createRuntimeLlmConfig(settings: ProviderSettings): RuntimeLlmConfig {
       deployments: {
         ocr: ocrDeployment,
         reasoning: reasoningDeployment,
-        embedding: embeddingDeployment
+        embedding: embeddingDeployment,
+        proofreading: proofreadingDeployment
       },
       apiVersion,
       embedding: {
@@ -6576,6 +6596,9 @@ function getProviderValidationMessage(settings: ProviderSettings, language: UiLa
     }
     if ((settings.azureReasoningDeployment.trim() || settings.azureDeployment.trim()).length === 0) {
       return language === "ko" ? "Azure 최종 분류/분석 deployment를 입력해주세요." : "Enter an Azure final reasoning deployment.";
+    }
+    if ((settings.azureProofreadingDeployment.trim() || settings.azureReasoningDeployment.trim() || settings.azureDeployment.trim()).length === 0) {
+      return language === "ko" ? "Azure final proofreading deployment를 입력해주세요." : "Enter an Azure final proofreading deployment.";
     }
     if (settings.azureEmbeddingDeployment.trim().length === 0) {
       return language === "ko" ? "Azure embedding deployment를 입력해주세요." : "Enter an Azure embedding deployment.";

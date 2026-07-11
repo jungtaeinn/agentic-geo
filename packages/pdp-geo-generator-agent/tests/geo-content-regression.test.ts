@@ -17,6 +17,18 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function expectKoreanWebPageScopeDescription(description: string, productName: string, brand?: string): void {
+  expect(description).toContain(productName);
+  expect(description.split(productName).length - 1).toBe(1);
+  expect(description).toMatch(/상품\s*페이지/u);
+  expect(description).toMatch(/페이지\s*본문에서는|페이지에서\s*확인할\s*수\s*있는\s*주요\s*성분·기술|페이지에\s*공개된\s*주요\s*효능·효과/u);
+  expect(description).not.toMatch(/구매\s*판단에\s*필요한|상품별\s*FAQ|가격·구매\s*정보를\s*함께\s*제공/u);
+  if (brand) {
+    expect(description).toContain(brand);
+  }
+  expect(description).not.toMatch(/FAQ와\s*HowTo|페이지에서\s*확인할\s*수\s*있는\s*정보\s*범위/u);
+}
+
 describe("evidence-rich GEO regression contracts", () => {
   it("accepts audited same-language GEO synthesis for descriptions, FAQ, and CEP", async () => {
     const product = evidenceRichProduct();
@@ -175,21 +187,23 @@ describe("evidence-rich GEO regression contracts", () => {
     expect(productDescription).toMatch(/장벽|보습/u);
     expect(productDescription).toMatch(/리뷰|촉촉/u);
     expect(productDescription).not.toMatch(/(?:필요|고민|효능|효과|케어|보습|장벽|수분)[^.!?。！？]{0,90}선택할\s*수\s*있습니다/u);
-    expect(webPageDescription).toMatch(/상품\s*페이지/u);
-    expect(webPageDescription).toMatch(/세라마이드/u);
-    expect(webPageDescription).not.toBe("하이드라 배리어 크림에 대해 제공된 정보를 확인할 수 있는 상품 페이지입니다.");
-    expect(webPageDescription).not.toMatch(/(?:필요|고민|효능|효과|케어|보습|장벽|수분)[^.!?。！？]{0,90}(?:비교|확인|살펴|고려)할\s*수\s*있습니다/u);
-    const targetIndex = webPageDescription.indexOf("건조하고 민감한 피부");
-    const ingredientIndex = webPageDescription.indexOf("세라마이드");
-    const benefitIndex = webPageDescription.indexOf("피부 장벽");
-    const reviewIndex = webPageDescription.indexOf("고객 리뷰");
+    const targetIndex = productDescription.indexOf("건조하고 민감한 피부");
+    const ingredientIndex = productDescription.indexOf("세라마이드");
+    const benefitIndex = productDescription.indexOf("피부 장벽");
+    const reviewIndex = productDescription.indexOf("고객 리뷰");
     expect(targetIndex).toBeGreaterThan(-1);
     expect(targetIndex).toBeLessThan(ingredientIndex);
     expect(ingredientIndex).toBeLessThan(benefitIndex);
     expect(benefitIndex).toBeLessThan(reviewIndex);
-    const webPageSentences = webPageDescription.split(/(?<=[.!?。！？])\s+/u);
-    expect(webPageSentences.some((sentence) => /세라마이드/u.test(sentence) && /사용|포함|적용|구성/u.test(sentence))).toBe(true);
-    expect(webPageSentences.some((sentence) => /피부\s*장벽|보습/u.test(sentence) && /도와|돕/u.test(sentence))).toBe(true);
+    const productSentences = productDescription.split(/(?<=[.!?。！？])\s+/u);
+    expect(productSentences.some((sentence) => /주요\s*성분/u.test(sentence) && /세라마이드/u.test(sentence))).toBe(true);
+    expect(productSentences.some((sentence) => /피부\s*장벽|보습/u.test(sentence) && /도와|돕/u.test(sentence))).toBe(true);
+
+    expectKoreanWebPageScopeDescription(webPageDescription, "하이드라 배리어 크림", "테스트랩");
+    expect(webPageDescription).not.toBe("하이드라 배리어 크림에 대해 제공된 정보를 확인할 수 있는 상품 페이지입니다.");
+    expect(webPageDescription).toMatch(/건조하고\s*민감한\s*피부\s*고객을\s*대상\s*고객으로\s*안내/u);
+    expect(webPageDescription).toMatch(/주요\s*성분·기술은\s*고밀도\s*세라마이드/u);
+    expect(webPageDescription).toMatch(/고객\s*리뷰에서는[^.]*촉촉한\s*사용감/u);
 
     expect(propertyValue("Key ingredients")).toContain("세라마이드");
     expect(propertyValue("Key ingredients")).not.toMatch(/(?:^|,\s*)(?:흡수력|유지력|보습\s*캡슐)(?:,|$)/u);
@@ -238,16 +252,19 @@ describe("evidence-rich GEO regression contracts", () => {
       .filter((item): item is Record<string, JsonValue> => typeof item === "object" && item !== null && !Array.isArray(item));
     const reportedDetails = String(properties.find((item) => item.name === "Reported details")?.value ?? "");
 
-    for (const description of [String(productNode.description ?? ""), String(webPage.description ?? "")]) {
-      expect(description).toContain("35%");
-      expect(description).toMatch(/기기\s*측정\s*시험/u);
-      expect(description).toMatch(/사용\s*2시간\s*후/u);
-      expect(description).not.toMatch(/10,000\s*ppm|평점\s*4\.9|리뷰\s*190개|30%\s*할인/u);
-      expect(description).not.toMatch(/확인\s*지표|평가\s*지표|결과가\s*제시|수치가\s*제시/u);
-      expect(description.indexOf("세라마이드")).toBeLessThan(description.indexOf("35%"));
-      expect(description.search(/피부\s*장벽|보습|수분\s*케어/u)).toBeLessThan(description.indexOf("35%"));
-      expect(description.indexOf("35%")).toBeLessThan(description.indexOf("고객 리뷰"));
-    }
+    const productDescription = String(productNode.description ?? "");
+    const webPageDescription = String(webPage.description ?? "");
+    expect(productDescription).toContain("35%");
+    expect(productDescription).toMatch(/기기\s*측정\s*시험/u);
+    expect(productDescription).toMatch(/사용\s*2시간\s*후/u);
+    expect(productDescription).not.toMatch(/10,000\s*ppm|평점\s*4\.9|리뷰\s*190개|30%\s*할인/u);
+    expect(productDescription).not.toMatch(/확인\s*지표|평가\s*지표|결과가\s*제시|수치가\s*제시/u);
+    expect(productDescription.indexOf("세라마이드")).toBeLessThan(productDescription.indexOf("35%"));
+    expect(productDescription.search(/피부\s*장벽|보습|수분\s*케어/u)).toBeLessThan(productDescription.indexOf("35%"));
+    expect(productDescription.indexOf("35%")).toBeLessThan(productDescription.indexOf("고객 리뷰"));
+
+    expectKoreanWebPageScopeDescription(webPageDescription, "하이드라 배리어 크림", "테스트랩");
+    expect(webPageDescription).not.toMatch(/공식\s*시험·측정\s*결과|35%|기기\s*측정\s*시험|사용\s*2시간\s*후|10,000\s*ppm|평점\s*4\.9|리뷰\s*190개|30%\s*할인/u);
 
     expect(reportedDetails).toContain("35%");
     expect((run.result.diagnostics.validationRepairs ?? []).filter((repair) => /description/u.test(repair.field))).toHaveLength(0);
@@ -266,9 +283,9 @@ describe("evidence-rich GEO regression contracts", () => {
     const webPageDescription = String(webPage.description ?? "");
 
     expect(productDescription.match(/하이드라\s*배리어\s*크림/gu)?.length ?? 0).toBe(1);
-    expect(webPageDescription.match(/하이드라\s*배리어\s*크림/gu)?.length ?? 0).toBe(2);
     expect(productDescription).toMatch(/주요\s*성분은\s*고밀도\s*세라마이드\s*캡슐과\s*콜레스테롤이며,\s*피부\s*장벽\s*케어와\s*(?:속보습을|수분\s*케어를)\s*도와\s*건조하고\s*민감한\s*피부가\s*고민인\s*고객에게\s*적합합니다/u);
-    expect(webPageDescription).toMatch(/하이드라\s*배리어\s*크림은\s*주요\s*성분인\s*고밀도\s*세라마이드\s*캡슐과\s*콜레스테롤로\s*구성되어\s*있으며,\s*피부\s*장벽\s*케어와\s*(?:속보습을|수분\s*케어를)\s*도와\s*건조하고\s*민감한\s*피부가\s*고민인\s*고객에게\s*적합합니다/u);
+    expectKoreanWebPageScopeDescription(webPageDescription, "하이드라 배리어 크림", "테스트랩");
+    expect(webPageDescription).toMatch(/주요\s*성분·기술은\s*고밀도\s*세라마이드\s*캡슐.*콜레스테롤/u);
     expect(`${productDescription}\n${webPageDescription}`).not.toMatch(/이러한\s*효능[·・]?효과를\s*바탕으로/u);
     expect(productDescription.indexOf("세라마이드")).toBeLessThan(productDescription.indexOf("피부 장벽 케어"));
     expect(productDescription.indexOf("피부 장벽 케어")).toBeLessThan(productDescription.indexOf("고객 리뷰"));
@@ -290,7 +307,7 @@ describe("evidence-rich GEO regression contracts", () => {
       .filter((item): item is Record<string, JsonValue> => typeof item === "object" && item !== null && !Array.isArray(item));
     const faqText = JSON.stringify(faqItems);
 
-    expect(faqItems.some((item) => /주요\s*성분과\s*효능/u.test(String(item.name ?? "")))).toBe(true);
+    expect(faqItems.some((item) => /주요\s*성분이나\s*기술.*역할/u.test(String(item.name ?? "")))).toBe(true);
     expect(faqText).toMatch(/세라마이드/u);
     expect(faqText).toMatch(/피부\s*장벽|보습/u);
     expect(faqText).not.toMatch(/고객\s*리뷰|긍정\s*리뷰|리뷰에서\s*반복/u);
@@ -328,21 +345,24 @@ describe("evidence-rich GEO regression contracts", () => {
     const properties = (productNode.additionalProperty as JsonValue[])
       .filter((item): item is Record<string, JsonValue> => typeof item === "object" && item !== null && !Array.isArray(item));
     const reportedDetails = String(properties.find((item) => item.name === "Reported details")?.value ?? "");
+    const productDescription = String(productNode.description ?? "");
+    const webPageDescription = String(webPage.description ?? "");
 
-    for (const description of [String(productNode.description ?? ""), String(webPage.description ?? "")]) {
-      expect(description).toMatch(/주요\s*성분(?:은|인)\s*고밀도\s*세라마이드\s*캡슐과\s*콜레스테롤(?:입니다|이며|로\s*구성(?:됩니다|되며|되어\s*있습니다|되어\s*있으며))/u);
-      expect(description).toMatch(/한\s*번\s*사용\s*후\s*보습이\s*120시간\s*지속됩니다/u);
-      expect(description).toMatch(/\(주\)테스트리서치/u);
-      expect(description).toMatch(/2024년\s*1월\s*2일부터\s*2024년\s*2월\s*16일까지/u);
-      expect(description).toMatch(/여성\s*32명/u);
-      expect(description).toMatch(/사용\s*직후\s*보습량은\s*사용\s*전\s*대비\s*2배\s*증가/u);
-      expect(description).toMatch(/단\s*10분\s*만에\s*손상\s*장벽은\s*사용\s*전\s*대비\s*2배\s*개선/u);
-      expect(description).toMatch(/건조하고\s*민감한\s*피부(?:가\s*고민인)?\s*고객에게\s*적합합니다/u);
-      expect(description).not.toMatch(/190%|ex\s*vivo/iu);
-      expect(description.indexOf("고밀도 세라마이드 캡슐")).toBeLessThan(description.indexOf("피부 장벽 케어"));
-      expect(description.indexOf("피부 장벽 케어")).toBeLessThan(description.indexOf("120시간"));
-      expect(description.indexOf("120시간")).toBeLessThan(description.indexOf("고객 리뷰"));
-    }
+    expect(productDescription).toMatch(/주요\s*성분(?:은|인)\s*고밀도\s*세라마이드\s*캡슐과\s*콜레스테롤(?:입니다|이며|로\s*구성(?:됩니다|되며|되어\s*있습니다|되어\s*있으며))/u);
+    expect(productDescription).toMatch(/한\s*번\s*사용\s*후\s*보습이\s*120시간\s*지속됩니다/u);
+    expect(productDescription).toMatch(/\(주\)테스트리서치/u);
+    expect(productDescription).toMatch(/2024년\s*1월\s*2일부터\s*2024년\s*2월\s*16일까지/u);
+    expect(productDescription).toMatch(/여성\s*32명/u);
+    expect(productDescription).toMatch(/사용\s*직후\s*보습량은\s*사용\s*전\s*대비\s*2배\s*증가/u);
+    expect(productDescription).toMatch(/단\s*10분\s*만에\s*손상\s*장벽은\s*사용\s*전\s*대비\s*2배\s*개선/u);
+    expect(productDescription).toMatch(/건조하고\s*민감한\s*피부(?:가\s*고민인)?\s*고객에게\s*적합합니다/u);
+    expect(productDescription).not.toMatch(/190%|ex\s*vivo/iu);
+    expect(productDescription.indexOf("고밀도 세라마이드 캡슐")).toBeLessThan(productDescription.indexOf("피부 장벽 케어"));
+    expect(productDescription.indexOf("피부 장벽 케어")).toBeLessThan(productDescription.indexOf("120시간"));
+    expect(productDescription.indexOf("120시간")).toBeLessThan(productDescription.indexOf("고객 리뷰"));
+
+    expectKoreanWebPageScopeDescription(webPageDescription, "하이드라 배리어 크림", "테스트랩");
+    expect(webPageDescription).not.toMatch(/공식\s*시험·측정\s*결과|120시간|테스트리서치|여성\s*32명|보습량은|손상\s*장벽은|190%|ex\s*vivo/iu);
 
     expect(reportedDetails).toMatch(/120시간|\(주\)테스트리서치|여성\s*32명|사용\s*전\s*대비/u);
     expect(reportedDetails.match(/한\s*번\s*사용\s*후\s*보습이\s*120시간\s*지속/gu)?.length ?? 0).toBe(1);
@@ -376,19 +396,19 @@ describe("evidence-rich GEO regression contracts", () => {
 
     const run = await generatePdpGeo({ product, hints: { locale: "ko-KR" } });
     const graph = run.result.schemaMarkup.jsonLd["@graph"] as JsonValue[];
-    const descriptions = graph
-      .filter((node): node is Record<string, JsonValue> => typeof node === "object" && node !== null && !Array.isArray(node))
-      .filter((node) => node["@type"] === "Product" || node["@type"] === "WebPage")
-      .map((node) => String(node.description ?? ""));
+    const nodes = graph.filter((node): node is Record<string, JsonValue> => typeof node === "object" && node !== null && !Array.isArray(node));
+    const productDescription = String(nodes.find((node) => node["@type"] === "Product")?.description ?? "");
+    const webPageDescription = String(nodes.find((node) => node["@type"] === "WebPage")?.description ?? "");
 
-    for (const description of descriptions) {
-      expect(description).toMatch(/한\s*번\s*사용\s*후\s*보습이\s*96시간\s*지속/u);
-      expect(description).toMatch(/\(주\)풋노트리서치[^.!?。！？]*성인\s*30명[^.!?。！？]*인체적용시험/u);
-      expect(description).toMatch(/사용\s*직후\s*보습량은\s*1\.8배\s*증가/u);
-      expect(description).toMatch(/단\s*15분\s*만에\s*손상\s*장벽은\s*1\.6배\s*개선/u);
-      expect(description).not.toMatch(/사용\s*전\s*대비/u);
-      expect(description).not.toMatch(/\*|인체적용시험\s*완료/u);
-    }
+    expect(productDescription).toMatch(/한\s*번\s*사용\s*후\s*보습이\s*96시간\s*지속/u);
+    expect(productDescription).toMatch(/\(주\)풋노트리서치[^.!?。！？]*성인\s*30명[^.!?。！？]*인체적용시험/u);
+    expect(productDescription).toMatch(/사용\s*직후\s*보습량은\s*1\.8배\s*증가/u);
+    expect(productDescription).toMatch(/단\s*15분\s*만에\s*손상\s*장벽은\s*1\.6배\s*개선/u);
+    expect(productDescription).not.toMatch(/사용\s*전\s*대비/u);
+    expect(productDescription).not.toMatch(/\*|인체적용시험\s*완료/u);
+
+    expectKoreanWebPageScopeDescription(webPageDescription, "하이드라 배리어 크림", "테스트랩");
+    expect(webPageDescription).not.toMatch(/96시간|풋노트리서치|성인\s*30명|1\.8배|1\.6배/u);
   });
 
   it("groups arbitrary source-backed duration and study values without product-specific numbers", async () => {
@@ -418,18 +438,18 @@ describe("evidence-rich GEO regression contracts", () => {
     const run = await generatePdpGeo({ product, hints: { locale: "ko-KR" } });
     const graph = run.result.schemaMarkup.jsonLd["@graph"] as JsonValue[];
     const nodes = graph.filter((node): node is Record<string, JsonValue> => typeof node === "object" && node !== null && !Array.isArray(node));
-    const descriptions = nodes
-      .filter((node) => node["@type"] === "Product" || node["@type"] === "WebPage")
-      .map((node) => String(node.description ?? ""));
+    const productDescription = String(nodes.find((node) => node["@type"] === "Product")?.description ?? "");
+    const webPageDescription = String(nodes.find((node) => node["@type"] === "WebPage")?.description ?? "");
 
-    for (const description of descriptions) {
-      expect(description).toMatch(/수분이\s*72시간\s*지속/u);
-      expect(description).toContain("(주)뉴리서치");
-      expect(description).toMatch(/여성\s*28명/u);
-      expect(description).toMatch(/사용\s*전\s*대비\s*38%\s*증가/u);
-      expect(description).toMatch(/사용\s*전\s*대비\s*27%\s*개선/u);
-      expect(description).not.toMatch(/120시간|2배/u);
-    }
+    expect(productDescription).toMatch(/수분이\s*72시간\s*지속/u);
+    expect(productDescription).toContain("(주)뉴리서치");
+    expect(productDescription).toMatch(/여성\s*28명/u);
+    expect(productDescription).toMatch(/사용\s*전\s*대비\s*38%\s*증가/u);
+    expect(productDescription).toMatch(/사용\s*전\s*대비\s*27%\s*개선/u);
+    expect(productDescription).not.toMatch(/120시간|2배/u);
+
+    expectKoreanWebPageScopeDescription(webPageDescription, "하이드라 배리어 크림", "테스트랩");
+    expect(webPageDescription).not.toMatch(/72시간|뉴리서치|여성\s*28명|38%|27%|120시간|2배/u);
   });
 
   it("classifies a concrete ingredient over its generic class and atomizes reverse-order OCR outcomes", async () => {
@@ -475,21 +495,22 @@ describe("evidence-rich GEO regression contracts", () => {
     const run = await generatePdpGeo({ product, hints: { locale: "ko-KR", market: "KR" } });
     const graph = run.result.schemaMarkup.jsonLd["@graph"] as JsonValue[];
     const nodes = graph.filter((node): node is Record<string, JsonValue> => typeof node === "object" && node !== null && !Array.isArray(node));
-    const descriptions = nodes
-      .filter((node) => node["@type"] === "Product" || node["@type"] === "WebPage")
-      .map((node) => String(node.description ?? ""));
+    const productDescription = String(nodes.find((node) => node["@type"] === "Product")?.description ?? "");
+    const webPageDescription = String(nodes.find((node) => node["@type"] === "WebPage")?.description ?? "");
     const faqText = JSON.stringify(nodes.find((node) => node["@type"] === "FAQPage")?.mainEntity ?? []);
 
-    for (const description of descriptions) {
-      expect(description).toMatch(/주요\s*성분[^.!?。！？]*고밀도\s*세라마이드\s*캡슐[^.!?。！？]*니아신아마이드/u);
-      expect(description).not.toMatch(/주요\s*성분[^.!?。！？]*\b비타민(?:이며|이고|으로|입니다)/u);
-      expect(description).toMatch(/\(주\)범용리서치/u);
-      expect(description).toMatch(/2025년\s*4월\s*3일부터\s*2025년\s*5월\s*14일까지/u);
-      expect(description).toMatch(/성인\s*29명/u);
-      expect(description).toMatch(/사용\s*직후\s*계절성\s*건조로\s*인한\s*들뜬\s*각질은\s*사용\s*전\s*대비\s*41\.7%\s*개선/u);
-      expect(description).toMatch(/사용\s*6주\s*후\s*건조로\s*인해\s*거칠어진\s*피부결은\s*사용\s*전\s*대비\s*8\.4%\s*개선/u);
-      expect(description).not.toMatch(/인한\.|인해\.|개선\s*\(/u);
-    }
+    expect(productDescription).toMatch(/주요\s*성분[^.!?。！？]*고밀도\s*세라마이드\s*캡슐[^.!?。！？]*니아신아마이드/u);
+    expect(productDescription).not.toMatch(/주요\s*성분[^.!?。！？]*\b비타민(?:이며|이고|으로|입니다)/u);
+    expect(productDescription).toMatch(/\(주\)범용리서치/u);
+    expect(productDescription).toMatch(/2025년\s*4월\s*3일부터\s*2025년\s*5월\s*14일까지/u);
+    expect(productDescription).toMatch(/성인\s*29명/u);
+    expect(productDescription).toMatch(/사용\s*직후\s*계절성\s*건조로\s*인한\s*들뜬\s*각질은\s*사용\s*전\s*대비\s*41\.7%\s*개선/u);
+    expect(productDescription).toMatch(/사용\s*6주\s*후\s*건조로\s*인해\s*거칠어진\s*피부결은\s*사용\s*전\s*대비\s*8\.4%\s*개선/u);
+    expect(productDescription).not.toMatch(/인한\.|인해\.|개선\s*\(/u);
+
+    expectKoreanWebPageScopeDescription(webPageDescription, "범용 배리어 로션");
+    expect(webPageDescription).toMatch(/주요\s*성분·기술은\s*고밀도\s*세라마이드.*니아신아마이드/u);
+    expect(webPageDescription).not.toMatch(/범용리서치|성인\s*29명|41\.7%|8\.4%/u);
     expect(faqText).not.toMatch(/시험\s*대상\/표본\s*수\s*미공개|시험\/평가\s*기준/u);
     expect(faqText).not.toMatch(/인한\.|인해\.|개선\s*\(/u);
     expect((run.result.diagnostics.validationRepairs ?? []).filter((repair) =>
@@ -523,34 +544,37 @@ describe("evidence-rich GEO regression contracts", () => {
     const properties = (productNode.additionalProperty as JsonValue[])
       .filter((item): item is Record<string, JsonValue> => typeof item === "object" && item !== null && !Array.isArray(item));
     const reportedDetails = String(properties.find((item) => item.name === "Reported details")?.value ?? "");
+    const productDescription = String(productNode.description ?? "");
+    const webPageDescription = String(webPage.description ?? "");
+    const sentences = productDescription.split(/(?<=[.!?。！？])\s+/u);
+    const durationSentence = sentences.find((sentence) => /120시간/u.test(sentence));
+    const studySentence = sentences.find((sentence) => /인체적용시험/u.test(sentence));
+    expect(durationSentence).toMatch(/한\s*번\s*사용\s*후\s*보습이\s*120시간\s*지속됩니다/u);
+    expect(studySentence).toMatch(/\(주\)엘리드/u);
+    expect(studySentence).toMatch(/2023년\s*2월\s*2일부터\s*2023년\s*3월\s*23일까지/u);
+    expect(studySentence).toMatch(/여성\s*32명/u);
+    expect(studySentence).toMatch(/사용\s*직후\s*보습량은\s*사용\s*전\s*대비\s*2배\s*증가/u);
+    expect(studySentence).toMatch(/단\s*10분\s*만에\s*손상\s*장벽은\s*사용\s*전\s*대비\s*2배\s*개선/u);
+    expect(productDescription).toMatch(/주요\s*성분(?:은|인)\s*고밀도\s*세라마이드\s*캡슐과\s*콜레스테롤/u);
+    expect(productDescription).toMatch(/피부\s*장벽\s*케어와\s*속보습을\s*돕고,\s*한\s*번\s*사용\s*후\s*보습이\s*120시간\s*지속됩니다/u);
+    expect(productDescription).toMatch(/이러한\s*효능·효과를\s*바탕으로\s*건조하고\s*민감한\s*피부\s*고객에게\s*적합합니다/u);
+    expect(productDescription.indexOf("인체적용시험")).toBeLessThan(productDescription.indexOf("이러한 효능·효과"));
+    expect(productDescription.indexOf("이러한 효능·효과")).toBeLessThan(productDescription.indexOf("고객 리뷰"));
+    expect(productDescription).not.toMatch(/주요\s*성분[^.!?。！？]{0,80}DermaON/iu);
+    expect(productDescription.match(/보습량은\s*사용\s*전\s*대비\s*2배\s*증가/gu)?.length ?? 0).toBe(1);
+    expect(productDescription.match(/손상\s*장벽은\s*사용\s*전\s*대비\s*2배\s*개선/gu)?.length ?? 0).toBe(1);
+    expect(productDescription).not.toMatch(/사용\s*전\s*사용\s*후|120h|※|\*|인체적용시험\s*완료|이\s*제품입니다|\(겉보습|242%|356%/u);
 
-    for (const description of [String(productNode.description ?? ""), String(webPage.description ?? "")]) {
-      const sentences = description.split(/(?<=[.!?。！？])\s+/u);
-      const durationSentence = sentences.find((sentence) => /120시간/u.test(sentence));
-      const studySentence = sentences.find((sentence) => /인체적용시험/u.test(sentence));
-      expect(durationSentence).toMatch(/한\s*번\s*사용\s*후\s*보습이\s*120시간\s*지속됩니다/u);
-      expect(studySentence).toMatch(/\(주\)엘리드/u);
-      expect(studySentence).toMatch(/2023년\s*2월\s*2일부터\s*2023년\s*3월\s*23일까지/u);
-      expect(studySentence).toMatch(/여성\s*32명/u);
-      expect(studySentence).toMatch(/사용\s*직후\s*보습량은\s*사용\s*전\s*대비\s*2배\s*증가/u);
-      expect(studySentence).toMatch(/단\s*10분\s*만에\s*손상\s*장벽은\s*사용\s*전\s*대비\s*2배\s*개선/u);
-      expect(description).toMatch(/주요\s*성분(?:은|인)\s*고밀도\s*세라마이드\s*캡슐과\s*콜레스테롤/u);
-      expect(description).toMatch(/피부\s*장벽\s*케어와\s*속보습을\s*돕고,\s*한\s*번\s*사용\s*후\s*보습이\s*120시간\s*지속됩니다/u);
-      expect(description).toMatch(/이러한\s*효능·효과를\s*바탕으로\s*건조하고\s*민감한\s*피부\s*고객에게\s*적합합니다/u);
-      expect(description.indexOf("인체적용시험")).toBeLessThan(description.indexOf("이러한 효능·효과"));
-      expect(description.indexOf("이러한 효능·효과")).toBeLessThan(description.indexOf("고객 리뷰"));
-      expect(description).not.toMatch(/주요\s*성분[^.!?。！？]{0,80}DermaON/iu);
-      expect(description.match(/보습량은\s*사용\s*전\s*대비\s*2배\s*증가/gu)?.length ?? 0).toBe(1);
-      expect(description.match(/손상\s*장벽은\s*사용\s*전\s*대비\s*2배\s*개선/gu)?.length ?? 0).toBe(1);
-      expect(description).not.toMatch(/사용\s*전\s*사용\s*후|120h|※|\*|인체적용시험\s*완료|이\s*제품입니다|\(겉보습|242%|356%/u);
-    }
+    expectKoreanWebPageScopeDescription(webPageDescription, "아토베리어365 크림", "테스트랩");
+    expect(webPageDescription).toMatch(/주요\s*성분·기술은\s*고밀도\s*세라마이드.*콜레스테롤/iu);
+    expect(webPageDescription).not.toMatch(/120시간|엘리드|여성\s*32명|2배/iu);
 
     expect(reportedDetails).toMatch(/120시간|\(주\)엘리드|여성\s*32명|사용\s*전\s*대비/u);
     expect(reportedDetails).not.toMatch(/사용\s*전\s*사용\s*후|120h|※|\*|인체적용시험\s*완료|이\s*제품입니다/u);
     expect((run.result.diagnostics.validationRepairs ?? []).filter((repair) => /description/u.test(repair.field))).toHaveLength(0);
   });
 
-  it("renders one shared clinical evidence group once across every public summary field", async () => {
+  it("renders one shared clinical evidence group once across Product and evidence summary fields", async () => {
     const base = evidenceRichProduct();
     const sourceText = "한번만 발라도 120시간 보습 지속 사용 직후 보습량 2배 증가 단 10분 만에 손상장벽 2배 개선 ※ ㈜엘리드, 2023.02.02-2023.03.23, 스스로 피부가 민감하다고 느끼고 건조 고민이 있는 여성 32명 대상 인체적용시험 완료 *사용 전 대비 보습량 2배 증가, 손상장벽 2배 개선";
     const product: PdpProductSignal = {
@@ -605,14 +629,13 @@ describe("evidence-rich GEO regression contracts", () => {
     const webPage = nodes.find((node) => node["@type"] === "WebPage")!;
     const properties = (productNode.additionalProperty as JsonValue[])
       .filter((item): item is Record<string, JsonValue> => typeof item === "object" && item !== null && !Array.isArray(item));
-    const publicSummaries = [
+    const detailedPublicSummaries = [
       String(productNode.description ?? ""),
-      String(webPage.description ?? ""),
       String(properties.find((item) => item.name === "Reported details")?.value ?? ""),
       String(properties.find((item) => item.name === "Clinical result summary")?.value ?? "")
     ];
 
-    for (const value of publicSummaries) {
+    for (const value of detailedPublicSummaries) {
       expect(value.match(/\(주\)엘리드/gu)?.length ?? 0).toBe(1);
       expect(value.match(/사용\s*직후\s*보습량은\s*사용\s*전\s*대비\s*2배\s*증가/gu)?.length ?? 0).toBe(1);
       expect(value.match(/단\s*10분\s*만에\s*손상\s*장벽은\s*사용\s*전\s*대비\s*2배\s*개선/gu)?.length ?? 0).toBe(1);
@@ -620,6 +643,11 @@ describe("evidence-rich GEO regression contracts", () => {
       const sentences = value.split(/(?<=[.!?。！？])\s+/u).map((sentence) => sentence.trim()).filter(Boolean);
       expect(new Set(sentences).size).toBe(sentences.length);
     }
+    const webPageDescription = String(webPage.description ?? "");
+    expectKoreanWebPageScopeDescription(webPageDescription, "배리어 리커버리 크림", "테스트랩");
+    expect(webPageDescription).toMatch(/완제품\s*인체적용시험에서[^.]*보습량은[^.]*2배\s*증가/u);
+    expect(webPageDescription).toMatch(/같은\s*시험에서[^.]*손상\s*장벽은[^.]*2배\s*개선/u);
+    expect(webPageDescription).not.toMatch(/엘리드|120시간|190%|ex\s*vivo/iu);
     expect((run.result.diagnostics.validationRepairs ?? []).filter((repair) => /description/u.test(repair.field))).toHaveLength(0);
   });
 
@@ -724,22 +752,21 @@ describe("evidence-rich GEO regression contracts", () => {
 
     const run = await generatePdpGeo({ product: normalized.product, hints: { locale: "ko-KR" } });
     const graph = run.result.schemaMarkup.jsonLd["@graph"] as JsonValue[];
-    const descriptions = graph
-      .filter((node): node is Record<string, JsonValue> => typeof node === "object" && node !== null && !Array.isArray(node))
-      .filter((node) => node["@type"] === "Product" || node["@type"] === "WebPage")
-      .map((node) => String(node.description ?? ""));
+    const nodes = graph.filter((node): node is Record<string, JsonValue> => typeof node === "object" && node !== null && !Array.isArray(node));
+    const productDescription = String(nodes.find((node) => node["@type"] === "Product")?.description ?? "");
+    const webPageDescription = String(nodes.find((node) => node["@type"] === "WebPage")?.description ?? "");
+    const studySentence = productDescription.split(/(?<=[.!?。！？])\s+/u).find((sentence) => /인체적용시험/u.test(sentence));
+    expect(productDescription).toMatch(/한\s*번\s*사용\s*후\s*수분이\s*96시간\s*지속됩니다/u);
+    expect(studySentence).toMatch(/\(주\)뉴리서치/u);
+    expect(studySentence).toMatch(/2025년\s*4월\s*1일부터\s*2025년\s*5월\s*15일까지/u);
+    expect(studySentence).toMatch(/성인\s*28명/u);
+    expect(studySentence).toMatch(/사용\s*30분\s*후\s*피부\s*수분량은\s*사용\s*전\s*대비\s*38%\s*증가/u);
+    expect(studySentence).toMatch(/사용\s*14일\s*후\s*장벽\s*지표는\s*사용\s*전\s*대비\s*27%\s*개선/u);
+    expect(productDescription).not.toMatch(/고객\s*리뷰/u);
+    expect(productDescription).not.toMatch(/사용\s*전\s*사용\s*후|96h|※|\*|인체적용시험\s*완료|본\s*제품입니다|\(겉보습|118%|164%|120시간|2배|32명/u);
 
-    for (const description of descriptions) {
-      const studySentence = description.split(/(?<=[.!?。！？])\s+/u).find((sentence) => /인체적용시험/u.test(sentence));
-      expect(description).toMatch(/한\s*번\s*사용\s*후\s*수분이\s*96시간\s*지속됩니다/u);
-      expect(studySentence).toMatch(/\(주\)뉴리서치/u);
-      expect(studySentence).toMatch(/2025년\s*4월\s*1일부터\s*2025년\s*5월\s*15일까지/u);
-      expect(studySentence).toMatch(/성인\s*28명/u);
-      expect(studySentence).toMatch(/사용\s*30분\s*후\s*피부\s*수분량은\s*사용\s*전\s*대비\s*38%\s*증가/u);
-      expect(studySentence).toMatch(/사용\s*14일\s*후\s*장벽\s*지표는\s*사용\s*전\s*대비\s*27%\s*개선/u);
-      expect(description).not.toMatch(/고객\s*리뷰/u);
-      expect(description).not.toMatch(/사용\s*전\s*사용\s*후|96h|※|\*|인체적용시험\s*완료|본\s*제품입니다|\(겉보습|118%|164%|120시간|2배|32명/u);
-    }
+    expectKoreanWebPageScopeDescription(webPageDescription, "배리어 리페어 크림");
+    expect(webPageDescription).not.toMatch(/96시간|뉴리서치|성인\s*28명|38%|27%|118%|164%/u);
   });
 
   it("routes model-inferred metric structures as atomic ledger evidence while retaining raw OCR only as provenance", () => {
@@ -833,23 +860,53 @@ describe("evidence-rich GEO regression contracts", () => {
     const productDescription = String(productNode.description ?? "");
     const webPageDescription = String(webPage.description ?? "");
 
-    for (const description of [productDescription, webPageDescription]) {
-      expect(description).toMatch(/하이드라 배리어 크림/u);
-      expect(description).toMatch(/건조하고 민감한 피부/u);
-      expect(description).toMatch(/세라마이드/u);
-      expect(description).toMatch(/피부 장벽|보습/u);
-      expect(description).toMatch(/고객 리뷰/u);
-      expect(description.indexOf("하이드라 배리어 크림")).toBeLessThan(description.indexOf("건조하고 민감한 피부"));
-      expect(description.indexOf("건조하고 민감한 피부")).toBeLessThan(description.indexOf("세라마이드"));
-      expect(description.indexOf("세라마이드")).toBeLessThan(description.indexOf("고객 리뷰"));
-      expect(description).not.toMatch(/민감 피부 사용 맥락은|선택 기준을 보완|원료적 특성에 한한|해당 결과는|표기되어 있다|190%|ex vivo/iu);
-    }
+    expect(productDescription).toMatch(/하이드라 배리어 크림/u);
+    expect(productDescription).toMatch(/건조하고 민감한 피부/u);
+    expect(productDescription).toMatch(/세라마이드/u);
+    expect(productDescription).toMatch(/피부 장벽|보습/u);
+    expect(productDescription).toMatch(/고객 리뷰/u);
+    expect(productDescription.indexOf("하이드라 배리어 크림")).toBeLessThan(productDescription.indexOf("건조하고 민감한 피부"));
+    expect(productDescription.indexOf("건조하고 민감한 피부")).toBeLessThan(productDescription.indexOf("세라마이드"));
+    expect(productDescription.indexOf("세라마이드")).toBeLessThan(productDescription.indexOf("고객 리뷰"));
+    expect(productDescription).not.toMatch(/민감 피부 사용 맥락은|선택 기준을 보완|원료적 특성에 한한|해당 결과는|표기되어 있다|190%|ex vivo/iu);
 
     expect(productDescription).not.toMatch(/상품\s*페이지/u);
-    expect(webPageDescription).toMatch(/상품\s*페이지/u);
+    expectKoreanWebPageScopeDescription(webPageDescription, "하이드라 배리어 크림", "테스트랩");
+    expect(webPageDescription).toMatch(/건조하고\s*민감한\s*피부\s*고객을\s*대상\s*고객으로\s*안내.*주요\s*성분·기술은\s*고밀도\s*세라마이드/iu);
+    expect(webPageDescription).toMatch(/고객\s*리뷰에서는/u);
+    expect(webPageDescription).not.toMatch(/190%|ex\s*vivo/iu);
     expect(reportedDetails).toMatch(/190%/u);
     expect(reportedDetails).toMatch(/ex vivo/iu);
     expect(reportedDetails).not.toMatch(/표기되어 있다|제시된다|설명된다/u);
+  });
+
+  it("removes generic educational FAQ and keeps product decision questions", async () => {
+    const base = evidenceRichProduct();
+    const product: PdpProductSignal = {
+      ...base,
+      name: "하이드라 배리어 크림",
+      faq: [
+        {
+          question: "피부 장벽의 기능이 무엇인가요?",
+          answer: "피부 장벽은 말 그대로 '벽'의 역할을 합니다."
+        }
+      ]
+    };
+
+    const run = await generatePdpGeo({ product, hints: { locale: "ko-KR" } });
+    const graph = run.result.schemaMarkup.jsonLd["@graph"] as JsonValue[];
+    const faqPage = graph
+      .filter((node): node is Record<string, JsonValue> => typeof node === "object" && node !== null && !Array.isArray(node))
+      .find((node) => node["@type"] === "FAQPage")!;
+    const faqItems = (faqPage.mainEntity as JsonValue[])
+      .filter((item): item is Record<string, JsonValue> => typeof item === "object" && item !== null && !Array.isArray(item));
+    const questions = faqItems.map((item) => String(item.name));
+    const answers = faqItems.map((item) => String((item.acceptedAnswer as Record<string, JsonValue>).text));
+
+    expect(questions).not.toContain("피부 장벽의 기능이 무엇인가요?");
+    expect(answers.join(" ")).not.toContain("말 그대로 '벽'의 역할");
+    expect(questions.some((question) => /(?:어떤\s*(?:고객|피부)|고민|효능|효과)/u.test(question))).toBe(true);
+    expect(questions.some((question) => /(?:성분|기술)/u.test(question))).toBe(true);
   });
 
   it("rewrites source-narrated FAQ into concern, effect, and direct life-stage answers before validation", async () => {
@@ -893,7 +950,7 @@ describe("evidence-rich GEO regression contracts", () => {
     const faqPage = nodes.find((node) => node["@type"] === "FAQPage")!;
     const faqItems = (faqPage.mainEntity as JsonValue[])
       .filter((item): item is Record<string, JsonValue> => typeof item === "object" && item !== null && !Array.isArray(item));
-    const effectFaq = faqItems.find((item) => /손상된\s*피부\s*장벽이\s*고민/u.test(String(item.name)))!;
+    const effectFaq = faqItems.find((item) => /(?:속건조|피부\s*장벽\s*관리|손상된\s*피부\s*장벽)[^?？]*고민/u.test(String(item.name)))!;
     const infantFaq = faqItems.find((item) => /영유아/u.test(String(item.name)))!;
     expect(effectFaq, JSON.stringify(faqItems, null, 2)).toBeDefined();
     const effectAnswer = String((effectFaq.acceptedAnswer as Record<string, JsonValue>).text);
@@ -904,9 +961,10 @@ describe("evidence-rich GEO regression contracts", () => {
     const usage = String(properties.find((item) => item.name === "Usage")?.value ?? "");
 
     expect(effectAnswer).toMatch(/아토베리어365 크림/u);
-    expect(effectAnswer).toMatch(/외부\s*자극|유해\s*환경/u);
-    expect(effectAnswer).toMatch(/진정과\s*보습/u);
-    expect(effectAnswer).toMatch(/따라서\s*진정과\s*보습을\s*원하는\s*고객/u);
+    expect(effectAnswer).toMatch(/건조하고\s*민감한\s*피부\s*고객을\s*위한\s*크림/u);
+    expect(effectAnswer).toMatch(/공식\s*상품\s*정보에서[^.]*피부\s*장벽\s*관리[^.]*수분\s*케어에\s*도움을\s*주는\s*제품/u);
+    expect(effectAnswer).toMatch(/세라마이드\s*캡슐은[^.]*피부\s*장벽을\s*돕는\s*성분·기술/u);
+    expect(effectAnswer).toMatch(/따라서[^.]*고려할\s*수\s*있습니다/u);
     expect(infantAnswer).toMatch(/아토베리어365 크림/u);
     expect(infantAnswer).toMatch(/0세부터\s*성인까지/u);
     expect(infantAnswer).toMatch(/국소부위|국소\s*부위/u);
@@ -1322,12 +1380,18 @@ describe("evidence-rich GEO regression contracts", () => {
     expect(unlinkedDescriptions).not.toMatch(/Niacinamide[^.!?]{0,50}(?:support|help|deliver)[^.!?]{0,30}hydration/iu);
     expect(String(productNode.description)).toContain("The formula includes Niacinamide");
     expect(String(productNode.description)).toContain("The product's documented benefit is hydration");
-    expect(String(productNode.description)).toContain("reviews report that it feels light and absorbs quickly");
+    expect(String(productNode.description)).toContain("One customer review mentions");
+    expect(String(productNode.description)).toContain("lightweight texture");
+    expect(String(productNode.description)).toContain("quick absorption");
+    expect(String(productNode.description)).not.toMatch(/reviews? (?:repeatedly )?report|repeated review/i);
     expect(String(productNode.description)).not.toContain("for customers");
     expect(String(webPageNode.description)).toMatch(/^This Clear Serum product page introduces the serum\./u);
     expect(String(webPageNode.description)).not.toMatch(/for customers|introduces[^.!?]*through/iu);
     expect(String(productNode.description).match(/Clear\s+Serum/gu)?.length ?? 0).toBe(1);
-    expect(String(webPageNode.description).match(/Clear\s+Serum/gu)?.length ?? 0).toBe(2);
+    expect(String(webPageNode.description).match(/Clear\s+Serum/gu)?.length ?? 0).toBe(1);
+    expect(String(webPageNode.description)).toMatch(/lists Niacinamide as highlighted formula components.*documents hydration as product benefits/iu);
+    expect(String(webPageNode.description)).toMatch(/Customer reviews mention lightweight texture, quick absorption, and texture/iu);
+    expect(String(webPageNode.description)).not.toMatch(/The formula includes Niacinamide|documented benefit is hydration|One customer review mentions/iu);
     expect(unlinked.result.content.sections.ingredients).toBe("- Niacinamide");
     expect(unlinkedDescriptions).not.toMatch(/dry\s+skin|skin[-\s]?barrier|aging|wrinkle/iu);
 
@@ -1448,13 +1512,13 @@ describe("evidence-rich GEO regression contracts", () => {
         .filter((item): item is Record<string, JsonValue> => typeof item === "object" && item !== null && !Array.isArray(item))
         .map((item) => String(item.name));
       const suitabilityQuestions = questions.filter((question) => testCase.locale === "ko-KR"
-        ? /(?:어떤 고객|피부 고민[^?]*적합|고민인 고객[^?]*효과)/u.test(question)
+        ? /(?:어떤 고객|피부 고민[^?]*적합|고민인 고객[^?]*(?:효과|적합)|고객에게[^?]*적합)/u.test(question)
         : /(?:which customers[^?]*suitable|who[^?]*best suited|skin concerns[^?]*address)/iu.test(question));
 
       expect(suitabilityQuestions).toHaveLength(1);
       expect(questions.some((question) => testCase.locale === "ko-KR"
-        ? /주요 성분과 효능/u.test(question)
-        : /key ingredients and benefits/iu.test(question))).toBe(true);
+        ? /주요 성분이나 기술.*역할/u.test(question)
+        : /ingredients? or technologies.*roles? are explicitly stated/iu.test(question))).toBe(true);
     }
   });
 
@@ -1766,7 +1830,7 @@ describe("evidence-rich GEO regression contracts", () => {
     expect(String(product.description)).toMatch(/배리어 로션은 건조하고 민감한 피부 고객을 위한 로션/u);
     expect(String(product.description)).not.toMatch(/로션은\s+배리어\s+라인은/u);
     expect(faqText).not.toMatch(/따가운\s*상태.*써도|신생아가\s*사용/u);
-    expect(faqText).not.toMatch(/제형이라[^.]*수분감입니다,|효능.*효능.*뒷받침|케어와\s*연결됩니다|사용\s*루틴\s*답변/u);
+    expect(faqText).not.toMatch(/제형이라[^.]*수분감입니다,|효능[^.]*효능[^.]*뒷받침|케어와\s*연결됩니다|사용\s*루틴\s*답변/u);
   });
 });
 

@@ -1,5 +1,6 @@
 import { generatePdpGeoArtifacts } from "./generate";
 import { refinePdpGeoCopy } from "./copy-refiner";
+import { createPdpGeoPublicCopyProvenance, finalProofreadPdpGeoArtifacts } from "./final-proofreader";
 import { createPdpGeoEvidenceLedger, planPdpGeoContent } from "./content-planner";
 import { normalizeProductReviewKeywords } from "./keyword-normalizer";
 import { normalizePdpProduct } from "./normalize";
@@ -9,7 +10,7 @@ import { readPdpGeoGeneratorRagProfile } from "./rag/profile";
 import { createPdpGeoReasoning } from "./rag/reasoning";
 import { createPdpGeoRagQueryPlan, resolvePdpGeoRagSettings, retrievePdpGeoRagChunks } from "./rag/retrieval";
 import { pdpGeoGeneratorRagManifest } from "./rag/manifest";
-import { validateAndRepairPdpGeoArtifacts } from "./validate";
+import { validatePdpGeoArtifacts } from "./validate";
 import {
   PdpGeoGenerationInputSchema,
   type PdpGeoDiagnostics,
@@ -70,8 +71,8 @@ const pipelineSteps: Array<Pick<PdpGeoGenerationStep, "id" | "title" | "descript
   },
   {
     id: "generate",
-    title: "GEO 산출물 생성",
-    description: "JSON-LD schema markup과 HTML content 생성"
+    title: "GEO 산출물 생성 및 최종 교정",
+    description: "JSON-LD/HTML 생성 후 선택적으로 별도 fluency-only proofreading 모델 호출"
   },
   {
     id: "validate",
@@ -80,8 +81,8 @@ const pipelineSteps: Array<Pick<PdpGeoGenerationStep, "id" | "title" | "descript
   },
   {
     id: "repair",
-    title: "방어 보정",
-    description: "누락된 필수 필드와 안전하지 않은 HTML 보정"
+    title: "검증 결과 기록",
+    description: "자동 수정 없이 validation findings를 diagnostics에 기록"
   },
   {
     id: "artifact",
@@ -138,8 +139,11 @@ export async function generatePdpGeo(
   normalized = {
     ...normalized,
     product: productNormalization.product,
-    locale: productNormalization.locale,
-    market: productNormalization.market,
+    // Locale and explicit market are request control-plane values. A model may
+    // classify source languages, but it must not silently change the target
+    // language/market selected by the caller or deterministic bootstrap.
+    locale: parsed.hints?.locale ?? normalized.locale,
+    market: parsed.hints?.market ?? productNormalization.market ?? normalized.market,
     evidence: [
       ...normalized.evidence,
       ...productNormalization.evidence
@@ -304,6 +308,11 @@ export async function generatePdpGeo(
     reasoning,
     contentPlan: contentPlanning.plan
   });
+  const renderedPublicCopyProvenance = createPdpGeoPublicCopyProvenance({
+    schemaMarkup: generated.schemaMarkup,
+    contentPlan: contentPlanning.plan,
+    evidenceLedger
+  });
   const shouldRunCopyRefinement = !contentPlanning.applied
     || options.copyRefinement?.enabled === true;
   if (shouldRunCopyRefinement && shouldReportCopyRefinementCall(options)) {
@@ -344,28 +353,48 @@ export async function generatePdpGeo(
       ...copyRefinement.evidence
     ]
   };
+  if (shouldReportFinalProofreadingCall(options)) {
+    process.start("generate", `${runtimeProviderLabel(options.finalProofreading?.provider ?? options.provider)} final fluency-only proofreading 모델을 호출합니다.`);
+  }
+  const finalProofreading = await finalProofreadPdpGeoArtifacts({
+    product: normalized.product,
+    locale: normalized.locale,
+    market: normalized.market,
+    schemaMarkup: generated.schemaMarkup,
+    content: generated.content,
+    evidenceLedger,
+    contentPlan: contentPlanning.plan,
+    publicCopyProvenance: renderedPublicCopyProvenance
+  }, options);
+  generated = {
+    ...generated,
+    schemaMarkup: finalProofreading.schemaMarkup,
+    content: finalProofreading.content,
+    evidence: [...generated.evidence, ...finalProofreading.evidence]
+  };
   process.done(
     "generate",
-    contentPlanning.applied
+    finalProofreading.diagnostics.applied
+      ? `근거와 구조를 잠근 상태에서 ${finalProofreading.diagnostics.acceptedFields.length}개 필드의 최종 문장 교정을 적용했습니다.`
+      : contentPlanning.applied
       ? "근거 ID 기반 Content/Schema Plan으로 적합한 Product, WebPage, FAQ, HowTo와 가시 콘텐츠를 생성했습니다."
       : copyRefinement.applied
         ? "보수적 스키마 적합성 판단 후 Gen AI 문장 refinement를 적용했습니다."
         : "보수적 스키마 적합성 판단으로 근거가 확인된 산출물을 생성했습니다."
   );
 
-  process.start("validate", "JSON-LD와 HTML 문법을 검증합니다.");
-  const validated = validateAndRepairPdpGeoArtifacts({
+  process.start("validate", "최종 교정 이후 JSON-LD와 HTML을 읽기 전용으로 검증합니다.");
+  const validated = validatePdpGeoArtifacts({
     schemaMarkup: generated.schemaMarkup,
     content: generated.content,
     fallbackProductName: generated.content.sections.productName,
     fallbackDescription: generated.content.sections.description,
     locale: normalized.locale
   });
-  const repaired = validated;
-  process.done("validate", createValidationStepMessage(repaired.validationWarnings, repaired.validationRepairs));
+  process.done("validate", createValidationStepMessage(validated.validationWarnings, validated.validationFindings));
 
-  process.start("repair", "검증 경고에 대한 안전 보정을 적용합니다.");
-  process.done("repair", createRepairStepMessage(repaired.validationRepairs));
+  process.start("repair", "검증기는 문장을 수정하지 않고 진단만 기록합니다.");
+  process.done("repair", "자동 보정을 적용하지 않았습니다. 최종 교정 산출물을 그대로 보존했습니다.");
 
   process.start("artifact", "최종 GEO 아티팩트를 직렬화합니다.");
   const generatedAt = new Date().toISOString();
@@ -378,6 +407,8 @@ export async function generatePdpGeo(
     contentPlanningCalled: contentPlanning.called,
     copyRefinementUsage: copyRefinement.usage,
     copyRefinementCalled: copyRefinement.called,
+    finalProofreadingUsage: finalProofreading.usage,
+    finalProofreadingCalled: finalProofreading.diagnostics.called,
     retrievedCount: retrieved.length,
     selectedRagCount: selectedRagChunks.length,
     ragDocumentCount: ragDocuments.length
@@ -391,9 +422,9 @@ export async function generatePdpGeo(
     evidence: [
       ...normalized.evidence,
       ...generated.evidence,
-      ...repaired.validationWarnings.map((warning) => ({
+      ...validated.validationWarnings.map((warning) => ({
         field: "validation",
-        source: "repair" as const,
+        source: "schema-validator" as const,
         value: warning
       }))
     ],
@@ -406,8 +437,11 @@ export async function generatePdpGeo(
     runtimeUsage,
     terminology: generated.terminology,
     inferredSearchQueries: generated.inferredSearchQueries,
-    validationWarnings: repaired.validationWarnings,
-    validationRepairs: repaired.validationRepairs,
+    finalProofreading: finalProofreading.diagnostics,
+    finalPublicCopyProvenance: finalProofreading.finalPublicCopyProvenance,
+    validationWarnings: validated.validationWarnings,
+    validationFindings: validated.validationFindings,
+    validationRepairs: [],
     ragMode: ragSettings.mode,
     generatedAt
   };
@@ -415,8 +449,8 @@ export async function generatePdpGeo(
     source: parsed.source,
     locale: normalized.locale,
     market: normalized.market,
-    schemaMarkup: repaired.schemaMarkup,
-    content: repaired.content,
+    schemaMarkup: generated.schemaMarkup,
+    content: generated.content,
     diagnostics,
     generatedAt,
     ragProfile: profile.profile
@@ -487,17 +521,6 @@ function createValidationStepMessage(warnings: string[], repairs: Array<{ field:
     return `${warnings.length}개 검증 경고를 확인했습니다. 첫 문제: ${firstRepair.field} - ${firstRepair.issue}`;
   }
   return `${warnings.length}개 검증 경고를 확인했습니다. ${warnings.slice(0, 2).join(" / ")}`;
-}
-
-function createRepairStepMessage(repairs: Array<{ field: string; action: string }>): string {
-  if (repairs.length === 0) {
-    return "추가 보정 없이 통과했습니다.";
-  }
-  const firstRepair = repairs[0];
-  if (!firstRepair) {
-    return `${repairs.length}개 보정을 적용했습니다.`;
-  }
-  return `${repairs.length}개 보정을 적용했습니다. 첫 보정: ${firstRepair.field} - ${firstRepair.action}`;
 }
 
 function mergeRetrievedRagChunks(chunks: PdpGeoRetrievedChunk[]): PdpGeoRetrievedChunk[] {
@@ -945,6 +968,8 @@ function createGeneratorRuntimeUsage(
     contentPlanningCalled?: boolean;
     copyRefinementUsage?: PdpGeoTokenUsage;
     copyRefinementCalled?: boolean;
+    finalProofreadingUsage?: PdpGeoTokenUsage;
+    finalProofreadingCalled?: boolean;
     retrievedCount: number;
     selectedRagCount: number;
     ragDocumentCount: number;
@@ -978,6 +1003,14 @@ function createGeneratorRuntimeUsage(
     context.contentPlanningCalled ? "Evidence-bound content/schema planning was called before artifact rendering." : undefined,
     context.copyRefinementCalled ? "Model-backed copy refinement was called after deterministic schema/content generation." : undefined
   ].filter(Boolean).join(" ");
+  const proofreadingSettings = options.finalProofreading;
+  const proofreadingProviderId = proofreadingSettings?.provider ?? options.provider;
+  const proofreadingProvider = runtimeProviderLabel(proofreadingProviderId);
+  const proofreadingModel = proofreadingSettings?.model ?? options.model;
+  const proofreadingDeployment = proofreadingSettings?.deployment
+    ?? options.deployments?.proofreading
+    ?? options.deployments?.reasoning
+    ?? options.deployment;
   const steps: PdpGeoRuntimePipelineStep[] = [
     {
       stage: "chunking",
@@ -1045,6 +1078,19 @@ function createGeneratorRuntimeUsage(
       called: Boolean(context.productNormalizationCalled || context.keywordNormalizationUsage || context.contentPlanningCalled || context.copyRefinementCalled),
       tokenUsage: finalTokenUsage,
       details: finalDetails || "Schema/content reasoning is deterministic in the current generator path; no final model usage metadata was returned."
+    },
+    {
+      stage: "final",
+      label: "Final proofreading",
+      provider: proofreadingProvider,
+      service: deploymentServiceLabel(proofreadingProviderId) ?? proofreadingProvider,
+      model: usesDeployments(proofreadingProviderId) ? undefined : proofreadingModel,
+      deployment: usesDeployments(proofreadingProviderId) ? proofreadingDeployment : undefined,
+      called: Boolean(context.finalProofreadingCalled),
+      tokenUsage: context.finalProofreadingUsage,
+      details: context.finalProofreadingCalled
+        ? "A separate fluency-only model call reviewed the finalized public-copy fields; deterministic invariant gates accepted or rejected each proposed edit."
+        : "Final proofreading is disabled or no eligible public-copy fields were available."
     }
   ];
   const tokenTotals = mergeTokenUsages(steps.map((step) => step.tokenUsage).filter((usage): usage is PdpGeoTokenUsage => Boolean(usage)));
@@ -1133,6 +1179,20 @@ function shouldReportCopyRefinementCall(options: PdpGeoGeneratorOptions): boolea
     && provider !== "custom");
 }
 
+function shouldReportFinalProofreadingCall(options: PdpGeoGeneratorOptions): boolean {
+  if (options.finalProofreading?.enabled === false) return false;
+  if (options.customFinalProofreader) return true;
+  const settings = options.finalProofreading;
+  if (!settings) return false;
+  const provider = settings.provider ?? options.provider ?? "mock";
+  const enabled = settings.enabled ?? (
+    provider !== "mock"
+    && provider !== "custom"
+    && Boolean(settings.apiKey ?? options.apiKey)
+  );
+  return Boolean(enabled && provider !== "mock" && provider !== "custom");
+}
+
 function shouldReportContentPlanningCall(options: PdpGeoGeneratorOptions): boolean {
   if (options.contentPlanning?.enabled === false) {
     return false;
@@ -1201,7 +1261,7 @@ function createRagUsageDiagnostics(
 function describeRagUsage(principle: PdpGeoReasoningPrinciple, fieldTargets: PdpGeoRagFieldTarget[]): string {
   const base = {
     "answer-ready FAQ": "FAQ 질문/답변 구성 근거",
-    "stepwise HowTo": "HowTo 단계와 사용 루틴 구성 근거",
+    "stepwise HowTo": "HowTo 원문 단계의 적합성·보존 근거",
     "evidence-backed claims": "효능/성분 주장 근거와 과장 방지 기준",
     "target customer context": "고객 맥락과 PDP 설명 문장 구성 근거",
     "review-intent FAQ": "긍정/중립 리뷰 언어를 FAQ 사용감 의도로 재구성하는 근거"

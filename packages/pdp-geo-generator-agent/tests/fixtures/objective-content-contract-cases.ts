@@ -29,18 +29,6 @@ export const ineligibleHowToCases: Array<{
     }
   },
   {
-    label: "one isolated application note rather than a procedure",
-    input: {
-      product: {
-        name: "Hydra Serum",
-        category: "Serum",
-        description: "A hydrating serum for dry-feeling skin.",
-        usage: ["Apply a small amount to the face."]
-      },
-      hints: { locale: "en-US" }
-    }
-  },
-  {
     label: "two concrete but unordered body-area actions",
     input: {
       product: {

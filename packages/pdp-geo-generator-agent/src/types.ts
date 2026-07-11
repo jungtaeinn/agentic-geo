@@ -143,6 +143,7 @@ export interface PdpGeoGeneratorOptions {
     ocr?: string;
     reasoning?: string;
     embedding?: string;
+    proofreading?: string;
   };
   apiVersion?: string;
   /** Sampling temperature forwarded to model calls. Omitted from requests when undefined (model default). */
@@ -183,6 +184,8 @@ export interface PdpGeoGeneratorOptions {
   customContentPlanner?: PdpGeoContentPlanner;
   copyRefinement?: PdpGeoCopyRefinementSettings;
   customCopyRefiner?: PdpGeoCopyRefiner;
+  finalProofreading?: PdpGeoFinalProofreadingSettings;
+  customFinalProofreader?: PdpGeoFinalProofreader;
 }
 
 export interface PdpGeoFaqItem {
@@ -732,6 +735,116 @@ export interface PdpGeoCopyRefinementSettings {
   apiVersion?: string;
 }
 
+export type PdpGeoFinalProofreadingIssueCode =
+  | "awkward"
+  | "grammar"
+  | "duplicate-sentence"
+  | "duplicate-word"
+  | "punctuation";
+
+export type PdpGeoFinalProofreadingFieldPath =
+  | "Product.description"
+  | "WebPage.description"
+  | `FAQPage.mainEntity[${number}].name`
+  | `FAQPage.mainEntity[${number}].acceptedAnswer.text`
+  | `HowTo.step[${number}].text`;
+
+export interface PdpGeoFinalProofreadingField {
+  fieldPath: PdpGeoFinalProofreadingFieldPath;
+  sourceHash: string;
+  text: string;
+  constraint: "fluency-only" | "punctuation-only";
+  evidenceIds: string[];
+  immutableTokens: string[];
+}
+
+export interface PdpGeoFinalProofreadingRequest {
+  locale: PdpGeoLocale;
+  market?: string;
+  productName: string;
+  brand?: string;
+  fields: PdpGeoFinalProofreadingField[];
+  evidenceLedger: PdpGeoAtomicEvidence[];
+}
+
+export interface PdpGeoFinalProofreadingEdit {
+  fieldPath: PdpGeoFinalProofreadingFieldPath;
+  sourceHash: string;
+  action: "keep" | "revise";
+  revisedText: string;
+  issueCodes: PdpGeoFinalProofreadingIssueCode[];
+}
+
+export interface PdpGeoFinalProofreadingResult {
+  edits: PdpGeoFinalProofreadingEdit[];
+  warnings: string[];
+  rawText?: string;
+  usage?: PdpGeoTokenUsage;
+}
+
+export interface PdpGeoFinalProofreader {
+  proofread(request: PdpGeoFinalProofreadingRequest): Promise<PdpGeoFinalProofreadingResult> | PdpGeoFinalProofreadingResult;
+}
+
+export interface PdpGeoFinalProofreadingSettings {
+  /** This final, additional model call is opt-in for library consumers. */
+  enabled?: boolean;
+  provider?: PdpGeoProviderId;
+  apiKey?: string;
+  model?: string;
+  endpoint?: string;
+  deployment?: string;
+  apiVersion?: string;
+  maxOutputTokens?: number;
+}
+
+export interface PdpGeoFinalProofreadingRejection {
+  fieldPath?: PdpGeoFinalProofreadingFieldPath;
+  reason: string;
+  proposedText?: string;
+}
+
+export interface PdpGeoFinalProofreadingSkippedField {
+  fieldPath: PdpGeoFinalProofreadingFieldPath;
+  reason: string;
+}
+
+export interface PdpGeoFinalProofreadingAcceptedEdit {
+  fieldPath: PdpGeoFinalProofreadingFieldPath;
+  sourceHash: string;
+  before: string;
+  after: string;
+  evidenceIds: string[];
+  issueCodes: PdpGeoFinalProofreadingIssueCode[];
+}
+
+export interface PdpGeoPublicCopySentenceProvenance {
+  text: string;
+  sourceHash: string;
+  evidenceIds: string[];
+}
+
+export interface PdpGeoPublicCopyProvenance {
+  fieldPath: PdpGeoFinalProofreadingFieldPath;
+  text: string;
+  sourceHash: string;
+  origin: "model-plan" | "deterministic-renderer";
+  evidenceIds: string[];
+  sentences: PdpGeoPublicCopySentenceProvenance[];
+}
+
+export interface PdpGeoFinalProofreadingDiagnostics {
+  status: "skipped" | "kept" | "applied" | "rejected" | "failed";
+  called: boolean;
+  applied: boolean;
+  acceptedFields: PdpGeoFinalProofreadingFieldPath[];
+  acceptedEdits: PdpGeoFinalProofreadingAcceptedEdit[];
+  rejectedEdits: PdpGeoFinalProofreadingRejection[];
+  skippedFields: PdpGeoFinalProofreadingSkippedField[];
+  warnings: string[];
+  finalPublicCopyProvenance: PdpGeoPublicCopyProvenance[];
+}
+
 export interface PdpGeoContentSections {
   productName: string;
   description: string;
@@ -771,6 +884,16 @@ export interface PdpGeoValidationRepair {
   action: string;
   before?: JsonValue;
   after?: JsonValue;
+  evidence?: string[];
+}
+
+export interface PdpGeoValidationFinding {
+  field: string;
+  source: PdpGeoValidationRepair["source"];
+  issue: string;
+  suggestedAction: string;
+  before?: JsonValue;
+  suggestedAfter?: JsonValue;
   evidence?: string[];
 }
 
@@ -850,7 +973,10 @@ export interface PdpGeoDiagnostics {
   runtimeUsage?: PdpGeoRuntimeUsage;
   terminology: PdpGeoTerminologyDiagnostics;
   inferredSearchQueries?: PdpGeoInferredSearchQueryDiagnostic[];
+  finalProofreading?: PdpGeoFinalProofreadingDiagnostics;
+  finalPublicCopyProvenance?: PdpGeoPublicCopyProvenance[];
   validationWarnings: string[];
+  validationFindings?: PdpGeoValidationFinding[];
   validationRepairs?: PdpGeoValidationRepair[];
   ragMode: PdpGeoRagMode;
   generatedAt: string;

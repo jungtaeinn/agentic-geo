@@ -19,7 +19,7 @@ interface CreatePdpGeoReasoningInput {
 const queryIntents = [
   "schema and entity composition",
   "answer-ready FAQ intent",
-  "stepwise HowTo reconstruction",
+  "source-faithful HowTo eligibility",
   "evidence-backed claim selection",
   "target customer and category-entry context",
   "positive or neutral customer review FAQ intent",
@@ -97,7 +97,7 @@ export function createPdpGeoReasoning(input: CreatePdpGeoReasoningInput): PdpGeo
       ragSources: ragSourcesByPrinciple.howTo,
       productEvidence: evidence.usage.slice(0, 6),
       fallbackSources: productEvidenceSources,
-      rationale: "HowTo reconstruction is enabled only when usage evidence exists and selected RAG guidance can support step-level composition. Brand identity must not create usage steps."
+      rationale: "HowTo is enabled only when concrete source usage evidence exists. One source instruction remains one step, and only an explicitly ordered source sequence may produce multiple steps; brand identity and general RAG guidance must not create, split, merge, or reorder usage actions."
     }),
     createDecision({
       principle: "evidence-backed claims",

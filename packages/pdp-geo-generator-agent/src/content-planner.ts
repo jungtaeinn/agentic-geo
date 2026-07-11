@@ -237,8 +237,6 @@ export function createPdpGeoEvidenceLedger(product: PdpProductSignal, locale: Pd
   });
   product.semanticFacts?.ingredientBenefitLinks.forEach((link, index) => {
     add("ingredient", link.ingredient, `product.semanticFacts.ingredientBenefitLinks[${index}].ingredient`, 0.94);
-    add("benefit", link.benefit, `product.semanticFacts.ingredientBenefitLinks[${index}].benefit`, 0.94);
-    add("effect", link.effect, `product.semanticFacts.ingredientBenefitLinks[${index}].effect`, 0.94);
     add("source", link.sourceText || link.sentence || [link.ingredient, link.benefit, link.effect].filter(Boolean).join("; "), `product.semanticFacts.ingredientBenefitLinks[${index}]`, 0.92);
   });
   product.sourceTexts.forEach((value, index) => add(
@@ -460,22 +458,54 @@ export class ModelBackedContentPlanner implements PdpGeoContentPlanner {
 function createConservativeContentPlan(request: PdpGeoContentPlanningRequest): PdpGeoContentPlan {
   const usageEvidence = request.evidenceLedger.filter((item) => item.role === "usage");
   const semanticUsageSteps = uniqueText(request.product.semanticFacts?.usageSteps ?? []).filter(isConcreteUsageAction);
-  const semanticUsageSequence = hasOrderedUsageEvidence(semanticUsageSteps)
-    ? semanticUsageSteps
-    : selectProceduralUsageSequence(semanticUsageSteps);
-  const semanticOrderProvenance = semanticUsageSequence.length >= 2;
-  const sourceUsageSteps = request.product.sourceTexts.flatMap(extractOrderedUsageSegments);
   const directUsageSteps = uniqueText(request.product.usage).filter(isConcreteUsageAction);
-  const usageCandidates = semanticOrderProvenance
-    ? semanticUsageSequence
-    : directUsageSteps.length >= 2
+  const sourceTextUsageSteps = uniqueText(request.product.sourceTexts).filter(isConcreteUsageAction);
+  const explicitDirectSequence = extractExplicitUsageSequence(request.product.usage);
+  const explicitSourceTextSequence = extractExplicitUsageSequence(request.product.sourceTexts);
+  const explicitSemanticSequence = extractExplicitUsageSequence(semanticUsageSteps);
+  const explicitSourceSequenceExtendsDirectUsage = directUsageSteps.length === 1
+    && explicitSourceTextSequence.length >= 2
+    && explicitSourceTextSequence.some((sourceStep) => usageActionsAreSemanticallyEquivalent(sourceStep, directUsageSteps[0] ?? ""));
+  const longestDirectUsageLength = Math.max(0, ...directUsageSteps.map((step) => cleanText(step).length));
+  const compositeSourceInstructions = sourceTextUsageSteps.filter((sourceStep) =>
+    cleanText(sourceStep).length > longestDirectUsageLength
+    && directUsageSteps.some((directStep) => usageActionsAreSemanticallyEquivalent(sourceStep, directStep))
+    && !directUsageSteps.some((directStep) => normalizeForMatch(directStep) === normalizeForMatch(sourceStep))
+  );
+  const singleCompositeSourceInstruction = compositeSourceInstructions.length === 1
+    ? compositeSourceInstructions
+    : [];
+  const hasDirectUsageEvidence = directUsageSteps.length > 0;
+  // The normalized product usage field is closest to the source contract and
+  // therefore wins over model-classified semanticFacts. A semantic model must
+  // not split one direct source instruction into synthetic steps, infer order
+  // from action stages, or replace an explicit source sequence with a different
+  // cardinality. Source text can restore explicit markers that normalization
+  // removed, but multiple unmarked notes are never promoted into a procedure.
+  const usageSteps = (explicitDirectSequence.length >= 2
+    ? explicitDirectSequence
+    : explicitSourceSequenceExtendsDirectUsage
+      ? explicitSourceTextSequence
+    : directUsageSteps.length === 1
       ? directUsageSteps
-      : sourceUsageSteps;
-  const usageSteps = (semanticOrderProvenance ? usageCandidates : selectProceduralUsageSequence(usageCandidates)).slice(0, 6);
-  const explicitlyOrdered = semanticOrderProvenance
-    || hasOrderedUsageEvidence(usageSteps)
-    || hasProceduralActionProgression(usageSteps);
-  const steps = explicitlyOrdered
+      : explicitSourceTextSequence.length >= 2
+        ? explicitSourceTextSequence
+      : singleCompositeSourceInstruction.length === 1
+        ? singleCompositeSourceInstruction
+        : hasDirectUsageEvidence
+          ? []
+          : sourceTextUsageSteps.length === 1
+            ? sourceTextUsageSteps
+            : sourceTextUsageSteps.length > 1
+              ? []
+              : explicitSemanticSequence.length >= 2
+                ? explicitSemanticSequence
+                : []).slice(0, 6);
+  const sourceStructureSupported = usageSteps.length === 1
+    || explicitDirectSequence.length >= 2
+    || explicitSourceTextSequence.length >= 2
+    || (!hasDirectUsageEvidence && sourceTextUsageSteps.length === 0 && explicitSemanticSequence.length >= 2);
+  const steps = sourceStructureSupported
     ? usageSteps.map((text, index): PdpGeoPlannedHowToStep => ({
         position: index + 1,
         name: truncate(text, 80),
@@ -483,7 +513,7 @@ function createConservativeContentPlan(request: PdpGeoContentPlanningRequest): P
         evidenceIds: matchingEvidenceIds(text, usageEvidence)
       })).filter((step) => step.evidenceIds.length > 0)
     : [];
-  const eligible = explicitlyOrdered && steps.length >= 2;
+  const eligible = sourceStructureSupported && steps.length === usageSteps.length && steps.length >= 1;
   const emptyField = (intent: string): PdpGeoPlannedField => ({
     include: false,
     text: "",
@@ -501,12 +531,12 @@ function createConservativeContentPlan(request: PdpGeoContentPlanningRequest): P
     faq: [],
     howTo: {
       eligible,
-      ordered: explicitlyOrdered,
+      ordered: eligible,
       goal: eligible ? request.product.name : "",
       steps: eligible ? steps : [],
       evidenceIds: eligible ? uniqueText(steps.flatMap((step) => step.evidenceIds)) : [],
       confidence: eligible ? 0.75 : 0.85,
-      omitReason: eligible ? "" : "The source does not contain a supported ordered multi-step procedure."
+      omitReason: eligible ? "" : "The source does not contain a supported usage instruction or ordered multi-step procedure."
     },
     cep: [],
     warnings: []
@@ -524,6 +554,7 @@ function sanitizeModelPlan(
   semanticAuditPassed: boolean
 ): SanitizedContentPlan {
   const evidenceById = new Map(request.evidenceLedger.map((item) => [item.id, item]));
+  const sourceFaithfulHowTo = createConservativeContentPlan(request).howTo;
   const gateWarnings: string[] = [];
   const sanitizeIds = (ids: string[]) => uniqueText(ids).filter((id) => evidenceById.has(id));
   const sanitizeField = (field: PdpGeoPlannedField, name: string): PdpGeoPlannedField => {
@@ -569,14 +600,20 @@ function sanitizeModelPlan(
         ["question-length", question.length >= 6],
         ["answer-length", answer.length >= 12],
         ["known-evidence-ids", evidenceIds.length > 0],
-        ["numeric-relationship", numbersAreSupported(`${question} ${answer}`, evidenceIds, evidenceById)],
+        // A buyer question may name a duration, size, or other selector whose
+        // factual relationship is stated only in the answer. Validate the
+        // answer as the public claim unit so joining Q+A cannot create a false
+        // numeric relationship across sentence boundaries.
+        ["numeric-relationship", numbersAreSupported(answer, evidenceIds, evidenceById)],
         ["question-locale", isTargetLocaleCopy(question, request.locale)],
         ["answer-locale", isTargetLocaleCopy(answer, request.locale)],
         ["question-coherence", isCoherentPublicCopy(question, "question")],
         ["answer-coherence", isCoherentPublicCopy(answer, "statement")],
         ["context-support", publicContextSupported],
+        ["question-risk-support", claimRiskIsSupported(question, citedEvidenceText)],
+        ["question-role-support", evidenceRolesSupportClaimTopics(question, evidenceIds.map((id) => evidenceById.get(id)).filter((value): value is PdpGeoAtomicEvidence => Boolean(value)))],
         ["question-entailment", faqQuestionIsSupported(question, evidenceIds, evidenceById, request.product, semanticAuditPassed)],
-        ["answer-entailment", evidenceSemanticallySupportsText(answer, evidenceIds, evidenceById, request.product, semanticAuditPassed)]
+        ["answer-entailment", faqAnswerIsSupported(answer, evidenceIds, evidenceById, request.product, semanticAuditPassed)]
       ];
       const failedChecks = gateChecks.filter(([, passed]) => !passed).map(([name]) => name);
       const include = item.include && failedChecks.length === 0;
@@ -625,9 +662,9 @@ function sanitizeModelPlan(
     .slice(0, 8);
   const howToEligible = raw.howTo.eligible
     && raw.howTo.ordered
-    && steps.length >= 2
+    && steps.length >= 1
     && hasSourceOrderProvenance(steps, evidenceById);
-  if (raw.howTo.eligible && !howToEligible) gateWarnings.push("HowTo was omitted because it was not an ordered, evidence-backed multi-step procedure.");
+  if (raw.howTo.eligible && !howToEligible) gateWarnings.push("HowTo was omitted because it was not a source-backed usage instruction or ordered multi-step procedure.");
 
   const cep = raw.cep
     .flatMap((item) => {
@@ -675,18 +712,10 @@ function sanitizeModelPlan(
     productDescription,
     webPageDescription,
     faq,
-    howTo: {
-      ...raw.howTo,
-      eligible: howToEligible,
-      ordered: howToEligible,
-      // The public title is derived by the renderer from product identity and
-      // locale. Model-written titles are not needed for applicability and can
-      // otherwise introduce an unsupported claim outside step-level evidence.
-      goal: "",
-      steps: howToEligible ? steps : [],
-      evidenceIds: howToEligible ? sanitizeIds([...raw.howTo.evidenceIds, ...steps.flatMap((step) => step.evidenceIds)]) : [],
-      omitReason: howToEligible ? "" : cleanText(raw.howTo.omitReason) || "No evidence-backed ordered multi-step procedure was found."
-    },
+    // Usage structure is deterministic and source-faithful. The model may
+    // reason about applicability, but it cannot split, merge, omit, or invent
+    // HowTo steps after product usage has been normalized.
+    howTo: sourceFaithfulHowTo,
     cep,
     warnings: [...raw.warnings.map(cleanText).filter(Boolean), ...gateWarnings]
   };
@@ -698,17 +727,19 @@ function resolvePlanner(options: PdpGeoGeneratorOptions): { planner?: PdpGeoCont
   if (options.customContentPlanner) return { planner: options.customContentPlanner };
   const settings = options.contentPlanning;
   const provider = settings?.provider ?? options.provider ?? "mock";
-  const enabled = settings?.enabled ?? (provider !== "mock" && provider !== "custom" && Boolean(settings?.apiKey ?? options.apiKey));
+  const mayInheritProviderSettings = settings?.provider === undefined || settings.provider === options.provider;
+  const apiKey = settings?.apiKey ?? (mayInheritProviderSettings ? options.apiKey : undefined);
+  const enabled = settings?.enabled ?? (provider !== "mock" && provider !== "custom" && Boolean(apiKey));
   if (!enabled) return {};
   if (provider === "mock" || provider === "custom") return { warning: `${provider} content planning requires customContentPlanner.` };
   return {
     planner: new ModelBackedContentPlanner({
       provider,
-      apiKey: settings?.apiKey ?? options.apiKey,
-      model: settings?.model ?? options.model,
-      endpoint: settings?.endpoint ?? options.endpoint,
-      deployment: settings?.deployment ?? options.deployments?.reasoning ?? options.deployment,
-      apiVersion: settings?.apiVersion ?? options.apiVersion,
+      apiKey,
+      model: settings?.model ?? (mayInheritProviderSettings ? options.model : undefined),
+      endpoint: settings?.endpoint ?? (mayInheritProviderSettings ? options.endpoint : undefined),
+      deployment: settings?.deployment ?? (mayInheritProviderSettings ? options.deployments?.reasoning ?? options.deployment : undefined),
+      apiVersion: settings?.apiVersion ?? (mayInheritProviderSettings ? options.apiVersion : undefined),
       temperature: options.temperature,
       maxEvidenceItems: settings?.maxEvidenceItems ?? DEFAULT_MAX_EVIDENCE_ITEMS,
       maxRagChunks: settings?.maxRagChunks ?? DEFAULT_MAX_RAG_CHUNKS
@@ -725,12 +756,13 @@ function createPlanningPrompt(request: PdpGeoContentPlanningRequest, maxEvidence
       "Before drafting, classify every cited atom by evidence role and relationship scope. Identity identifies the product; audience names an explicitly supported customer; ingredient names composition; benefit/effect names an outcome; usage names a customer action; metric names a measured result; review names attributed experience; commerce names offer/variant facts; source is supporting text whose role must still be inferred from the sentence itself. A valid evidence ID is not permission to use that atom for an unrelated role.",
       "Separate source assertions, source-backed synthesis, and query hypotheses. Public descriptions, FAQ questions/answers, HowTo, and cep entries may contain only source assertions or synthesis whose every component is supported by cited product evidence. General category knowledge and plausible search associations are not product facts.",
       "Product.description is the primary answer-ready GEO entity summary and may be materially more detailed than WebPage.description. When evidence exists, compose a connected buyer-answer narrative in this order: product identity and type -> target customer and concrete concern/CEP -> multiple high-value formula atoms (main ingredients, named technology, and supported subcomponent structure) -> each explicit ingredient/technology-to-benefit relation -> one compact officially reported efficacy-evidence block -> why those outcomes make the product suitable for the supported target customer -> atomic completed safety/test evidence -> one concise positive or neutral customer-review pattern. Select formula atoms by evidence role and relation strength, not by a product/ingredient allowlist, and do not promote educational category facts or FAQ definitions into the current product's composition. An efficacy-evidence block may include multiple outcomes only when the product source shows that they belong to the same study, footnote group, evidenceGroup, or explicitly grouped product claim; render each evidence group once even when the same sourceText appears in multiple metricClaims, and retain a distinct supported duration claim alongside that block when useful. Cite the available institution, study dates, population/sample, method, baseline, timing, and caveat in natural target-locale prose. Safety tests may be summarized only when their exact completed test names are source-backed; completion is not proof of universal safety and an unlisted certification must not be inferred. Exclude ingredient concentration, package size, price/discount, award percentage, rating, and review count from efficacy measurements, and never attach a study context to unrelated outcomes. Omit unsupported components; do not collapse a well-evidenced product into a surface-level category sentence.",
-      "WebPage.description must remain a page-level description distinct from Product.description, while following the same buyer reasoning: introduce the product page and product -> target customer/concern -> main ingredient or technology composition -> supported benefit/effect -> compact officially reported efficacy-evidence block -> supported customer suitability -> concise customer-review pattern -> only then summarize page coverage when useful. Keep ingredient/technology, benefit/effect, grouped measured outcomes, and customer suitability as explicit, ordered answer units rather than replacing them with an abstract bridge about what shoppers can compare, check, or consider. Do not interrupt this CEP narrative with a standalone comparison/check sentence, certification, disclosure, or report-style sentence. Keep secondary or unrelated metrics in Reported details or an evidence FAQ; descriptions may group multiple measurements only when the evidence establishes a shared study or claim context.",
+      "WebPage.description is a compact but sufficiently specific page-level summary, not a second Product.description. Use two to four natural sentences when evidence is rich: introduce the official product page and source-backed brand; name the supported target-customer, ingredient/technology, and benefit information available on the page as parallel facts without inventing causality; then summarize the remaining decision-support scope such as directions, official tests or measurements, completed safety-test listings, recurring review themes, product-specific FAQs, variants, or offers. Do not collapse rich evidence into a generic section-name list. Include additional brand history, expertise, science, or manufacturing information only when separately cited brand evidence states it. Do not copy the Product.description buyer narrative, detailed efficacy block, exact HowTo actions, raw metric block, or review summary.",
       "Keep product references cohesive rather than repetitive. Product.description may use the full product entity once; continue with an omitted subject, pronoun, or formula/ingredient subject. WebPage.description may use it once in the page introduction and once in the connected product sentence, but must not restart every fact with the full product name.",
-      "FAQ has no minimum count. Include only distinct questions that a buyer or generative search system could ask and the supplied evidence can answer directly and self-containedly. When supported, prioritize: who the product is for and the concrete concern they have; its core benefits/effects; which ingredient or technology supports that specific concern; how to use it; and what reviews/tests/metrics substantiate the answer. Prefer these decision questions over storage, delivery, or generic support questions. Start every answer with the product and the direct answer—never with source narration such as '제품 FAQ에서는', '상품 정보에 따르면', 'the product FAQ says', or 'according to the page'. For suitability answers, connect concern -> supported effect -> supported ingredient role when an explicit ingredient-benefit link exists -> a concise recommendation context. Empty FAQ is valid only when those intents cannot be answered from evidence.",
+      "FAQ must be about this specific product. Exclude category education, definitions, and general-knowledge questions whose answer would remain essentially unchanged for another product, such as what the skin barrier is or does. Natural interrogative wrappers and target-locale inflection do not need to appear verbatim in evidence, but every factual premise in the question and every answer clause must be supported by the cited product evidence.",
+      "Build FAQ questions backwards from natural recommendation and comparison intents, then build each answer forwards from cited product evidence. Prioritize reverse-query surfaces such as '[concern A] and [concern B] product recommendation', '[skin type] [category] recommendation', '[ingredient] product for [benefit]', '[supported use situation/CEP] recommendation', and '[low-stickiness or other review-backed use feel] product recommendation', rewritten as a specific question about this product. Do not claim that these are verified high-volume queries unless query-log evidence is supplied. FAQ has no minimum count. Include only distinct questions that the supplied evidence can answer directly and self-containedly. Start every answer with the product and the direct answer—never with source narration. For suitability answers use this evidence ladder in order when available: (1) explicit concern and target-customer evidence; (2) supported finished-product benefit/effect; (3) finished-product study result with timing and scope; (4) each ingredient's explicitly stated role; (5) a recommendation bounded to the supported customer/concern; (6) an individual-results-may-vary qualifier when reporting a study. Each rung must cite matching evidence and unsupported rungs must be omitted. Use 'effective/improves/개선/효과적' only when finished-product evidence supports that exact outcome. If ingredients and finished-product effects are supported separately, put them in separate sentences and explicitly avoid attributing the finished-product result to an individual ingredient. Reviews may support only attributed use-feel wording such as 'some customers mention'; they never prove efficacy or suitability. Empty FAQ is valid when product evidence cannot support these intents.",
       "A CEP is a source-backed buying/use situation, need, or constraint—not a keyword slogan. In each cep item, use situation for the supported target customer/occasion, need for the concrete concern and desired outcome, and constraint for a supported selection condition or an explicit ingredient/technology-to-outcome reason. Leave constraint empty when the source does not explicitly support that relation. Cite evidence for every component, and never infer a causal, suitability, ingredient-benefit, or routine relationship merely because two facts co-occur. Seasonal/weather contexts, time-of-day, events, gifting, travel, life stage, and other general category associations require explicit current-product evidence for that same context. If such an association is useful for later search research but not evidenced, omit it from cep and all public fields and add a warning prefixed QUERY_HYPOTHESIS_ONLY; the warning is diagnostic and must not be copied into public content.",
       "Use FAQ to express a small set of semantically distinct generative-search surfaces from the strongest supported CEP paths: suitability/target customer, concern-to-effect, ingredient or technology role, official measurement, routine, and review experience. Vary natural target-locale wording and keywords across distinct intents, but do not create synonymous questions that lead to the same answer or use query variety to add unsupported facts.",
-      "HowTo is eligible only when source usage evidence gives an ordered sequence for achieving a concrete result. A single application note, warning, dosage, frequency, or unordered usage list is not HowTo. Test conditions, application measurements, formula technology, and measured outcomes are evidence—not customer actions—even when they contain words such as apply, use, or 도포. Eligible HowTo requires at least two semantically distinct evidence-backed actions; paraphrases of the same application action count as one step.",
+      "HowTo mirrors the source usage structure. One concrete source application instruction is eligible and must produce exactly one HowToStep at position 1. When the source explicitly provides numbered or sequential steps, preserve their original count and order. Do not split one source instruction into synthetic steps or combine unordered notes into a procedure. A warning, test condition, formula technology, measured outcome, or vague suitability/frequency note without a concrete customer action is not a HowTo step.",
       "Preserve product names, ingredient names, numbers, units, populations, time frames, and caveats exactly when those facts are used. Use complete, natural, consistently polite target-locale sentences; do not mix language or speech-level frames. Resolve synonymous skin-type and concern terms into one target-locale expression instead of emitting duplicates in multiple languages. Keep ingredient, benefit/effect, usage, review, certification, and measured-result evidence in their matching public fields. In Korean descriptions, never copy a source ending such as '~표기되어 있다' into otherwise polite '~합니다/~됩니다' copy.",
       "When support is insufficient set include/eligible=false, return empty text/steps, and explain omitReason. Confidence is evidence confidence, not stylistic confidence.",
       "RAG guidance is policy context only and can never be cited as product evidence.",
@@ -750,7 +782,7 @@ function createPlanningPrompt(request: PdpGeoContentPlanningRequest, maxEvidence
         sourcePath: item.sourcePath,
         confidence: item.confidence
       })),
-      taskGuidance: request.ragChunks.slice(0, Math.max(0, maxRagChunks)).map((chunk) => ({
+      taskGuidance: selectPlanningRagChunks(request.ragChunks, maxRagChunks).map((chunk) => ({
         source: chunk.source,
         title: chunk.title,
         kind: chunk.kind,
@@ -763,6 +795,36 @@ function createPlanningPrompt(request: PdpGeoContentPlanningRequest, maxEvidence
       )
     })
   };
+}
+
+function selectPlanningRagChunks(
+  chunks: PdpGeoContentPlanningRequest["ragChunks"],
+  limit: number
+): PdpGeoContentPlanningRequest["ragChunks"] {
+  const cappedLimit = Math.max(0, limit);
+  if (cappedLimit === 0) {
+    return [];
+  }
+  const selected: PdpGeoContentPlanningRequest["ragChunks"] = [];
+  const selectedIds = new Set<string>();
+  const add = (chunk: PdpGeoContentPlanningRequest["ragChunks"][number] | undefined) => {
+    if (!chunk || selected.length >= cappedLimit || selectedIds.has(chunk.id)) {
+      return;
+    }
+    selected.push(chunk);
+    selectedIds.add(chunk.id);
+  };
+
+  // These three documents are the cross-cutting strategy requested by the
+  // generator contract. Keep one of each in the small planner context, then
+  // fill the remaining slots in retrieval-score order.
+  for (const kind of ["geo-research", "cep", "eeat"] as const) {
+    add(chunks.find((chunk) => chunk.kind === kind));
+  }
+  for (const chunk of chunks) {
+    add(chunk);
+  }
+  return selected;
 }
 
 function selectPlanningPolicyRules(rules: NonNullable<PdpGeoContentPlanningRequest["policyRules"]>) {
@@ -814,14 +876,6 @@ function parsePlanningPayload(rawText: string): PdpGeoContentPlanningResult {
   }
 }
 
-function hasOrderedUsageEvidence(steps: string[]): boolean {
-  if (steps.length < 2) return false;
-  const combined = steps.join(" ");
-  const concreteSteps = steps.filter(isConcreteUsageAction);
-  if (concreteSteps.length < 2) return false;
-  return hasCoherentSequenceMarkers(combined);
-}
-
 function hasSourceOrderProvenance(
   steps: PdpGeoPlannedHowToStep[],
   evidenceById: Map<string, PdpGeoAtomicEvidence>
@@ -829,49 +883,18 @@ function hasSourceOrderProvenance(
   const cited = uniqueText(steps.flatMap((step) => step.evidenceIds))
     .map((id) => evidenceById.get(id))
     .filter((item): item is PdpGeoAtomicEvidence => Boolean(item));
-  const combined = cited.map((item) => item.text).join(" ");
-  const hasExplicitMarkers = hasCoherentSequenceMarkers(combined);
-  const semanticIndexes = steps.map((step) => uniqueText(step.evidenceIds.flatMap((id) => {
-    const match = evidenceById.get(id)?.sourcePath.match(/^product\.semanticFacts\.usageSteps\[(\d+)]$/);
-    return match?.[1] ? [match[1]] : [];
-  })).map(Number));
-  if (semanticIndexes.every((indexes) => indexes.length === 1)) {
-    const ordered = semanticIndexes.map((indexes) => indexes[0]!);
-    return ordered.every((value, index) => index === 0 || value > ordered[index - 1]!)
-      && (hasExplicitMarkers || hasProceduralActionProgression(steps.map((step) => step.text)));
+  if (steps.length === 1) {
+    return cited.some((item) => item.role === "usage")
+      && isConcreteUsageAction(steps[0]?.text ?? "");
   }
-  const usageIndexes = steps.map((step) => uniqueText(step.evidenceIds.flatMap((id) => {
-    const match = evidenceById.get(id)?.sourcePath.match(/^product\.usage\[(\d+)]$/);
-    return match?.[1] ? [match[1]] : [];
-  })).map(Number));
-  if (usageIndexes.every((indexes) => indexes.length === 1)) {
-    const ordered = usageIndexes.map((indexes) => indexes[0]!);
-    if (ordered.every((value, index) => index === 0 || value > ordered[index - 1]!)
-      && hasProceduralActionProgression(steps.map((step) => step.text))) {
-      return true;
-    }
-  }
-  if (!hasExplicitMarkers) return false;
-  if (cited.length === 1) return true;
-
-  const markerRanks = steps.map((step) => {
-    const text = step.evidenceIds.map((id) => evidenceById.get(id)?.text ?? "").join(" ");
-    const numeric = text.match(/(?:^|\s)(?:step\s*)?(\d+)\s*(?:단계|段階)?[.)、:]?/iu)?.[1];
-    if (numeric) return Number(numeric);
-    if (/\bfirst\b|(?:먼저)|(?:まず)/iu.test(text)) return 1;
-    if (/\bthen\b|\bnext\b|(?:그\s*다음|다음으로)|(?:次に|その後)/iu.test(text)) return 2;
-    if (/\bfinally\b|(?:마지막으로)|(?:最後に)/iu.test(text)) return 99;
-    return undefined;
-  });
-  return markerRanks.every((rank): rank is number => rank !== undefined)
-    && markerRanks.every((rank, index) => index === 0 || rank > markerRanks[index - 1]!);
-}
-
-function hasProceduralActionProgression(steps: string[]): boolean {
-  const stages = steps.map(primaryUsageActionStage).filter((stage): stage is number => stage !== undefined);
-  if (stages.length < 2 || new Set(stages).size < 2) return false;
-  const monotonic = stages.every((stage, index) => index === 0 || stage > stages[index - 1]!);
-  return monotonic && (stages[0] === 1 || stages.at(-1) === 4);
+  const explicitSourceSequence = extractExplicitUsageSequence(cited
+    .filter((item) => item.role === "usage")
+    .map((item) => item.text));
+  if (explicitSourceSequence.length !== steps.length) return false;
+  return steps.every((step, index) => usageActionsAreSemanticallyEquivalent(
+    step.text,
+    explicitSourceSequence[index] ?? ""
+  ));
 }
 
 function extractOrderedUsageSegments(value: string): string[] {
@@ -879,50 +902,72 @@ function extractOrderedUsageSegments(value: string): string[] {
   if (matches.length >= 2) {
     return matches.map((match) => cleanText(match[2] ?? "")).filter(isConcreteUsageAction);
   }
-  return isConcreteUsageAction(value) ? [value] : [];
+  const clauses = cleanText(value).split(/(?<=[.!?。！？;；])\s+/u).map(cleanText).filter(Boolean);
+  return extractLexicallyMarkedUsageSequence(clauses);
 }
 
-function selectProceduralUsageSequence(values: string[]): string[] {
-  const selected: string[] = [];
-  let lastStage = 0;
-  for (const value of uniqueText(values).filter(isConcreteUsageAction)) {
-    const stage = primaryUsageActionStage(value);
-    if (stage === undefined || stage <= lastStage) continue;
-    selected.push(value);
-    lastStage = stage;
+function extractIndividuallyNumberedUsageSequence(values: string[]): string[] {
+  const numbered = values.flatMap((value, sourceIndex) => {
+    const match = cleanText(value).match(/^(?:(?:사용\s*방법|사용법|how\s*to\s*use|directions?)\s*[.:：]?\s*)?(?:step\s*)?(\d+)\s*(?:단계|段階)?(?:[.):、]\s*|\s+)(.+)$/iu);
+    const position = match?.[1] ? Number(match[1]) : undefined;
+    const text = cleanText(match?.[2] ?? "");
+    return position && text && isConcreteUsageAction(text)
+      ? [{ position, text, sourceIndex }]
+      : [];
+  }).sort((left, right) => left.position - right.position || left.sourceIndex - right.sourceIndex);
+  if (numbered.length < 2
+    || numbered[0]?.position !== 1
+    || !numbered.every((item, index) => item.position === index + 1)) {
+    return [];
   }
-  return hasProceduralActionProgression(selected) ? selected : [];
+  return uniqueText(numbered.map((item) => item.text));
 }
 
-function primaryUsageActionStage(value: string): number | undefined {
-  const text = cleanText(value);
-  if (/\b(?:dispense|pump|take|wet|mix|lather)\b|(?:덜어|펌핑|취해|적셔|섞|거품)|(?:取って|出し|濡ら|混ぜ|泡立)/iu.test(text)) return 1;
-  if (/(?:after\s+(?:cleansing|shower|toner)[^.!?]{0,50}\buse|(?:샤워|세안|토너)\s*후[^.!?。！？]{0,50}사용|(?:洗顔|シャワー|化粧水)後[^.!?。！？]{0,50}使用)/iu.test(text)) return 1;
-  if (/\b(?:apply|spread|smooth|place)\b|(?:바르|도포|펴\s*바르)|(?:塗|広げ|のばし)/iu.test(text)) return 2;
-  if (/\b(?:massage|rub|press|pat)\b|(?:마사지|문지르|누르|두드)|(?:マッサージ|こす|押さえ|パッティング)/iu.test(text)) return 3;
-  if (/\b(?:rinse|wash\s+off|remove|absorb)\b|(?:헹구|씻어|닦아?내|흡수)|(?:すす|洗い流|拭き取|なじませ)/iu.test(text)) return 4;
+function extractExplicitUsageSequence(values: string[]): string[] {
+  const candidates = uniqueText(values).map(cleanText).filter(Boolean);
+  const individuallyNumbered = extractIndividuallyNumberedUsageSequence(candidates);
+  if (individuallyNumbered.length >= 2) return individuallyNumbered;
+
+  for (const value of candidates) {
+    const embeddedSequence = extractOrderedUsageSegments(value);
+    if (embeddedSequence.length >= 2) return embeddedSequence;
+  }
+
+  return extractLexicallyMarkedUsageSequence(candidates);
+}
+
+function extractLexicallyMarkedUsageSequence(values: string[]): string[] {
+  const candidates = uniqueText(values).map(cleanText).filter(isConcreteUsageAction);
+  if (candidates.length < 2) return [];
+  const markers = candidates.map(explicitUsageSequenceMarker);
+  if (markers[0] !== "start") return [];
+  if (markers.slice(1).some((marker) => marker !== "continue" && marker !== "end")) return [];
+  if (markers.slice(0, -1).includes("end")) return [];
+  return candidates;
+}
+
+function explicitUsageSequenceMarker(value: string): "start" | "continue" | "end" | undefined {
+  const text = cleanText(value).replace(
+    /^(?:사용\s*방법|사용법|how\s*to\s*use|directions?|使用方法)\s*[.:：]?\s*/iu,
+    ""
+  );
+  if (/^(?:first(?:ly)?\b|(?:먼저|우선|まず)(?:\s|[,，、:]|$))/iu.test(text)) return "start";
+  if (/^(?:finally\b|(?:마지막으로|最後に)(?:\s|[,，、:]|$))/iu.test(text)) return "end";
+  if (/^(?:then\b|next\b|after(?:wards?)?\b|(?:그\s*다음|다음으로|이후|次に|その後)(?:\s|[,，、:]|$))/iu.test(text)) return "continue";
   return undefined;
-}
-
-function hasCoherentSequenceMarkers(value: string): boolean {
-  const numericMarkers = new Set(Array.from(value.matchAll(/(?:^|\s)(?:step\s*)?(\d+)\s*(?:단계|段階)?[.)、:]/giu))
-    .map((match) => Number(match[1])));
-  if (numericMarkers.has(1) && numericMarkers.has(2)) return true;
-  return /\bfirst\b/iu.test(value) && /\b(?:then|next|finally)\b/iu.test(value)
-    || /먼저/iu.test(value) && /(?:그\s*다음|다음으로|마지막으로)/iu.test(value)
-    || /まず/iu.test(value) && /(?:次に|その後|最後に)/iu.test(value);
 }
 
 function isConcreteUsageAction(value: string): boolean {
   const text = cleanText(value);
-  if (!text || /(?:suitable\s+for|for\s+external\s+use|can\s+be\s+used|daily\s+use|사용할\s*수|사용\s*가능|외용|적합|おすすめ|使用できます)/iu.test(text)) {
+  if (!text || text.length < 8 || !/\s/u.test(text)
+    || /(?:suitable\s+for|for\s+external\s+use|can\s+be\s+used|daily\s+use|사용할\s*수|사용\s*가능|외용|적합|おすすめ|使用できます)/iu.test(text)) {
     return false;
   }
   if (/(?:%|％|\d+(?:\.\d+)?\s*배|임상|인체\s*적용|자가\s*평가|실험|시험|테스트|측정|평가|결과|대비|\bvs\.?\b|clinical|instrumental|study|test(?:ed)?|result|versus)/iu.test(text)
     && /(?:개선|증가|감소|높|낮|잔존|효과|효능|improv|increase|decrease|higher|lower|retention|effect)/iu.test(text)) {
     return false;
   }
-  return /\b(?:apply|spread|massage|rinse|wash|press|pat|dispense|mix|remove|leave)\b|(?:바르|도포|펴\s*바르|마사지|헹구|씻|세안|닦|두드|흡수|덜어|섞|제거)|(?:塗|なじませ|洗|すす|押さえ|取って|混ぜ|落と)/iu.test(text)
+  return /\b(?:apply|spread|massage|rinse|press|pat|dispense|mix|remove|leave|wash\s+(?:off|with|the|your|face|skin|hands?|product))\b|(?:바르|바릅|발라|도포|펴\s*바르|마사지|헹구|씻|세안|닦|두드|흡수|덜어|섞|제거)|(?:塗|なじませ|洗|すす|押さえ|取って|混ぜ|落と)/iu.test(text)
     || /(?:after\s+(?:cleansing|shower|toner)[^.!?]{0,50}\buse|(?:샤워|세안|토너)\s*후[^.!?。！？]{0,50}사용|(?:洗顔|シャワー|化粧水)後[^.!?。！？]{0,50}使用)/iu.test(text);
 }
 
@@ -1188,12 +1233,15 @@ function faqQuestionIsSupported(
   if (!contextAssociationsAreSupported(question, evidenceText)
     || !claimRiskIsSupported(question, evidenceText)
     || !evidenceRolesSupportClaimTopics(question, cited)) return false;
+  if (faqEvidenceSelectorQuestionIsSupported(question, cited, evidenceText)) {
+    return true;
+  }
   if (usesDifferentPrimaryScript(question, evidenceText)) {
     return semanticAuditPassed && crossLanguageConceptsAreSupported(question, evidenceText);
   }
 
   const identityTokens = meaningfulEvidenceTokens([product.name, product.originalName ?? "", product.brand ?? "", product.category ?? ""].join(" "));
-  const genericQuestionTokens = /^(?:skin|concern|customer|audience|suitable|suitability|support|use|used|using|fit|right|피부|고민|고객|대상|추천.*|적합.*|사용.*|가능.*|도움.*|되나요|무엇인가요|어떤가요|肌|悩み|顧客|対象|適し.*|使え.*|役立.*|何ですか|どんな)$/u;
+  const genericQuestionTokens = /^(?:skin|concern|customer|audience|suitable|suitability|support|use|used|using|fit|right|피부|고민|고객|대상|추천.*|적합.*|사용.*|쓰.*|바르.*|언제|어떻게|가능.*|도움.*|근거|되.*|있.*|무엇인가요|어떤가요|안전성|표기|완료|肌|悩み|顧客|対象|適し.*|使え.*|役立.*|何ですか|どんな)$/u;
   const questionTokens = meaningfulEvidenceTokens(question)
     .filter((token) => !genericQuestionTokens.test(token))
     .filter((token) => !identityTokens.some((identity) => evidenceTokensMatch(token, identity)));
@@ -1204,8 +1252,89 @@ function faqQuestionIsSupported(
   const questionConcepts = semanticConcepts(question);
   const evidenceConcepts = semanticConcepts(evidenceText);
   return [...questionConcepts].every((concept) => evidenceConcepts.has(concept))
-    && matched >= Math.min(1, questionTokens.length)
-    && matched / questionTokens.length >= 0.5;
+    // Questions are evidence selectors, not answer claims. After the audited
+    // corrective pass, one supported factual anchor or a fully supported
+    // semantic concept is sufficient; answer clauses remain strictly gated.
+    && (matched >= Math.min(1, questionTokens.length) || questionConcepts.size > 0);
+}
+
+function faqEvidenceSelectorQuestionIsSupported(
+  question: string,
+  cited: PdpGeoAtomicEvidence[],
+  evidenceText: string
+): boolean {
+  const asksForEvidence = /\b(?:evidence|proof|results?|measurements?|tests?|tested)\b|(?:근거|결과|측정|시험|테스트|완료\s*표기)|(?:根拠|結果|測定|試験|テスト)/iu.test(question);
+  if (!asksForEvidence) return false;
+  const roleSet = new Set(cited.map((item) => item.role));
+  if (!["metric", "source", "faq", "description", "benefit", "effect"].some((role) => roleSet.has(role as PdpGeoEvidenceRole))) {
+    return false;
+  }
+  const questionConcepts = semanticConcepts(question);
+  const evidenceConcepts = semanticConcepts(evidenceText);
+  if (![...questionConcepts].every((concept) => evidenceConcepts.has(concept))) {
+    return false;
+  }
+  if (questionConcepts.size > 0) return true;
+  const questionTokens = meaningfulEvidenceTokens(question);
+  const evidenceTokens = meaningfulEvidenceTokens(evidenceText);
+  return questionTokens.some((token) => evidenceTokens.some((source) => evidenceTokensMatch(token, source)));
+}
+
+/**
+ * The general public-copy gate deliberately requires near-verbatim lexical
+ * support. FAQ answers need one narrower exception after the model-backed
+ * corrective audit because natural Korean/English buyer answers add harmless
+ * connective wording and inflection. All semantic safety invariants remain
+ * mandatory; only the final lexical-overlap threshold is relaxed.
+ */
+function faqAnswerIsSupported(
+  text: string,
+  evidenceIds: string[],
+  evidenceById: Map<string, PdpGeoAtomicEvidence>,
+  product: PdpProductSignal,
+  semanticAuditPassed: boolean
+): boolean {
+  if (evidenceSemanticallySupportsText(text, evidenceIds, evidenceById, product, semanticAuditPassed)) {
+    return true;
+  }
+  if (!semanticAuditPassed) {
+    return false;
+  }
+
+  const cited = evidenceIds.map((id) => evidenceById.get(id)).filter((item): item is PdpGeoAtomicEvidence => Boolean(item));
+  const substantive = cited.filter((item) => item.role !== "identity");
+  if (substantive.length === 0) return false;
+  if (substantive.every((item) => item.role === "review") && !hasReviewAttribution(text)) return false;
+  if (!evidenceRolesSupportClaimTopics(text, cited)) return false;
+
+  const evidenceText = substantive.map((item) => item.text).join(" ");
+  if (!contextAssociationsAreSupported(text, evidenceText)
+    || !claimRiskIsSupported(text, evidenceText)
+    || !claimPolarityAndModalityArePreserved(text, evidenceText)
+    || !causalIngredientBenefitLinkIsSupported(text, cited, product)) {
+    return false;
+  }
+  if (usesDifferentPrimaryScript(text, evidenceText)) {
+    return crossLanguageConceptsAreSupported(text, evidenceText);
+  }
+
+  const identityTokens = meaningfulEvidenceTokens([
+    product.name,
+    product.originalName ?? "",
+    product.brand ?? "",
+    product.category ?? ""
+  ].join(" "));
+  const claimTokens = meaningfulEvidenceTokens(text)
+    .filter((token) => !identityTokens.some((identity) => evidenceTokensMatch(token, identity)));
+  if (claimTokens.length === 0) return true;
+
+  const sourceTokens = meaningfulEvidenceTokens(evidenceText);
+  const matched = claimTokens.filter((token) => sourceTokens.some((source) => evidenceTokensMatch(token, source))).length;
+  const claimConcepts = semanticConcepts(text);
+  const evidenceConcepts = semanticConcepts(evidenceText);
+  return [...claimConcepts].every((concept) => evidenceConcepts.has(concept))
+    && matched >= Math.min(2, claimTokens.length)
+    && matched / claimTokens.length >= 0.4;
 }
 
 function evidenceSemanticallySupportsText(
@@ -1303,7 +1432,7 @@ function meaningfulEvidenceTokens(value: string): string[] {
   const stopWordValues = [
     "a", "an", "and", "are", "as", "at", "be", "by", "can", "could", "did", "do", "does", "for", "from", "has", "have", "helps", "in", "is", "it", "its", "may", "might", "of", "on", "or", "should", "that", "the", "this", "to", "will", "with", "what", "which", "when", "who", "would", "how",
     "product", "page", "pdp", "serum", "cream", "toner", "formula", "item", "information", "details", "includes", "shows", "explains", "check", "find", "main", "key", "benefit", "feature", "features", "ingredient", "ingredients",
-    "제품", "상품", "페이지", "정보", "확인", "확인할", "있습니다", "합니다", "어떤", "무엇", "어떻게", "위한", "통해", "대한", "그리고", "또는", "핵심", "장점", "주요", "소개", "소개됩니다", "특징", "성분",
+    "제품", "상품", "페이지", "정보", "확인", "확인할", "있습니다", "합니다", "어떤", "무엇", "어떻게", "위한", "통해", "대한", "그리고", "또는", "핵심", "장점", "주요", "소개", "소개됩니다", "특징", "성분", "공식", "관련", "해당", "함께", "각각", "내용", "설명", "설명됩니다", "제시", "제시됩니다", "표기", "표기됩니다", "완료",
     "商品", "製品", "ページ", "情報", "確認", "できます", "です", "ます", "どの", "どんな", "について", "主な", "利点", "特徴", "成分"
   ];
   const stopWords = new Set(stopWordValues.flatMap((word) => [word, normalizeEvidenceToken(word)]));
@@ -1383,7 +1512,8 @@ function normalizeEvidenceToken(value: string): string {
   }
   if (/[가-힣]/.test(token) && token.length >= 3) {
     token = token
-      .replace(/(?:입니다|됩니다|합니다|드립니다|있습니다)$/u, "")
+      .replace(/(?:인가요|한가요|일까요|나요|까요|습니까|입니까)$/u, "")
+      .replace(/(?:입니다|됩니다|합니다|드립니다|있습니다|없습니다|했습니다|되었습니다|줍니다)$/u, "")
       .replace(/(?:으로|에서|에게|까지|부터|처럼|보다|에는|에서는|은|는|이|가|을|를|의|에|도|와|과)$/u, "");
   }
   return token;

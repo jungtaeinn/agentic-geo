@@ -6,7 +6,7 @@ If the source example is written in Korean but the requested output locale is En
 
 ## RAG Corpus Orchestration
 
-Use the typed RAG index as the first-pass map for deciding which content unit should be retrieved. This document should be selected when the generator needs overlap resolution, public wording rules, benchmark depth, OCR/source blending, FAQ intent breadth, HowTo reconstruction, or product/entity description separation.
+Use the typed RAG index as the first-pass map for deciding which content unit should be retrieved. This document should be selected when the generator needs overlap resolution, public wording rules, benchmark depth, OCR/source blending, FAQ intent breadth, source-faithful HowTo eligibility, or product/entity description separation.
 
 Content-unit priority:
 
@@ -22,11 +22,11 @@ When policies overlap, choose the stricter source-backed rule and keep the decis
 
 ## Core Principle
 
-GEO output should help generative engines cite and verify the product from structured, evidence-rich facts. Citation readiness means varied, natural product expressions and complete facts, not public citation labels, quote phrases, or repeated stock claim sentences.
+GEO output should make the product easier to retrieve, understand, verify, and reuse from visible, evidence-rich facts. It cannot guarantee selection or citation. Citation readiness means varied, natural product expressions and complete facts, not public citation labels, quote phrases, or repeated stock claim sentences.
 
 - Prefer product-specific facts over generic SEO claims.
 - Treat ChatGPT Search, Gemini grounding, and Google AI Search as retrieval-and-citation environments: they reward crawlable, visible, source-backed content units, not hidden AI-only instructions or artificial markup tricks.
-- Compose descriptions as a buyer-answer narrative: product identity/type + target customer and concern/CEP + ingredient or technology relevance + supported benefit/effect + concise positive or neutral review pattern.
+- Compose `Product.description` as a five-part buyer-answer narrative: product introduction/type + target customer and concern/CEP + ingredient or technology composition + supported finished-product benefit/effect and compact evidence/test context + attributed positive or neutral review summary last.
 - Never expose internal wording such as "GEO-ready", "PDP name", "schema optimization", or "for generative engines" inside public schema/content.
 - Do not use analysis labels such as "usage", "review", "benefit", or "keyword" as product category values.
 - Do not create FAQ, review, or HowTo content from isolated tokens. Use complete questions, answers, review summaries, and actionable usage steps.
@@ -49,7 +49,7 @@ Use a graph with connected entities when the product page has enough evidence.
 - `WebPage`: locale-specific page entity with URL, name, concise product-page description, `inLanguage`, `isPartOf`, and `mainEntity`.
 - `Product`: the canonical product entity with `name`, `alternateName`, `description`, `brand`, `manufacturer`, `category`, `audience`, `offers`, `award`, and `additionalProperty`.
 - `FAQPage`: high-intent questions grounded in product facts, customer concerns, product comparisons, claims, usage, and purchase decisions.
-- `HowTo`: concise usage routine with complete step names and instructions. Include `totalTime` only when supported or safely inferable from usage evidence.
+- `HowTo`: source-faithful usage directions with complete step names and instructions. Include `totalTime` only when the source explicitly states a duration; never infer it.
 - `BreadcrumbList`: include when category path or navigation hierarchy is available.
 
 For multilingual PDPs, represent each locale as a separate `WebPage` node when URLs differ. Keep one canonical `Product` node when the product identity is shared, using `alternateName` for cross-locale product naming.
@@ -64,19 +64,19 @@ Role: describe the product page as the source that organizes information about t
 
 Recommended composition:
 
-`[Product name] product page introduces the [product type] for [target customer/concern]. [Ingredient/technology] is relevant because it supports [benefit/effect]. Customer reviews repeatedly mention [use-feel summary]. Page coverage may be summarized after this connected buyer narrative.`
+`This [brand] [product name] product page introduces the [product type]. The page covers [supported information categories such as ingredients, benefits, directions, tests, reviews, variants, or offers].`
 
 Use `WebPage.description` to expose:
 
 - Page scope: product detail page, product comparison page, routine guide, variant page, or purchase page.
-- Target customer or search intent: who would use the page to decide, compare, or verify the product.
-- Main page coverage: benefits/effects, ingredients or technologies, usage guidance, FAQ, HowTo, reviews, ratings, offers, variants, and reported results.
+- Brand context: use the source-backed brand name; add history, expertise, research, or manufacturing context only when separate current-source brand evidence supports it.
+- Main page coverage: benefits/effects, ingredients or technologies, usage guidance, FAQ, HowTo, reviews, ratings, offers, variants, and reported results when those areas exist.
 - Entity linkage: wording should make it clear that the page is about the `Product` connected through `mainEntity` or `about`.
 
 Avoid:
 
 - Reusing `Product.description` verbatim.
-- Saying only that the page "organises information" without naming the actual benefit, ingredient, review, or result topics.
+- Repeating the detailed Product description, review summary, or numeric efficacy block.
 - Making the page itself sound like it has ingredients or effects. The product has those properties; the page covers or explains them.
 - Interrupting the buyer narrative with standalone certification, test-method, disclosure, or report-style sentences. Keep detailed methods, caveats, and raw metrics in `Reported details` or an evidence FAQ unless one natural measured-outcome sentence directly answers the concern.
 
@@ -86,7 +86,7 @@ Role: describe the product as the commercial entity being sold or evaluated.
 
 Recommended composition:
 
-`[Product name] is a [product type] for [target customer and concern]. [Key ingredient/technology] is relevant to that concern because it supports [specific benefit/effect]. Representative customer reviews repeatedly mention [texture, comfort, or satisfaction summary].`
+`[Product name] is a [product type]. It is intended for [target customer and concern]. The formula includes [key ingredients/technology]. [Supported finished-product benefit/effect and compact evidence/test context]. Customer reviews mention [attributed texture, comfort, or satisfaction summary].`
 
 Use `Product.description` to expose:
 
@@ -94,7 +94,7 @@ Use `Product.description` to expose:
 - Target customer: concern, skin type, routine need, purchase intent, or use occasion.
 - Benefits/effects: concrete supported terms such as fine lines, firmness, hydration, elasticity, barrier support, texture, or brightening.
 - Ingredients/technologies: multiple high-value formula atoms when available, including main ingredients, named technology, supported subcomponent structure, and only explicit ingredient/technology-to-benefit relations.
-- Usage context: when and how it can be used in a routine, not just "how to use" labels.
+- Usage context belongs in Usage/HowTo so it does not interrupt the Product description order.
 - Representative reviews: prefer real review phrases or concise review-language summaries over isolated keyword lists.
 - Source-supported results: metrics, duration, population, award, satisfaction, or rating only when available in source facts; render a shared clinical study, footnote, or `evidenceGroup` only once even when several metric atoms repeat its provenance.
 - Safety/test evidence: exact completed test names only when product evidence supports them. Completion must not be expanded into a universal safety guarantee or an unlisted certification.
@@ -103,14 +103,16 @@ Avoid:
 
 - Generic SEO copy, overstuffed keyword lists, or claims not visible in source data.
 - Raw source fragments such as incomplete clinical sample text, isolated durations, or section labels.
-- Mid-sentence truncation or ellipsis in Product descriptions. Summarize usage and evidence into complete sentences instead of cutting raw source text.
+- Mid-sentence truncation or ellipsis in Product descriptions. Summarize evidence into complete sentences and keep usage in Usage/HowTo.
 - Page-level wording such as "product page" inside `Product.description`; reserve page/resource language for `WebPage.description`.
 - Internal labels such as "evidence signal", "review signals", "GEO", "RAG", or "schema optimization".
 
 ## Product Entity Best Practice
 
 The `Product` node should be dense but verifiable.
-Do not reuse the same description for `WebPage.description` and `Product.description`. Both should follow the buyer's reasoning from product identity to target concern to ingredient-to-benefit explanation and review summary. The WebPage description retains a page-level introduction or coverage sentence; Product.description remains a product-specific entity description and may include a compact list of exact completed safety tests when those tests help the supported target customer evaluate the product. Detailed methods, disclosures, caveats, ungrouped certifications, and raw metric strings belong in dedicated properties or evidence FAQ rather than report-style description sentences.
+Do not reuse the same description for `WebPage.description` and `Product.description`. WebPage is a compact but concrete page/brand/scope summary: with rich evidence it may name supported target-customer, formula/technology, and benefit categories as parallel page facts, then summarize the remaining decision-support sections. Product is the five-part connected product narrative and may include a compact list of exact completed safety tests inside its benefit/evidence block. Detailed methods, disclosures, caveats, ungrouped certifications, and raw metric strings belong in dedicated properties or evidence FAQ rather than report-style description sentences.
+
+For product-recommendation FAQ, work backwards from buyer queries and forwards from evidence. Prefer combinations such as concern A + concern B, skin type + category, ingredient + supported role, a source-backed CEP/use situation, or an attributed review use-feel. Build the answer in an evidence ladder: explicit concern/target customer -> finished-product claim -> finished-product test result -> explicitly stated ingredient role -> bounded recommendation -> individual-results qualifier for a reported study. Omit any unsupported rung. Ingredient presence and a finished-product result must remain separate unless the source explicitly links them; review wording remains attributed experience and cannot prove efficacy.
 
 Resolve product identity before writing copy. Many commerce PDPs expose a SKU name such as `[Brand][small size] Representative Product 30ml`, while the BestPractice product entity should be the representative sellable product such as `Brand Representative Product`. Preserve the full source SKU name in `alternateName`, option facts, offer labels, and diagnostics; do not let bracketed badges, volume labels, or promotion labels become the canonical `Product.name`.
 
@@ -179,19 +181,19 @@ For English output, rewrite Korean or multilingual OCR meaning into natural Engl
 ## Description Pattern
 
 Descriptions should be rewritten into diverse, answer-ready product content, not copied mechanically.
-Avoid shallow descriptions that only say the page "organises information" or that the product is simply a "hydration serum". A strong Product description should expose the product identity, target customer and concrete concern, the relevant ingredient or technology, its supported benefit/effect, and a concise positive or neutral customer-review pattern. A measured result belongs in the description only when it directly answers that concern as a natural outcome sentence.
+Avoid a Product description that only says the product is a "hydration serum". A strong Product description should expose the product introduction/type, target customer and concrete concern, relevant ingredient or technology composition, supported benefit/effect and evidence, and an attributed positive or neutral customer-review pattern last. A measured result belongs in the description only when it directly answers that concern as a natural outcome sentence.
 
 Good structure:
 
-`[Product name] is a [product type] for [target customer and concern]. [Ingredient/technology] supports [core benefit/effect] relevant to that concern. [Repeated positive or neutral customer-review pattern] closes the description.`
+`[Product name] is a [product type] for [target customer and concern]. The formula includes [ingredient/technology]. The finished product has [source-backed benefit/effect]; relate the ingredient to that outcome only when one source assertion explicitly does so. [Attributed positive or neutral customer-review observation] closes the description.`
 
 Korean example structure:
 
-`[제품명]은 [대상 고객]이 [구체적인 피부 고민]을 관리할 때 고려할 수 있는 [제품 유형]입니다. [핵심 성분/기술]이 해당 고민과 연결되는 [효능/효과]를 돕습니다. 마지막에는 [고객 리뷰에서 반복되는 긍정적·중립적 사용 경험]을 자연스럽게 요약합니다.`
+`[제품명]은 [제품 유형]입니다. [대상 고객]의 [구체적인 피부 고민]을 위한 제품입니다. 주요 구성은 [핵심 성분/기술]입니다. [근거가 있는 완제품 효능/효과와 시험 정보]를 설명합니다. 마지막에는 [고객 리뷰에서 확인된 긍정적·중립적 사용 경험]을 출처가 드러나게 요약하고, 실제로 여러 리뷰에서 확인된 경우에만 반복 표현이라고 씁니다.`
 
 English example structure:
 
-`[Product name] is a [product type] for [target concern]. [Ingredient/technology] supports [benefits], with clinical or reported details when available. High-level routine, comparison, or repeated customer review language can close the description.`
+`[Product name] is a [product type]. It is intended for [target customer and concern]. The formula includes [ingredient/technology]. [Supported finished-product benefits and compact test evidence]. Customer reviews mention [attributed positive or neutral experience].`
 
 The language may change, but the structure must remain fact-first.
 
@@ -199,6 +201,8 @@ The language may change, but the structure must remain fact-first.
 
 Generate FAQ from customer intent and product evidence. Mix factual questions with shopping-decision questions.
 Treat visible PDP FAQ as the strongest question-and-answer evidence. Preserve it when it is already direct and natural; rewrite it only when the meaning and evidence remain unchanged. New FAQ may be proposed from product benefit/effect facts, ingredient or technology facts, usage context, and repeated positive or neutral review use-feel language, but every final item must be visible, distinct, and answerable from cited product evidence. Do not create FAQ items from raw customer reviews, negative reviewer sentiment, ratings, reviewer metadata, or scent complaints.
+
+Build questions backwards from natural recommendation/comparison intents, then build answers forwards from evidence. For example, convert "a product recommendation for concern A and concern B" into "Is [product] suitable for customers with concern A and concern B?" only when both concerns are source-backed. In the answer, state the product and supported target/effect first; add an ingredient role only for an explicit ingredient-benefit link, and use efficacy or recommendation wording only at the evidence level actually supplied.
 
 FAQ has no target or minimum count. Zero questions is valid when the source does not support a useful, direct answer. Select only the distinct customer intents that materially help a buying or usage decision; schema presence and question volume are not citation guarantees.
 
@@ -229,7 +233,7 @@ FAQ answers should start with the direct answer, then add one short cited eviden
 
 ## HowTo Best Practice
 
-Create HowTo only when the source describes an ordered multi-action procedure for achieving a concrete result. A frequency note, warning, amount, routine position, or single application sentence remains visible usage guidance but is not HowTo. Every HowTo requires at least two distinct source-backed actions. Remove source section labels such as "How to use" and deduplicate repeated instructions; do not add benefits, ingredients, or texture claims to a procedural step.
+Create HowTo from concrete source directions without changing their structure. One application instruction becomes one HowToStep; an explicitly ordered multi-action procedure preserves its original count and order. A frequency note, warning, amount, routine position, test condition, or compatibility note without a concrete action remains ordinary usage guidance. Remove source section labels such as "How to use", but do not split, merge, or invent actions, and do not add benefits, ingredients, or texture claims to a step.
 
 Good step shape:
 
@@ -267,7 +271,7 @@ Use reference patterns as architecture guidance, not as reusable product copy. A
 - `Product`: current product name, brand, category, description, offer data, audience only when supported, and source-backed properties.
 - `Product.additionalProperty`: facts that belong to the product evidence layer, such as ingredient roles, certification, texture, scent, metrics, awards, variants, and source context.
 - `FAQPage`: answer-ready customer questions derived from product facts, CEPs, and search intent.
-- `HowTo`: usage actions only, such as amount, order, application area, frequency, wait time, rinsing, layering, or caution steps.
+- `HowTo`: concrete source usage actions only. Preserve source amount, order, application area, wait time, rinsing, or layering inside the action that states it; do not turn standalone frequency, timing, amount, or caution notes into steps.
 
 ### Field Evidence Routing Pattern
 

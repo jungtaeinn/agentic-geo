@@ -142,7 +142,100 @@ describe("adversarial evidence-bound content planning", () => {
     expect(result.plan.faq).toHaveLength(1);
   });
 
-  it("does not infer order from unrelated semantic usage facts", async () => {
+  it("retains audited Korean product FAQs despite natural inflection and separated numeric question context", async () => {
+    const source = product({
+      name: "아토베리어365 크림",
+      description: "아토베리어365 크림은 건조하고 민감한 피부 고객을 위한 장벽 보습 크림입니다.",
+      category: "크림",
+      benefits: ["피부 장벽 보습"],
+      ingredients: ["고밀도 세라마이드 캡슐"],
+      usage: ["아침과 저녁 세안 후 적당량을 피부에 골고루 펴 바릅니다."],
+      metrics: ["인체적용시험에서 사용 직후 보습량은 사용 전 대비 2배 증가했습니다."],
+      semanticFacts: {
+        ingredients: ["고밀도 세라마이드 캡슐"],
+        benefits: ["피부 장벽 보습"],
+        effects: [],
+        skinTypes: ["건조 피부", "민감 피부"],
+        usageSteps: ["아침과 저녁 세안 후 적당량을 피부에 골고루 펴 바릅니다."],
+        metricClaims: [],
+        evidenceSentences: [],
+        ingredientBenefitLinks: [],
+        safetyTests: ["민감 피부 자극 테스트 완료", "피부과 테스트 완료"]
+      }
+    });
+    const request = planningRequest(source, "ko-KR");
+    const ids = (...roles: string[]) => request.evidenceLedger
+      .filter((item) => roles.includes(item.role))
+      .map((item) => item.id);
+    const candidate = planPayload("ko-KR", {
+      faq: [
+        {
+          include: true,
+          question: "아토베리어365 크림은 건조하고 민감한 피부 고객에게 적합한가요?",
+          answer: "아토베리어365 크림은 건조하고 민감한 피부 고객이 장벽 보습을 고려할 때 적합한 크림입니다.",
+          intent: "target-customer-suitability",
+          cep: "건조하고 민감한 피부의 장벽 보습",
+          evidenceIds: ids("identity", "description", "audience", "benefit"),
+          confidence: 0.95,
+          omitReason: ""
+        },
+        {
+          include: true,
+          question: "아토베리어365 크림의 보습 개선 근거는 무엇인가요?",
+          answer: "인체적용시험에서 사용 직후 보습량은 사용 전보다 2배 증가했습니다.",
+          intent: "official-measurement",
+          cep: "공식 보습 측정 결과 확인",
+          evidenceIds: ids("identity", "metric"),
+          confidence: 0.95,
+          omitReason: ""
+        },
+        {
+          include: true,
+          question: "아토베리어365 크림은 언제, 어떻게 바르나요?",
+          answer: "아침과 저녁 세안 후 적당량을 피부에 골고루 펴 바릅니다.",
+          intent: "usage-order",
+          cep: "아침과 저녁 세안 후 사용",
+          evidenceIds: ids("usage"),
+          confidence: 0.95,
+          omitReason: ""
+        },
+        {
+          include: true,
+          question: "아토베리어365 크림에는 어떤 피부 안전성 테스트 완료 표기가 있나요?",
+          answer: "민감 피부 자극 테스트와 피부과 테스트 완료가 표기되어 있습니다.",
+          intent: "completed-safety-tests",
+          cep: "민감 피부 테스트 완료 항목 확인",
+          evidenceIds: ids("identity", "source"),
+          confidence: 0.95,
+          omitReason: ""
+        }
+      ]
+    });
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      output: [{ content: [{ type: "output_text", text: JSON.stringify(candidate) }] }]
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await planPdpGeoContent(request, {
+      contentPlanning: {
+        enabled: true,
+        provider: "openai",
+        apiKey: "test-key",
+        model: "gpt-test"
+      }
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.plan.faq.map((item) => item.intent)).toEqual([
+      "target-customer-suitability",
+      "official-measurement",
+      "usage-order",
+      "completed-safety-tests"
+    ]);
+    expect(result.warnings.join("\n")).not.toMatch(/numeric-relationship|question-entailment|answer-entailment/u);
+  });
+
+  it("does not infer order from unmarked semantic action-stage facts", async () => {
     const source = product({
       semanticFacts: {
         ingredients: [],
@@ -150,8 +243,9 @@ describe("adversarial evidence-bound content planning", () => {
         effects: [],
         skinTypes: [],
         usageSteps: [
+          "Dispense one pump into the hand.",
           "Apply the serum to the face.",
-          "Massage the cleanser onto the hands."
+          "Massage gently until absorbed."
         ],
         metricClaims: [],
         evidenceSentences: [],
@@ -163,6 +257,49 @@ describe("adversarial evidence-bound content planning", () => {
 
     expect(result.plan.howTo.eligible).toBe(false);
     expect(result.plan.howTo.steps).toEqual([]);
+  });
+
+  it("does not let semantic step labels add order to unmarked source usage notes", async () => {
+    const source = product({
+      sourceTexts: [
+        "Dispense one pump into the hand.",
+        "Apply the serum evenly to the face."
+      ],
+      semanticFacts: {
+        ingredients: [],
+        benefits: [],
+        effects: [],
+        skinTypes: [],
+        usageSteps: [
+          "Step 1: Dispense one pump into the hand.",
+          "Step 2: Apply the serum evenly to the face."
+        ],
+        metricClaims: [],
+        evidenceSentences: [],
+        ingredientBenefitLinks: []
+      }
+    });
+
+    const result = await planPdpGeoContent(planningRequest(source, "en-US"), {});
+
+    expect(result.plan.howTo.eligible).toBe(false);
+    expect(result.plan.howTo.steps).toEqual([]);
+  });
+
+  it("keeps one direct product usage instruction even when source text contains another explicit sequence", async () => {
+    const source = product({
+      usage: ["Apply one pump evenly to the face."],
+      sourceTexts: [
+        "Step 1: Remove the outer carton.",
+        "Step 2: Recycle the empty carton."
+      ]
+    });
+
+    const result = await planPdpGeoContent(planningRequest(source, "en-US"), {});
+
+    expect(result.plan.howTo.eligible).toBe(true);
+    expect(result.plan.howTo.steps).toHaveLength(1);
+    expect(result.plan.howTo.steps[0]?.text).toBe("Apply one pump evenly to the face.");
   });
 
   it("does not publish a raw wrong-locale description when the plan omits it", async () => {

@@ -276,7 +276,7 @@ describe("corrective refinement pass", () => {
     const faqPage = graph.find((node) => node["@type"] === "FAQPage") as Record<string, any>;
     const mainEntity = faqPage.mainEntity as Array<Record<string, any>>;
 
-    expect(mainEntity[0]!.name).toBe("민감하고 건조한 피부에는 어떤 토너를 추천하나요?");
+    expect(mainEntity[0]!.name).toBe("에스트라 아토베리어365 캡슐 토너는 어떤 고객에게 추천할 수 있나요?");
     expect(mainEntity[1]!.name).toBe("에스트라 아토베리어365 캡슐 토너에는 어떤 성분이 들어 있나요?");
     expect(mainEntity[1]!.acceptedAnswer.text).toBe(
       "에스트라 아토베리어365 캡슐 토너에는 PHA와 고밀도 세라마이드 캡슐이 담겨 있으며, 장벽 보습과 피부결 정돈에 도움을 줍니다."
@@ -367,12 +367,13 @@ describe("FAQ generative-intent recomposition", () => {
     const faqPage = graph.find((node) => node["@type"] === "FAQPage") as Record<string, any>;
     const mainEntity = faqPage.mainEntity as Array<Record<string, any>>;
 
-    expect(mainEntity[0]!.name).toBe("민감하고 건조한 피부에는 어떤 토너를 추천하나요?");
+    expect(mainEntity[0]!.name).toBe("에스트라 아토베리어365 캡슐 토너는 어떤 고객에게 추천할 수 있나요?");
     expect(mainEntity[2]!.name).toBe("아토베리어365 크림에 함유된 캡슐과 동일한 캡슐인가요?");
     expect(mainEntity[2]!.acceptedAnswer.text.startsWith("네,")).toBe(true);
-    expect(result.content.sections.faq.indexOf("민감하고 건조한 피부에는")).toBeLessThan(
+    expect(result.content.sections.faq.indexOf("에스트라 아토베리어365 캡슐 토너는 어떤 고객에게")).toBeLessThan(
       result.content.sections.faq.indexOf("동일한 캡슐인가요?")
     );
+    expect(result.warnings.some((warning) => warning.includes("question is no longer specific to this product or brand"))).toBe(true);
   });
 
   it("drops FAQ items without a matching sourceQuestion and preserves unlisted existing items", async () => {
@@ -397,11 +398,143 @@ describe("FAQ generative-intent recomposition", () => {
     const mainEntity = faqPage.mainEntity as Array<Record<string, any>>;
 
     expect(mainEntity).toHaveLength(3);
-    expect(mainEntity[0]!.name).toBe("민감하고 건조한 피부에는 어떤 토너를 추천하나요?");
+    expect(mainEntity[0]!.name).toBe("에스트라 아토베리어365 캡슐 토너는 어떤 고객에게 추천할 수 있나요?");
     expect(mainEntity.some((item) => String(item.name).includes("구매"))).toBe(false);
     expect(mainEntity.some((item) => String(item.name).includes("동일한 캡슐"))).toBe(true);
     expect(mainEntity.some((item) => String(item.name).includes("주요 성분과 효능"))).toBe(true);
     expect(result.warnings.some((warning) => warning.includes("does not match an existing FAQ question"))).toBe(true);
+  });
+});
+
+describe("approved copy contract preservation", () => {
+  it("retains the approved Product.description when refinement drops an existing core role", async () => {
+    const baseDescription = [
+      "에스트라 아토베리어365 캡슐 토너는 장벽보습 캡슐 토너입니다.",
+      "건조하고 민감한 피부 고객에게 적합합니다.",
+      "PHA와 고밀도 세라마이드 캡슐을 함유합니다.",
+      "제품은 장벽 보습과 피부결 정돈에 도움을 줍니다.",
+      "고객 리뷰에서는 촉촉한 사용감이 언급됩니다."
+    ].join(" ");
+    const request = createRefinementRequest({ productDescription: baseDescription });
+    const droppedIngredient = [
+      "에스트라 아토베리어365 캡슐 토너는 장벽보습 캡슐 토너입니다.",
+      "건조하고 민감한 피부 고객에게 적합합니다.",
+      "제품은 장벽 보습과 피부결 정돈에 도움을 줍니다.",
+      "고객 리뷰에서는 촉촉한 사용감이 언급됩니다."
+    ].join(" ");
+
+    const result = await refinePdpGeoCopy(request, createOptions(() => ({
+      schemaDescriptions: { product: droppedIngredient }
+    })));
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    expect(product.description).toBe(baseDescription);
+    expect(result.warnings.some((warning) => warning.includes("ingredient/formula role"))).toBe(true);
+  });
+
+  it("keeps an attributed review last when that role exists in the approved Product.description", async () => {
+    const baseDescription = [
+      "에스트라 아토베리어365 캡슐 토너는 장벽보습 캡슐 토너입니다.",
+      "건조하고 민감한 피부 고객에게 적합합니다.",
+      "고밀도 세라마이드 캡슐을 함유합니다.",
+      "제품은 장벽 보습에 도움을 줍니다.",
+      "고객 리뷰에서는 촉촉한 사용감이 언급됩니다."
+    ].join(" ");
+    const request = createRefinementRequest({ productDescription: baseDescription });
+    const reviewBeforeBenefit = [
+      "에스트라 아토베리어365 캡슐 토너는 장벽보습 캡슐 토너입니다.",
+      "건조하고 민감한 피부 고객에게 적합합니다.",
+      "고밀도 세라마이드 캡슐을 함유합니다.",
+      "고객 리뷰에서는 촉촉한 사용감이 언급됩니다.",
+      "제품은 장벽 보습에 도움을 줍니다."
+    ].join(" ");
+
+    const result = await refinePdpGeoCopy(request, createOptions(() => ({
+      schemaDescriptions: { product: reviewBeforeBenefit }
+    })));
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    expect(product.description).toBe(baseDescription);
+    expect(result.warnings.some((warning) => warning.includes("attributed review role") || warning.includes("final Product.description role"))).toBe(true);
+  });
+
+  it("rejects a newly invented ingredient-to-benefit causal relation", async () => {
+    const request = createRefinementRequest();
+    const unsupportedRelation = [
+      "에스트라 아토베리어365 캡슐 토너는 장벽보습 캡슐 토너입니다.",
+      "건조하고 민감한 피부를 위한 제품입니다.",
+      "PHA가 피부 장벽 보습과 피부결 개선을 돕습니다."
+    ].join(" ");
+
+    const result = await refinePdpGeoCopy(request, createOptions(() => ({
+      schemaDescriptions: { product: unsupportedRelation }
+    })));
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    expect(product.description).toBe(request.content.sections.description);
+    expect(result.warnings.some((warning) => warning.includes("unsupported causal ingredient-to-benefit relation") && warning.includes("PHA"))).toBe(true);
+  });
+
+  it("rejects a detailed WebPage refinement that clones the Product buyer narrative", async () => {
+    const productDescription = [
+      "에스트라 아토베리어365 캡슐 토너는 장벽보습 캡슐 토너입니다.",
+      "건조하고 민감한 피부 고객에게 적합합니다.",
+      "PHA와 고밀도 세라마이드 캡슐을 함유합니다.",
+      "제품은 장벽 보습과 피부결 정돈에 도움을 줍니다.",
+      "고객 리뷰에서는 촉촉한 사용감이 언급됩니다."
+    ].join(" ");
+    const webPageDescription = "AESTURA의 에스트라 아토베리어365 캡슐 토너 상품 페이지는 상품 정보와 브랜드 정보, 사용법 및 FAQ를 제공합니다.";
+    const request = createRefinementRequest({ productDescription, webPageDescription });
+    const productClone = [
+      "AESTURA의 에스트라 아토베리어365 캡슐 토너 상품 페이지는 건조하고 민감한 피부 고객을 위한 장벽보습 토너를 소개합니다.",
+      "PHA와 고밀도 세라마이드 캡슐을 함유하고 장벽 보습과 피부결 정돈에 도움을 주며, 고객 리뷰에서는 촉촉한 사용감이 언급됩니다."
+    ].join(" ");
+
+    const result = await refinePdpGeoCopy(request, createOptions(() => ({
+      schemaDescriptions: { webPage: productClone }
+    })));
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const webPage = graph.find((node) => node["@type"] === "WebPage") as Record<string, any>;
+    expect(webPage.description).toBe(webPageDescription);
+    expect(result.warnings.some((warning) => warning.includes("detailed Product") || warning.includes("detailed Product target"))).toBe(true);
+  });
+
+  it("retains a product-specific FAQ answer when refinement becomes generic", async () => {
+    const request = createRefinementRequest();
+    const sourceQuestion = "에스트라 아토베리어365 캡슐 토너는 어떤 고객에게 추천할 수 있나요?";
+    const genericAnswer = "건조하고 민감한 피부 고객에게 장벽 보습과 피부결 정돈을 제공하는 데일리 토너를 추천할 수 있습니다.";
+
+    const result = await refinePdpGeoCopy(request, createOptions(() => ({
+      faqAnswers: [{
+        sourceQuestion,
+        question: "건조하고 민감한 피부에는 어떤 토너를 추천하나요?",
+        answer: genericAnswer
+      }]
+    })));
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const faqPage = graph.find((node) => node["@type"] === "FAQPage") as Record<string, any>;
+    const targetFaq = (faqPage.mainEntity as Array<Record<string, any>>).find((item) =>
+      String(item.acceptedAnswer?.text ?? "").includes("건조하고 민감한 피부 고객에게 적합한 장벽보습 캡슐 토너"));
+    expect(targetFaq?.acceptedAnswer.text).toContain("에스트라 아토베리어365 캡슐 토너");
+    expect(targetFaq?.acceptedAnswer.text).not.toBe(genericAnswer);
+    expect(result.warnings.some((warning) => warning.includes("answer is no longer product-specific"))).toBe(true);
+  });
+
+  it("rejects unverifiable free-form FAQ section rewrites", async () => {
+    const request = createRefinementRequest();
+    const result = await refinePdpGeoCopy(request, createOptions(() => ({
+      contentSections: {
+        faq: "Q. 어떤 화장품이 모든 피부 문제를 해결하나요? A. 이 토너는 누구에게나 확실한 효과를 제공합니다."
+      }
+    })));
+
+    expect(result.content.sections.faq).toBe(request.content.sections.faq);
+    expect(result.warnings.some((warning) => warning.includes("free-form FAQ section copy cannot be verified"))).toBe(true);
   });
 });
 

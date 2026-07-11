@@ -161,7 +161,7 @@ describe("post-validation schema graph integrity", () => {
     expect(result.validationRepairs.some((repair) => repair.field === "WebPage.hasPart")).toBe(true);
   });
 
-  it("rebuilds visible FAQ and omits HowTo when fewer than two valid steps survive", () => {
+  it("rebuilds visible FAQ and retains a source-backed single HowTo step", () => {
     const validQuestion = "What does Barrier Serum support?";
     const validAnswer = "Barrier Serum supports hydration for dry skin.";
     const validStep = "Apply one pump to clean skin morning and night.";
@@ -203,9 +203,9 @@ describe("post-validation schema graph integrity", () => {
     });
 
     expect(result.content.sections.faq).toBe(`Q. ${validQuestion}\nA. ${validAnswer}`);
-    expect(result.content.sections.howToUse).toBe("");
+    expect(result.content.sections.howToUse).toBe(`1. ${validStep}`);
     expect(result.content.html).toContain(validQuestion);
-    expect(graphOf(result).some((node) => node["@type"] === "HowTo")).toBe(false);
+    expect(graphOf(result).some((node) => node["@type"] === "HowTo")).toBe(true);
     expect(result.content.html).not.toContain("Broken question");
     expect(result.content.html).not.toContain("formula story");
   });

@@ -10,6 +10,7 @@ import { generatePdpGeo } from "@agentic-geo/pdp-geo-generator-agent";
 import { readPdpGeoGeneratorRagProfile } from "@agentic-geo/pdp-geo-generator-agent/rag-profile";
 import type {
   PdpGeoContentPlanningSettings,
+  PdpGeoFinalProofreadingSettings,
   PdpGeoGenerationInput,
   PdpGeoGenerationResult,
   PdpGeoGenerationStep,
@@ -39,6 +40,7 @@ interface GeoGeneratorRequest {
       ocr?: string;
       reasoning?: string;
       embedding?: string;
+      proofreading?: string;
     };
     apiVersion?: string;
     temperature?: number;
@@ -66,11 +68,15 @@ interface GeoGeneratorRequest {
     productNormalization?: PdpGeoProductNormalizationSettings;
     /** Optional semantic content/schema planning override. */
     contentPlanning?: PdpGeoContentPlanningSettings;
+    /** Final, fluency-only pass over fixed public schema strings. */
+    finalProofreading?: PdpGeoFinalProofreadingSettings;
   };
   /** Top-level override takes precedence over llm.productNormalization. */
   productNormalization?: PdpGeoProductNormalizationSettings;
   /** Top-level override takes precedence over llm.contentPlanning. */
   contentPlanning?: PdpGeoContentPlanningSettings;
+  /** Top-level override takes precedence over llm.finalProofreading. */
+  finalProofreading?: PdpGeoFinalProofreadingSettings;
   rag?: PdpGeoGenerationInput["rag"];
   extractorRag?: {
     analysisPrompt?: string;
@@ -161,6 +167,7 @@ async function runGeoGenerator(body: GeoGeneratorRequest, emitProgress?: Progres
       ?? (runtimeProvider === "aistudio" && body.llm?.model ? { reasoning: body.llm.model } : resolveProviderDeployments(runtimeProvider));
     const runtimeProductNormalization = resolveProductNormalization(body, runtimeProvider, runtimeApiKey);
     const runtimeContentPlanning = resolveContentPlanning(body, runtimeProvider, runtimeApiKey);
+    const runtimeFinalProofreading = resolveFinalProofreading(body, runtimeProvider, runtimeApiKey);
     const [extractorRagProfile, generatorRagProfile] = await Promise.all([
       readProductExtractorRagProfile().catch(() => undefined),
       readPdpGeoGeneratorRagProfile().catch(() => undefined)
@@ -218,6 +225,7 @@ async function runGeoGenerator(body: GeoGeneratorRequest, emitProgress?: Progres
             })),
             productNormalization: runtimeProductNormalization,
             contentPlanning: runtimeContentPlanning,
+            finalProofreading: runtimeFinalProofreading,
             onProgress: (step) => emitProgress?.({
               type: "progress",
               group: "generator",
@@ -346,6 +354,7 @@ async function runGeoGenerator(body: GeoGeneratorRequest, emitProgress?: Progres
             })),
             productNormalization: runtimeProductNormalization,
             contentPlanning: runtimeContentPlanning,
+            finalProofreading: runtimeFinalProofreading,
             onProgress: (step) => emitProgress?.({
               type: "progress",
               group: "generator",
@@ -519,6 +528,50 @@ function resolveContentPlanning(
   };
 }
 
+function resolveFinalProofreading(
+  body: GeoGeneratorRequest,
+  runtimeProvider: Provider,
+  runtimeApiKey: string | undefined
+): PdpGeoFinalProofreadingSettings {
+  const nestedSettings = body.llm?.finalProofreading;
+  const topLevelSettings = body.finalProofreading;
+  const mergedSettings = {
+    ...nestedSettings,
+    ...topLevelSettings
+  };
+  const proofreadingProvider = mergedSettings.provider ?? runtimeProvider;
+  const proofreadingApiKey = mergedSettings.apiKey ?? (
+    proofreadingProvider === runtimeProvider
+      ? runtimeApiKey
+      : proofreadingProvider === "custom"
+        ? undefined
+        : resolveProviderApiKey(proofreadingProvider)
+  );
+  const explicitlyEnabled = topLevelSettings?.enabled ?? nestedSettings?.enabled;
+  const enabled = explicitlyEnabled ?? (
+    proofreadingProvider !== "mock"
+    && proofreadingProvider !== "custom"
+    && Boolean(proofreadingApiKey)
+  );
+  const azureProofreadingDeployment = proofreadingProvider === "azure-openai"
+    ? body.llm?.deployments?.proofreading ?? process.env.AZURE_OPENAI_PROOFREADING_DEPLOYMENT
+    : undefined;
+
+  return {
+    ...mergedSettings,
+    enabled,
+    provider: proofreadingProvider,
+    apiKey: proofreadingApiKey,
+    model: mergedSettings.model ?? azureProofreadingDeployment ?? resolveProviderModel(proofreadingProvider),
+    endpoint: mergedSettings.endpoint ?? resolveProviderEndpoint(proofreadingProvider),
+    deployment: mergedSettings.deployment
+      ?? azureProofreadingDeployment
+      ?? (proofreadingProvider === "aistudio" ? mergedSettings.model : undefined)
+      ?? resolveProviderDeployment(proofreadingProvider),
+    apiVersion: mergedSettings.apiVersion ?? resolveProviderApiVersion(proofreadingProvider)
+  };
+}
+
 class RequestConfigurationError extends Error {}
 
 function assertSafeRequestEndpoints(body: GeoGeneratorRequest, runtimeProvider: Provider): void {
@@ -552,6 +605,18 @@ function assertSafeRequestEndpoints(body: GeoGeneratorRequest, runtimeProvider: 
     endpoint: planning.endpoint,
     requestApiKey: planning.apiKey ?? (planningProvider === runtimeProvider ? body.llm?.apiKey : undefined)
   });
+
+  const proofreading = {
+    ...body.llm?.finalProofreading,
+    ...body.finalProofreading
+  };
+  const proofreadingProvider = proofreading.provider ?? runtimeProvider;
+  assertEndpointCredentialPair({
+    label: "finalProofreading.endpoint",
+    provider: proofreadingProvider,
+    endpoint: proofreading.endpoint,
+    requestApiKey: proofreading.apiKey ?? (proofreadingProvider === runtimeProvider ? body.llm?.apiKey : undefined)
+  });
 }
 
 function assertEndpointCredentialPair(input: {
@@ -562,15 +627,18 @@ function assertEndpointCredentialPair(input: {
 }): void {
   if (!input.endpoint || input.requestApiKey || !resolveProviderApiKey(input.provider)) return;
   const configuredEndpoint = resolveProviderEndpoint(input.provider);
-  if (configuredEndpoint && endpointOrigin(configuredEndpoint) === endpointOrigin(input.endpoint)) return;
+  if (configuredEndpoint && endpointIdentity(configuredEndpoint) === endpointIdentity(input.endpoint)) return;
   throw new RequestConfigurationError(
-    `${input.label} cannot override the configured provider origin while using a server-managed API key. Supply the matching request API key or use the configured endpoint.`
+    `${input.label} cannot override the configured provider endpoint while using a server-managed API key. Supply the matching request API key or use the configured endpoint.`
   );
 }
 
-function endpointOrigin(value: string): string {
+function endpointIdentity(value: string): string {
   try {
-    return new URL(value).origin;
+    const url = new URL(value);
+    if (url.username || url.password || url.search || url.hash) throw new Error("unsafe endpoint components");
+    const pathname = url.pathname.replace(/\/+$/, "") || "/";
+    return `${url.protocol}//${url.host}${pathname}`;
   } catch {
     throw new RequestConfigurationError(`Invalid provider endpoint URL: ${value}`);
   }
@@ -622,12 +690,13 @@ function resolveProviderDeployment(runtimeProvider: PdpGeoProviderId): string | 
   return undefined;
 }
 
-function resolveProviderDeployments(runtimeProvider: PdpGeoProviderId): { ocr?: string; reasoning?: string; embedding?: string } | undefined {
+function resolveProviderDeployments(runtimeProvider: PdpGeoProviderId): { ocr?: string; reasoning?: string; embedding?: string; proofreading?: string } | undefined {
   if (runtimeProvider === "azure-openai") {
     return {
       ocr: process.env.AZURE_OPENAI_OCR_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
       reasoning: process.env.AZURE_OPENAI_REASONING_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT,
-      embedding: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT
+      embedding: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT,
+      proofreading: process.env.AZURE_OPENAI_PROOFREADING_DEPLOYMENT
     };
   }
   if (runtimeProvider === "aistudio") {

@@ -12,11 +12,12 @@ import type {
 export interface PdpGeoGeneratorRestRequest extends Omit<PdpGeoGenerationInput, "product"> {
   product?: unknown;
   products?: unknown[];
-  llm?: Partial<Pick<PdpGeoGeneratorRestConfig, "provider" | "apiKey" | "model" | "endpoint" | "deployment" | "deployments" | "apiVersion" | "temperature" | "embedding" | "reranker" | "productNormalization" | "contentPlanning" | "copyRefinement">>;
+  llm?: Partial<Pick<PdpGeoGeneratorRestConfig, "provider" | "apiKey" | "model" | "endpoint" | "deployment" | "deployments" | "apiVersion" | "temperature" | "embedding" | "reranker" | "productNormalization" | "keywordNormalization" | "contentPlanning" | "copyRefinement" | "finalProofreading">>;
   productNormalization?: PdpGeoGeneratorRestConfig["productNormalization"];
   keywordNormalization?: PdpGeoGeneratorRestConfig["keywordNormalization"];
   contentPlanning?: PdpGeoGeneratorRestConfig["contentPlanning"];
   copyRefinement?: PdpGeoGeneratorRestConfig["copyRefinement"];
+  finalProofreading?: PdpGeoGeneratorRestConfig["finalProofreading"];
 }
 
 export interface PdpGeoGeneratorRestFailure {
@@ -38,6 +39,11 @@ export function createPdpGeoGeneratorRestHandler(config: PdpGeoGeneratorRestConf
       const body = await request.json() as PdpGeoGeneratorRestRequest;
       assertSafeRestEndpointOverrides(config, body);
       const products = Array.isArray(body.products) ? body.products : body.product !== undefined ? [body.product] : [];
+      const productNormalization = mergeRestProviderStageSettings(config, body, config.productNormalization, body.llm?.productNormalization, body.productNormalization);
+      const keywordNormalization = mergeRestProviderStageSettings(config, body, config.keywordNormalization, body.llm?.keywordNormalization, body.keywordNormalization);
+      const contentPlanning = mergeRestProviderStageSettings(config, body, config.contentPlanning, body.llm?.contentPlanning, body.contentPlanning);
+      const copyRefinement = mergeRestProviderStageSettings(config, body, config.copyRefinement, body.llm?.copyRefinement, body.copyRefinement);
+      const finalProofreading = mergeRestFinalProofreadingSettings(config, body);
       const runtimeConfig: PdpGeoGeneratorRestConfig = {
         ...config,
         ...body.llm,
@@ -45,33 +51,11 @@ export function createPdpGeoGeneratorRestHandler(config: PdpGeoGeneratorRestConf
           ...config.rag,
           ...body.rag
         },
-        productNormalization: config.productNormalization || body.productNormalization || body.llm?.productNormalization
-          ? {
-              ...config.productNormalization,
-              ...body.llm?.productNormalization,
-              ...body.productNormalization
-            }
-          : undefined,
-        keywordNormalization: config.keywordNormalization || body.keywordNormalization
-          ? {
-              ...config.keywordNormalization,
-              ...body.keywordNormalization
-            }
-          : undefined,
-        contentPlanning: config.contentPlanning || body.contentPlanning || body.llm?.contentPlanning
-          ? {
-              ...config.contentPlanning,
-              ...body.llm?.contentPlanning,
-              ...body.contentPlanning
-            }
-          : undefined,
-        copyRefinement: config.copyRefinement || body.copyRefinement || body.llm?.copyRefinement
-          ? {
-              ...config.copyRefinement,
-              ...body.llm?.copyRefinement,
-              ...body.copyRefinement
-            }
-          : undefined
+        productNormalization,
+        keywordNormalization,
+        contentPlanning,
+        copyRefinement,
+        finalProofreading
       };
 
       if (products.length === 0) {
@@ -142,12 +126,24 @@ function assertSafeRestEndpointOverrides(
   config: PdpGeoGeneratorRestConfig,
   body: PdpGeoGeneratorRestRequest
 ): void {
+  assertRestProviderCredentialPair(
+    "llm.provider",
+    body.llm?.provider,
+    body.llm?.apiKey,
+    config.provider,
+    config.apiKey
+  );
   assertRestEndpointPair("llm.endpoint", body.llm?.endpoint, body.llm?.apiKey, config.endpoint, config.apiKey);
   const checks = [
     {
       label: "productNormalization.endpoint",
       requested: { ...body.llm?.productNormalization, ...body.productNormalization },
       configured: config.productNormalization
+    },
+    {
+      label: "keywordNormalization.endpoint",
+      requested: { ...body.llm?.keywordNormalization, ...body.keywordNormalization },
+      configured: config.keywordNormalization
     },
     {
       label: "contentPlanning.endpoint",
@@ -158,13 +154,184 @@ function assertSafeRestEndpointOverrides(
       label: "copyRefinement.endpoint",
       requested: { ...body.llm?.copyRefinement, ...body.copyRefinement },
       configured: config.copyRefinement
+    },
+    {
+      label: "finalProofreading.endpoint",
+      requested: { ...body.llm?.finalProofreading, ...body.finalProofreading },
+      configured: config.finalProofreading
     }
   ];
   for (const check of checks) {
     const serverEndpoint = check.configured?.endpoint ?? config.endpoint;
     const serverApiKey = check.configured?.apiKey ?? config.apiKey;
-    assertRestEndpointPair(check.label, check.requested.endpoint, check.requested.apiKey ?? body.llm?.apiKey, serverEndpoint, serverApiKey);
+    const requestApiKey = check.label === "finalProofreading.endpoint"
+      ? finalProofreadingRequestApiKey(config, body, check.requested)
+      : providerStageRequestApiKey(config, body, check.requested, check.configured);
+    const parentRequestProvider = body.llm?.provider ?? config.provider;
+    if (check.label !== "finalProofreading.endpoint"
+      && check.requested.provider
+      && body.llm?.apiKey
+      && check.requested.provider !== parentRequestProvider
+      && !check.requested.apiKey) {
+      throw new RestRequestConfigurationError(
+        `${check.label.replace(/\.endpoint$/, ".provider")} requires its own API key when it differs from llm.provider; llm.apiKey is scoped to the parent provider.`
+      );
+    }
+    if (check.label !== "finalProofreading.endpoint") {
+      assertRestProviderCredentialPair(
+        check.label.replace(/\.endpoint$/, ".provider"),
+        check.requested.provider,
+        requestApiKey,
+        check.configured?.provider ?? config.provider,
+        serverApiKey
+      );
+    }
+    assertRestEndpointPair(check.label, check.requested.endpoint, requestApiKey, serverEndpoint, serverApiKey);
   }
+  const requestedFinal = { ...body.llm?.finalProofreading, ...body.finalProofreading };
+  const parentRequestProvider = body.llm?.provider ?? config.provider;
+  if (requestedFinal.provider
+    && body.llm?.apiKey
+    && requestedFinal.provider !== parentRequestProvider
+    && !requestedFinal.apiKey) {
+    throw new RestRequestConfigurationError(
+      "finalProofreading.provider requires its own API key when it differs from llm.provider; llm.apiKey is scoped to the parent provider."
+    );
+  }
+  assertRestProviderCredentialPair(
+    "finalProofreading.provider",
+    requestedFinal.provider,
+    finalProofreadingRequestApiKey(config, body, requestedFinal),
+    config.finalProofreading?.provider ?? config.provider,
+    config.finalProofreading?.apiKey ?? config.apiKey
+  );
+}
+
+function providerStageRequestApiKey(
+  config: PdpGeoGeneratorRestConfig,
+  body: PdpGeoGeneratorRestRequest,
+  requested: RestProviderStageSettings,
+  configured: RestProviderStageSettings | undefined
+): string | undefined {
+  if (requested.apiKey) return requested.apiKey;
+  if (!body.llm?.apiKey) return undefined;
+  const parentProvider = body.llm.provider ?? config.provider;
+  const stageProvider = requested.provider
+    ?? (configured ? configured.provider ?? config.provider : undefined)
+    ?? parentProvider;
+  return stageProvider === parentProvider ? body.llm.apiKey : undefined;
+}
+
+interface RestProviderStageSettings {
+  enabled?: boolean;
+  provider?: PdpGeoGeneratorOptions["provider"];
+  apiKey?: string;
+  model?: string;
+  endpoint?: string;
+  deployment?: string;
+  apiVersion?: string;
+}
+
+function mergeRestProviderStageSettings<T extends RestProviderStageSettings>(
+  config: PdpGeoGeneratorRestConfig,
+  body: PdpGeoGeneratorRestRequest,
+  configured: T | undefined,
+  nested: T | undefined,
+  topLevel: T | undefined
+): T | undefined {
+  if (!configured && !nested && !topLevel) return undefined;
+  const requested = { ...nested, ...topLevel } as T;
+  const configuredProvider = configured ? configured.provider ?? config.provider : undefined;
+  const providerChanged = Boolean(requested.provider && configuredProvider && requested.provider !== configuredProvider);
+  const inherited = providerChanged ? { enabled: configured?.enabled } : { ...configured };
+  const effectiveProvider = requested.provider
+    ?? configuredProvider
+    ?? body.llm?.provider
+    ?? config.provider;
+  return {
+    ...inherited,
+    ...requested,
+    ...(effectiveProvider ? { provider: effectiveProvider } : {})
+  } as T;
+}
+
+function mergeRestFinalProofreadingSettings(
+  config: PdpGeoGeneratorRestConfig,
+  body: PdpGeoGeneratorRestRequest
+): PdpGeoGeneratorRestConfig["finalProofreading"] {
+  const requested = { ...body.llm?.finalProofreading, ...body.finalProofreading };
+  if (!config.finalProofreading && !body.llm?.finalProofreading && !body.finalProofreading) return undefined;
+  const configuredProvider = config.finalProofreading
+    ? config.finalProofreading.provider ?? config.provider
+    : undefined;
+  const effectiveProvider = effectiveFinalProofreadingProvider(config, body, requested);
+  const providerChanged = Boolean(requested.provider && requested.provider !== configuredProvider);
+  const inherited = providerChanged
+    ? { enabled: config.finalProofreading?.enabled }
+    : { ...config.finalProofreading };
+  const merged = { ...inherited, ...requested };
+  const configuredEndpoint = config.finalProofreading?.endpoint ?? config.endpoint;
+  const parentProvider = body.llm?.provider ?? config.provider;
+  const mayInheritParent = effectiveProvider === parentProvider;
+  const parentMatchesConfiguredProvider = parentProvider === config.provider;
+  const effectiveEndpoint = merged.endpoint
+    ?? (mayInheritParent ? body.llm?.endpoint ?? (parentMatchesConfiguredProvider ? config.endpoint : undefined) : undefined);
+  const serverApiKey = config.finalProofreading?.apiKey ?? config.apiKey;
+  const endpointChanged = Boolean(serverApiKey && effectiveEndpoint && (
+    !configuredEndpoint || restEndpointIdentity(effectiveEndpoint) !== restEndpointIdentity(configuredEndpoint)
+  ));
+  const requestApiKey = finalProofreadingRequestApiKey(config, body, requested);
+  return {
+    ...merged,
+    provider: effectiveProvider,
+    apiKey: providerChanged || endpointChanged ? requestApiKey : merged.apiKey ?? requestApiKey,
+    model: merged.model ?? (mayInheritParent ? body.llm?.model ?? (parentMatchesConfiguredProvider ? config.model : undefined) : undefined),
+    endpoint: effectiveEndpoint,
+    deployment: merged.deployment ?? (mayInheritParent
+      ? body.llm?.deployments?.proofreading
+        ?? body.llm?.deployment
+        ?? (parentMatchesConfiguredProvider ? config.deployments?.proofreading ?? config.deployment : undefined)
+      : undefined),
+    apiVersion: merged.apiVersion ?? (mayInheritParent
+      ? body.llm?.apiVersion ?? (parentMatchesConfiguredProvider ? config.apiVersion : undefined)
+      : undefined)
+  };
+}
+
+function finalProofreadingRequestApiKey(
+  config: PdpGeoGeneratorRestConfig,
+  body: PdpGeoGeneratorRestRequest,
+  requested: NonNullable<PdpGeoGeneratorRestConfig["finalProofreading"]>
+): string | undefined {
+  if (requested.apiKey) return requested.apiKey;
+  if (!body.llm?.apiKey) return undefined;
+  const parentProvider = body.llm.provider ?? config.provider;
+  const finalProvider = effectiveFinalProofreadingProvider(config, body, requested);
+  return finalProvider === parentProvider ? body.llm.apiKey : undefined;
+}
+
+function effectiveFinalProofreadingProvider(
+  config: PdpGeoGeneratorRestConfig,
+  body: PdpGeoGeneratorRestRequest,
+  requested: NonNullable<PdpGeoGeneratorRestConfig["finalProofreading"]>
+): PdpGeoGeneratorOptions["provider"] {
+  return requested.provider
+    ?? (config.finalProofreading ? config.finalProofreading.provider ?? config.provider : undefined)
+    ?? body.llm?.provider
+    ?? config.provider;
+}
+
+function assertRestProviderCredentialPair(
+  label: string,
+  requestProvider: PdpGeoGeneratorOptions["provider"] | undefined,
+  requestApiKey: string | undefined,
+  serverProvider: PdpGeoGeneratorOptions["provider"] | undefined,
+  serverApiKey: string | undefined
+): void {
+  if (!requestProvider || !serverApiKey || requestProvider === serverProvider || requestApiKey) return;
+  throw new RestRequestConfigurationError(
+    `${label} cannot change the configured provider while inheriting a server-managed API key. Supply an API key for the requested provider.`
+  );
 }
 
 function assertRestEndpointPair(
@@ -175,15 +342,18 @@ function assertRestEndpointPair(
   serverApiKey: string | undefined
 ): void {
   if (!requestEndpoint || requestApiKey || !serverApiKey) return;
-  if (serverEndpoint && restEndpointOrigin(serverEndpoint) === restEndpointOrigin(requestEndpoint)) return;
+  if (serverEndpoint && restEndpointIdentity(serverEndpoint) === restEndpointIdentity(requestEndpoint)) return;
   throw new RestRequestConfigurationError(
-    `${label} cannot override the configured provider origin while using a server-managed API key.`
+    `${label} cannot override the configured provider endpoint while using a server-managed API key.`
   );
 }
 
-function restEndpointOrigin(value: string): string {
+function restEndpointIdentity(value: string): string {
   try {
-    return new URL(value).origin;
+    const url = new URL(value);
+    if (url.username || url.password || url.search || url.hash) throw new Error("unsafe endpoint components");
+    const pathname = url.pathname.replace(/\/+$/, "") || "/";
+    return `${url.protocol}//${url.host}${pathname}`;
   } catch {
     throw new RestRequestConfigurationError(`Invalid provider endpoint URL: ${value}`);
   }
@@ -238,16 +408,16 @@ const failureStepMessages: Record<PdpGeoGenerationStageId, Pick<PdpGeoGeneration
     description: "schema, locale, terminology, GEO 관련성을 기준으로 재정렬"
   },
   generate: {
-    title: "GEO 산출물 생성",
-    description: "JSON-LD schema markup과 HTML content 생성"
+    title: "GEO 산출물 생성 및 최종 교정",
+    description: "JSON-LD/HTML 생성 후 선택적으로 별도 fluency-only proofreading 모델 호출"
   },
   validate: {
     title: "문법 검증",
     description: "JSON-LD와 HTML 구조 검증"
   },
   repair: {
-    title: "방어 보정",
-    description: "누락된 필수 필드와 안전하지 않은 HTML 보정"
+    title: "검증 결과 기록",
+    description: "자동 수정 없이 validation findings를 diagnostics에 기록"
   },
   artifact: {
     title: "최종 아티팩트 생성",

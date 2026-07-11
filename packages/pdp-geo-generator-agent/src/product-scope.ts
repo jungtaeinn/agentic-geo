@@ -98,6 +98,13 @@ const routineOnlyTokens = new Set([
   "wet"
 ]);
 
+const productFormTokens = new Set([
+  "ampoule", "balm", "cleanser", "cream", "essence", "foam", "gel", "lotion",
+  "mask", "mist", "moisturizer", "oil", "serum", "toner", "wash",
+  "앰플", "밤", "클렌저", "크림", "에센스", "폼", "젤", "로션", "마스크",
+  "미스트", "오일", "세럼", "토너"
+]);
+
 const actionTargetPattern =
   /\b(?:apply|dispense|take|pump|scoop|spray|mist|spread|massage|lather|rub|warm|layer|pat|smooth)\s+([^.;\n]{2,120})/giu;
 const currentProductActionPattern =
@@ -193,11 +200,15 @@ function createProductScope(product: PdpProductSignal): ProductScope {
     ...tokenize(product.originalName ?? "")
   ]));
   const categoryTokens = uniqueStrings(significantTokens(tokenize(product.category ?? "")));
-  const formTokens = categoryTokens.length > 0
-    ? categoryTokens
-    : nameTokens.length > 1
-      ? [nameTokens[nameTokens.length - 1]].filter((value): value is string => Boolean(value))
-      : nameTokens;
+  const categoryFormTokens = categoryTokens.filter((token) => productFormTokens.has(token));
+  const namedFormTokens = nameTokens.filter((token) => productFormTokens.has(token));
+  const formTokens = uniqueStrings(categoryFormTokens.length > 0
+    ? [...categoryFormTokens, ...namedFormTokens]
+    : namedFormTokens.length > 0
+      ? namedFormTokens
+      : nameTokens.length > 1
+        ? [nameTokens[nameTokens.length - 1]].filter((value): value is string => Boolean(value))
+        : nameTokens);
   const primaryFormToken = formTokens[formTokens.length - 1];
   const familyTokens = uniqueStrings(nameTokens.filter((token) => !containsMatchingToken(formTokens, token))).slice(0, 4);
   const productPhrases = uniqueTokenPhrases([
@@ -271,7 +282,7 @@ function hasCurrentProductAnchor(segment: string, scope: ProductScope): boolean 
   if (scope.productPhrases.some((phrase) => phrase.length > 0 && containsTokenSequence(tokens, phrase))) {
     return true;
   }
-  if (scope.primaryFormToken && containsMatchingToken(tokens, scope.primaryFormToken) && hasCurrentProductAction(segment)) {
+  if (candidateContainsPrimaryForm(tokens, scope) && hasCurrentProductAction(segment)) {
     return true;
   }
   if (scope.categoryTokens.length > 0 && tokenOverlapCount(tokens, scope.categoryTokens) === scope.categoryTokens.length) {
@@ -364,7 +375,9 @@ function isDifferentProductCandidate(candidate: ProductCandidate, scope: Product
   }
 
   if (candidate.source === "family-context") {
-    return tokenOverlapCount(candidate.tokens, scope.familyTokens) > 0 && !candidateContainsPrimaryForm(candidate.tokens, scope);
+    const namesAnotherProductForm = candidate.tokens.some((token) => productFormTokens.has(token))
+      && !candidateContainsPrimaryForm(candidate.tokens, scope);
+    return tokenOverlapCount(candidate.tokens, scope.familyTokens) > 0 && namesAnotherProductForm;
   }
 
   if (candidate.source === "capitalized") {
@@ -402,7 +415,7 @@ function isCurrentProductCandidate(tokens: string[], scope: ProductScope): boole
 }
 
 function candidateContainsPrimaryForm(tokens: string[], scope: ProductScope): boolean {
-  return Boolean(scope.primaryFormToken && containsMatchingToken(tokens, scope.primaryFormToken));
+  return scope.formTokens.some((formToken) => containsMatchingToken(tokens, formToken));
 }
 
 function isIngredientCandidate(tokens: string[], scope: ProductScope): boolean {

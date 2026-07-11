@@ -21,8 +21,9 @@ Generative Engine Optimization, or GEO, focuses on improving how useful, visible
 
 ### 2.2 Official Search Guidance Sources
 
-- Sources checked on 2026-06-24:
-  - Google Search Central generative AI guidance: https://developers.google.com/search/docs/fundamentals/ai-optimization-guide
+- Sources checked on 2026-07-11:
+  - Google Search Central generative AI optimization guide: https://developers.google.com/search/docs/fundamentals/ai-optimization-guide
+  - Google Search Central AI features guidance: https://developers.google.com/search/docs/appearance/ai-features
   - Google helpful content guidance: https://developers.google.com/search/docs/fundamentals/creating-helpful-content
   - Google Product structured data guidance: https://developers.google.com/search/docs/appearance/structured-data/product
 - Google states that generative AI search features are rooted in core Search quality and ranking systems, and that effective strategy should prioritize helpful, reliable, people-first content and clear technical structure.
@@ -60,7 +61,7 @@ Generative Engine Optimization, or GEO, focuses on improving how useful, visible
 ### 3.6 E-Commerce Listing Rewrites Converge on a Stable Pattern
 
 - The E-GEO testbed (7,000+ realistic shopping queries) found effective listing rewrites converge on one domain-agnostic pattern: concrete attributes, benefit-framed language, and query-aligned wording.
-- Apply this as the description order used in this project: target customer or concern, product identity, ingredient/technology, benefit or measured result, then usage/comparison/review context.
+- Apply the e-commerce evidence pattern through this project's user contract: product introduction/type, target customer or concern, ingredient/technology composition, supported benefit/effect or measured evidence, then attributed review context. Usage remains in Usage/HowTo.
 - Avoid category-specific gimmicks; keep the same evidence-first structure across product categories.
 
 ### 3.7 Citation Selection Mechanics
@@ -79,7 +80,7 @@ Generative Engine Optimization, or GEO, focuses on improving how useful, visible
 ### 4.2 Answer-Ready Facts
 
 - Write concise factual sentences that can stand alone in an AI answer.
-- Include product name, brand, category, target customer, ingredient/technology, benefit/effect or supported metric, and high-level usage/comparison/review preference only when available.
+- Across the appropriate fields, include product name, brand, category, target customer, ingredient/technology, benefit/effect or supported metric, usage, and attributed review preference only when available. Keep usage in Usage/HowTo and keep WebPage.description at page/brand scope.
 
 ### 4.3 Source-Backed Claims
 
@@ -93,13 +94,13 @@ Generative Engine Optimization, or GEO, focuses on improving how useful, visible
 
 ### 4.5 Review and Customer Language
 
-- Use repeated customer review language to shape preference phrases and experience summaries; do not turn raw review language into standalone FAQ questions.
+- Use attributed customer-review language to shape preference phrases and experience summaries; call it repeated only when multiple reviews or an aggregate supports that wording, and do not turn raw review language into standalone FAQ questions.
 - Keep customer review language representative. Do not turn customer sentiment into universal product guarantees.
 
 ### 4.6 FAQ and HowTo Answerability
 
 - Generate FAQ only when both the question intent and answer evidence exist.
-- Generate HowTo only when source usage contains an explicit ordered sequence with at least two distinct actions and a concrete goal. Never infer a HowTo from one general usage note.
+- Generate one HowToStep from one concrete source application instruction. When source usage contains an explicit ordered sequence, preserve the original step count and order. Never infer actions from a general note, warning, test condition, or benefit statement.
 - Phrase answers so they directly answer customer questions instead of repeating marketing labels.
 - HowTo steps are field-specific action content, not a place for benefit, metric, review, or ingredient evidence. A sentence that says a product "delivers hydration", "shows clinical results", or "contains an ingredient" can support descriptions or evidence fields, but it is not a usage step unless it also gives an action the customer performs.
 
@@ -107,8 +108,8 @@ Generative Engine Optimization, or GEO, focuses on improving how useful, visible
 
 - Before writing schema/content, classify source facts into evidence roles: identity, benefit/effect, ingredient/technology, actionable usage, review/customer expression, metric/evidence, FAQ, commerce, or page chrome.
 - Keep `ingredients` limited to ingredient names, formula technologies, ingredient-role explanations, and full ingredient lists. Do not move customer review language, routine phrases, SEO/search-intent labels, or benefit summaries into ingredients.
-- Keep `benefits` limited to customer-relevant outcomes, effects, review-backed positives, and short evidence topics. Do not copy full study text or diagnostic labels into benefit bullets.
-- Keep `HowTo.step` limited to actions, order, amount, timing, body area, routine position, warnings, and compatibility. Do not add explanatory ingredient/effect context inside the step text.
+- Keep `benefits` limited to source-backed finished-product outcomes, effects, and short evidence topics. Review-only positives remain attributed review experience and must not become product efficacy.
+- Keep `HowTo.step` limited to concrete source actions. Retain amount, timing, body area, or routine position only inside the source action that states it; standalone warnings, compatibility, frequency, timing, or amount notes are not steps. Do not add explanatory ingredient/effect context inside the step text.
 - Use `Product.additionalProperty` for atomic facts such as key ingredient, key benefit, reported detail, usage timing, texture, size, or review context. Use `Product.description` and FAQ answers for concise synthesis.
 - Blending evidence means using the right fact to support the right field-specific sentence; it does not mean merging raw source phrases across fields.
 - Prefer evidence-role classification and source-grounded regeneration over product-specific suppression rules. A new product should improve from the same RAG field contract without adding product-name or single-sentence exceptions.
@@ -143,12 +144,12 @@ Generative Engine Optimization, or GEO, focuses on improving how useful, visible
 
 ### 6.1 `WebPage.description`
 
-- Describe the PDP as a page that helps a customer evaluate the product through benefits, ingredients, usage, reviews, FAQ, HowTo, offers, variants, and reported results when available.
-- Use page-level discovery language and avoid duplicating `Product.description`.
+- Introduce the PDP, identify the product and source-backed brand, and concisely summarize actual page coverage such as ingredients, supported benefits, usage, tests, reviews, variants, and offers.
+- Avoid duplicating `Product.description`; add brand history, expertise, research, or manufacturing context only when separate current-source brand evidence supports it.
 
 ### 6.2 `Product.description`
 
-- Describe the product entity with target customer, product-specific benefits, key ingredients or technologies, texture/format, usage context, representative customer review language, and supported metrics.
+- Describe the product entity in order: product introduction/type, target customer and concern, key ingredients or technologies, supported benefits/effects and compact evidence/test context, then attributed representative customer-review language.
 - Keep the wording concise, factual, and source-backed.
 
 ### 6.3 `FAQPage.mainEntity`
@@ -158,7 +159,7 @@ Generative Engine Optimization, or GEO, focuses on improving how useful, visible
 
 ### 6.4 `HowTo.step`
 
-- Convert source usage instructions into complete ordered actions only when at least two actions and their sequence are source-backed; otherwise retain them as ordinary visible usage guidance.
+- Preserve concrete source usage instructions as supplied: one instruction becomes one step, while explicit multiple actions retain their source order. Do not split or merge actions merely to make a procedure longer.
 - Do not invent usage warnings or contraindications.
 
 ### 6.5 `Product.additionalProperty` and `Product.positiveNotes`
