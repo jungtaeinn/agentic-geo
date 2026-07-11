@@ -232,6 +232,128 @@ describe("adversarial evidence-bound content planning", () => {
 
     expect(result.plan.productDescription.include).toBe(false);
   });
+
+  it.each([
+    ["ko-KR", "찬 바람에 건조한 피부", "수분 공급"],
+    ["ko-KR", "추위로 건조한 피부", "수분 공급"],
+    ["en-US", "dry skin during the cold months", "hydration"]
+  ] as const)("rejects an unsupported weather context expressed as %s copy: %s", async (locale, situation, need) => {
+    const source = locale === "ko-KR"
+      ? product({
+          name: "하이드라 세럼",
+          description: "건조한 피부에 수분을 공급하는 세럼입니다.",
+          benefits: ["수분 공급"]
+        })
+      : product({ description: "A hydrating serum for dry skin.", benefits: ["hydration"] });
+    const request = planningRequest(source, locale);
+    const description = request.evidenceLedger.find((item) => item.role === "description")!;
+    const benefit = request.evidenceLedger.find((item) => item.role === "benefit")!;
+    const unsupportedPlan = planPayload(locale, {
+      cep: [{
+        situation,
+        need,
+        constraint: "",
+        evidenceIds: [description.id, benefit.id],
+        confidence: 0.9
+      }]
+    });
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      output: [{ content: [{ type: "output_text", text: JSON.stringify(unsupportedPlan) }] }]
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await planPdpGeoContent(request, {
+      contentPlanning: {
+        enabled: true,
+        provider: "openai",
+        apiKey: "test-key",
+        model: "gpt-test"
+      }
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.plan.cep).toEqual([]);
+    expect(result.warnings.join("\n")).toContain("QUERY_HYPOTHESIS_ONLY");
+  });
+
+  it.each([
+    ["en-US", "Ceramide delivers hydration."],
+    ["en-US", "Hydration is based on Ceramide."],
+    ["en-US", "A serum with Ceramide for hydration."],
+    ["ko-KR", "세라마이드로 보습"]
+  ] as const)("rejects an ingredient-benefit relationship assembled from separate facts: %s", async (locale, constraint) => {
+    const source = locale === "ko-KR"
+      ? product({
+          name: "테스트 크림",
+          description: "건조한 피부를 위한 크림입니다.",
+          category: "크림",
+          benefits: ["보습"],
+          ingredients: ["세라마이드"]
+        })
+      : product({
+          description: "A serum for dry skin.",
+          benefits: ["hydration"],
+          ingredients: ["Ceramide"]
+        });
+    const request = planningRequest(source, locale);
+    const description = request.evidenceLedger.find((item) => item.role === "description")!;
+    const benefit = request.evidenceLedger.find((item) => item.role === "benefit")!;
+    const ingredient = request.evidenceLedger.find((item) => item.role === "ingredient")!;
+    const unsupportedPlan = planPayload(locale, {
+      cep: [{
+        situation: locale === "ko-KR" ? "건조한 피부" : "dry skin",
+        need: locale === "ko-KR" ? "보습" : "hydration",
+        constraint,
+        evidenceIds: [description.id, benefit.id, ingredient.id],
+        confidence: 0.9
+      }]
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      output: [{ content: [{ type: "output_text", text: JSON.stringify(unsupportedPlan) }] }]
+    }), { status: 200 })));
+
+    const result = await planPdpGeoContent(request, {
+      contentPlanning: {
+        enabled: true,
+        provider: "openai",
+        apiKey: "test-key",
+        model: "gpt-test"
+      }
+    });
+
+    expect(result.plan.cep).toEqual([]);
+  });
+
+  it("retains an ingredient-benefit CEP when one cited clause states the relationship", async () => {
+    const source = product({
+      description: "Ceramide delivers hydration for dry skin.",
+      benefits: ["hydration"],
+      ingredients: ["Ceramide"]
+    });
+    const request = planningRequest(source, "en-US");
+    const description = request.evidenceLedger.find((item) => item.role === "description")!;
+    const benefit = request.evidenceLedger.find((item) => item.role === "benefit")!;
+    const ingredient = request.evidenceLedger.find((item) => item.role === "ingredient")!;
+
+    const result = await planPdpGeoContent(request, {
+      customContentPlanner: {
+        planContent: () => ({
+          plan: planPayload("en-US", {
+            cep: [{
+              situation: "dry skin",
+              need: "hydration",
+              constraint: "Ceramide delivers hydration",
+              evidenceIds: [description.id, benefit.id, ingredient.id],
+              confidence: 0.9
+            }]
+          })
+        })
+      }
+    });
+
+    expect(result.plan.cep).toHaveLength(1);
+    expect(result.plan.cep[0]?.constraint).toBe("Ceramide delivers hydration");
+  });
 });
 
 function product(overrides: Partial<PdpProductSignal> = {}): PdpProductSignal {

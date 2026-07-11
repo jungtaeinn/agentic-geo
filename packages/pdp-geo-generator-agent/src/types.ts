@@ -210,9 +210,13 @@ export interface PdpSemanticMetricClaim {
   metric?: string;
   direction?: string;
   timing?: string;
+  baseline?: string;
+  comparator?: string;
   period?: string;
   sample?: string;
   method?: string;
+  institution?: string;
+  evidenceGroup?: string;
   caveat?: string;
   sentence?: string;
   sourceText?: string;
@@ -232,6 +236,8 @@ export interface PdpSemanticFacts {
   effects: string[];
   skinTypes: string[];
   usageSteps: string[];
+  /** Atomic, source-backed safety/certification tests classified by the normalizer. */
+  safetyTests?: string[];
   metricClaims: PdpSemanticMetricClaim[];
   evidenceSentences: string[];
   ingredientBenefitLinks: PdpSemanticIngredientBenefitLink[];
@@ -824,7 +830,7 @@ export interface PdpGeoInferredSearchQueryDiagnostic {
   question: string;
   keywords: string[];
   answer: string;
-  source: "review-derived-cep" | "product-fact" | "positive-review-usefeel";
+  source: "model-inferred-cep" | "review-derived-cep" | "product-fact" | "positive-review-usefeel";
   mentionsProductOrBrand: boolean;
 }
 

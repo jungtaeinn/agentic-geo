@@ -3,11 +3,15 @@ import {
   createPdpGeoEvidenceLedger,
   generatePdpGeo,
   ModelBackedContentPlanner,
+  ModelBackedCopyRefiner,
   ModelBackedProductNormalizer,
+  normalizePdpProductWithAgent,
   planPdpGeoContent,
+  refinePdpGeoCopy,
   type PdpGeoContentPlan,
   type PdpGeoContentPlanningRequest,
   type PdpGeoContentPlanningResult,
+  type PdpGeoCopyRefinementRequest,
   type PdpProductSignal
 } from "../src/index";
 
@@ -145,7 +149,8 @@ describe("evidence-bound content planning", () => {
     expect(copyRefinerCalled).toBe(false);
     expect(productNode.description).toContain("건조한 피부에 수분을 공급");
     expect(webPage.description).toContain("이 페이지에서는");
-    expect(faq.mainEntity).toHaveLength(1);
+    expect((faq.mainEntity as Array<Record<string, unknown>>).length).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(faq.mainEntity)).toContain("하이드라 세럼은 어떤 피부 고민에 적합한가요");
     expect(graph.some((node) => node["@type"] === "HowTo")).toBe(false);
     expect(run.result.diagnostics.contentPlan?.mode).toBe("model");
     expect(run.result.diagnostics.evidenceLedger?.length).toBeGreaterThan(5);
@@ -184,6 +189,9 @@ describe("evidence-bound content planning", () => {
     expect(result.plan.faq).toEqual([]);
     expect(result.plan.howTo.eligible).toBe(false);
     expect(result.warnings.join(" ")).toMatch(/omitted/i);
+    expect(result.warnings.join(" ")).toMatch(/failed checks:.*known-evidence-ids/iu);
+    expect(result.warnings.join(" ")).toContain("검증되지 않은 인증이 있나요?");
+    expect(result.warnings.join(" ")).toMatch(/retained evidence IDs: none/iu);
   });
 
   it("does not publish a planned HowTo without ordered source provenance", async () => {
@@ -381,6 +389,82 @@ describe("evidence-bound content planning", () => {
 
     expect(result.plan.productDescription.include).toBe(false);
   });
+
+  it("keeps unsupported seasonal associations as query hypotheses after the model audit", async () => {
+    const request = planningRequest(product);
+    const identity = request.evidenceLedger.find((item) => item.role === "identity")!;
+    const description = request.evidenceLedger.find((item) => item.role === "description")!;
+    const benefit = request.evidenceLedger.find((item) => item.role === "benefit")!;
+    const seasonalPlan = planPayload({
+      productDescription: {
+        include: true,
+        text: "하이드라 세럼은 겨울철 건조한 피부에 수분을 공급하는 세럼입니다.",
+        intent: "seasonal-suitability",
+        evidenceIds: [identity.id, description.id, benefit.id],
+        confidence: 0.92,
+        omitReason: ""
+      },
+      faq: [{
+        include: true,
+        question: "겨울철 건조한 피부에는 어떤 세럼이 적합한가요?",
+        answer: "하이드라 세럼은 겨울철 건조한 피부에 수분을 공급하는 세럼입니다.",
+        intent: "seasonal-suitability",
+        cep: "겨울철 건조함 때문에 수분 공급이 필요할 때",
+        evidenceIds: [identity.id, description.id, benefit.id],
+        confidence: 0.91,
+        omitReason: ""
+      }],
+      cep: [{
+        situation: "겨울철 피부가 건조할 때",
+        need: "수분 공급",
+        constraint: "",
+        evidenceIds: [description.id, benefit.id],
+        confidence: 0.9
+      }]
+    });
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      output: [{ content: [{ type: "output_text", text: JSON.stringify(seasonalPlan) }] }]
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await planPdpGeoContent(request, {
+      contentPlanning: { enabled: true, provider: "openai", apiKey: "key", model: "gpt-test" }
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.plan.productDescription.include).toBe(false);
+    expect(result.plan.faq).toEqual([]);
+    expect(result.plan.cep).toEqual([]);
+    expect(result.warnings.join("\n")).toContain("QUERY_HYPOTHESIS_ONLY");
+  });
+
+  it("rejects a model description that mechanically restarts with the full product entity", async () => {
+    const request = planningRequest(product);
+    const identity = request.evidenceLedger.find((item) => item.role === "identity")!;
+    const description = request.evidenceLedger.find((item) => item.role === "description")!;
+    const benefit = request.evidenceLedger.find((item) => item.role === "benefit")!;
+    const ingredient = request.evidenceLedger.find((item) => item.role === "ingredient")!;
+    const repeatedPlan = planPayload({
+      productDescription: {
+        include: true,
+        text: "하이드라 세럼은 건조한 피부에 수분을 공급하는 세럼입니다. 하이드라 세럼은 세라마이드를 포함합니다.",
+        intent: "product-entity-summary",
+        evidenceIds: [identity.id, description.id, benefit.id, ingredient.id],
+        confidence: 0.92,
+        omitReason: ""
+      }
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      output: [{ content: [{ type: "output_text", text: JSON.stringify(repeatedPlan) }] }]
+    }), { status: 200 })));
+
+    const result = await planPdpGeoContent(request, {
+      contentPlanning: { enabled: true, provider: "openai", apiKey: "key", model: "gpt-test" }
+    });
+
+    expect(result.plan.productDescription.include).toBe(false);
+    expect(result.warnings.join("\n")).toMatch(/repeats the full product entity/i);
+  });
 });
 
 describe("provider-native structured output", () => {
@@ -450,9 +534,17 @@ describe("provider-native structured output", () => {
   it("uses the AI Studio chat-completions contract for product normalization", async () => {
     let url = "";
     let authorization = "";
+    let systemPrompt = "";
+    let responseFormat: unknown;
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       url = String(input);
       authorization = String((init?.headers as Record<string, string> | undefined)?.Authorization ?? "");
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        messages?: Array<{ role?: string; content?: string }>;
+        response_format?: unknown;
+      };
+      systemPrompt = body.messages?.find((message) => message.role === "system")?.content ?? "";
+      responseFormat = body.response_format;
       return new Response(JSON.stringify({
         choices: [{ message: { content: JSON.stringify({ product: { name: product.name }, locale: "ko-KR", market: "KR", warnings: [] }) } }],
         usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 }
@@ -475,8 +567,161 @@ describe("provider-native structured output", () => {
 
     expect(url).toBe("https://example.ai.studio/openai/deployments/reasoning/chat/completions");
     expect(authorization).toBe("Bearer key");
+    expect(systemPrompt).toContain("source assertions, source-backed synthesis, and query hypotheses");
+    expect(systemPrompt).toContain("QUERY_HYPOTHESIS_ONLY");
+    expect(systemPrompt).toContain("Do not create a causal or suitability relationship from co-occurrence");
+    expect(responseFormat).toMatchObject({
+      type: "json_schema",
+      json_schema: { name: "pdp_product_normalization_patch", strict: true }
+    });
     expect(result.product?.name).toBe(product.name);
     expect(result.usage?.totalTokens).toBe(8);
+  });
+
+  it("retries one malformed normalization response with the structured patch contract", async () => {
+    let calls = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response(JSON.stringify({
+          choices: [{ message: { content: "{\"product\":" } }],
+          usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 }
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({
+          product: { benefits: ["피부 장벽 보습"] },
+          locale: "ko-KR",
+          market: "KR",
+          warnings: []
+        }) } }],
+        usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 }
+      }), { status: 200 });
+    }));
+
+    const result = await normalizePdpProductWithAgent({
+      rawProduct: { ...product, benefits: ["피부 장벽 보습"] },
+      bootstrapProduct: product,
+      locale: "ko-KR",
+      market: "KR",
+      ragDocuments: []
+    }, {
+      provider: "aistudio",
+      apiKey: "key",
+      endpoint: "https://example.ai.studio",
+      deployment: "reasoning",
+      productNormalization: { enabled: true, provider: "aistudio" }
+    });
+
+    expect(calls).toBe(2);
+    expect(result.product.benefits).toEqual(["피부 장벽 보습"]);
+    expect(result.warnings).toContain("Product normalization recovered after one corrective structured retry.");
+    expect(result.usage?.totalTokens).toBe(14);
+    expect(result.evidence.some((item) => /DEGRADED_MODE/u.test(item.value))).toBe(false);
+  });
+});
+
+describe("model-backed evidence-role routing", () => {
+  it("keeps a novel source-backed complex while rejecting ingredient attributes and unsupported co-occurrence links", async () => {
+    const explicitRelation = "NovaSyn X7™ supports skin reset comfort.";
+    const coOccurrence = "Orbis Q™. Skin reset comfort.";
+    const rawProduct = {
+      ...product,
+      ingredients: ["NovaSyn X7™", "Orbis Q™", "absorption"],
+      benefits: ["skin reset comfort"],
+      sourceTexts: [explicitRelation, coOccurrence]
+    };
+    const result = await normalizePdpProductWithAgent({
+      rawProduct,
+      bootstrapProduct: { ...product, sourceTexts: [explicitRelation, coOccurrence] },
+      locale: "en-US",
+      market: "US",
+      ragDocuments: []
+    }, {
+      customProductNormalizer: {
+        normalizeProduct: () => ({
+          product: {
+            ingredients: ["NovaSyn X7™", "Orbis Q™", "absorption"],
+            benefits: ["skin reset comfort"],
+            semanticFacts: {
+              ingredients: ["NovaSyn X7™", "Orbis Q™", "absorption"],
+              benefits: ["skin reset comfort"],
+              effects: [],
+              skinTypes: [],
+              usageSteps: [],
+              metricClaims: [],
+              evidenceSentences: [explicitRelation, coOccurrence],
+              ingredientBenefitLinks: [
+                {
+                  ingredient: "NovaSyn X7™",
+                  benefit: "skin reset comfort",
+                  sentence: explicitRelation,
+                  sourceText: explicitRelation
+                },
+                {
+                  ingredient: "Orbis Q™",
+                  benefit: "skin reset comfort",
+                  sentence: coOccurrence,
+                  sourceText: coOccurrence
+                }
+              ]
+            }
+          }
+        })
+      }
+    });
+
+    expect(result.product.ingredients).toEqual(expect.arrayContaining(["NovaSyn X7™", "Orbis Q™"]));
+    expect(result.product.ingredients).not.toContain("absorption");
+    expect(result.product.semanticFacts?.ingredientBenefitLinks).toHaveLength(1);
+    expect(result.product.semanticFacts?.ingredientBenefitLinks[0]?.ingredient).toBe("NovaSyn X7™");
+  });
+});
+
+describe("copy-refinement query-hypothesis boundary", () => {
+  it("labels inferred search intents as non-evidentiary in the model prompt", async () => {
+    let body: Record<string, any> = {};
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body ?? "{}"));
+      return new Response(JSON.stringify({
+        output: [{ content: [{ type: "output_text", text: JSON.stringify({ warnings: [] }) }] }]
+      }), { status: 200 });
+    }));
+    const refiner = new ModelBackedCopyRefiner({ provider: "openai", apiKey: "key", model: "gpt-test" });
+
+    await refiner.refineCopy(copyRefinementRequest());
+
+    expect(String(body.instructions)).toContain("generativeQueryIntents");
+    expect(String(body.instructions)).toContain("non-evidentiary query hypotheses");
+    const payload = JSON.parse(String(body.input ?? "{}"));
+    expect(payload.generativeQueryIntents[0]).toMatchObject({
+      evidenceStatus: "query-hypothesis-only"
+    });
+  });
+
+  it("rejects seasonal query hypotheses promoted into descriptions or FAQ", async () => {
+    const request = copyRefinementRequest();
+    const result = await refinePdpGeoCopy(request, {
+      customCopyRefiner: {
+        refineCopy: () => ({
+          schemaDescriptions: {
+            product: "하이드라 세럼은 겨울철 건조한 피부에 수분을 공급하는 데일리 보습 세럼입니다."
+          },
+          faqAnswers: [{
+            sourceQuestion: "하이드라 세럼은 어떤 피부에 적합한가요?",
+            question: "겨울철 건조한 피부에는 하이드라 세럼이 적합한가요?",
+            answer: "하이드라 세럼은 겨울철 건조한 피부에 수분을 공급하는 보습 세럼입니다."
+          }]
+        })
+      }
+    });
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const productNode = graph.find((node) => node["@type"] === "Product")!;
+    const faqPage = graph.find((node) => node["@type"] === "FAQPage")!;
+
+    expect(String(productNode.description)).not.toContain("겨울");
+    expect(JSON.stringify(faqPage.mainEntity)).not.toContain("겨울");
+    expect(result.warnings.join("\n")).toMatch(/query hypothesis/i);
   });
 });
 
@@ -486,6 +731,57 @@ function planningRequest(value: PdpProductSignal): PdpGeoContentPlanningRequest 
     locale: "ko-KR",
     evidenceLedger: createPdpGeoEvidenceLedger(value, "ko-KR"),
     ragChunks: []
+  };
+}
+
+function copyRefinementRequest(): PdpGeoCopyRefinementRequest {
+  const productDescription = "하이드라 세럼은 건조한 피부에 수분을 공급하는 데일리 보습 세럼입니다.";
+  const webPageDescription = "하이드라 세럼 상품 페이지에서는 건조한 피부를 위한 수분 공급 특징을 소개합니다.";
+  const faqQuestion = "하이드라 세럼은 어떤 피부에 적합한가요?";
+  const faqAnswer = "하이드라 세럼은 건조한 피부에 수분을 공급하는 보습 세럼입니다.";
+  return {
+    product,
+    locale: "ko-KR",
+    schemaMarkup: {
+      jsonLd: {
+        "@context": "https://schema.org",
+        "@graph": [
+          { "@type": "Product", "@id": "urn:test#product", name: product.name, description: productDescription },
+          { "@type": "WebPage", "@id": "urn:test#webpage", name: product.name, description: webPageDescription },
+          {
+            "@type": "FAQPage",
+            "@id": "urn:test#faq",
+            mainEntity: [{
+              "@type": "Question",
+              name: faqQuestion,
+              acceptedAnswer: { "@type": "Answer", text: faqAnswer }
+            }]
+          }
+        ]
+      },
+      scriptTag: ""
+    },
+    content: {
+      html: "",
+      sections: {
+        productName: product.name,
+        description: productDescription,
+        quickFacts: "제품 유형: 세럼",
+        benefits: "- 수분 공급",
+        ingredients: "- 세라마이드",
+        howToUse: "",
+        faq: `Q. ${faqQuestion}\nA. ${faqAnswer}`
+      }
+    },
+    ragChunks: [],
+    inferredSearchQueries: [{
+      kind: "indirect",
+      question: "겨울철 건조한 피부에는 어떤 세럼이 좋은가요?",
+      keywords: ["겨울철", "건조한 피부", "보습 세럼"],
+      answer: "건조한 피부를 위한 수분 공급 세럼을 비교합니다.",
+      source: "product-fact",
+      mentionsProductOrBrand: false
+    }]
   };
 }
 

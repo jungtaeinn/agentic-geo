@@ -12,7 +12,8 @@ import type {
   PdpGeoPlannedField,
   PdpGeoPlannedHowToStep,
   PdpGeoTokenUsage,
-  PdpProductSignal
+  PdpProductSignal,
+  PdpSemanticMetricClaim
 } from "./types";
 
 const PLANNING_TIMEOUT_MS = 300_000;
@@ -209,6 +210,9 @@ export function createPdpGeoEvidenceLedger(product: PdpProductSignal, locale: Pd
   product.benefits.forEach((value, index) => add("benefit", value, `product.benefits[${index}]`, 0.95));
   product.effects.forEach((value, index) => add("effect", value, `product.effects[${index}]`, 0.95));
   product.ingredients.forEach((value, index) => add("ingredient", value, `product.ingredients[${index}]`, 0.95));
+  product.semanticFacts?.benefits.forEach((value, index) => add("benefit", value, `product.semanticFacts.benefits[${index}]`, 0.95));
+  product.semanticFacts?.effects.forEach((value, index) => add("effect", value, `product.semanticFacts.effects[${index}]`, 0.95));
+  product.semanticFacts?.ingredients.forEach((value, index) => add("ingredient", value, `product.semanticFacts.ingredients[${index}]`, 0.95));
   product.semanticFacts?.skinTypes.forEach((value, index) => add("audience", value, `product.semanticFacts.skinTypes[${index}]`, 0.95));
   product.usage.forEach((value, index) => add("usage", value, `product.usage[${index}]`, 0.98));
   product.metrics.forEach((value, index) => add("metric", value, `product.metrics[${index}]`, 0.98));
@@ -221,11 +225,20 @@ export function createPdpGeoEvidenceLedger(product: PdpProductSignal, locale: Pd
     add("review", `rating=${product.reviews.rating ?? "unknown"}; reviewCount=${product.reviews.reviewCount ?? "unknown"}`, "product.reviews.summary", 1);
   }
   product.semanticFacts?.usageSteps.forEach((value, index) => add("usage", value, `product.semanticFacts.usageSteps[${index}]`, 0.95));
+  product.semanticFacts?.safetyTests?.forEach((value, index) => add("source", value, `product.semanticFacts.safetyTests[${index}]`, 0.98));
   product.semanticFacts?.evidenceSentences.forEach((value, index) => add("source", value, `product.semanticFacts.evidenceSentences[${index}]`, 0.9));
   product.semanticFacts?.metricClaims.forEach((claim, index) => {
-    add("metric", claim.sourceText || claim.sentence || Object.values(claim).filter(Boolean).join("; "), `product.semanticFacts.metricClaims[${index}]`, 0.98);
+    const structuredMetric = formatMetricClaimEvidenceAtom(claim);
+    add("metric", structuredMetric, `product.semanticFacts.metricClaims[${index}]`, 0.98);
+    const provenance = claim.sourceText || claim.sentence;
+    if (provenance && cleanText(provenance) !== cleanText(structuredMetric)) {
+      add("source", provenance, `product.semanticFacts.metricClaims[${index}].sourceText`, 0.9);
+    }
   });
   product.semanticFacts?.ingredientBenefitLinks.forEach((link, index) => {
+    add("ingredient", link.ingredient, `product.semanticFacts.ingredientBenefitLinks[${index}].ingredient`, 0.94);
+    add("benefit", link.benefit, `product.semanticFacts.ingredientBenefitLinks[${index}].benefit`, 0.94);
+    add("effect", link.effect, `product.semanticFacts.ingredientBenefitLinks[${index}].effect`, 0.94);
     add("source", link.sourceText || link.sentence || [link.ingredient, link.benefit, link.effect].filter(Boolean).join("; "), `product.semanticFacts.ingredientBenefitLinks[${index}]`, 0.92);
   });
   product.sourceTexts.forEach((value, index) => add(
@@ -236,6 +249,27 @@ export function createPdpGeoEvidenceLedger(product: PdpProductSignal, locale: Pd
   ));
 
   return items;
+}
+
+function formatMetricClaimEvidenceAtom(claim: PdpSemanticMetricClaim): string {
+  const outcome = [claim.label, claim.subject, claim.metric].find((value) => typeof value === "string" && value.trim())?.trim();
+  const measuredValue = [claim.value, claim.unit].filter((value): value is string => typeof value === "string" && value.trim().length > 0).join("");
+  if (!outcome || !measuredValue) {
+    return claim.sentence || claim.sourceText || Object.values(claim).filter(Boolean).join("; ");
+  }
+  const context = [
+    ["direction", claim.direction],
+    ["timing", claim.timing],
+    ["baseline", claim.baseline],
+    ["comparator", claim.comparator],
+    ["sample", claim.sample],
+    ["period", claim.period],
+    ["method", claim.method],
+    ["institution", claim.institution],
+    ["evidenceGroup", claim.evidenceGroup],
+    ["caveat", claim.caveat]
+  ].flatMap(([label, value]) => typeof value === "string" && value.trim() ? [`${label}=${value.trim()}`] : []);
+  return [`${outcome}: ${measuredValue}`, ...context].join("; ");
 }
 
 /** Runs the evidence-bound planning call, falling back to conservative schema eligibility. */
@@ -495,13 +529,24 @@ function sanitizeModelPlan(
   const sanitizeField = (field: PdpGeoPlannedField, name: string): PdpGeoPlannedField => {
     const evidenceIds = sanitizeIds(field.evidenceIds);
     const text = cleanText(field.text);
+    const citedEvidenceText = evidenceIds.map((id) => evidenceById.get(id)?.text ?? "").join(" ");
+    const contextSupported = contextAssociationsAreSupported(text, citedEvidenceText);
+    const entityRepetitionSupported = descriptionEntityRepetitionWithinBudget(text, request.product, name);
     const supported = text.length > 0
       && evidenceIds.length > 0
       && numbersAreSupported(text, evidenceIds, evidenceById)
       && isTargetLocaleCopy(text, request.locale)
       && isCoherentPublicCopy(text, "statement")
+      && contextSupported
+      && entityRepetitionSupported
       && evidenceSemanticallySupportsText(text, evidenceIds, evidenceById, request.product, semanticAuditPassed);
     if (field.include && !supported) gateWarnings.push(`${name} was omitted because its text, locale, or cited evidence did not pass the evidence gate.`);
+    if (field.include && text && !contextSupported) {
+      gateWarnings.push(`QUERY_HYPOTHESIS_ONLY: ${name} context "${truncate(text, 160)}" was omitted from public copy because its seasonal, occasion, timing, general-association, or causal context was not explicit in the cited product evidence.`);
+    }
+    if (field.include && text && !entityRepetitionSupported) {
+      gateWarnings.push(`${name} was omitted because it mechanically repeats the full product entity instead of maintaining one connected buyer narrative.`);
+    }
     return {
       ...field,
       include: field.include && supported,
@@ -516,19 +561,37 @@ function sanitizeModelPlan(
       const evidenceIds = sanitizeIds(item.evidenceIds);
       const question = cleanText(item.question);
       const answer = cleanText(item.answer);
-      const include = item.include
-        && question.length >= 6
-        && answer.length >= 12
-        && evidenceIds.length > 0
-        && numbersAreSupported(`${question} ${answer}`, evidenceIds, evidenceById)
-        && isTargetLocaleCopy(question, request.locale)
-        && isTargetLocaleCopy(answer, request.locale)
-        && isCoherentPublicCopy(question, "question")
-        && isCoherentPublicCopy(answer, "statement")
-        && faqQuestionIsSupported(question, evidenceIds, evidenceById, request.product, semanticAuditPassed)
-        && evidenceSemanticallySupportsText(answer, evidenceIds, evidenceById, request.product, semanticAuditPassed);
-      if (item.include && !include) gateWarnings.push(`FAQ intent "${item.intent || "unknown"}" was omitted by the evidence/locale gate.`);
-      return { ...item, include, question, answer, evidenceIds };
+      const cep = cleanText(item.cep);
+      const citedEvidenceText = evidenceIds.map((id) => evidenceById.get(id)?.text ?? "").join(" ");
+      const cepContextSupported = !cep || contextAssociationsAreSupported(cep, citedEvidenceText);
+      const publicContextSupported = contextAssociationsAreSupported(`${question} ${answer}`, citedEvidenceText);
+      const gateChecks: Array<[string, boolean]> = [
+        ["question-length", question.length >= 6],
+        ["answer-length", answer.length >= 12],
+        ["known-evidence-ids", evidenceIds.length > 0],
+        ["numeric-relationship", numbersAreSupported(`${question} ${answer}`, evidenceIds, evidenceById)],
+        ["question-locale", isTargetLocaleCopy(question, request.locale)],
+        ["answer-locale", isTargetLocaleCopy(answer, request.locale)],
+        ["question-coherence", isCoherentPublicCopy(question, "question")],
+        ["answer-coherence", isCoherentPublicCopy(answer, "statement")],
+        ["context-support", publicContextSupported],
+        ["question-entailment", faqQuestionIsSupported(question, evidenceIds, evidenceById, request.product, semanticAuditPassed)],
+        ["answer-entailment", evidenceSemanticallySupportsText(answer, evidenceIds, evidenceById, request.product, semanticAuditPassed)]
+      ];
+      const failedChecks = gateChecks.filter(([, passed]) => !passed).map(([name]) => name);
+      const include = item.include && failedChecks.length === 0;
+      if (item.include && !include) {
+        gateWarnings.push(
+          `FAQ intent "${item.intent || "unknown"}" was omitted by the evidence/locale gate; failed checks: ${failedChecks.join(", ") || "unknown"}; question: "${truncate(question, 120)}"; retained evidence IDs: ${evidenceIds.join(", ") || "none"}.`
+        );
+      }
+      if (item.include && !publicContextSupported) {
+        gateWarnings.push(`QUERY_HYPOTHESIS_ONLY: FAQ intent "${item.intent || "unknown"}" was omitted from public copy because its seasonal, occasion, timing, general-association, or causal context was not explicit in the cited product evidence.`);
+      }
+      if (item.include && cep && !cepContextSupported) {
+        gateWarnings.push(`QUERY_HYPOTHESIS_ONLY: FAQ CEP "${truncate(cep, 120)}" was removed because its seasonal, occasion, timing, general-association, or causal context was not explicit in the cited product evidence.`);
+      }
+      return { ...item, include, question, answer, cep: cepContextSupported ? cep : "", evidenceIds };
     })
     .filter((item) => item.include)
     .filter((item, index, items) => items.findIndex((candidate) => faqEquivalent(candidate, item)) === index)
@@ -557,7 +620,7 @@ function sanitizeModelPlan(
     })
     .filter((step) => step.supported)
     .map((step, index) => ({ ...step, position: index + 1, name: step.name || truncate(step.text, 80) }))
-    .filter((step, index, items) => items.findIndex((candidate) => normalizeForMatch(candidate.text) === normalizeForMatch(step.text)) === index)
+    .filter((step, index, items) => items.findIndex((candidate) => usageActionsAreSemanticallyEquivalent(candidate.text, step.text)) === index)
     .map(({ supported: _supported, ...step }) => step)
     .slice(0, 8);
   const howToEligible = raw.howTo.eligible
@@ -576,13 +639,18 @@ function sanitizeModelPlan(
         evidenceIds: sanitizeIds(item.evidenceIds)
       };
       const text = [candidate.situation, candidate.need, candidate.constraint].filter(Boolean).join(" ");
+      const citedEvidenceText = candidate.evidenceIds.map((id) => evidenceById.get(id)?.text ?? "").join(" ");
+      const contextSupported = contextAssociationsAreSupported(text, citedEvidenceText);
       const supported = candidate.evidenceIds.length > 0
         && text.length > 0
         && isTargetLocaleCopy(text, request.locale)
         && numbersAreSupported(text, candidate.evidenceIds, evidenceById)
+        && contextSupported
         && evidenceSemanticallySupportsText(text, candidate.evidenceIds, evidenceById, request.product, semanticAuditPassed);
       if (!supported) {
-        gateWarnings.push("A CEP candidate was omitted because its situation, need, constraint, locale, or cited evidence was not supported.");
+        gateWarnings.push(contextSupported
+          ? "A CEP candidate was omitted because its situation, need, constraint, locale, or cited evidence was not supported."
+          : `QUERY_HYPOTHESIS_ONLY: CEP "${truncate(text, 160)}" was omitted from factual planning because its seasonal, occasion, timing, general-association, or causal context was not explicit in the cited product evidence.`);
         return [];
       }
       return [candidate];
@@ -654,11 +722,16 @@ function createPlanningPrompt(request: PdpGeoContentPlanningRequest, maxEvidence
       "You are an evidence-bound PDP content and schema applicability planner.",
       "Return only the requested strict JSON object in the target locale.",
       "Every factual public-copy clause must cite one or more valid evidenceIds. Never invent a product fact, audience, ingredient-benefit causal link, metric, certification, comparison, or buying situation.",
-      "Product.description describes the product entity. WebPage.description describes what this page lets a reader verify; do not make them paraphrases of each other.",
-      "FAQ has no minimum count. Include only distinct questions that a buyer could ask and the supplied evidence can answer directly and self-containedly. Empty FAQ is valid.",
-      "A CEP is a source-backed buying/use situation, need, or constraint—not a keyword slogan. Omit unsupported CEPs.",
-      "HowTo is eligible only when source usage evidence gives an ordered sequence for achieving a concrete result. A single application note, warning, dosage, frequency, or unordered usage list is not HowTo. Eligible HowTo requires at least two distinct evidence-backed steps.",
-      "Preserve product names, ingredient names, numbers, units, populations, time frames, and caveats exactly. Use complete, natural sentences; do not mix language frames.",
+      "Before drafting, classify every cited atom by evidence role and relationship scope. Identity identifies the product; audience names an explicitly supported customer; ingredient names composition; benefit/effect names an outcome; usage names a customer action; metric names a measured result; review names attributed experience; commerce names offer/variant facts; source is supporting text whose role must still be inferred from the sentence itself. A valid evidence ID is not permission to use that atom for an unrelated role.",
+      "Separate source assertions, source-backed synthesis, and query hypotheses. Public descriptions, FAQ questions/answers, HowTo, and cep entries may contain only source assertions or synthesis whose every component is supported by cited product evidence. General category knowledge and plausible search associations are not product facts.",
+      "Product.description is the primary answer-ready GEO entity summary and may be materially more detailed than WebPage.description. When evidence exists, compose a connected buyer-answer narrative in this order: product identity and type -> target customer and concrete concern/CEP -> multiple high-value formula atoms (main ingredients, named technology, and supported subcomponent structure) -> each explicit ingredient/technology-to-benefit relation -> one compact officially reported efficacy-evidence block -> why those outcomes make the product suitable for the supported target customer -> atomic completed safety/test evidence -> one concise positive or neutral customer-review pattern. Select formula atoms by evidence role and relation strength, not by a product/ingredient allowlist, and do not promote educational category facts or FAQ definitions into the current product's composition. An efficacy-evidence block may include multiple outcomes only when the product source shows that they belong to the same study, footnote group, evidenceGroup, or explicitly grouped product claim; render each evidence group once even when the same sourceText appears in multiple metricClaims, and retain a distinct supported duration claim alongside that block when useful. Cite the available institution, study dates, population/sample, method, baseline, timing, and caveat in natural target-locale prose. Safety tests may be summarized only when their exact completed test names are source-backed; completion is not proof of universal safety and an unlisted certification must not be inferred. Exclude ingredient concentration, package size, price/discount, award percentage, rating, and review count from efficacy measurements, and never attach a study context to unrelated outcomes. Omit unsupported components; do not collapse a well-evidenced product into a surface-level category sentence.",
+      "WebPage.description must remain a page-level description distinct from Product.description, while following the same buyer reasoning: introduce the product page and product -> target customer/concern -> main ingredient or technology composition -> supported benefit/effect -> compact officially reported efficacy-evidence block -> supported customer suitability -> concise customer-review pattern -> only then summarize page coverage when useful. Keep ingredient/technology, benefit/effect, grouped measured outcomes, and customer suitability as explicit, ordered answer units rather than replacing them with an abstract bridge about what shoppers can compare, check, or consider. Do not interrupt this CEP narrative with a standalone comparison/check sentence, certification, disclosure, or report-style sentence. Keep secondary or unrelated metrics in Reported details or an evidence FAQ; descriptions may group multiple measurements only when the evidence establishes a shared study or claim context.",
+      "Keep product references cohesive rather than repetitive. Product.description may use the full product entity once; continue with an omitted subject, pronoun, or formula/ingredient subject. WebPage.description may use it once in the page introduction and once in the connected product sentence, but must not restart every fact with the full product name.",
+      "FAQ has no minimum count. Include only distinct questions that a buyer or generative search system could ask and the supplied evidence can answer directly and self-containedly. When supported, prioritize: who the product is for and the concrete concern they have; its core benefits/effects; which ingredient or technology supports that specific concern; how to use it; and what reviews/tests/metrics substantiate the answer. Prefer these decision questions over storage, delivery, or generic support questions. Start every answer with the product and the direct answer—never with source narration such as '제품 FAQ에서는', '상품 정보에 따르면', 'the product FAQ says', or 'according to the page'. For suitability answers, connect concern -> supported effect -> supported ingredient role when an explicit ingredient-benefit link exists -> a concise recommendation context. Empty FAQ is valid only when those intents cannot be answered from evidence.",
+      "A CEP is a source-backed buying/use situation, need, or constraint—not a keyword slogan. In each cep item, use situation for the supported target customer/occasion, need for the concrete concern and desired outcome, and constraint for a supported selection condition or an explicit ingredient/technology-to-outcome reason. Leave constraint empty when the source does not explicitly support that relation. Cite evidence for every component, and never infer a causal, suitability, ingredient-benefit, or routine relationship merely because two facts co-occur. Seasonal/weather contexts, time-of-day, events, gifting, travel, life stage, and other general category associations require explicit current-product evidence for that same context. If such an association is useful for later search research but not evidenced, omit it from cep and all public fields and add a warning prefixed QUERY_HYPOTHESIS_ONLY; the warning is diagnostic and must not be copied into public content.",
+      "Use FAQ to express a small set of semantically distinct generative-search surfaces from the strongest supported CEP paths: suitability/target customer, concern-to-effect, ingredient or technology role, official measurement, routine, and review experience. Vary natural target-locale wording and keywords across distinct intents, but do not create synonymous questions that lead to the same answer or use query variety to add unsupported facts.",
+      "HowTo is eligible only when source usage evidence gives an ordered sequence for achieving a concrete result. A single application note, warning, dosage, frequency, or unordered usage list is not HowTo. Test conditions, application measurements, formula technology, and measured outcomes are evidence—not customer actions—even when they contain words such as apply, use, or 도포. Eligible HowTo requires at least two semantically distinct evidence-backed actions; paraphrases of the same application action count as one step.",
+      "Preserve product names, ingredient names, numbers, units, populations, time frames, and caveats exactly when those facts are used. Use complete, natural, consistently polite target-locale sentences; do not mix language or speech-level frames. Resolve synonymous skin-type and concern terms into one target-locale expression instead of emitting duplicates in multiple languages. Keep ingredient, benefit/effect, usage, review, certification, and measured-result evidence in their matching public fields. In Korean descriptions, never copy a source ending such as '~표기되어 있다' into otherwise polite '~합니다/~됩니다' copy.",
       "When support is insufficient set include/eligible=false, return empty text/steps, and explain omitReason. Confidence is evidence confidence, not stylistic confidence.",
       "RAG guidance is policy context only and can never be cited as product evidence.",
       "When candidatePlan is present, act as an evidence-entailment auditor: check every factual clause against only its cited evidence IDs, preserve claim modality and caveats, remove any added benefit/ingredient/audience/metric/CEP, and return the corrected full plan. Translation is allowed only when the cited fact has the same meaning."
@@ -845,8 +918,30 @@ function isConcreteUsageAction(value: string): boolean {
   if (!text || /(?:suitable\s+for|for\s+external\s+use|can\s+be\s+used|daily\s+use|사용할\s*수|사용\s*가능|외용|적합|おすすめ|使用できます)/iu.test(text)) {
     return false;
   }
+  if (/(?:%|％|\d+(?:\.\d+)?\s*배|임상|인체\s*적용|자가\s*평가|실험|시험|테스트|측정|평가|결과|대비|\bvs\.?\b|clinical|instrumental|study|test(?:ed)?|result|versus)/iu.test(text)
+    && /(?:개선|증가|감소|높|낮|잔존|효과|효능|improv|increase|decrease|higher|lower|retention|effect)/iu.test(text)) {
+    return false;
+  }
   return /\b(?:apply|spread|massage|rinse|wash|press|pat|dispense|mix|remove|leave)\b|(?:바르|도포|펴\s*바르|마사지|헹구|씻|세안|닦|두드|흡수|덜어|섞|제거)|(?:塗|なじませ|洗|すす|押さえ|取って|混ぜ|落と)/iu.test(text)
     || /(?:after\s+(?:cleansing|shower|toner)[^.!?]{0,50}\buse|(?:샤워|세안|토너)\s*후[^.!?。！？]{0,50}사용|(?:洗顔|シャワー|化粧水)後[^.!?。！？]{0,50}使用)/iu.test(text);
+}
+
+function usageActionsAreSemanticallyEquivalent(left: string, right: string): boolean {
+  const leftKey = usageActionSemanticKey(left);
+  const rightKey = usageActionSemanticKey(right);
+  return Boolean(leftKey) && (leftKey === rightKey || leftKey.includes(rightKey) || rightKey.includes(leftKey));
+}
+
+function usageActionSemanticKey(value: string): string {
+  return normalizeForMatch(value)
+    .replace(/아침\s*(?:과|와|또는)?\s*저녁|morning\s*(?:and|or)?\s*(?:evening|night)/giu, "morning night")
+    .replace(/피부\s*결/gu, "피부결")
+    .replace(/펴\s*(?:바르는\s*것이다|바릅니다|발라\s*주세요|바르세요|바르십시오|바른다)/gu, "펴바르")
+    .replace(/(?:적당량|소량)(?:을|를)?\s*(?:덜어|취해)?/gu, " ")
+    .replace(/\b(?:an?\s+)?(?:appropriate|small)\s+amount\b/giu, " ")
+    .replace(/(?:부드럽게|고르게|충분히|gently|evenly|thoroughly)/giu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function matchingEvidenceIds(text: string, evidence: PdpGeoAtomicEvidence[]): string[] {
@@ -938,6 +1033,9 @@ type PublicCopyKind = "statement" | "question" | "action";
 function isCoherentPublicCopy(value: string, kind: PublicCopyKind): boolean {
   const text = cleanText(value);
   if (!text) return false;
+  if (kind === "statement" && /^(?:(?:제품|상품)(?:\s*(?:페이지|정보))?\s*)?FAQ(?:에서는|에\s*따르면)|^(?:제품|상품)\s*(?:정보|자료|페이지)(?:에서는|에\s*따르면)|^(?:according\s+to\s+)?(?:the\s+)?(?:product\s+)?FAQ\b|^(?:the\s+)?product\s+(?:page|information|materials?)\s+(?:says|states|explains)\b/iu.test(text)) {
+    return false;
+  }
   const hangul = (text.match(/[\uac00-\ud7a3]/g) ?? []).length;
   const kana = (text.match(/[\u3040-\u30ff]/g) ?? []).length;
   const latin = (text.match(/[A-Za-z]/g) ?? []).length;
@@ -963,6 +1061,73 @@ function isCoherentPublicCopy(value: string, kind: PublicCopyKind): boolean {
     return /\b(?:is|are|was|were|has|have|contains?|includes?|provides?|supports?|helps?|improves?|offers?|features?|describes?|shows?|allows?|lets?|can|could|may|might|will)\b/iu.test(text);
   }
   return false;
+}
+
+// These are generic context classes, not product/category rules. Surface
+// variants across supported languages resolve to the same concept so a model
+// cannot evade evidence binding by paraphrasing an unsupported occasion.
+const contextConceptPatterns: ReadonlyArray<readonly [string, RegExp]> = [
+  ["season:spring", /\b(?:spring|springtime|spring\s+months?)\b|(?:봄철?|춘계)|(?:春|春季)/iu],
+  ["season:summer", /\b(?:summer|summertime|summer\s+months?|hot\s+(?:weather|months?|season|air))\b|(?:여름철?|하절기|더운\s*(?:날씨|시기|계절|바람))|(?:夏|夏季|暑い\s*(?:時期|季節|風))/iu],
+  ["season:autumn", /\b(?:autumn|autumnal|fall\s+season|autumn\s+months?)\b|(?:가을철?|추계)|(?:秋|秋季)/iu],
+  ["season:winter-cold", /\b(?:winter|wintertime|winter\s+months?|cold\s+(?:weather|months?|season|air|wind)|chilly\s+(?:weather|air|wind)|indoor\s+heating)\b|(?:겨울철?|동절기|추운\s*(?:날씨|시기|계절)|찬\s*바람|차가운\s*바람|추위|난방)|(?:冬|冬季|寒い\s*(?:時期|季節)|冷たい\s*風|寒さ|暖房)/iu],
+  ["season:transition", /\b(?:seasonal\s+transition|change\s+of\s+seasons?|dry\s+season|rainy\s+season)\b|(?:환절기|건기|우기|장마철)|(?:季節の変わり目|乾季|雨季|梅雨)/iu],
+  ["routine:morning", /\b(?:morning|a\.m\.)\b|(?:아침|오전)|(?:朝|午前)/iu],
+  ["routine:night", /\b(?:night|nighttime|evening|bedtime|overnight|p\.m\.)\b|(?:밤|야간|저녁|취침\s*전|밤사이)|(?:夜|夜間|夕方|就寝前|一晩)/iu],
+  ["routine:after-cleansing", /\b(?:after\s+cleansing|post[-\s]?cleanse|after\s+washing)\b|(?:세안\s*후|클렌징\s*후)|(?:洗顔後|クレンジング後)/iu],
+  ["routine:before-makeup", /\b(?:before\s+makeup|pre[-\s]?makeup|under\s+makeup)\b|(?:메이크업\s*전|화장\s*전)|(?:メイク前|化粧前)/iu],
+  ["occasion:gifting", /\b(?:gift|gifting|holiday|celebration)\b|(?:선물|기프트|명절|기념일)|(?:ギフト|贈り物|祝日|記念日)/iu],
+  ["occasion:travel", /\b(?:travel|travelling|traveling|on[-\s]?the[-\s]?go)\b|(?:여행|휴대용|외출)|(?:旅行|持ち運び|外出)/iu],
+  ["occasion:activity", /\b(?:exercise|workout|sport|outdoor)\b|(?:운동|스포츠|야외\s*활동)|(?:運動|スポーツ|屋外)/iu],
+  ["occasion:post-procedure", /\b(?:after\s+(?:a\s+)?procedure|post[-\s]?procedure|post[-\s]?treatment)\b|(?:시술\s*후|치료\s*후)|(?:施術後|治療後)/iu],
+  ["audience:life-stage", /\b(?:pregnan(?:t|cy)|postpartum|baby|infant|child|teen)\b|(?:임신|산후|아기|영유아|어린이|청소년)|(?:妊娠|産後|赤ちゃん|乳幼児|子ども|十代)/iu]
+];
+
+const generalizedAssociationPattern = /\b(?:generally|typically|usually|commonly|as\s+a\s+rule|in\s+general)\b|(?:일반적으로|대체로|통상적으로|보통은)|(?:一般的に|通常は|概して)/iu;
+const explicitCausalAssociationPattern = /\b(?:because|because\s+of|due\s+to|caused\s+by|as\s+a\s+result\s+of)\b|(?:때문에|로\s*인해|에서\s*비롯|결과로)|(?:ために|によって|が原因で)/iu;
+
+function contextAssociationsAreSupported(text: string, evidenceText: string): boolean {
+  if (!text) return true;
+  const outputConcepts = contextConcepts(text);
+  const evidenceConcepts = contextConcepts(evidenceText);
+  if (![...outputConcepts].every((concept) => evidenceConcepts.has(concept))) return false;
+  if (generalizedAssociationPattern.test(text) && !generalizedAssociationPattern.test(evidenceText)) return false;
+  if (explicitCausalAssociationPattern.test(text) && !explicitCausalAssociationPattern.test(evidenceText)) return false;
+  return true;
+}
+
+function contextConcepts(value: string): Set<string> {
+  return new Set(contextConceptPatterns
+    .filter(([, pattern]) => pattern.test(value))
+    .map(([concept]) => concept));
+}
+
+function descriptionEntityRepetitionWithinBudget(
+  text: string,
+  product: PdpProductSignal,
+  field: string
+): boolean {
+  if (!/^(?:Product|WebPage)\.description$/u.test(field)) {
+    return true;
+  }
+  const entity = normalizeEntityMention(product.name);
+  const narrative = normalizeEntityMention(text);
+  if (!entity || entity.length < 3 || !narrative.includes(entity)) {
+    return true;
+  }
+  let mentions = 0;
+  let offset = 0;
+  while (offset <= narrative.length - entity.length) {
+    const index = narrative.indexOf(entity, offset);
+    if (index < 0) break;
+    mentions += 1;
+    offset = index + entity.length;
+  }
+  return mentions <= (field === "Product.description" ? 1 : 2);
+}
+
+function normalizeEntityMention(value: string): string {
+  return value.toLocaleLowerCase().normalize("NFKC").replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
 const semanticConceptPatterns: ReadonlyArray<readonly [string, RegExp]> = [
@@ -1020,19 +1185,27 @@ function faqQuestionIsSupported(
 ): boolean {
   const cited = evidenceIds.map((id) => evidenceById.get(id)).filter((item): item is PdpGeoAtomicEvidence => Boolean(item));
   const evidenceText = cited.map((item) => item.text).join(" ");
-  if (!claimRiskIsSupported(question, evidenceText) || !evidenceRolesSupportClaimTopics(question, cited)) return false;
+  if (!contextAssociationsAreSupported(question, evidenceText)
+    || !claimRiskIsSupported(question, evidenceText)
+    || !evidenceRolesSupportClaimTopics(question, cited)) return false;
   if (usesDifferentPrimaryScript(question, evidenceText)) {
     return semanticAuditPassed && crossLanguageConceptsAreSupported(question, evidenceText);
   }
 
   const identityTokens = meaningfulEvidenceTokens([product.name, product.originalName ?? "", product.brand ?? "", product.category ?? ""].join(" "));
-  const genericQuestionTokens = /^(?:skin|concern|suitable|suitability|support|use|used|using|fit|right|피부|고민|적합.*|사용.*|가능.*|무엇인가요|어떤가요|肌|悩み|適し.*|使え.*|何ですか|どんな)$/u;
+  const genericQuestionTokens = /^(?:skin|concern|customer|audience|suitable|suitability|support|use|used|using|fit|right|피부|고민|고객|대상|추천.*|적합.*|사용.*|가능.*|도움.*|되나요|무엇인가요|어떤가요|肌|悩み|顧客|対象|適し.*|使え.*|役立.*|何ですか|どんな)$/u;
   const questionTokens = meaningfulEvidenceTokens(question)
     .filter((token) => !genericQuestionTokens.test(token))
     .filter((token) => !identityTokens.some((identity) => evidenceTokensMatch(token, identity)));
   if (questionTokens.length === 0) return true;
   const evidenceTokens = meaningfulEvidenceTokens(evidenceText);
-  return questionTokens.every((token) => evidenceTokens.some((source) => evidenceTokensMatch(token, source)));
+  const matched = questionTokens.filter((token) => evidenceTokens.some((source) => evidenceTokensMatch(token, source))).length;
+  if (!semanticAuditPassed) return matched === questionTokens.length;
+  const questionConcepts = semanticConcepts(question);
+  const evidenceConcepts = semanticConcepts(evidenceText);
+  return [...questionConcepts].every((concept) => evidenceConcepts.has(concept))
+    && matched >= Math.min(1, questionTokens.length)
+    && matched / questionTokens.length >= 0.5;
 }
 
 function evidenceSemanticallySupportsText(
@@ -1054,6 +1227,9 @@ function evidenceSemanticallySupportsText(
   }
 
   const evidenceText = substantive.map((item) => item.text).join(" ");
+  if (!contextAssociationsAreSupported(text, evidenceText)) {
+    return false;
+  }
   if (!claimRiskIsSupported(text, evidenceText)) {
     return false;
   }
@@ -1085,6 +1261,13 @@ function evidenceSemanticallySupportsText(
   if (japaneseClaim && semanticAuditPassed) {
     return matched >= Math.min(3, claimTokens.length) && matched / claimTokens.length >= 0.55;
   }
+  if (semanticAuditPassed) {
+    const claimConcepts = semanticConcepts(text);
+    const evidenceConcepts = semanticConcepts(evidenceText);
+    return [...claimConcepts].every((concept) => evidenceConcepts.has(concept))
+      && matched >= Math.min(3, claimTokens.length)
+      && matched / claimTokens.length >= 0.55;
+  }
   return matched === claimTokens.length;
 }
 
@@ -1093,6 +1276,7 @@ function claimPolarityAndModalityArePreserved(text: string, evidenceText: string
   const weak = /\b(?:may|might|could|can|potentially|appears?|suggests?|helps?|supports?|designed\s+to|aims?\s+to)\b|(?:수\s*있|가능성|도움을?\s*줄|도와|돕|지원|설계)|(?:可能性|ことがある|場合がある|助け|支え|目指|設計)/iu;
   const outputIsNegative = negative.test(text);
   const outputIsWeak = weak.test(text);
+  const outputMakesAssertiveClaim = /\b(?:improves?|boosts?|strengthens?|provides?|increases?|decreases?|cures?|treats?)\b|(?:개선|강화|제공|증가|감소|완화|치료|치유)(?:하|합|됩|시켜|된다고)|(?:改善|強化|提供|増加|減少|治療)(?:する|します|できる)/iu.test(text);
   const outputTokens = meaningfulEvidenceTokens(text);
   const outputConcepts = semanticConcepts(text);
   const evidenceClauses = evidenceText.split(/[.!?。！？;；\n]+/u).map(cleanText).filter(Boolean);
@@ -1110,7 +1294,7 @@ function claimPolarityAndModalityArePreserved(text: string, evidenceText: string
       : lexicalMatches >= Math.min(2, Math.max(1, sourceTokens.length));
     if (!related) continue;
     if (sourceIsNegative && !outputIsNegative) return false;
-    if (sourceIsWeak && !outputIsWeak) return false;
+    if (sourceIsWeak && outputMakesAssertiveClaim && !outputIsWeak) return false;
   }
   return true;
 }
@@ -1158,9 +1342,6 @@ function causalIngredientBenefitLinkIsSupported(
   cited: PdpGeoAtomicEvidence[],
   product: PdpProductSignal
 ): boolean {
-  if (!/\b(?:helps?|supports?|improves?|boosts?|strengthens?|provides?)\b|(?:도와|돕|지원|개선|강화|높여|제공)|(?:助け|支え|改善|高め|与え)/iu.test(text)) {
-    return true;
-  }
   const textTokens = meaningfulEvidenceTokens(text);
   const ingredientTokens = meaningfulEvidenceTokens([
     ...product.ingredients,
@@ -1175,18 +1356,21 @@ function causalIngredientBenefitLinkIsSupported(
   const mentionsIngredient = ingredientTokens.some((token) => textTokens.some((candidate) => evidenceTokensMatch(token, candidate)));
   const mentionsBenefit = benefitTokens.some((token) => textTokens.some((candidate) => evidenceTokensMatch(token, candidate)));
   if (!mentionsIngredient || !mentionsBenefit) return true;
-  const causalLanguage = /\b(?:helps?|supports?|improves?|boosts?|strengthens?|provides?|contributes?\s+to|for)\b|(?:도와|돕|지원|개선|강화|높여|제공|위한|기여)|(?:助け|支え|改善|高め|与え|ため|寄与)/iu;
   return cited.some((item) => item.text
     .split(/[.!?。！？;；\n]+/u)
     .map(cleanText)
     .filter(Boolean)
     .some((clause) => {
-      if (!causalLanguage.test(clause)) return false;
       const sourceTokens = meaningfulEvidenceTokens(clause);
-      return ingredientTokens.some((token) => sourceTokens.some((candidate) => evidenceTokensMatch(token, candidate)))
-        && benefitTokens.some((token) => sourceTokens.some((candidate) => evidenceTokensMatch(token, candidate)));
+      const clauseMentionsIngredient = ingredientTokens.some((token) => sourceTokens.some((candidate) => evidenceTokensMatch(token, candidate)));
+      const clauseMentionsBenefit = benefitTokens.some((token) => sourceTokens.some((candidate) => evidenceTokensMatch(token, candidate)));
+      return clauseMentionsIngredient
+        && clauseMentionsBenefit
+        && explicitIngredientBenefitRelationPattern.test(clause);
     }));
 }
+
+const explicitIngredientBenefitRelationPattern = /\b(?:helps?|supports?|improves?|boosts?|strengthens?|provides?|delivers?|contributes?\s+to|based\s+on|powered\s+by|through|via)\b|\bwith\b[^.!?。！？;；\n]{0,100}\bfor\b|\bfor\b[^.!?。！？;；\n]{0,100}\bwith\b|(?:도와|돕|지원|개선|강화|높여|제공|기여|기반|통해|(?:으)?로\s+[^.!?。！？;；\n]{0,80}(?:보습|수분|장벽|탄력|진정|개선|효과|효능))|(?:助け|支え|改善|高め|与え|寄与|による|を通じ|配合で)/iu;
 
 function normalizeEvidenceToken(value: string): string {
   let token = value.toLocaleLowerCase();

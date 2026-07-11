@@ -59,11 +59,22 @@ Category Entry Points, or CEPs, describe buying, discovery, usage, or memory sit
 1. Extract product facts: name, brand, category, benefits, effects, ingredients, usage, size, texture, format, variants, metrics, offer data, and constraints.
 2. Extract customer signals: review keywords, repeated review phrases, rating context, complaints, questions, and routine mentions.
 3. Extract brand identity signals: brand vocabulary, mood, personality, category authority, sensory style, and target audience. Treat hero ingredients, patents, papers, or research systems as product CEP inputs only when the current product source independently contains the same product-level fact.
-4. Generate CEP candidates by combining product facts with customer contexts and query intents.
-5. Filter candidates that are unsupported, too generic, medically risky, duplicated, or unrelated to the category.
-6. Prioritize candidates by source support, specificity, review repetition, commerce usefulness, locale fit, and schema field usefulness.
+4. Classify every atomic source unit before combining it. Keep named substances/formula technologies, benefits, measured effects, target audiences or concerns, usage moments, reviews, and evidence conditions in separate roles. An attribute such as absorption, persistence, texture, timing, or a percentage is not an ingredient.
+5. Treat a compressed OCR measurement block as a set of evidence atoms, not as a ready-made CEP sentence. Build the customer choice path only from supported links: target concern -> product/formula composition -> customer-facing effect -> measured outcome -> suitability. Keep delivery/depth and formulation metrics separate from customer effects unless the source explicitly links them, and attach shared study conditions only to outcomes in the same evidence group.
+6. Build evidence-backed causal paths only where the source supports each edge: `target customer or concern -> desired outcome`, `ingredient or technology -> supported benefit/effect`, `effect -> measurement/study context`, and `review pattern -> customer preference`. Do not connect an ingredient to a benefit merely because both occur somewhere on the same page.
+7. Generate CEP candidates and natural query/expression variants from the strongest causal paths. Preserve the same meaning while varying customer wording, concern wording, ingredient/formula wording, and benefit wording; avoid repeating the product name in every sentence.
+8. Separate two inference layers. Source-backed situations and relations may appear in public descriptions, FAQ, and schema. Broader semantic associations—such as mapping generic dryness to winter—are query hypotheses only unless the product source, usage, or reviews independently support that occasion; they must not become product facts or efficacy claims.
+9. Filter candidates that are unsupported, too generic, medically risky, duplicated, semantically redundant, or unrelated to the category.
+10. Prioritize candidates by source support, causal completeness, specificity, review repetition, commerce usefulness, locale fit, and schema field usefulness.
 
-### 4.2 Scoring Guidance
+### 4.2 Causal Path Completeness
+
+- Prefer a compact path that can answer a buyer question end to end: product identity/type -> target customer and concrete concern -> relevant ingredient/technology -> supported benefit/effect -> official measurement when available -> positive or neutral review pattern when available.
+- A path can omit a missing node, but it must never fill the gap with general category knowledge. If no explicit ingredient-to-outcome relation exists, state formula composition and product benefit as separate supported facts instead of inventing causality.
+- Produce multiple search expressions only when they represent distinct intent surfaces, such as suitability, concern/effect, ingredient role, measured result, routine, or review experience. Synonymous questions that would receive the same answer count as one intent.
+- Keep description prose cohesive: introduce the product once, use a short product reference or an omitted subject in following clauses, and connect ingredient composition to benefit/effect instead of restarting every sentence with the full product name.
+
+### 4.3 Scoring Guidance
 
 - Strong CEP: supported by product facts and repeated review/customer language; maps to a clear schema or PDP section.
 - Medium CEP: supported by product facts but weak review repetition; useful for description or product-context copy if not overused.

@@ -1,5 +1,6 @@
 import type { JsonObject, JsonValue, PdpGeoContentArtifact, PdpGeoContentSections, PdpGeoLocale, PdpGeoSchemaMarkup, PdpGeoValidationRepair } from "./types";
 import { captureStructuredContentSnapshot, repairPdpSchemaGraphIntegrity, synchronizeStructuredContentWithGraph } from "./graph-integrity";
+import { isNegativeReviewSignalText } from "./review-sentiment";
 
 interface ValidateAndRepairInput {
   schemaMarkup: PdpGeoSchemaMarkup;
@@ -326,6 +327,10 @@ function containsProductDescriptionPageEntityLanguage(value: string): boolean {
 }
 
 function areSchemaDescriptionsTooSimilar(webPageDescription: string, productDescription: string): boolean {
+  const webPageOpening = splitPublicSentences(webPageDescription)[0] ?? "";
+  const productOpening = splitPublicSentences(productDescription)[0] ?? "";
+  const hasDistinctPageOpening = /(?:상품\s*페이지|제품\s*페이지|상세\s*페이지|product\s+(?:detail\s+)?page|\bPDP\b|商品ページ|製品ページ)/iu.test(webPageOpening)
+    && normalizeDescriptionForRoleComparison(webPageOpening) !== normalizeDescriptionForRoleComparison(productOpening);
   const webPage = normalizeDescriptionForRoleComparison(webPageDescription);
   const product = normalizeDescriptionForRoleComparison(productDescription);
   if (!webPage || !product) {
@@ -340,6 +345,12 @@ function areSchemaDescriptionsTooSimilar(webPageDescription: string, productDesc
   if (webPage.length >= 72 && product.includes(webPage)) {
     return true;
   }
+  // Both schema nodes should repeat the same citation-worthy product facts.
+  // A distinct, explicit page introduction preserves the WebPage role even
+  // when ingredient, benefit, and measured-outcome sentences are shared.
+  if (hasDistinctPageOpening) {
+    return false;
+  }
 
   const webPageSentences = splitPublicSentences(webPageDescription)
     .map(normalizeDescriptionForRoleComparison)
@@ -347,13 +358,17 @@ function areSchemaDescriptionsTooSimilar(webPageDescription: string, productDesc
   const productSentences = splitPublicSentences(productDescription)
     .map(normalizeDescriptionForRoleComparison)
     .filter((sentence) => sentence.length >= 72);
-  return productSentences.some((productSentence) =>
+  const duplicateSentenceCount = productSentences.filter((productSentence) =>
     webPageSentences.some((webPageSentence) =>
       webPageSentence === productSentence
       || webPageSentence.includes(productSentence)
       || productSentence.includes(webPageSentence)
     )
-  );
+  ).length;
+  // A page description may legitimately repeat one long, source-backed metric
+  // sentence while its other sentences retain page-level coverage. Treat the
+  // roles as collapsed only when multiple substantive sentences duplicate.
+  return duplicateSentenceCount >= 2;
 }
 
 function normalizeDescriptionForRoleComparison(value: string): string {
@@ -654,6 +669,10 @@ function repairProductDescriptionFieldContract(
   }
   let changed = false;
   const kept = sentences.flatMap((sentence) => {
+    if (isStiffDescriptionEvidenceSentence(sentence)) {
+      changed = true;
+      return [];
+    }
     const repaired = repairProductDescriptionUsageStepSentence(sentence);
     if (repaired !== sentence) {
       changed = true;
@@ -668,8 +687,8 @@ function repairProductDescriptionFieldContract(
   addRepair(warnings, repairs, {
     field: "Product.description",
     source: "field-contract-validator",
-    issue: "Product.description mixed product identity, ingredient, benefit, or metric evidence with concrete usage directions.",
-    action: "Removed concrete usage directions from Product.description while keeping product, ingredient, benefit, and metric evidence available for Product schema.",
+    issue: "Product.description mixed product identity and benefit copy with concrete usage directions or stiff source-report evidence narration.",
+    action: "Removed concrete usage directions and report-style evidence sentences while keeping detailed usage and measured evidence in their dedicated schema fields.",
     before: value,
     after: next,
     evidence: ["Product.description", "HowTo/Usage field evidence contract", locale]
@@ -713,6 +732,10 @@ function repairWebPageDescriptionFieldContract(
   let changed = false;
   const benefitContext = extractKoreanWebPageBenefitContext(value);
   const kept = sentences.flatMap((sentence) => {
+    if (isStiffDescriptionEvidenceSentence(sentence)) {
+      changed = true;
+      return [];
+    }
     const targetActorRepaired = repairKoreanSkinTypeActorOpening(sentence);
     if (targetActorRepaired !== sentence) {
       changed = true;
@@ -769,13 +792,21 @@ function repairWebPageDescriptionFieldContract(
   addRepair(warnings, repairs, {
     field: "WebPage.description",
     source: "field-contract-validator",
-    issue: "WebPage.description contained awkward target-customer grammar, mixed page coverage, or over-merged ingredient/metric evidence.",
-    action: "Rewrote awkward target-customer openings and separated misrouted usage, FAQ, ingredient, and metric wording so WebPage.description keeps page-level product evidence citation-ready.",
+    issue: "WebPage.description contained awkward target-customer grammar, stiff evidence narration, mixed page coverage, or over-merged ingredient/metric evidence.",
+    action: "Rewrote awkward target-customer openings and removed report-style certification/test narration while keeping detailed evidence in dedicated schema fields.",
     before: value,
     after: next,
     evidence: ["WebPage.description", "HowTo/Usage field evidence contract", locale]
   }, "WebPage.description usage/technology routing was repaired.");
   return next;
+}
+
+function isStiffDescriptionEvidenceSentence(value: string): boolean {
+  const text = value.trim();
+  if (!/[가-힣]/u.test(text)) {
+    return false;
+  }
+  return /(?:민감\s*피부\s*사용\s*맥락은[^.!?。！？]{0,120}?(?:보완|뒷받침)(?:됩니다|합니다)|해당\s*결과(?:는|가)[^.!?。！？]{0,180}?(?:표기되어\s*있|제시되어\s*있)|원료적\s*특성에\s*한한[^.!?。！？]{0,120}?(?:결과|테스트)|(?:결과|수치)(?:가|는)?\s*(?:제시|표기)되며[^.!?。！？]{0,160}?표기되어\s*있다)/iu.test(text);
 }
 
 function repairKoreanSkinTypeActorOpening(value: string): string {
@@ -1739,7 +1770,7 @@ function isValidSectionLineForField(line: string, field: string): boolean {
     return isActionableUsageText(text);
   }
   if (field === "content.sections.ingredients") {
-    return isIngredientEvidenceText(text) && !isMisroutedIngredientContext(text);
+    return (isIngredientEvidenceText(text) || isConciseIngredientToken(text)) && !isMisroutedIngredientContext(text);
   }
   if (field === "content.sections.benefits") {
     return !isRawMetricEvidenceText(text);
@@ -1791,6 +1822,10 @@ function isSensoryOnlyUsageText(value: string): boolean {
 function isEvidenceOnlyUsageText(value: string): boolean {
   const text = value.trim();
   if (isSafetyOrTestClaimUsageText(text)) {
+    return true;
+  }
+  if (/(?:%|％|\d+(?:\.\d+)?\s*배|임상|인체\s*적용|자가\s*평가|실험|시험|테스트|측정|평가|결과|대비|\bvs\.?\b|clinical|instrumental|study|test(?:ed)?|result|versus)/iu.test(text)
+    && /(?:개선|증가|감소|높|낮|잔존|효과|효능|improv|increase|decrease|higher|lower|retention|effect)/iu.test(text)) {
     return true;
   }
   const looksLikeEvidence = isRawMetricEvidenceText(text)
@@ -1943,6 +1978,18 @@ function isIngredientEvidenceText(value: string): boolean {
   return /^[A-Z][\p{L}\p{N}™®-]+(?:\s+[A-Z][\p{L}\p{N}™®-]+){0,4}$/u.test(text);
 }
 
+function isConciseIngredientToken(value: string): boolean {
+  const text = value.trim();
+  if (!text || text.length > 80 || /[.!?。！？]/u.test(text) || text.split(/\s+/u).length > 6) {
+    return false;
+  }
+  if (isIngredientAttributePropertyToken(text)
+    || /(?:고객|리뷰|후기|사용법|루틴|효과가|도움|개선|진정|보습력|흡수력|review|customer|usage|routine|benefit|effect)/iu.test(text)) {
+    return false;
+  }
+  return /^[\p{L}\p{N}][\p{L}\p{N}\s+()\[\],.'’®™-]*$/u.test(text);
+}
+
 function isMisroutedIngredientContext(value: string): boolean {
   const text = value.trim();
   return /\b(?:customer reviews?|review-backed|review language|routine|usage guidance|how to use|apply|morning|night|search intent|comparison cues|reported details)\b/i.test(text)
@@ -2038,13 +2085,12 @@ function dedupeFaqSectionTextBySemanticIntent(
     const key = normalizeFaqQuestionDedupeKey(question);
     const semanticKeys = createFaqSemanticDedupeKeys(question, locale);
     const preference = scoreFaqSemanticDedupePreference(question, answer, locale);
-    const exactIndex = key ? selected.findIndex((candidate) => candidate.key === key) : -1;
-    const semanticIndex = semanticKeys.length > 0
-      ? selected.findIndex((candidate) => hasFaqSemanticDedupeConflict(semanticKeys, candidate.semanticKeys))
-      : -1;
-    const conflictIndex = exactIndex > -1 ? exactIndex : semanticIndex;
+    const conflictIndexes = selected.flatMap((candidate, selectedIndex) => (
+      key && candidate.key === key
+      || semanticKeys.length > 0 && hasFaqSemanticDedupeConflict(semanticKeys, candidate.semanticKeys)
+    ) ? [selectedIndex] : []);
 
-    if (conflictIndex === -1) {
+    if (conflictIndexes.length === 0) {
       selected.push({
         block,
         question,
@@ -2055,21 +2101,30 @@ function dedupeFaqSectionTextBySemanticIntent(
       });
     } else {
       changed = true;
-      const existing = selected[conflictIndex];
+      const existingCandidates = conflictIndexes
+        .map((selectedIndex) => selected[selectedIndex])
+        .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate));
+      const existing = existingCandidates
+        .sort((left, right) => right.preference - left.preference)[0];
       if (!existing) {
         index = nextIndex;
         continue;
       }
-      if (preference > existing.preference) {
-        selected[conflictIndex] = {
+      const winner = preference > existing.preference
+        ? {
           block,
           question,
           answer,
           key,
           semanticKeys,
           preference
-        };
+        }
+        : existing;
+      const insertionIndex = Math.min(...conflictIndexes);
+      for (const selectedIndex of [...conflictIndexes].sort((left, right) => right - left)) {
+        selected.splice(selectedIndex, 1);
       }
+      selected.splice(Math.min(insertionIndex, selected.length), 0, winner);
     }
     index = nextIndex;
   }
@@ -2284,12 +2339,11 @@ function dedupeFaqMainEntityBySemanticIntent(
 
     const semanticKeys = createFaqSemanticDedupeKeys(question, locale);
     const preference = scoreFaqSemanticDedupePreference(question, answer, locale);
-    const exactIndex = selected.findIndex((candidate) => candidate.key === key);
-    const semanticIndex = semanticKeys.length > 0
-      ? selected.findIndex((candidate) => hasFaqSemanticDedupeConflict(semanticKeys, candidate.semanticKeys))
-      : -1;
-    const conflictIndex = exactIndex > -1 ? exactIndex : semanticIndex;
-    if (conflictIndex === -1) {
+    const conflictIndexes = selected.flatMap((candidate, index) => (
+      candidate.key === key
+      || semanticKeys.length > 0 && hasFaqSemanticDedupeConflict(semanticKeys, candidate.semanticKeys)
+    ) ? [index] : []);
+    if (conflictIndexes.length === 0) {
       selected.push({
         item,
         question,
@@ -2301,7 +2355,11 @@ function dedupeFaqMainEntityBySemanticIntent(
       continue;
     }
 
-    const existing = selected[conflictIndex];
+    const existingCandidates = conflictIndexes
+      .map((index) => selected[index])
+      .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate));
+    const existing = existingCandidates
+      .sort((left, right) => right.preference - left.preference)[0];
     if (!existing) {
       selected.push({
         item,
@@ -2314,10 +2372,7 @@ function dedupeFaqMainEntityBySemanticIntent(
       continue;
     }
     const keepCurrent = preference > existing.preference;
-    const removed = keepCurrent ? existing.item : item;
-    const kept = keepCurrent ? item : existing.item;
-    if (keepCurrent) {
-      selected[conflictIndex] = {
+    const current = {
         item,
         question,
         answer,
@@ -2325,14 +2380,22 @@ function dedupeFaqMainEntityBySemanticIntent(
         semanticKeys,
         preference
       };
+    const winner = keepCurrent ? current : existing;
+    const removedItems = keepCurrent
+      ? existingCandidates.map((candidate) => candidate.item)
+      : [item, ...existingCandidates.filter((candidate) => candidate !== existing).map((candidate) => candidate.item)];
+    const insertionIndex = Math.min(...conflictIndexes);
+    for (const index of [...conflictIndexes].sort((left, right) => right - left)) {
+      selected.splice(index, 1);
     }
+    selected.splice(Math.min(insertionIndex, selected.length), 0, winner);
     addRepair(warnings, repairs, {
       field: "FAQPage.mainEntity",
       source: "field-contract-validator",
       issue: "FAQ contained duplicate or overlapping ingredient-benefit and benefit-overview question intent.",
       action: "Kept the more specific answer-ready FAQ question and removed the overlapping FAQ item.",
-      before: toJsonValue(removed),
-      after: toJsonValue(kept),
+      before: toJsonValue(removedItems.length === 1 ? removedItems[0] : removedItems),
+      after: toJsonValue(winner.item),
       evidence: ["FAQPage.mainEntity.name", "semantic FAQ intent dedupe"]
     }, "Overlapping FAQ question intent was removed during final sentence QA.");
   }
@@ -2349,19 +2412,24 @@ function normalizeFaqQuestionDedupeKey(question: string): string {
 }
 
 function createFaqSemanticDedupeKeys(question: string, locale: PdpGeoLocale): string[] {
+  const keys: string[] = [];
   if (isDirectIngredientBenefitFaqQuestion(question, locale)) {
-    return ["ingredient-benefit-overview"];
+    keys.push("ingredient-benefit-overview");
   }
   if (isGenericBenefitOverviewFaqQuestion(question, locale)) {
-    return ["benefit-overview"];
+    keys.push("benefit-overview");
   }
-  return [];
+  if (isIngredientOverviewFaqQuestion(question, locale)) {
+    keys.push("ingredient-overview");
+  }
+  if (isSuitabilityOverviewFaqQuestion(question, locale)) {
+    keys.push("suitability-overview");
+  }
+  return keys;
 }
 
 function hasFaqSemanticDedupeConflict(nextKeys: string[], selectedKeys: string[]): boolean {
-  return nextKeys.some((nextKey) => selectedKeys.includes(nextKey)
-    || nextKey === "ingredient-benefit-overview" && selectedKeys.includes("benefit-overview")
-    || nextKey === "benefit-overview" && selectedKeys.includes("ingredient-benefit-overview"));
+  return nextKeys.some((nextKey) => selectedKeys.includes(nextKey));
 }
 
 function scoreFaqSemanticDedupePreference(question: string, answer: string, locale: PdpGeoLocale): number {
@@ -2391,6 +2459,31 @@ function isGenericBenefitOverviewFaqQuestion(question: string, locale: PdpGeoLoc
   }
   return /\bskin\s+concerns?\s+(?:and|&)\s+(?:benefits?|effects?)\b|\b(?:benefits?|effects?)\s+and\s+skin\s+concerns?\b/i.test(text)
     && !isDirectIngredientBenefitFaqQuestion(text, locale);
+}
+
+function isIngredientOverviewFaqQuestion(question: string, locale: PdpGeoLocale): boolean {
+  const text = normalizeKoreanRepairPhrase(question);
+  if (locale === "ko-KR") {
+    return /(?:(?:주요|핵심|강조되는)\s*(?:성분|성분\/기술)|(?:성분|성분\/기술)[^?？.。!！]{0,30}(?:무엇|뭔가요|있나요))/u.test(text);
+  }
+  if (locale === "ja-JP") {
+    return /(?:主な|主要な|強調される)?(?:成分|技術)[^?？。]{0,30}(?:何|どれ)/u.test(text);
+  }
+  return /\b(?:which|what|key|main|primary|highlighted)\b[^?!.]{0,60}\b(?:ingredients?|formula|technolog(?:y|ies))\b/iu.test(text);
+}
+
+function isSuitabilityOverviewFaqQuestion(question: string, locale: PdpGeoLocale): boolean {
+  const text = normalizeKoreanRepairPhrase(question);
+  if (/(?:신생아|영유아|유아|아기|어린이|임산부|수유부|newborns?|infants?|bab(?:y|ies)|children|pregnan|乳幼児|赤ちゃん|子ども|妊娠)/iu.test(text)) {
+    return false;
+  }
+  if (locale === "ko-KR") {
+    return /(?:어떤\s*(?:고객|피부|대상)|누구(?:에게)?|추천\s*(?:대상|고객)|적합|피부\s*타입)/u.test(text);
+  }
+  if (locale === "ja-JP") {
+    return /(?:どんな.*(?:人|肌)|誰|向いて|肌タイプ)/u.test(text);
+  }
+  return /(?:who\s+is|best\s+suited|suitable\s+for|recommended\s+for|which\s+skin\s+types?|what\s+skin\s+types?)/iu.test(text);
 }
 
 function repairKoreanUsageFaqReviewLeak(question: string, answer: string): string {
@@ -2731,14 +2824,6 @@ function extractKoreanProductNameFromFaqText(value: string): string | undefined 
   return match?.[1] ? normalizeKoreanRepairPhrase(match[1]) : undefined;
 }
 
-function isNegativeReviewSignalText(value: string): boolean {
-  const text = normalizeKoreanRepairPhrase(value).toLocaleLowerCase();
-  if (!text) {
-    return false;
-  }
-  return /(?:약품\s*냄새|냄새|향(?:이|은)?[^.。！？]{0,24}(?:아쉬|별로|강하|불편)|아쉬|별로|불편|따가|화끈|자극(?!\s*(?:없|없이|적))|트러블(?!\s*(?:없|안|올라오지|올라오지\s*않))|건조하|당김이\s*심|끈적|답답|무거|뻑뻑|실망|문제|bad|worse|worst|smell|odor|scent|fragrance|irritat|breakout|sticky|greasy|heavy|drying|disappoint|complain)/iu.test(text);
-}
-
 function isReviewBasedFaqItem(question: string, answer: string, locale: PdpGeoLocale): boolean {
   const normalizedQuestion = normalizeKoreanRepairPhrase(question);
   const normalizedAnswer = normalizeKoreanRepairPhrase(answer);
@@ -2953,12 +3038,12 @@ function dedupeRedundantMetricClausesWithRepair(
   warnings: string[],
   repairs: PdpGeoValidationRepair[]
 ): string {
-  if (!/[가-힣]/.test(value) || !/\d+(?:\.\d+)?\s*%/.test(value)) {
-    return value;
-  }
-  const next = value
+  const sentenceDeduped = dedupeRepeatedPublicSentences(value);
+  const next = sentenceDeduped
     .split(/(?<=[.。])\s+/)
-    .map((sentence) => dedupeRedundantKoreanMetricClausesInSentence(sentence))
+    .map((sentence) => /[가-힣]/u.test(sentence) && /\d+(?:\.\d+)?\s*(?:%|％|배)/u.test(sentence)
+      ? dedupeRedundantKoreanMetricClausesInSentence(sentence)
+      : sentence)
     .join(" ")
     .replace(/\s{2,}/g, " ")
     .trim();
@@ -2966,8 +3051,8 @@ function dedupeRedundantMetricClausesWithRepair(
     addRepair(warnings, repairs, {
       field,
       source: "sentence-qa",
-      issue: "Description repeated the same measured-result clause more than once in one sentence.",
-      action: "Removed the fully redundant duplicated metric clause and restored the sentence ending.",
+      issue: "Description repeated the same public sentence or measured-result clause more than once.",
+      action: "Removed the redundant sentence/metric clause and restored the sentence ending.",
       before: value,
       after: next,
       evidence: [field, "final sentence QA"]
@@ -2976,8 +3061,30 @@ function dedupeRedundantMetricClausesWithRepair(
   return next;
 }
 
+function dedupeRepeatedPublicSentences(value: string): string {
+  const sentences = splitPublicSentences(value);
+  if (sentences.length < 2) {
+    return value;
+  }
+  const seen = new Set<string>();
+  const kept = sentences.filter((sentence) => {
+    const key = sentence
+      .replace(/^㈜/u, "(주)")
+      .toLocaleLowerCase()
+      .replace(/[.!?。！？]+$/u, "")
+      .replace(/\s+/gu, " ")
+      .trim();
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+  return kept.length === sentences.length ? value : kept.join(" ");
+}
+
 function dedupeRedundantKoreanMetricClausesInSentence(sentence: string): string {
-  if (!/\d+(?:\.\d+)?\s*%/.test(sentence) || !koreanClauseConnectivePattern.test(sentence)) {
+  if (!/\d+(?:\.\d+)?\s*(?:%|％|배)/u.test(sentence) || !koreanClauseConnectivePattern.test(sentence)) {
     return sentence;
   }
   const trailing = sentence.match(/[.。]$/)?.[0] ?? "";
@@ -3013,7 +3120,7 @@ function dedupeRedundantKoreanMetricClausesInSentence(sentence: string): string 
 }
 
 function koreanClauseCoreTokens(text: string): Set<string> {
-  const tokens = text.match(/\d+(?:\.\d+)?\s*%|\d+[가-힣]+|[가-힣]{2,}|[A-Za-z]{3,}/g) ?? [];
+  const tokens = text.match(/\d+(?:\.\d+)?\s*(?:%|％|배)|\d+[가-힣]+|[가-힣]{2,}|[A-Za-z]{3,}/g) ?? [];
   return new Set(tokens
     .map((token) => token.replace(/\s+/g, "").replace(/(되었습니다|되었고|되었으며|하였습니다|했습니다|합니다|됩니다|입니다)$/u, ""))
     .filter((token) => token.length > 0));
@@ -3248,8 +3355,10 @@ function isInvalidPropertyValue(name: string, value: string, locale: PdpGeoLocal
   if (/^Functional certification$/i.test(name) && isLowQualityFunctionalCertificationValue(value, locale)) {
     return true;
   }
-  if (/reported details/i.test(name) && isQuestionLike(value, locale)) {
-    return true;
+  if (/reported details/i.test(name)) {
+    return isQuestionLike(value, locale)
+      || !hasContextualReportedPropertyValue(value)
+      || (value.match(/(?:확인\s*지표|확인\s*근거|reported\s*result)\s*:/gi) ?? []).length > 1;
   }
   if (/^key ingredients$/i.test(name)) {
     return value.split(",").some((item) => {
@@ -3259,10 +3368,26 @@ function isInvalidPropertyValue(name: string, value: string, locale: PdpGeoLocal
         || hasTruncationMarker(token)
         || isQuestionLike(token, locale)
         || /[.。！？?]/.test(token)
-        || /(설계|자극|고객님|리뉴얼 전 제품|property value)/i.test(token);
+        || /(설계|자극|고객님|리뉴얼 전 제품|property value)/i.test(token)
+        || isIngredientAttributePropertyToken(token);
     });
   }
   return false;
+}
+
+function hasContextualReportedPropertyValue(value: string): boolean {
+  const text = value.replace(/\s+/g, " ").trim();
+  if (/^(?:확인\s*지표|확인\s*근거|측정\s*결과|시험\s*결과|reported\s*result)?\s*:?\s*[+\-−]?\d+(?:[.,]\d+)?\s*(?:%|％|배|시간|일|주|weeks?|days?|hours?)[.!。]?$/iu.test(text)) {
+    return false;
+  }
+  const hasMetricAndSubject = /(?:%|％|\d+(?:\.\d+)?\s*배|\d+(?:\.\d+)?\s*(?:시간|일|주|weeks?|days?|hours?))/iu.test(text)
+    && /(?:잔존|보습|수분|장벽|피부|탄력|주름|피부결|진정|회복|개선|감소|증가|상승|향상|완화|지속|도달|사용|도포|세정|시험|테스트|평가|대상|참여자|리뷰|평점|비교|대비|ex\s*vivo|clinical|study|test|assessment|participant|user|review|rating|retention|hydration|moisture|barrier|wrinkle|firmness|improv|increase|decrease|after|versus|\bvs\.?\b)/iu.test(text);
+  const hasEvidenceContext = /(?:인체\s*적용|자가\s*평가|소비자\s*평가|시험|테스트|측정|평가|임상|in\s*vitro|ex\s*vivo|clinical|study|test|assessment|instrumental|survey|home\s+usage|\d+\s*명|\d+\s*(?:women|men|users?|subjects?|participants?)|대상|참여자|사용자|표본|sample|participants?|subjects?|사용\s*(?:직후|전|후)|도포\s*(?:직후|전|후)|\d+(?:\.\d+)?\s*(?:시간|일|주|개월|weeks?|days?|hours?|months?)\s*(?:후|동안)?|비교|대비|versus|\bvs\.?\b|(?:before|after)\s+(?:use|application)|after\s+\d)/iu.test(text);
+  return hasMetricAndSubject && hasEvidenceContext;
+}
+
+function isIngredientAttributePropertyToken(value: string): boolean {
+  return /^(?:흡수력|유지력|지속력|보습력|전달력|침투력|밀착력|발림성|사용감|안정성|수분감|피부결|유분\s*컨트롤|피부\s*장벽|피부장벽|장벽보습|민감\s*피부|민감피부|건조\s*피부|견고한\s*구조|잔존\s*효과|보습\s*캡슐|캡슐\s*제형|비캡슐|연구|효능|효과|개선|완화|진정|absorption|absorbency|retention|persistence|delivery|penetration|spreadability|texture|finish|efficacy|effect|benefit|hydration|moisture|skin\s*barrier|sensitive\s*skin|dry\s*skin|oil\s*control|吸収力|持続力|使用感|保湿力|肌バリア|敏感肌|乾燥肌|効果|効能)$/iu.test(value.trim());
 }
 
 function repairFunctionalCertificationPropertyValue(value: string, locale: PdpGeoLocale): string {
@@ -3271,10 +3396,18 @@ function repairFunctionalCertificationPropertyValue(value: string, locale: PdpGe
   }
   const text = value.replace(/\s+/g, " ").trim();
   const signals = [
+    /극민감\s*(?:피부\s*)?테스트\s*완료/u.test(text) ? "극민감 피부 테스트 완료" : undefined,
+    /민감\s*피부\s*(?:대상\s*)?(?:피부\s*)?자극\s*테스트\s*완료/u.test(text) ? "민감 피부 자극 테스트 완료" : undefined,
+    /피부과\s*테스트\s*완료/u.test(text) ? "피부과 테스트 완료" : undefined,
+    /여드름성\s*피부\s*사용\s*적합\s*테스트\s*완료/u.test(text) ? "여드름성 피부 사용 적합 테스트 완료" : undefined,
+    /알러지\s*테스트\s*완료/u.test(text) ? "알러지 테스트 완료" : undefined,
+    /인체\s*안자극\s*테스트\s*완료/u.test(text) ? "인체 안자극 테스트 완료" : undefined,
+    /소아과\s*피부\s*테스트\s*완료/u.test(text) ? "소아과 피부 테스트 완료" : undefined,
     /민감\s*성?\s*피부\s*사용\s*적합\s*테스트\s*완료/u.test(text) ? "민감성 피부 사용 적합 테스트 완료" : undefined,
     /민감\s*피부\s*대상\s*사용성\s*테스트\s*완료/u.test(text) ? "민감 피부 대상 사용성 테스트 완료" : undefined,
     /민감\s*피부\s*대상\s*피부\s*자극\s*테스트\s*완료/u.test(text) ? "민감 피부 대상 피부 자극 테스트 완료" : undefined,
-    /피부\s*자극\s*테스트\s*완료/u.test(text) ? "피부 자극 테스트 완료" : undefined,
+    !/민감\s*피부\s*(?:대상\s*)?(?:피부\s*)?자극\s*테스트\s*완료/u.test(text)
+      && /피부\s*자극\s*테스트\s*완료/u.test(text) ? "피부 자극 테스트 완료" : undefined,
     /저자극\s*테스트\s*완료/u.test(text) ? "저자극 테스트 완료" : undefined,
     /안\s*자극\s*대체\s*시험\s*완료/u.test(text) ? "안자극 대체 시험 완료" : undefined,
     /하이포\s*알러지\s*테스트\s*완료/u.test(text) || /하이포알러지\s*테스트\s*완료/u.test(text) ? "하이포알러지 테스트 완료" : undefined,
@@ -3325,6 +3458,7 @@ function repairGeneratedText(
   repairs: PdpGeoValidationRepair[]
 ): string {
   let next = value
+    .replace(/^(?:(?:-{1,2}|=)>|→|⇒|➜|➔)\s*/u, "")
     .replace(/\\"/g, "\"")
     .replace(/\\[rn]/g, " ")
     .replace(/\u00a0/g, " ")
@@ -3347,6 +3481,7 @@ function repairGeneratedText(
 
   if (locale === "ko-KR") {
     next = next
+      .replace(/(들어가|함유되어|포함되어|배합되어|담겨|기재되어|표기되어)\s*(있는|없는)/gu, "$1 $2")
       .replace(/떠\s*있은/g, "떠 있는")
       .replace(/떠\s*있어야/g, "떠 있어야")
       .replace(/떠\s*있는\s+것이/g, "떠 있는 것이");
@@ -4032,12 +4167,25 @@ function rewriteKoreanMetaClaimForPublicCopy(value: string): string | undefined 
 
 function repairKoreanParticles(value: string): string {
   return value.replace(/([가-힣]{1,40})(을|를|은|는|이|가|와|과)(?=[\s,.!?。！？]|$)/g, (match, word: string, particle: string) => {
+    if (/(?:효과|결과|성과|피부과|소아과|치과|안과|외과|내과|학과|사과)$/u.test(match)) {
+      return match;
+    }
     if (word.length <= 1 && /[은는이가]/.test(particle)) {
+      return match;
+    }
+    if (/(?:있|없|하|되|같|싶)$/u.test(word) && /[은는]/u.test(particle)) {
+      return match;
+    }
+    if (!isKoreanDomainNounForParticleRepair(word)) {
       return match;
     }
     const replacement = chooseKoreanParticle(word, particle);
     return replacement ? `${word}${replacement}` : match;
   });
+}
+
+function isKoreanDomainNounForParticleRepair(value: string): boolean {
+  return /(?:수분감|사용감|보습력|흡수력|유지력|피부결|피부\s*장벽|장벽|수분|보습|효능|효과|성분|기술|제품|상품|크림|세럼|토너|로션|앰플|에센스|클렌저|고객|피부|루틴|단계|결과|내용|특징|기준|관리|탄력|진정|주름|광채|윤기|길이|사계절)$/u.test(value);
 }
 
 function chooseKoreanParticle(word: string, particle: string): string | undefined {

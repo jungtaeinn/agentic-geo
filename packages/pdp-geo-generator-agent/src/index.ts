@@ -7,6 +7,12 @@ export {
   planPdpGeoContent
 } from "./content-planner";
 export { ModelBackedProductNormalizer, normalizePdpProductWithAgent } from "./product-normalizer";
+export {
+  inferPdpEvidenceRoles,
+  sanitizePdpSemanticFacts,
+  type PdpEvidenceRoleInference,
+  type PdpEvidenceSemanticRole
+} from "./normalize";
 export { createPdpGeoGeneratorRestHandler, type PdpGeoGeneratorRestConfig, type PdpGeoGeneratorRestRequest } from "./rest";
 export { pdpGeoGeneratorRagManifest } from "./rag/manifest";
 export {
