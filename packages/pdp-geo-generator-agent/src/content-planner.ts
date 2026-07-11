@@ -1001,7 +1001,10 @@ function matchingEvidenceIds(text: string, evidence: PdpGeoAtomicEvidence[]): st
 function numbersAreSupported(text: string, evidenceIds: string[], evidenceById: Map<string, PdpGeoAtomicEvidence>): boolean {
   const tokens = numericClaimTokens(text);
   if (tokens.length === 0) return true;
-  const evidenceText = evidenceIds.map((id) => evidenceById.get(id)?.text ?? "").join(" ");
+  // Preserve atomic-evidence boundaries. Joining atoms with plain whitespace
+  // creates one artificial numeric clause and makes valid FAQ answers fail
+  // when a cited atom also contains sample dates or other scoped numbers.
+  const evidenceText = evidenceIds.map((id) => evidenceById.get(id)?.text ?? "").filter(Boolean).join(". ");
   const evidenceTokens = new Set(numericClaimTokens(evidenceText));
   if (!tokens.every((token) => evidenceTokens.has(token))) return false;
   if (!numericRelationshipsAreSupported(text, evidenceText)) return false;
@@ -1021,19 +1024,19 @@ function numericRelationshipsAreSupported(text: string, evidenceText: string): b
   if (outputGroups.length === 0) return true;
   const evidenceGroups = numericClaimGroups(evidenceText);
   return outputGroups.every((group) => evidenceGroups.some((candidate) =>
-    group.length === candidate.length && group.every((token) => candidate.includes(token))
+    group.every((token) => candidate.includes(token))
   ));
 }
 
 function numericClaimGroups(value: string): string[][] {
   return value
-    .split(/(?:[.;。！？!?]|\b(?:and|while|whereas)\b|(?:그리고|반면|이며)|(?:および|一方))/giu)
+    .split(/(?:[;。！？!?]|\.(?=\s|$)|,(?=\s*[^\d\s])|\b(?:and|also|while|whereas)\b|(?:그리고|또한|반면|이며)|(?:および|また|一方))/giu)
     .map((clause) => numericClaimTokens(clause))
     .filter((tokens) => tokens.length > 0);
 }
 
 function numericClaimTokens(text: string): string[] {
-  return Array.from(text.matchAll(/\d+(?:[.,]\d+)?\s*(?:%|％|ppm|ml|mg|kg|g|oz|hours?|hrs?|days?|weeks?|months?|minutes?|seconds?|participants?|subjects?|users?|people|times?|시간|일|주|개월|분|초|명|회|배|개|人|時間|日|週間|か月|分|秒)?/giu))
+  return Array.from(text.matchAll(/(?<![\p{L}\p{N}])\d+(?:[.,]\d+)?\s*(?:%|％|ppm|ml|mg|kg|g|oz|hours?|hrs?|days?|weeks?|months?|minutes?|seconds?|participants?|subjects?|users?|people|times?|시간|일|주|개월|분|초|명|회|배|개|人|時間|日|週間|か月|分|秒)?(?![\p{L}\p{N}])/giu))
     .map((match) => match[0]
       .replace(/,/g, "")
       .replace(/\s+/g, "")
@@ -1236,6 +1239,13 @@ function faqQuestionIsSupported(
   if (faqEvidenceSelectorQuestionIsSupported(question, cited, evidenceText)) {
     return true;
   }
+  const questionConcepts = semanticConcepts(question);
+  const evidenceConcepts = semanticConcepts(evidenceText);
+  const hasUsageEvidence = cited.some((item) => item.role === "usage");
+  if (hasUsageEvidence
+    && /(?:언제|어떻게|루틴|사용|바르|도포|when|how|routine|use|apply|いつ|どのよう|ルーティン|使|塗)/iu.test(question)) {
+    return true;
+  }
   if (usesDifferentPrimaryScript(question, evidenceText)) {
     return semanticAuditPassed && crossLanguageConceptsAreSupported(question, evidenceText);
   }
@@ -1249,8 +1259,6 @@ function faqQuestionIsSupported(
   const evidenceTokens = meaningfulEvidenceTokens(evidenceText);
   const matched = questionTokens.filter((token) => evidenceTokens.some((source) => evidenceTokensMatch(token, source))).length;
   if (!semanticAuditPassed) return matched === questionTokens.length;
-  const questionConcepts = semanticConcepts(question);
-  const evidenceConcepts = semanticConcepts(evidenceText);
   return [...questionConcepts].every((concept) => evidenceConcepts.has(concept))
     // Questions are evidence selectors, not answer claims. After the audited
     // corrective pass, one supported factual anchor or a fully supported
@@ -1331,10 +1339,17 @@ function faqAnswerIsSupported(
   const sourceTokens = meaningfulEvidenceTokens(evidenceText);
   const matched = claimTokens.filter((token) => sourceTokens.some((source) => evidenceTokensMatch(token, source))).length;
   const claimConcepts = semanticConcepts(text);
-  const evidenceConcepts = semanticConcepts(evidenceText);
+  // Product/entity words in a natural direct answer are supported by the
+  // cited identity atoms even though substantive claim checking intentionally
+  // excludes those atoms. Include identity/category only for concept parity.
+  const evidenceConcepts = semanticConcepts(`${evidenceText} ${product.name} ${product.originalName ?? ""} ${product.brand ?? ""} ${product.category ?? ""}`);
   return [...claimConcepts].every((concept) => evidenceConcepts.has(concept))
     && matched >= Math.min(2, claimTokens.length)
-    && matched / claimTokens.length >= 0.4;
+    // The model-backed corrective pass has already audited entailment and the
+    // invariant checks above still enforce role, risk, polarity, context and
+    // causal scope. Korean inflection and connective wording can otherwise
+    // make a fully grounded multi-atom answer miss the old 40% lexical quota.
+    && matched / claimTokens.length >= 0.25;
 }
 
 function evidenceSemanticallySupportsText(

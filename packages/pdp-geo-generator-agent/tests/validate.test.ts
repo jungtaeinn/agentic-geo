@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { validateAndRepairPdpGeoArtifacts } from "../src/validate";
+import { createPdpGeoContentHtml } from "../src/generate";
+import type { JsonObject } from "../src/types";
+import { validateAndRepairPdpGeoArtifacts, validatePdpGeoArtifacts } from "../src/validate";
 
 describe("validateAndRepairPdpGeoArtifacts", () => {
   it("deduplicates Korean HowTo steps by usage action", () => {
@@ -511,5 +513,131 @@ describe("validateAndRepairPdpGeoArtifacts FAQ and public text QA", () => {
     expect(description.match(/87\.3%/g)).toHaveLength(1);
     expect(description).toContain("60.5% 회복");
     expect(description).toMatch(/회복되었습니다\.?$/);
+  });
+});
+
+describe("read-only validation false-positive regression", () => {
+  it("keeps valid Korean product subjects and fl. oz. punctuation without cascading into an HTML mismatch", () => {
+    const description = "아토베리어365 크림은 건조하고 민감한 피부 고객을 위한 크림입니다. 이 제품은 고밀도 세라마이드 캡슐로 장벽 보습을 제공한다고 제시됩니다.";
+    const sections = {
+      productName: "아토베리어365 크림",
+      description,
+      quickFacts: "옵션은 2.70 fl. oz., 80 mL입니다.",
+      benefits: "피부 장벽 케어",
+      ingredients: "고밀도 세라마이드 캡슐",
+      howToUse: "",
+      faq: ""
+    };
+    const jsonLd: JsonObject = {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebPage",
+          "@id": "https://example.com/product#webpage",
+          name: "아토베리어365 크림",
+          description: "아토베리어365 크림 상품 페이지는 크림 상품을 소개합니다. 옵션은 2.70 fl. oz., 80 mL입니다.",
+          mainEntity: { "@id": "https://example.com/product#product" }
+        },
+        {
+          "@type": "Product",
+          "@id": "https://example.com/product#product",
+          name: "아토베리어365 크림",
+          description,
+          mainEntityOfPage: { "@id": "https://example.com/product#webpage" },
+          additionalProperty: [{
+            "@type": "PropertyValue",
+            name: "Reported details",
+            value: "완제품 인체적용시험에서 사용 직후 보습량은 사용 전 대비 2배 증가했습니다."
+          }]
+        }
+      ]
+    };
+    const result = validatePdpGeoArtifacts({
+      schemaMarkup: {
+        jsonLd,
+        scriptTag: `<script type="application/ld+json">${JSON.stringify(jsonLd, null, 2)}</script>`
+      },
+      content: {
+        sections,
+        html: createPdpGeoContentHtml(sections, "ko-KR")
+      },
+      fallbackProductName: sections.productName,
+      fallbackDescription: description,
+      locale: "ko-KR"
+    });
+
+    expect(result.validationWarnings).not.toEqual(expect.arrayContaining([
+      expect.stringMatching(/Korean particle or spacing was awkward/u),
+      expect.stringMatching(/Description evidence scope did not match/u),
+      expect.stringMatching(/Generated HTML was not trusted/u)
+    ]));
+  });
+
+  it("keeps an official localized-use caution in a suitability FAQ without treating it as a customer review", () => {
+    const question = "아토베리어365 크림은 어린아이부터 성인까지 사용할 수 있나요?";
+    const answer = "아토베리어365 크림은 민감하고 연약한 피부가 사용할 수 있게 개발된 제품으로, 0세부터 성인까지 누구나 사용 가능한 제품이라고 안내됩니다. 공식 상품 정보에서 피부 장벽 관리에 도움을 주는 제품으로 설명됩니다. 다만 피부 상태를 정확히 알기 어려운 경우에는 국소 부위에 먼저 사용해보는 것을 권장한다는 안내도 함께 제시됩니다.";
+    const faq = `Q. ${question}\nA. ${answer}`;
+    const sections = {
+      productName: "아토베리어365 크림",
+      description: "아토베리어365 크림은 민감하고 연약한 피부를 위한 보습 크림입니다.",
+      quickFacts: "",
+      benefits: "",
+      ingredients: "",
+      howToUse: "",
+      faq
+    };
+    const jsonLd: JsonObject = {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebPage",
+          "@id": "https://example.com/product#webpage",
+          name: "아토베리어365 크림",
+          mainEntity: { "@id": "https://example.com/product#product" }
+        },
+        {
+          "@type": "Product",
+          "@id": "https://example.com/product#product",
+          name: "아토베리어365 크림",
+          description: sections.description,
+          mainEntityOfPage: { "@id": "https://example.com/product#webpage" }
+        },
+        {
+          "@type": "FAQPage",
+          "@id": "https://example.com/product#faq",
+          isPartOf: { "@id": "https://example.com/product#webpage" },
+          about: { "@id": "https://example.com/product#product" },
+          mainEntity: [{
+            "@type": "Question",
+            name: question,
+            acceptedAnswer: {
+              "@type": "Answer",
+              text: answer
+            }
+          }]
+        }
+      ]
+    };
+    const result = validatePdpGeoArtifacts({
+      schemaMarkup: {
+        jsonLd,
+        scriptTag: `<script type="application/ld+json">${JSON.stringify(jsonLd, null, 2)}</script>`
+      },
+      content: {
+        sections,
+        html: createPdpGeoContentHtml(sections, "ko-KR")
+      },
+      fallbackProductName: sections.productName,
+      fallbackDescription: sections.description,
+      locale: "ko-KR"
+    });
+
+    expect(sections.faq).toContain("국소 부위에 먼저 사용해보는 것을 권장");
+    expect(result.validationWarnings).not.toEqual(expect.arrayContaining([
+      expect.stringMatching(/raw customer review wording/u),
+      expect.stringMatching(/Korean particle or spacing was awkward/u),
+      expect.stringMatching(/FAQ section items did not use supported Q\/A markers/u),
+      expect.stringMatching(/Generated HTML was not trusted/u)
+    ]));
   });
 });

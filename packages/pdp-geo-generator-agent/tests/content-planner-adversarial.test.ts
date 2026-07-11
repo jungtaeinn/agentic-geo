@@ -235,6 +235,128 @@ describe("adversarial evidence-bound content planning", () => {
     expect(result.warnings.join("\n")).not.toMatch(/numeric-relationship|question-entailment|answer-entailment/u);
   });
 
+  it("retains audited rich-product FAQ answers when cited metric atoms contain extra sample and study numbers", async () => {
+    const source = product({
+      name: "아토베리어365 크림",
+      description: "아토베리어365 크림은 건조하고 민감한 피부 고객을 위한 장벽 보습 크림입니다.",
+      category: "크림",
+      benefits: ["피부 장벽 관리", "수분 케어"],
+      ingredients: ["고밀도 세라마이드 캡슐", "롱체인 세라마이드", "링커 세라마이드"],
+      usage: ["아침과 저녁 세안 후 토너와 세럼 다음 단계에 피부에 골고루 펴 바릅니다."],
+      metrics: [
+        "㈜엘리드가 여성 32명을 대상으로 2023.02.02-2023.03.23 진행한 완제품 인체적용시험에서 사용 직후 보습량은 사용 전 대비 2배 증가했습니다.",
+        "완제품 인체적용시험에서 한 번 도포 후 보습 효과가 120시간 지속되는 것으로 확인되었습니다."
+      ],
+      faq: [{
+        question: "크림을 바르는데 알갱이가 느껴져요. 써도 되나요?",
+        answer: "크림에 함유된 캡슐은 바를 때 부드럽게 녹으며, 지속 사용에 불편감이 있으면 고객서비스센터로 연락하도록 안내합니다."
+      }],
+      semanticFacts: {
+        ingredients: ["고밀도 세라마이드 캡슐", "롱체인 세라마이드", "링커 세라마이드"],
+        benefits: ["피부 장벽 관리", "수분 케어"],
+        effects: [],
+        skinTypes: ["건조 피부", "민감 피부"],
+        usageSteps: ["아침과 저녁 세안 후 토너와 세럼 다음 단계에 피부에 골고루 펴 바릅니다."],
+        metricClaims: [],
+        evidenceSentences: [],
+        ingredientBenefitLinks: [],
+        safetyTests: ["민감 피부 자극 테스트 완료", "피부과 테스트 완료"]
+      }
+    });
+    const request = planningRequest(source, "ko-KR");
+    const ids = (...roles: string[]) => request.evidenceLedger
+      .filter((item) => roles.includes(item.role))
+      .map((item) => item.id);
+    const candidate = planPayload("ko-KR", {
+      faq: [
+        {
+          include: true,
+          question: "건조하고 민감한 피부 고객에게 아토베리어365 크림은 적합한가요?",
+          answer: "아토베리어365 크림은 건조하고 민감한 피부 고객이 피부 장벽 관리와 수분 케어를 고려할 때 선택할 수 있는 크림입니다.",
+          intent: "target-customer-suitability",
+          cep: "건조하고 민감한 피부의 장벽 보습",
+          evidenceIds: ids("identity", "description", "audience", "benefit"),
+          confidence: 0.95,
+          omitReason: ""
+        },
+        {
+          include: true,
+          question: "아토베리어365 크림의 보습량 증가 수치는 어떤 시험에서 나온 결과인가요?",
+          answer: "아토베리어365 크림은 여성 32명을 대상으로 진행한 완제품 인체적용시험에서 사용 직후 보습량이 사용 전 대비 2배 증가했습니다.",
+          intent: "official-measurement",
+          cep: "완제품 보습 시험 결과 확인",
+          evidenceIds: ids("identity", "metric"),
+          confidence: 0.95,
+          omitReason: ""
+        },
+        {
+          include: true,
+          question: "아토베리어365 크림의 주요 성분과 기술은 무엇인가요?",
+          answer: "아토베리어365 크림에는 고밀도 세라마이드 캡슐, 롱체인 세라마이드, 링커 세라마이드가 포함되어 있습니다.",
+          intent: "ingredient-technology",
+          cep: "세라마이드 캡슐 구성 확인",
+          evidenceIds: ids("identity", "ingredient"),
+          confidence: 0.95,
+          omitReason: ""
+        },
+        {
+          include: true,
+          question: "아토베리어365 크림은 아침과 저녁 루틴에서 언제 바르나요?",
+          answer: "아침과 저녁 세안 후 토너와 세럼 다음 단계에 피부에 골고루 펴 바릅니다.",
+          intent: "usage-order",
+          cep: "아침과 저녁 사용 순서",
+          evidenceIds: ids("identity", "usage"),
+          confidence: 0.95,
+          omitReason: ""
+        },
+        {
+          include: true,
+          question: "아토베리어365 크림을 바를 때 알갱이가 느껴져도 사용할 수 있나요?",
+          answer: "크림에 함유된 캡슐은 바를 때 부드럽게 녹으며, 지속 사용에 불편감이 있으면 고객서비스센터로 연락하도록 안내합니다.",
+          intent: "capsule-use-feel",
+          cep: "캡슐 사용감 확인",
+          evidenceIds: ids("identity", "faq"),
+          confidence: 0.95,
+          omitReason: ""
+        },
+        {
+          include: true,
+          question: "아토베리어365 크림은 어떤 피부 안전성 테스트를 완료했나요?",
+          answer: "민감 피부 자극 테스트와 피부과 테스트 완료가 표기되어 있습니다.",
+          intent: "completed-safety-tests",
+          cep: "민감 피부 테스트 완료 항목 확인",
+          evidenceIds: ids("identity", "source"),
+          confidence: 0.95,
+          omitReason: ""
+        }
+      ]
+    });
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      output: [{ content: [{ type: "output_text", text: JSON.stringify(candidate) }] }]
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await planPdpGeoContent(request, {
+      contentPlanning: {
+        enabled: true,
+        provider: "openai",
+        apiKey: "test-key",
+        model: "gpt-test"
+      }
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.plan.faq.map((item) => item.intent)).toEqual([
+      "target-customer-suitability",
+      "official-measurement",
+      "ingredient-technology",
+      "usage-order",
+      "capsule-use-feel",
+      "completed-safety-tests"
+    ]);
+    expect(result.warnings.join("\n")).not.toMatch(/numeric-relationship|answer-entailment/u);
+  });
+
   it("does not infer order from unmarked semantic action-stage facts", async () => {
     const source = product({
       semanticFacts: {

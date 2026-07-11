@@ -803,10 +803,14 @@ function createKoreanWebPageMetricSentences(product: PdpProductSignal): string[]
 }
 
 function formatKoreanWebPageMetricOutcome(claim: PdpSemanticMetricClaim): string | undefined {
-  const label = cleanSignal(claim.label ?? claim.subject ?? claim.metric ?? "").replace(/손상장벽/gu, "손상 장벽");
+  const rawLabel = cleanSignal(claim.label ?? claim.subject ?? claim.metric ?? "").replace(/손상장벽/gu, "손상 장벽");
   const value = cleanSignal([claim.value, claim.unit].filter(Boolean).join(""));
   const direction = cleanSignal(claim.direction ?? "");
-  if (!label || !value || !direction) return undefined;
+  if (!rawLabel || !value || !direction) return undefined;
+  const label = /지속/u.test(direction)
+    ? rawLabel
+    : rawLabel.replace(/\s*(증가|개선|감소|향상|회복|완화|상승)$/u, (suffix) => direction.includes(suffix.trim()) ? "" : suffix);
+  if (!label) return undefined;
   const timing = cleanSignal(claim.timing ?? "");
   const labelWithTiming = (timing && !label.includes(timing)
     && !numericClaimSignature(timing).some((token) => numericClaimSignature(label).includes(token))
@@ -2088,6 +2092,8 @@ function normalizeKoreanProductRelationSentence(value: string): string | undefin
     .replace(/피부장벽/gu, "피부 장벽")
     .replace(/장벽보습/gu, "장벽 보습")
     .replace(/강화시켜\s*줍니다$/u, "강화하는 데 도움을 줍니다")
+    .replace(/제공한다고\s*제시됩니다$/u, "제공하는 것으로 소개됩니다")
+    .replace(/효과적인\s*성분으로\s*제시됩니다$/u, "효과적인 성분으로 소개됩니다")
     .replace(/효과적인\s*성분(?:이라고|으로)?\s*(?:설명|안내)(?:되어\s*있습니다|됩니다|합니다)$/u, "효과적인 성분입니다")
     .replace(/([^.!?。！？]+?)(?:이라고|라고)\s*(?:설명|안내)되어\s*있습니다$/u, "$1입니다")
     .replace(/\s+/g, " ")
@@ -9146,7 +9152,8 @@ function createSuitabilityFaqAnswer(
       ?? formatKoreanFaqBenefitPhrase(product, locale, benefit);
     const ingredientPhrase = formatDescriptionList(selectLocalizedKeyIngredients(product, locale, 2), locale, 2);
     const studySentences = studyContext?.split(/(?<=[.!?。！？])\s+/u).filter(Boolean) ?? [];
-    const studyEvidence = studySentences.find((sentence) => /(?:인체\s*적용\s*시험|임상\s*시험|자가\s*평가|소비자\s*평가|\d+\s*명\s*대상)/u.test(sentence))
+    const studyEvidence = createKoreanFaqFinishedProductStudyEvidence(product)
+      ?? studySentences.find((sentence) => /(?:인체\s*적용\s*시험|임상\s*시험|자가\s*평가|소비자\s*평가|\d+\s*명\s*대상)/u.test(sentence))
       ?? studySentences[0];
     const ingredientRoleSentences = supportedLinks.map((link) =>
       `${appendKoreanTopicParticle(link.ingredient)} 공식 상품 정보에서 ${appendKoreanObjectParticle(link.benefit)} 돕는 성분·기술로 설명됩니다`);
@@ -9187,6 +9194,39 @@ function createSuitabilityFaqAnswer(
     supportedLink ? `${supportedLink.ingredient} supports ${supportedLink.benefit}` : undefined,
     studyContext
   ]));
+}
+
+function createKoreanFaqFinishedProductStudyEvidence(product: PdpProductSignal): string | undefined {
+  const candidates = (product.semanticFacts?.metricClaims ?? [])
+    .filter(hasSemanticClinicalClaimContext)
+    .filter((claim) => !isIngredientPerformanceOnlyMetricClaim(claim))
+    .map((claim, index) => ({
+      claim,
+      index,
+      outcome: formatKoreanWebPageMetricOutcome(claim),
+      score: Number(Boolean(cleanSignal(claim.baseline ?? claim.comparator ?? ""))) * 4
+        + Number(Boolean(cleanSignal(claim.sample ?? ""))) * 3
+        + Number(Boolean(cleanSignal(claim.period ?? ""))) * 2
+        + Number(Boolean(cleanSignal(claim.institution ?? "")))
+    }))
+    .filter((item): item is typeof item & { outcome: string } => Boolean(item.outcome))
+    .sort((left, right) => right.score - left.score || left.index - right.index);
+  const selected = candidates[0];
+  if (!selected) return undefined;
+  const { claim, outcome } = selected;
+  const institution = cleanSignal(claim.institution ?? "");
+  const period = cleanSignal(claim.period ?? "");
+  const sample = cleanSignal(claim.sample ?? "");
+  const method = cleanSignal(claim.method ?? "인체적용시험")
+    .replace(institution, "")
+    .replace(/^[,·:\s-]+|[,·:\s-]+$/g, "")
+    || "인체적용시험";
+  const finishedProductMethod = /완제품/u.test(method) ? method : `완제품 ${method}`;
+  return compactSentence([
+    institution
+      ? `${appendKoreanSubjectParticle(institution)} ${period ? `${period} 동안 ` : ""}${sample ? `${appendKoreanObjectParticle(sample)} 대상으로 ` : ""}진행한 ${finishedProductMethod}에서 ${outcome}`
+      : `${period ? `${period} 동안 ` : ""}${sample ? `${appendKoreanObjectParticle(sample)} 대상으로 ` : ""}진행한 ${finishedProductMethod}에서 ${outcome}`
+  ]);
 }
 
 function normalizeEnglishSupportObject(value: string): string {

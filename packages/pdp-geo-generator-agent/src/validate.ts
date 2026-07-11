@@ -2564,7 +2564,12 @@ function isKoreanUsageFaqReviewLeakSentence(value: string): boolean {
   if (!text || !/[가-힣]/u.test(text)) {
     return false;
   }
-  const hasReviewExpectation = /(?:아직|본격적으로|워낙\s*평|평이\s*좋|기대(?:가|되|하)|사용해\s*보|사용해보|써\s*보|써보|후기|리뷰|좋아요|더라구|더라고|구요|네요|어요)/u.test(text);
+  const isOfficialUseCaution = /(?:국소\s*부위|패치\s*테스트|피부\s*상태|피부\s*이상|자극|발진|붉어짐|전문의|고객\s*서비스\s*센터)/u.test(text)
+    && /(?:권장|먼저\s*사용해\s*보|테스트|사용을?\s*중단|상담|연락)/u.test(text);
+  if (isOfficialUseCaution) {
+    return false;
+  }
+  const hasReviewExpectation = /(?:아직|본격적으로|워낙\s*평|평이\s*좋|기대(?:가|되|하)|사용해\s*봤|사용해봤|사용해\s*보니|사용해보니|사용해\s*보고|사용해보고|써\s*봤|써봤|써\s*보니|써보니|써\s*보고|써보고|후기|리뷰|좋아요|더라구|더라고|구요|네요|어요)/u.test(text);
   if (hasReviewExpectation && !hasActionableApplicationVerb(text)) {
     return true;
   }
@@ -4060,7 +4065,12 @@ function isKoreanMetaNarrationFrame(value: string): boolean {
 }
 
 function koreanMetaNarrationSourceSubjectPattern(): string {
-  return "(?:상품\\s*(?:페이지|상세|정보)?|제품\\s*(?:자료|정보|의\\s*확인\\s*근거)?|확인(?:된)?\\s*(?:결과\\/정보|상품\\s*정보|가능한\\s*정보|근거|정보|결과)|성분\\/효능\\s*근거|근거|내용|자료|리뷰\\s*(?:기반\\s*)?표현)";
+  // Bare "상품" and "제품" are valid entity subjects (for example
+  // "이 제품은 ...로 소개됩니다"). Treat only explicit page/material
+  // frames as meta narration so sentence QA cannot corrupt valid copy.
+  // "공식 상품 정보에서 ...로 설명됩니다" is evidence attribution,
+  // not an internal generation frame, and must remain public copy.
+  return "(?:(?<!공식\\s)상품\\s*(?:페이지|상세|정보)|제품\\s*(?:자료|정보|의\\s*확인\\s*근거)|확인(?:된)?\\s*(?:결과\\/정보|상품\\s*정보|가능한\\s*정보|근거|정보|결과)|성분\\/효능\\s*근거|근거|내용|자료|리뷰\\s*(?:기반\\s*)?표현)";
 }
 
 function rewriteKoreanMetaNarrationPhrase(phrase: string, mode: "provide" | "describe"): string {
@@ -4272,6 +4282,9 @@ function normalizeRepeatedPunctuation(value: string): string {
 
 function addSentencePunctuationSpacing(_match: string, punctuation: string, offset: number, input: string): string {
   if (punctuation === "." && /\d/.test(input[offset - 1] ?? "") && /\d/.test(input[offset + 1] ?? "")) {
+    return punctuation;
+  }
+  if (/[,.;:!?。！？)\]}]/u.test(input[offset + 1] ?? "")) {
     return punctuation;
   }
   return `${punctuation} `;
