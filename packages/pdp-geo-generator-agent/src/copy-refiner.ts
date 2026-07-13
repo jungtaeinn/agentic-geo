@@ -1,4 +1,3 @@
-import { createPdpGeoContentHtml } from "./generate";
 import { formatPolicyChecklistPayload, formatPolicyComplianceRecap } from "./rag/policy-compiler";
 import type {
   JsonObject,
@@ -986,7 +985,7 @@ function applyCopyRefinement(
     content = {
       ...request.content,
       sections,
-      html: createPdpGeoContentHtml(sections, request.locale)
+      html: ""
     };
     evidence.push({ field: "content.description", source: "llm", value: summarizeRefinement(request.content.sections.description, nextContentDescription) });
     applied = true;
@@ -1035,7 +1034,7 @@ function applyCopyRefinement(
     content = {
       ...content,
       sections,
-      html: createPdpGeoContentHtml(sections, request.locale)
+      html: ""
     };
     if (nextQuickFacts && nextQuickFacts !== request.content.sections.quickFacts) {
       evidence.push({ field: "content.quickFacts", source: "llm", value: summarizeRefinement(request.content.sections.quickFacts, nextQuickFacts) });

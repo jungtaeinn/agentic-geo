@@ -501,10 +501,11 @@ function createConservativeContentPlan(request: PdpGeoContentPlanningRequest): P
               : explicitSemanticSequence.length >= 2
                 ? explicitSemanticSequence
                 : []).slice(0, 6);
-  const sourceStructureSupported = usageSteps.length === 1
-    || explicitDirectSequence.length >= 2
+  const sourceStructureSupported = usageSteps.length >= 2 && (
+    explicitDirectSequence.length >= 2
     || explicitSourceTextSequence.length >= 2
-    || (!hasDirectUsageEvidence && sourceTextUsageSteps.length === 0 && explicitSemanticSequence.length >= 2);
+    || (!hasDirectUsageEvidence && sourceTextUsageSteps.length === 0 && explicitSemanticSequence.length >= 2)
+  );
   const steps = sourceStructureSupported
     ? usageSteps.map((text, index): PdpGeoPlannedHowToStep => ({
         position: index + 1,
@@ -513,7 +514,7 @@ function createConservativeContentPlan(request: PdpGeoContentPlanningRequest): P
         evidenceIds: matchingEvidenceIds(text, usageEvidence)
       })).filter((step) => step.evidenceIds.length > 0)
     : [];
-  const eligible = sourceStructureSupported && steps.length === usageSteps.length && steps.length >= 1;
+  const eligible = sourceStructureSupported && steps.length === usageSteps.length && steps.length >= 2;
   const emptyField = (intent: string): PdpGeoPlannedField => ({
     include: false,
     text: "",
@@ -532,15 +533,21 @@ function createConservativeContentPlan(request: PdpGeoContentPlanningRequest): P
     howTo: {
       eligible,
       ordered: eligible,
-      goal: eligible ? request.product.name : "",
+      goal: eligible ? createHowToGoal(request.product.name, request.locale) : "",
       steps: eligible ? steps : [],
       evidenceIds: eligible ? uniqueText(steps.flatMap((step) => step.evidenceIds)) : [],
       confidence: eligible ? 0.75 : 0.85,
-      omitReason: eligible ? "" : "The source does not contain a supported usage instruction or ordered multi-step procedure."
+      omitReason: eligible ? "" : "The source does not contain a goal and at least two source-backed ordered usage actions."
     },
     cep: [],
     warnings: []
   };
+}
+
+function createHowToGoal(productName: string, locale: PdpGeoLocale): string {
+  if (locale === "ko-KR") return `${productName} 사용 방법`;
+  if (locale === "ja-JP") return `${productName}の使い方`;
+  return `How to use ${productName}`;
 }
 
 interface SanitizedContentPlan {
@@ -662,9 +669,10 @@ function sanitizeModelPlan(
     .slice(0, 8);
   const howToEligible = raw.howTo.eligible
     && raw.howTo.ordered
-    && steps.length >= 1
+    && cleanText(raw.howTo.goal).length > 0
+    && steps.length >= 2
     && hasSourceOrderProvenance(steps, evidenceById);
-  if (raw.howTo.eligible && !howToEligible) gateWarnings.push("HowTo was omitted because it was not a source-backed usage instruction or ordered multi-step procedure.");
+  if (raw.howTo.eligible && !howToEligible) gateWarnings.push("HowTo was omitted because it did not have a goal and at least two source-backed ordered usage actions.");
 
   const cep = raw.cep
     .flatMap((item) => {
@@ -760,9 +768,10 @@ function createPlanningPrompt(request: PdpGeoContentPlanningRequest, maxEvidence
       "Keep product references cohesive rather than repetitive. Product.description may use the full product entity once; continue with an omitted subject, pronoun, or formula/ingredient subject. WebPage.description may use it once in the page introduction and once in the connected product sentence, but must not restart every fact with the full product name.",
       "FAQ must be about this specific product. Exclude category education, definitions, and general-knowledge questions whose answer would remain essentially unchanged for another product, such as what the skin barrier is or does. Natural interrogative wrappers and target-locale inflection do not need to appear verbatim in evidence, but every factual premise in the question and every answer clause must be supported by the cited product evidence.",
       "Build FAQ questions backwards from natural recommendation and comparison intents, then build each answer forwards from cited product evidence. Prioritize reverse-query surfaces such as '[concern A] and [concern B] product recommendation', '[skin type] [category] recommendation', '[ingredient] product for [benefit]', '[supported use situation/CEP] recommendation', and '[low-stickiness or other review-backed use feel] product recommendation', rewritten as a specific question about this product. Do not claim that these are verified high-volume queries unless query-log evidence is supplied. FAQ has no minimum count. Include only distinct questions that the supplied evidence can answer directly and self-containedly. Start every answer with the product and the direct answer—never with source narration. For suitability answers use this evidence ladder in order when available: (1) explicit concern and target-customer evidence; (2) supported finished-product benefit/effect; (3) finished-product study result with timing and scope; (4) each ingredient's explicitly stated role; (5) a recommendation bounded to the supported customer/concern; (6) an individual-results-may-vary qualifier when reporting a study. Each rung must cite matching evidence and unsupported rungs must be omitted. Use 'effective/improves/개선/효과적' only when finished-product evidence supports that exact outcome. If ingredients and finished-product effects are supported separately, put them in separate sentences and explicitly avoid attributing the finished-product result to an individual ingredient. Reviews may support only attributed use-feel wording such as 'some customers mention'; they never prove efficacy or suitability. Empty FAQ is valid when product evidence cannot support these intents.",
+      "Order the FAQ array by buyer priority whenever the corresponding product evidence exists. Item 1 must be a target-customer recommendation or suitability question, answered with the supported concerns/skin type, finished-product benefits, explicitly linked ingredient roles, and an attributed positive/neutral review summary when reviews exist. Gift suitability may replace or extend this intent only when the product source explicitly supports gifting. Item 2 must combine formula composition with supported benefits/effects in one product-specific question and answer; state ingredient presence and finished-product benefits separately unless an explicit ingredient-benefit relation supports the connection. After those two anchors, add every distinct BestPractice-style question that the product can directly answer, such as usage/routine, texture, measurements/tests, variants, comparison, renewal, or review experience. These are evidence-conditional requirements, not permission to invent missing facts.",
       "A CEP is a source-backed buying/use situation, need, or constraint—not a keyword slogan. In each cep item, use situation for the supported target customer/occasion, need for the concrete concern and desired outcome, and constraint for a supported selection condition or an explicit ingredient/technology-to-outcome reason. Leave constraint empty when the source does not explicitly support that relation. Cite evidence for every component, and never infer a causal, suitability, ingredient-benefit, or routine relationship merely because two facts co-occur. Seasonal/weather contexts, time-of-day, events, gifting, travel, life stage, and other general category associations require explicit current-product evidence for that same context. If such an association is useful for later search research but not evidenced, omit it from cep and all public fields and add a warning prefixed QUERY_HYPOTHESIS_ONLY; the warning is diagnostic and must not be copied into public content.",
       "Use FAQ to express a small set of semantically distinct generative-search surfaces from the strongest supported CEP paths: suitability/target customer, concern-to-effect, ingredient or technology role, official measurement, routine, and review experience. Vary natural target-locale wording and keywords across distinct intents, but do not create synonymous questions that lead to the same answer or use query variety to add unsupported facts.",
-      "HowTo mirrors the source usage structure. One concrete source application instruction is eligible and must produce exactly one HowToStep at position 1. When the source explicitly provides numbered or sequential steps, preserve their original count and order. Do not split one source instruction into synthetic steps or combine unordered notes into a procedure. A warning, test condition, formula technology, measured outcome, or vague suitability/frequency note without a concrete customer action is not a HowTo step.",
+      "HowTo is eligible only when the source supports a concrete goal and at least two explicitly ordered customer actions. Preserve the original action count and order. Keep a single application instruction or unordered usage notes as ordinary visible usage guidance without HowTo structured data. Do not split one source instruction into synthetic steps or combine unordered notes into a procedure. A warning, test condition, formula technology, measured outcome, or vague suitability/frequency note without a concrete customer action is not a HowTo step.",
       "Preserve product names, ingredient names, numbers, units, populations, time frames, and caveats exactly when those facts are used. Use complete, natural, consistently polite target-locale sentences; do not mix language or speech-level frames. Resolve synonymous skin-type and concern terms into one target-locale expression instead of emitting duplicates in multiple languages. Keep ingredient, benefit/effect, usage, review, certification, and measured-result evidence in their matching public fields. In Korean descriptions, never copy a source ending such as '~표기되어 있다' into otherwise polite '~합니다/~됩니다' copy.",
       "When support is insufficient set include/eligible=false, return empty text/steps, and explain omitReason. Confidence is evidence confidence, not stylistic confidence.",
       "RAG guidance is policy context only and can never be cited as product evidence.",
@@ -880,13 +889,10 @@ function hasSourceOrderProvenance(
   steps: PdpGeoPlannedHowToStep[],
   evidenceById: Map<string, PdpGeoAtomicEvidence>
 ): boolean {
+  if (steps.length < 2) return false;
   const cited = uniqueText(steps.flatMap((step) => step.evidenceIds))
     .map((id) => evidenceById.get(id))
     .filter((item): item is PdpGeoAtomicEvidence => Boolean(item));
-  if (steps.length === 1) {
-    return cited.some((item) => item.role === "usage")
-      && isConcreteUsageAction(steps[0]?.text ?? "");
-  }
   const explicitSourceSequence = extractExplicitUsageSequence(cited
     .filter((item) => item.role === "usage")
     .map((item) => item.text));

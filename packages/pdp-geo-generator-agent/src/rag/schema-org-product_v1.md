@@ -32,7 +32,7 @@ Use schema.org JSON-LD to represent PDP entities and grounded facts consistently
 
 - Use `FAQPage.mainEntity` only for final question-and-answer pairs that are also visible and directly supported by product evidence. There is no minimum item count; omit the node when no item passes.
 - Google stopped showing FAQ rich results on 2026-05-07. Retain `FAQPage` here only as schema.org-valid, visible product Q/A semantics for downstream consumers; do not describe it as Google FAQ rich-result optimization or as a citation guarantee.
-- Mirror concrete source usage in `HowTo.step`: one application instruction becomes one step, while an explicitly ordered sequence preserves its original step count and order. Omit HowTo for warnings, test conditions, vague frequency/compatibility notes, or other text without a concrete customer action.
+- Use `HowTo.step` only when the source supports a concrete goal and at least two explicitly ordered customer actions; preserve the original step count and order. Keep one application instruction as ordinary visible usage guidance without HowTo structured data. Omit HowTo for warnings, test conditions, vague frequency/compatibility notes, or other text without a concrete customer action.
 - Use `BreadcrumbList` when URL, brand, category, or product hierarchy exists.
 
 ## 7. Public Safety

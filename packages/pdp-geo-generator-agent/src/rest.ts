@@ -409,11 +409,11 @@ const failureStepMessages: Record<PdpGeoGenerationStageId, Pick<PdpGeoGeneration
   },
   generate: {
     title: "GEO 산출물 생성 및 최종 교정",
-    description: "JSON-LD/HTML 생성 후 선택적으로 별도 fluency-only proofreading 모델 호출"
+    description: "JSON-LD 생성 후 선택적으로 별도 fluency-only proofreading 모델 호출"
   },
   validate: {
     title: "문법 검증",
-    description: "JSON-LD와 HTML 구조 검증"
+    description: "JSON-LD 구조와 공개 문구 검증"
   },
   repair: {
     title: "검증 결과 기록",

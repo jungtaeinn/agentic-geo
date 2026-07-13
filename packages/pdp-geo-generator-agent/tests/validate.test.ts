@@ -184,7 +184,7 @@ describe("validateAndRepairPdpGeoArtifacts", () => {
     const howTo = graph.find((node) => node["@type"] === "HowTo");
     const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
 
-    expect((howTo?.step as Array<Record<string, unknown>>)).toHaveLength(1);
+    expect(howTo).toBeUndefined();
     expect(repaired.content.sections.howToUse).toBe("1. 손바닥에 적당량을 덜어 피부결을 따라 부드럽게 펴 바릅니다");
     expect(repaired.content.sections.howToUse).not.toMatch(/하이드로퀄|포뮬러 기술을 사용|PHA 워터에 고밀도 세라마이드 캡슐/);
     expect(repaired.content.sections.howToUse).not.toMatch(/피부 장벽 유사 성분|바르는 순간|세라마이드 캡슐 세라마이드/);
@@ -249,7 +249,7 @@ describe("validateAndRepairPdpGeoArtifacts", () => {
     const graph = repaired.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
     const howTo = graph.find((node) => node["@type"] === "HowTo");
 
-    expect((howTo?.step as Array<Record<string, unknown>>)).toHaveLength(1);
+    expect(howTo).toBeUndefined();
     expect(repaired.content.sections.howToUse).toBe("1. 手のひらに適量を取り、肌になじませます");
     expect(repaired.content.sections.howToUse).not.toMatch(/ハイドロクオールフローティングフォーミュラ|処方を使用/);
     expect(repaired.validationRepairs.some((repair) => repair.field === "HowTo.step.text")).toBe(true);
@@ -573,6 +573,73 @@ describe("read-only validation false-positive regression", () => {
     ]));
   });
 
+  it("keeps 내용물 and 내용량 copy without cascading FAQ and HTML findings", () => {
+    const question = "아토베리어365 크림은 아침저녁 루틴에서 언제 바르나요?";
+    const answer = "아토베리어365 크림은 아침과 저녁 세안 후 토너와 세럼 단계 이후에 사용하도록 안내됩니다. 적당량의 내용물을 덜어 피부에 골고루 펴 바르고, 부드럽게 피부를 눌러 흡수를 도와주는 사용법이 제시됩니다.";
+    const sections = {
+      productName: "아토베리어365 크림",
+      description: "아토베리어365 크림은 건조하고 민감한 피부 고객을 위한 크림입니다.",
+      quickFacts: "내용량은 80 mL로 구성됩니다.",
+      benefits: "",
+      ingredients: "",
+      howToUse: "",
+      faq: `Q. ${question}\nA. ${answer}`
+    };
+    const jsonLd: JsonObject = {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebPage",
+          "@id": "https://example.com/product#webpage",
+          name: sections.productName,
+          mainEntity: { "@id": "https://example.com/product#product" },
+          hasPart: [{ "@id": "https://example.com/product#faq" }]
+        },
+        {
+          "@type": "Product",
+          "@id": "https://example.com/product#product",
+          name: sections.productName,
+          description: sections.description,
+          mainEntityOfPage: { "@id": "https://example.com/product#webpage" }
+        },
+        {
+          "@type": "FAQPage",
+          "@id": "https://example.com/product#faq",
+          isPartOf: { "@id": "https://example.com/product#webpage" },
+          about: { "@id": "https://example.com/product#product" },
+          mainEntity: [{
+            "@type": "Question",
+            name: question,
+            acceptedAnswer: { "@type": "Answer", text: answer }
+          }]
+        }
+      ]
+    };
+    const result = validatePdpGeoArtifacts({
+      schemaMarkup: {
+        jsonLd,
+        scriptTag: `<script type="application/ld+json">${JSON.stringify(jsonLd, null, 2)}</script>`
+      },
+      content: {
+        sections,
+        html: createPdpGeoContentHtml(sections, "ko-KR")
+      },
+      fallbackProductName: sections.productName,
+      fallbackDescription: sections.description,
+      locale: "ko-KR"
+    });
+
+    expect(result.validationWarnings).not.toEqual(expect.arrayContaining([
+      expect.stringMatching(/Korean particle or spacing was awkward/u),
+      expect.stringMatching(/Generated HTML was not trusted/u)
+    ]));
+    expect(result.validationFindings.some((finding) =>
+      finding.field === "FAQPage.mainEntity.acceptedAnswer.text"
+      || finding.field === "content.sections.faq"
+      || finding.field === "content.html"
+    )).toBe(false);
+  });
+
   it("keeps an official localized-use caution in a suitability FAQ without treating it as a customer review", () => {
     const question = "아토베리어365 크림은 어린아이부터 성인까지 사용할 수 있나요?";
     const answer = "아토베리어365 크림은 민감하고 연약한 피부가 사용할 수 있게 개발된 제품으로, 0세부터 성인까지 누구나 사용 가능한 제품이라고 안내됩니다. 공식 상품 정보에서 피부 장벽 관리에 도움을 주는 제품으로 설명됩니다. 다만 피부 상태를 정확히 알기 어려운 경우에는 국소 부위에 먼저 사용해보는 것을 권장한다는 안내도 함께 제시됩니다.";
@@ -639,5 +706,53 @@ describe("read-only validation false-positive regression", () => {
       expect.stringMatching(/FAQ section items did not use supported Q\/A markers/u),
       expect.stringMatching(/Generated HTML was not trusted/u)
     ]));
+  });
+
+  it("keeps an attributed review summary in a target-customer FAQ answer", () => {
+    const question = "건조하고 민감한 피부 고객에게 아토베리어365 크림은 적합한가요?";
+    const answer = "아토베리어365 크림은 건조하고 민감한 피부 고객을 위한 크림입니다. 공식 상품 정보에서 피부 장벽 관리와 수분 케어에 도움을 주는 제품으로 소개됩니다. 고객 리뷰에서는 촉촉한 사용감과 흡수감이 언급되어 사용감과 만족도를 판단할 때 참고할 수 있습니다.";
+    const repaired = validateAndRepairPdpGeoArtifacts({
+      locale: "ko-KR",
+      fallbackProductName: "아토베리어365 크림",
+      fallbackDescription: "아토베리어365 크림은 건조하고 민감한 피부 고객을 위한 크림입니다.",
+      schemaMarkup: {
+        jsonLd: {
+          "@context": "https://schema.org",
+          "@graph": [{
+            "@type": "Product",
+            name: "아토베리어365 크림",
+            description: "아토베리어365 크림은 건조하고 민감한 피부 고객을 위한 크림입니다."
+          }, {
+            "@type": "FAQPage",
+            mainEntity: [{
+              "@type": "Question",
+              name: question,
+              acceptedAnswer: { "@type": "Answer", text: answer }
+            }]
+          }]
+        },
+        scriptTag: ""
+      },
+      content: {
+        sections: {
+          productName: "아토베리어365 크림",
+          description: "아토베리어365 크림은 건조하고 민감한 피부 고객을 위한 크림입니다.",
+          quickFacts: "",
+          benefits: "피부 장벽 관리, 수분 케어",
+          ingredients: "고밀도 세라마이드 캡슐",
+          howToUse: "",
+          faq: `Q. ${question}\nA. ${answer}`
+        },
+        html: ""
+      }
+    });
+
+    const faqPage = (repaired.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>)
+      .find((node) => node["@type"] === "FAQPage") as Record<string, any>;
+    const repairedAnswer = String(faqPage.mainEntity[0].acceptedAnswer.text);
+    expect(repairedAnswer).toContain("고객 리뷰에서는 촉촉한 사용감과 흡수감이 언급되어");
+    expect(repaired.validationRepairs.some((repair) =>
+      repair.issue === "FAQ answer mixed customer-review language into a product-detail answer."
+    )).toBe(false);
   });
 });

@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { createPdpGeoContentHtml } from "./generate";
 import { validatePdpGeoArtifacts } from "./validate";
 import type {
   JsonObject,
@@ -1611,7 +1610,7 @@ function applyAcceptedEdits(
   const content = {
     ...input.content,
     sections,
-    html: createPdpGeoContentHtml(sections, input.locale)
+    html: ""
   };
   return { schemaMarkup, content };
 }

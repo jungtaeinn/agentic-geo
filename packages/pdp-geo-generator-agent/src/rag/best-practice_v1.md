@@ -233,7 +233,7 @@ FAQ answers should start with the direct answer, then add one short cited eviden
 
 ## HowTo Best Practice
 
-Create HowTo from concrete source directions without changing their structure. One application instruction becomes one HowToStep; an explicitly ordered multi-action procedure preserves its original count and order. A frequency note, warning, amount, routine position, test condition, or compatibility note without a concrete action remains ordinary usage guidance. Remove source section labels such as "How to use", but do not split, merge, or invent actions, and do not add benefits, ingredients, or texture claims to a step.
+Create HowTo only from a concrete goal and at least two explicitly ordered source actions without changing their structure. Preserve the ordered procedure's original count and order; keep one application instruction as ordinary visible usage guidance without HowTo structured data. A frequency note, warning, amount, routine position, test condition, or compatibility note without a concrete action also remains ordinary usage guidance. Remove source section labels such as "How to use", but do not split, merge, or invent actions, and do not add benefits, ingredients, or texture claims to a step.
 
 Good step shape:
 

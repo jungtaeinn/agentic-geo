@@ -4,7 +4,7 @@
 
 Generate GEO-optimized PDP artifacts from arbitrary product JSON.
 
-Return two user-facing artifacts: schema markup as JSON-LD and grouped HTML content for PDP sections.
+Return one user-facing artifact: schema markup as JSON-LD. HTML CONTENT is currently disabled; internal section copy may support planning and proofreading but must not be rendered or scored.
 
 ## 2. RAG Orchestration
 
@@ -27,7 +27,7 @@ Return two user-facing artifacts: schema markup as JSON-LD and grouped HTML cont
 - Treat field routing as a reasoning task before copywriting. First decide whether each source sentence is primarily product identity, benefit/effect, ingredient/technology, usage direction, review/customer expression, metric/evidence, FAQ, commerce, or page chrome.
 - After field routing, construct only evidence-backed relations between target concern, ingredient/technology, benefit/effect, measured evidence, and review preference. A co-occurrence on the same page is not enough to claim that an ingredient causes an effect.
 - Use those relations to infer distinct suitability, concern/effect, ingredient-role, evidence, routine, and review query intents. General semantic expansions may be retained as diagnostic query hypotheses, but they cannot become public product facts unless source or review evidence supports the added occasion or concern.
-- `HowTo.step` must mirror concrete source directions: one application instruction becomes one step, and an explicit multi-step sequence preserves its original count and order. Frequency, amount, routine position, warning, test, or compatibility text without a concrete action is not HowTo. Do not place benefit claims, clinical metrics, ingredient explanations, review summaries, or product-result sentences in HowTo.
+- `HowTo.step` requires a concrete goal and at least two explicitly ordered source actions, preserving their original count and order. Keep one application instruction as ordinary visible usage guidance without HowTo structured data. Frequency, amount, routine position, warning, test, or compatibility text without a concrete action is not HowTo. Do not place benefit claims, clinical metrics, ingredient explanations, review summaries, or product-result sentences in HowTo.
 - `ingredients` may use only ingredient names, formula technologies, INCI/full-ingredient lists, and source-backed ingredient-role explanations. Do not place customer review language, routine context, search-intent phrases, benefit summaries, or clinical result text in the ingredient section.
 - `benefits` may use only source-backed finished-product outcomes, effects, and concise evidence topics. `positiveNotes` may include review experience only when the wording remains explicitly review-attributed. Do not copy full clinical sentences into benefit bullets; route full metrics to `Reported details` or evidence FAQ.
 - `FAQPage.mainEntity` may use product-detail evidence such as benefits, ingredients/technology, usage, suitability, comparisons, metrics, and repeated positive or neutral review use-feel language. Do not create FAQ questions or answers from negative reviews, fragrance complaints, ratings, reviewer metadata, or raw review snippets.
@@ -55,4 +55,4 @@ Return two user-facing artifacts: schema markup as JSON-LD and grouped HTML cont
 - Do not expose internal labels such as evidence signal, review signals, technology signals, GEO, RAG, schema optimization, or citation optimization inside public JSON-LD or PDP content.
 - Keep Product.additionalProperty values atomic and single-line. Do not place a multiline Quick facts block in Product schema, and do not expose escaped newline markers such as \n as visible content.
 - Apply locale and market terminology rules before finalizing text.
-- Validate JSON-LD syntax, schema.org type/property usage, and safe HTML before returning artifacts.
+- Validate JSON-LD syntax, schema.org type/property usage, graph integrity, and public schema copy before returning the artifact.

@@ -17,7 +17,7 @@ export interface PdpGeoGeneratorRagProfile {
 export const defaultPdpGeoGeneratorAnalysisPrompt = [
   "Generate GEO-optimized PDP artifacts from arbitrary product JSON.",
   "Use the typed RAG index as the source of truth for document-level and content-unit routing before selecting schema, E-E-A-T, CEP, GEO research, official docs, locale, or best-practice chunks.",
-  "Return two user-facing artifacts: schema markup as JSON-LD and grouped HTML content for PDP sections.",
+  "Return one user-facing artifact: schema markup as JSON-LD. HTML CONTENT is currently disabled and must not be rendered or scored.",
   "Normalize source product JSON into product facts before generation; do not require a fixed extractor schema.",
   "When a product normalization agent is configured, use the deterministic normalized product only as a bootstrap and let the agent infer source-backed field routing from raw JSON, fieldMapping, hints, and policy documents before review keyword normalization.",
   "When bootstrap usage already contains actionable directions, preserve its source item count and order; a normalization model must not split, merge, reorder, or paraphrase those instructions.",
@@ -38,13 +38,13 @@ export const defaultPdpGeoGeneratorAnalysisPrompt = [
   "Build FAQ questions backwards from natural recommendation/comparison intents, then write answers forwards from evidence: product and target concern first, finished-product effect next, and an ingredient role only when an explicit ingredient-benefit link exists. Do not strengthen neutral evidence into an efficacy or recommendation claim.",
   "Key ingredients must be named substances, INCI entries, identifiable complexes, or proprietary ingredient technologies; absorption, retention, persistence, texture, skin type, efficacy, and research duration are attributes or evidence context, not ingredients.",
   "Reported details must bind every number to a subject/outcome and preserve available method, comparison, duration, population, and caveat context. Drop isolated numeric tokens and do not repeat labels such as 확인 지표 or duplicate the same metric claim.",
-  "HowTo mirrors source usage cardinality: one concrete source-backed application instruction becomes one HowToStep, while an explicitly ordered multi-step procedure preserves its original count and order. Vague frequency, warning, test, or compatibility notes are not HowTo.",
+  "HowTo requires a concrete goal and at least two explicitly ordered source-backed customer actions. Preserve the source action count and order; keep a single instruction or unordered usage notes as ordinary visible usage guidance without HowTo structured data.",
   "Prioritize RAG chunks that improve OCR sentence diagnostics, positive or neutral customer-review FAQ intent, WebPage.description versus Product.description separation, structured claim support, source-faithful HowTo eligibility, benefit/effect phrasing, and public wording.",
   "Do not expose internal labels such as evidence signal, review signals, technology signals, GEO, RAG, schema optimization, or citation optimization inside public JSON-LD or PDP content.",
   "Use only source product data and selected RAG guidance. Do not invent clinical, medical, or regulatory claims.",
   "Use official AI/search platform docs RAG to choose retrieval, embedding, grounding, structured data, and answer eligibility constraints.",
   "Apply locale and market terminology rules before finalizing text.",
-  "Validate JSON-LD syntax, schema.org type/property usage, and safe HTML before returning artifacts."
+  "Validate JSON-LD syntax, schema.org type/property usage, graph integrity, and public schema copy before returning the artifact."
 ].join("\n");
 
 export const defaultPdpGeoGeneratorRagProfile: PdpGeoGeneratorRagProfile = {
@@ -70,7 +70,7 @@ export const defaultPdpGeoGeneratorRagProfile: PdpGeoGeneratorRagProfile = {
         "- Use `positiveNotes` for product highlights, benefit statements, and review-backed positive points.",
         "- Use `FAQPage.mainEntity` only for distinct, direct, source-backed question-and-answer pairs that are also visible. There is no minimum count; omit the node when none pass.",
         "- Google stopped showing FAQ rich results on 2026-05-07. Keep FAQPage only as schema.org-valid visible Q/A semantics; it is not a current Google FAQ rich-result tactic or a citation guarantee.",
-        "- Use `HowTo.step` for concrete source usage: one application instruction becomes one step, and an explicit multi-step sequence preserves its source count and order. Do not convert warnings, tests, or unordered notes into steps.",
+        "- Use `HowTo.step` only for a concrete goal with at least two explicitly ordered source actions, preserving their count and order. Keep a single instruction as ordinary visible usage guidance, and do not convert warnings, tests, or unordered notes into steps.",
         "- Use `BreadcrumbList` when URL, brand, category, or product hierarchy exists.",
         "- Keep JSON-LD aligned with content visible in the generated HTML. Do not mark up hidden, irrelevant, or misleading facts.",
         "- Do not expose internal diagnostic labels such as \"evidence signal\", \"review signals\", \"technology signals\", \"GEO\", \"RAG\", or \"schema optimization\" in JSON-LD values.",
@@ -185,7 +185,7 @@ export const defaultPdpGeoGeneratorRagProfile: PdpGeoGeneratorRagProfile = {
         "- Product.additionalProperty: use objective CEP attributes such as skin type, concern, texture, ingredient, usage timing, size, technology, format, or review-derived recommendation context when repeated positive reviews support the customer situation. Put customer situations and question wording in `value` or `FAQPage.mainEntity`, not as free-form `PropertyValue.name`.",
         "- Product.positiveNotes: use source-backed benefit and review-backed positive points.",
         "- FAQPage.mainEntity: include a likely category-entry question only when product evidence directly supports a self-contained answer; zero questions is valid.",
-        "- HowTo.step: use one step for one concrete source instruction; for an explicit sequence preserve every source-backed step and its order. CEP context cannot invent actions.",
+        "- HowTo.step: require at least two explicitly ordered source-backed actions and preserve every step and its order. Keep single instructions outside HowTo; CEP context cannot invent actions.",
         "",
         "## Partial Update Query Planning",
         "",
@@ -236,7 +236,7 @@ export const defaultPdpGeoGeneratorRagProfile: PdpGeoGeneratorRagProfile = {
         "",
         "- Do not reuse the same text for WebPage.description and Product.description. WebPage is a compact but sufficiently specific page/brand/supported-information/scope summary; Product is the detailed five-part connected product narrative. Keep detailed methods/disclosures and raw metric strings in dedicated properties.",
         "- FAQPage has no quota. Select only non-overlapping customer intents with direct product-evidence answers, and omit the node when no pair passes.",
-        "- Keep usage source-faithful: one concrete source instruction becomes one HowTo step, and explicit multiple steps retain their count and order. Remove labels but do not split, merge, or invent actions.",
+        "- Keep usage source-faithful: HowTo requires at least two explicit ordered actions and retains their count and order. Keep a single instruction as visible usage copy without HowTo. Remove labels but do not split, merge, or invent actions.",
         "",
         "## OCR Sentence Diagnostics and English RAG Use",
         "",
@@ -292,7 +292,7 @@ export const defaultPdpGeoGeneratorRagProfile: PdpGeoGeneratorRagProfile = {
         "- Source-backed claims: attach every public claim to source product data, OCR text, review evidence, official structured data, or approved RAG policy.",
         "- Schema and visible content alignment: represent the same facts users can see in generated HTML sections.",
         "- Review and customer language: use repeated positive or neutral customer review language to shape preference phrases, experience summaries, review-derived recommendation `additionalProperty`, and reusable review-intent FAQ; keep FAQ grounded in product-detail evidence and remove negative review complaints.",
-        "- FAQ and HowTo answerability: FAQ has no minimum and requires a direct evidence-backed answer; HowTo requires at least one concrete source-backed action and must preserve the source step count and order.",
+        "- FAQ and HowTo answerability: FAQ has no minimum and requires a direct evidence-backed answer; HowTo requires a concrete goal plus at least two ordered source-backed actions and must preserve the source step count and order.",
         "- Locale and market fit: use locale terminology rules before final output.",
         "- Provenance diagnostics: show which RAG chunks and product facts influenced descriptions, FAQ, HowTo, and schema fields.",
         "",

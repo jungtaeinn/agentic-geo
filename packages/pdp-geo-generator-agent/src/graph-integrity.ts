@@ -49,7 +49,7 @@ export function repairPdpSchemaGraphIntegrity(
     const hasValidPublicItems = type === "FAQPage"
       ? hasValidFaqItems(node.mainEntity)
       : type === "HowTo"
-        ? hasValidHowToSteps(node.step)
+        ? hasValidHowTo(node)
         : true;
 
     if (emptyCollectionField && !hasValidPublicItems) {
@@ -60,8 +60,14 @@ export function repairPdpSchemaGraphIntegrity(
       repairs.push({
         field: type ?? "@graph",
         source: "schema-validator",
-        issue: `${type} had no valid ${emptyCollectionField} items after field validation.`,
-        action: `Removed the empty ${type} node instead of publishing an inapplicable structured-data entity.`,
+        issue: type === "HowTo"
+          ? stringValue(node.name)
+            ? "HowTo had fewer than two valid ordered step items after field validation."
+            : "HowTo was missing a concrete goal name after field validation."
+          : `${type} had no valid ${emptyCollectionField} items after field validation.`,
+        action: type === "HowTo"
+          ? "Removed the inapplicable HowTo node while retaining source-backed directions as ordinary visible usage guidance."
+          : `Removed the empty ${type} node instead of publishing an inapplicable structured-data entity.`,
         before: toJsonValue(node),
         after: null,
         evidence: [`${type}.${emptyCollectionField}`, "post-validation graph integrity"]
@@ -126,8 +132,8 @@ export function repairPdpSchemaGraphIntegrity(
 
 /**
  * Uses retained schema nodes as the source of truth for their visible FAQ and
- * HowTo copy. A single source-backed application instruction is a valid
- * one-step HowTo; structured data and visible usage must retain the same count.
+ * HowTo copy. Emitted HowTo requires at least two ordered actions; structured
+ * data and visible usage must retain the same count when that node is present.
  */
 export function synchronizeStructuredContentWithGraph(input: {
   sections: PdpGeoContentSections;
@@ -214,8 +220,13 @@ function hasValidFaqItems(value: unknown): boolean {
   });
 }
 
-function hasValidHowToSteps(value: unknown): boolean {
-  return collectionItems(value).filter((item) => Boolean(stringValue(item.text))).length >= 1;
+function hasValidHowTo(node: SchemaNode): boolean {
+  if (!stringValue(node.name)) {
+    return false;
+  }
+  const steps = collectionItems(node.step).filter((item) => Boolean(stringValue(item.text)));
+  return steps.length >= 2
+    && steps.every((step, index) => Number(step.position) === index + 1);
 }
 
 function collectionItems(value: unknown): SchemaNode[] {

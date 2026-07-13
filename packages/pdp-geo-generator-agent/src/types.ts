@@ -861,7 +861,9 @@ export interface PdpGeoSchemaMarkup {
 }
 
 export interface PdpGeoContentArtifact {
+  /** Reserved for a future optional renderer. Currently always empty. */
   html: string;
+  /** Internal structured copy used to compose and proofread schema fields. */
   sections: PdpGeoContentSections;
 }
 

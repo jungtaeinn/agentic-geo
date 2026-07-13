@@ -4,6 +4,7 @@ import { isConflictingProductUsageInstruction } from "./product-scope";
 import { isNegativeReviewSignalText } from "./review-sentiment";
 import type {
   JsonObject,
+  PdpGeoAtomicEvidence,
   PdpGeoContentArtifact,
   PdpGeoContentPlan,
   PdpGeoContentSections,
@@ -12,6 +13,7 @@ import type {
   PdpGeoGenerationHints,
   PdpGeoInferredSearchQueryDiagnostic,
   PdpGeoLocale,
+  PdpGeoPlannedFaqItem,
   PdpGeoRecommendation,
   PdpGeoReasoningResult,
   PdpGeoRetrievedChunk,
@@ -76,6 +78,156 @@ const defaultTargets: PdpGeoSchemaTarget[] = ["WebPage", "Product", "FAQPage", "
 
 const genericCategoryPattern = /^(usage|use|how to use|direction|directions|review|reviews|rating|ratings|benefit|benefits|effect|effects|ingredient|ingredients|content|section|product|item|type)$/i;
 
+/**
+ * Completes a model plan with source-backed FAQ coverage before rendering.
+ * Required buyer anchors are ordered first; other deterministic candidates
+ * reuse the existing BestPractice-driven FAQ renderer without changing the
+ * BestPractice documents themselves.
+ */
+export function ensurePdpGeoFaqPlanCoverage(input: {
+  plan: PdpGeoContentPlan;
+  product: PdpProductSignal;
+  locale: PdpGeoLocale;
+  market?: string;
+  ragChunks: PdpGeoRetrievedChunk[];
+  reasoning?: PdpGeoReasoningResult;
+  evidenceLedger: PdpGeoAtomicEvidence[];
+}): PdpGeoContentPlan {
+  if (input.plan.mode !== "model") {
+    return input.plan;
+  }
+  const reasoning = input.reasoning ?? createPdpGeoReasoning({
+    product: input.product,
+    locale: input.locale,
+    market: input.market,
+    ragChunks: input.ragChunks
+  });
+  const guidance = {
+    ...createGeoOptimizationGuidance(input.ragChunks, reasoning),
+    useAnswerReadyFaq: true,
+    useTargetCustomerContext: true
+  };
+  const fallbackFaq = ensureFaq(
+    input.product,
+    input.locale,
+    input.product.name,
+    guidance,
+    createOptimizedUsageSteps(input.product, input.locale, guidance)
+  );
+  const planned = input.plan.faq.filter((item) => item.include);
+  const fallbackPlanned = fallbackFaq.map((item) => createPlannedFaqFromRenderedItem(
+    item,
+    input.product,
+    input.locale,
+    input.evidenceLedger
+  ));
+  const target = planned.find((item) => isRequiredTargetCustomerFaq(item, input.locale))
+    ?? fallbackPlanned.find((item) => isRequiredTargetCustomerFaq(item, input.locale));
+  const composition = planned.find((item) => isRequiredCompositionBenefitFaq(item, input.locale))
+    ?? fallbackPlanned.find((item) => isRequiredCompositionBenefitFaq(item, input.locale));
+  const hasTarget = Boolean(target);
+  const hasComposition = Boolean(composition);
+  const merged = [
+    target,
+    composition,
+    ...planned,
+    ...fallbackPlanned
+  ].filter((item): item is PdpGeoPlannedFaqItem => Boolean(item))
+    .filter((item, index, items) => items.findIndex((candidate) =>
+      normalizeFaqQuestionKey(candidate.question) === normalizeFaqQuestionKey(item.question)
+    ) === index)
+    .filter((item) => {
+      if (item === target || item === composition) return true;
+      if (hasTarget && isRequiredTargetCustomerFaq(item, input.locale)) return false;
+      if (hasComposition && (isRequiredCompositionBenefitFaq(item, input.locale)
+        || isIngredientOverviewFaqQuestion(item.question, input.locale))) return false;
+      return true;
+    })
+    .slice(0, 8);
+
+  return {
+    ...input.plan,
+    faq: merged
+  };
+}
+
+function createPlannedFaqFromRenderedItem(
+  item: PdpGeoFaqItem,
+  product: PdpProductSignal,
+  locale: PdpGeoLocale,
+  evidenceLedger: PdpGeoAtomicEvidence[]
+): PdpGeoPlannedFaqItem {
+  const target = isRequiredTargetCustomerFaq(item, locale);
+  const composition = isRequiredCompositionBenefitFaq(item, locale);
+  const evidenceIds = selectRenderedFaqEvidenceIds(item, evidenceLedger, target, composition);
+  return {
+    include: true,
+    question: item.question,
+    answer: item.answer,
+    intent: target
+      ? "target-customer-recommendation"
+      : composition
+        ? "composition-benefit-effect"
+        : classifyRenderedFaqIntent(item),
+    cep: target
+      ? inferTargetCustomer(product, locale)
+      : composition
+        ? locale === "ko-KR" ? "구성 성분과 효능·효과를 함께 확인하는 상황" : "checking formula composition and supported benefits"
+        : "",
+    evidenceIds,
+    confidence: evidenceIds.length > 0 ? 0.9 : 0.75,
+    omitReason: ""
+  };
+}
+
+function selectRenderedFaqEvidenceIds(
+  item: PdpGeoFaqItem,
+  evidenceLedger: PdpGeoAtomicEvidence[],
+  target: boolean,
+  composition: boolean
+): string[] {
+  const text = `${item.question} ${item.answer}`;
+  const roles = new Set<string>(["identity", "description", "faq"]);
+  if (target || /(?:고객|피부|대상|추천|적합|customer|skin|suitable|recommend|顧客|肌|向いて)/iu.test(text)) {
+    roles.add("audience");
+  }
+  if (target || composition || /(?:효능|효과|장점|benefit|effect|効果)/iu.test(text)) {
+    roles.add("benefit");
+    roles.add("effect");
+  }
+  if (target || composition || /(?:성분|기술|ingredient|formula|technology|成分|技術)/iu.test(text)) {
+    roles.add("ingredient");
+  }
+  if (/(?:리뷰|후기|사용감|review|texture|レビュー|口コミ)/iu.test(text)) roles.add("review");
+  if (/(?:사용|루틴|바르|use|routine|apply|使用|ルーティン)/iu.test(text)) roles.add("usage");
+  if (/(?:근거|시험|측정|테스트|%|\d+\s*(?:시간|일|주|명)|evidence|study|test|hours?|days?|weeks?|試験|根拠)/iu.test(text)) {
+    roles.add("metric");
+    roles.add("source");
+  }
+  return evidenceLedger
+    .filter((evidence) => roles.has(evidence.role))
+    .map((evidence) => evidence.id)
+    .slice(0, 36);
+}
+
+function classifyRenderedFaqIntent(item: PdpGeoFaqItem): string {
+  const text = `${item.question} ${item.answer}`;
+  if (/(?:사용|루틴|바르|use|routine|apply|使用|ルーティン)/iu.test(text)) return "usage-routine";
+  if (/(?:리뷰|후기|사용감|review|texture|レビュー|口コミ)/iu.test(text)) return "review-experience";
+  if (/(?:근거|시험|측정|테스트|evidence|study|test|試験|根拠)/iu.test(text)) return "evidence-measurement";
+  if (/(?:옵션|버전|용량|option|variant|size|容量)/iu.test(text)) return "variant-comparison";
+  return "product-question";
+}
+
+function isRequiredTargetCustomerFaq(item: Pick<PdpGeoFaqItem, "question" | "answer">, locale: PdpGeoLocale): boolean {
+  return isSuitabilityOverviewFaqQuestion(item.question, locale)
+    || isTargetConcernEffectSuitabilityFaq(item, locale);
+}
+
+function isRequiredCompositionBenefitFaq(item: Pick<PdpGeoFaqItem, "question" | "answer">, locale: PdpGeoLocale): boolean {
+  return isDirectIngredientBenefitFaqQuestion(item.question, locale);
+}
+
 /** Builds deterministic GEO artifacts from normalized product signals and selected RAG chunks. */
 export function generatePdpGeoArtifacts(input: GenerateArtifactsInput): GenerateArtifactsOutput {
   const terminologyConcepts = readTerminologyConcepts(input.ragDocuments);
@@ -101,7 +253,10 @@ export function generatePdpGeoArtifacts(input: GenerateArtifactsInput): Generate
   const modelPlanned = input.contentPlan?.mode === "model";
   const plannedFaq = (input.contentPlan?.faq ?? [])
     .filter((item) => item.include)
-    .map((item) => ({ question: item.question, answer: item.answer }));
+    .map((item) => ({
+      question: normalizeInferencePublicText(item.question, input.locale),
+      answer: normalizeInferencePublicText(item.answer, input.locale)
+    }));
   // A model content plan is a fail-closed membership contract. FAQ candidates
   // rejected by the planner's evidence gate must not be restored by the
   // deterministic fallback, otherwise contentPlan, FAQPage and visible copy
@@ -112,7 +267,9 @@ export function generatePdpGeoArtifacts(input: GenerateArtifactsInput): Generate
   const plannedHowToSteps = input.contentPlan?.howTo.eligible
     ? normalizePlannedHowToSteps(input.contentPlan.howTo.steps.map((step) => ({ name: step.name, text: step.text })), input.locale)
     : [];
-  const publicUsageSteps = input.contentPlan
+  // A simple source-backed direction remains useful visible PDP copy even when
+  // it is not eligible for multi-step HowTo structured data.
+  const publicUsageSteps = plannedHowToSteps.length >= 2
     ? plannedHowToSteps.map((step) => step.text)
     : optimizedUsageSteps;
   const inferredProductDescription = normalizeInferencePublicText(modelPlanned
@@ -239,10 +396,12 @@ export function generatePdpGeoArtifacts(input: GenerateArtifactsInput): Generate
     locale: input.locale,
     market: input.market,
     sourceUrl: input.sourceUrl,
-    targets: resolveSchemaTargets(input.hints?.schemaTargets, plannedHowToSteps.length >= 1)
+    targets: resolveSchemaTargets(input.hints?.schemaTargets, plannedHowToSteps.length >= 2)
   });
   const content = {
-    html: createPdpGeoContentHtml(sections, input.locale),
+    // HTML CONTENT is intentionally disabled. Keep the empty field for API
+    // compatibility until the optional renderer is reintroduced.
+    html: "",
     sections
   };
 
@@ -3605,15 +3764,14 @@ function normalizeEnglishAudienceLabel(value: string | undefined): "women" | "me
 }
 
 function inferRecommendedSkinType(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
-  const explicitSuitability = selectExplicitSuitabilitySkinTypes(product, locale);
-  if (explicitSuitability) {
-    return explicitSuitability;
-  }
+  // The extractor's semantic role is the strongest product-level audience
+  // signal. Prefer it to free-form FAQ/review-adjacent copy so an individual
+  // reviewer's skin type cannot broaden the product's recommended audience.
   const semanticSkinType = formatRecommendedSkinTypeList(product.semanticFacts?.skinTypes ?? [], locale, 3);
   if (semanticSkinType) {
     return semanticSkinType;
   }
-  return undefined;
+  return selectExplicitSuitabilitySkinTypes(product, locale);
 }
 
 function selectExplicitSuitabilitySkinTypes(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
@@ -7699,7 +7857,7 @@ function normalizePlannedHowToSteps(
       text
     });
   }
-  return results.length >= 1 ? results : [];
+  return results.length >= 2 ? results : [];
 }
 
 function hasExplicitMultiStepUsageMarkers(value: string): boolean {
@@ -7827,7 +7985,14 @@ function ensureFaq(
   const usage = first(selectUsageInstructions(product).filter((value) => isNarrativeLocaleCompatible(value, locale)));
   const optimizedUsage = first(optimizedUsageSteps) ?? usage;
   const ingredient = formatDescriptionList(selectLocalizedKeyIngredients(product, locale, 3), locale, 3);
-  const benefit = first(selectClaimedBenefitSignals(product, locale)) ?? first(selectPublicBenefitSignals(product, locale));
+  const claimedBenefitSignals = selectClaimedBenefitSignals(product, locale);
+  const publicBenefitSignals = selectPublicBenefitSignals(product, locale);
+  const benefit = first(claimedBenefitSignals) ?? first(publicBenefitSignals);
+  const compositionBenefit = formatDescriptionList(
+    (claimedBenefitSignals.length > 0 ? claimedBenefitSignals : publicBenefitSignals).slice(0, 3),
+    locale,
+    3
+  ) ?? benefit;
   const ingredientBenefitLink = selectFaqIngredientBenefitLink(product, locale);
   const evidence = selectEvidenceSignal(product, locale);
   const customerOutcomeEvidence = createStructuredClinicalEvidenceSummary(product, locale)
@@ -7839,9 +8004,6 @@ function ensureFaq(
   const sourceFaqIntents = product.faq.flatMap(classifySourceFaqIntent);
   const sourceFaq = selectSourceFaqForPublicUse(product.faq, locale, productName, faqStructuredClaimEvidence(product));
   const ocrFaqContexts = createOcrFaqBlendContexts(product, locale);
-  const recommendedSkinType = inferRecommendedSkinType(product, locale);
-  const inferredTargetCustomer = inferTargetCustomer(product, locale);
-  const hasSpecificTargetCustomer = isSpecificTargetCustomer(inferredTargetCustomer, locale);
   const textureFinish = selectTextureFinishSignal(product, locale);
   const routineSynergy = selectRoutineSynergySignal(product, locale);
   const variantComparison = selectVariantComparisonSignal(product, locale);
@@ -7851,6 +8013,44 @@ function ensureFaq(
     faq.push(item);
     canonicalQuestionKeys.add(normalizeFaqQuestionKey(item.question));
   };
+
+  // Required FAQ anchors: customer suitability first, then formula + benefits.
+  // The wording is product-derived; only the intent and order are contractual.
+  if (benefit) {
+    pushCanonicalFaq({
+      question: createSuitabilityFaqQuestion(product, locale, productName),
+      answer: createSuitabilityFaqAnswer(
+        product,
+        locale,
+        productName,
+        benefit,
+        ingredient,
+        evidence,
+        ocrFaqContexts.benefit ?? ocrFaqContexts.ingredient
+      )
+    });
+  }
+  if (ingredient && compositionBenefit) {
+    pushCanonicalFaq({
+      question: fallback(locale, {
+        "ko-KR": `${productName}의 구성 성분과 효능·효과는 무엇인가요?`,
+        "ja-JP": `${productName}の構成成分と主な効果は何ですか？`,
+        "en-US": `What are the key ingredients and supported benefits of ${productName}?`,
+        "en-GB": `What are the key ingredients and supported benefits of ${productName}?`
+      }),
+      answer: createIngredientFaqAnswer(product, locale, productName, ingredient, compositionBenefit, ingredientBenefitLink, ocrFaqContexts.ingredient)
+    });
+  } else if (ingredient) {
+    pushCanonicalFaq({
+      question: fallback(locale, {
+        "ko-KR": `${productName}의 주요 성분이나 기술은 무엇이고 어떤 역할이 명시되어 있나요?`,
+        "ja-JP": `${productName}の主な成分・技術と、明記された役割は何ですか？`,
+        "en-US": `Which ingredients or technologies are highlighted for ${productName}, and what roles are explicitly stated?`,
+        "en-GB": `Which ingredients or technologies are highlighted for ${productName}, and what roles are explicitly stated?`
+      }),
+      answer: createIngredientFaqAnswer(product, locale, productName, ingredient, undefined, ingredientBenefitLink, ocrFaqContexts.ingredient)
+    });
+  }
 
   if (benefit) {
     const benefitCandidate = {
@@ -7863,17 +8063,6 @@ function ensureFaq(
       answer: createBenefitFaqAnswer(product, locale, productName, benefit, ingredient, customerOutcomeEvidence, guidance, ocrFaqContexts.benefit)
     };
     pushCanonicalFaq(benefitCandidate);
-  }
-  if (ingredient) {
-    pushCanonicalFaq({
-      question: fallback(locale, {
-        "ko-KR": `${productName}의 주요 성분이나 기술은 무엇이고 어떤 역할이 명시되어 있나요?`,
-        "ja-JP": `${productName}の主な成分・技術と、明記された役割は何ですか？`,
-        "en-US": `Which ingredients or technologies are highlighted for ${productName}, and what roles are explicitly stated?`,
-        "en-GB": `Which ingredients or technologies are highlighted for ${productName}, and what roles are explicitly stated?`
-      }),
-      answer: createIngredientFaqAnswer(locale, productName, ingredient, benefit, ingredientBenefitLink, ocrFaqContexts.ingredient)
-    });
   }
   if (optimizedUsage) {
     pushCanonicalFaq({
@@ -7904,20 +8093,6 @@ function ensureFaq(
     faq.push({
       question: query.question,
       answer: removeMisroutedReviewContextFromFaqAnswer(query.question, query.answer, locale)
-    });
-  }
-  if ((sourceFaqIntents.includes("suitability") || recommendedSkinType || hasSpecificTargetCustomer) && benefit) {
-    pushCanonicalFaq({
-      question: createSuitabilityFaqQuestion(product, locale, productName),
-      answer: createSuitabilityFaqAnswer(
-        product,
-        locale,
-        productName,
-        benefit,
-        ingredient,
-        evidence,
-        ocrFaqContexts.benefit ?? ocrFaqContexts.ingredient
-      )
     });
   }
   if (textureFinish) {
@@ -7990,7 +8165,29 @@ function ensureFaq(
   // FAQ is evidence- and intent-limited, never quota-filled. Suppressed
   // candidates stay omitted: a missing FAQ is safer than a generic question
   // that the PDP cannot answer directly.
-  return ensureHighValueSourceFaqCoverage(ranked, sourceFaq, locale, faqLimit);
+  const covered = ensureHighValueSourceFaqCoverage(ranked, sourceFaq, locale, faqLimit);
+  const requiredTarget = covered.find((item) => isRequiredTargetCustomerFaq(item, locale))
+    ?? faq.find((item) => isRequiredTargetCustomerFaq(item, locale));
+  const requiredComposition = covered.find((item) => isRequiredCompositionBenefitFaq(item, locale))
+    ?? faq.find((item) => isRequiredCompositionBenefitFaq(item, locale));
+  return orderRequiredFaqAnchors([
+    requiredTarget,
+    requiredComposition,
+    ...covered
+  ].filter((item): item is PdpGeoFaqItem => Boolean(item))
+    .filter((item, index, items) => items.findIndex((candidate) =>
+      normalizeFaqQuestionKey(candidate.question) === normalizeFaqQuestionKey(item.question)
+    ) === index), locale).slice(0, faqLimit);
+}
+
+function orderRequiredFaqAnchors(items: PdpGeoFaqItem[], locale: PdpGeoLocale): PdpGeoFaqItem[] {
+  const target = items.find((item) => isRequiredTargetCustomerFaq(item, locale));
+  const composition = items.find((item) => isRequiredCompositionBenefitFaq(item, locale));
+  return [
+    target,
+    composition,
+    ...items.filter((item) => item !== target && item !== composition)
+  ].filter((item): item is PdpGeoFaqItem => Boolean(item));
 }
 
 function ensureHighValueSourceFaqCoverage(ranked: PdpGeoFaqItem[], sourceFaq: PdpGeoFaqItem[], locale: PdpGeoLocale, limit: number): PdpGeoFaqItem[] {
@@ -8311,7 +8508,7 @@ function isGenericBenefitOverviewFaqQuestion(question: string, locale: PdpGeoLoc
     && !isDirectIngredientBenefitFaqQuestion(text, locale);
 }
 
-function isTargetConcernEffectSuitabilityFaq(item: PdpGeoFaqItem, locale: PdpGeoLocale): boolean {
+function isTargetConcernEffectSuitabilityFaq(item: Pick<PdpGeoFaqItem, "question" | "answer">, locale: PdpGeoLocale): boolean {
   const question = cleanSignal(item.question);
   const combined = cleanSignal(`${item.question} ${item.answer}`);
   if (!question || isDirectIngredientBenefitFaqQuestion(question, locale)) {
@@ -8376,7 +8573,7 @@ function isRawReviewLikeKoreanFaqCandidateQuestion(value: string): boolean {
     return true;
   }
   const hasReviewVoice = /(?:뽀득거리지도|미끌거리지도|무난하게|데일리로\s*사용|트러블\s*올라오지|성분이\s*착해서|약품\s*냄새|약품냄새|냄새|향이|아쉬운|좋아요|좋네요|좋은\s*것\s*같|같아요|같구요|같네요|더라구|더라고|구요|했어요|써봤|구매했|사용중|느낌)$/u.test(text)
-    || /(?:뽀득|미끌|촉촉|당김|크리미|거품|순해서|자극없이|데일리|무난|트러블|아쉬운|냄새|향이|좋아요|같아요|느낌)/u.test(text);
+    || /(?:뽀득|미끌|촉촉|당김|크리미|거품|순해서|자극없이|데일리|무난|트러블|아쉬운|냄새|향이|좋아요|같아요|느낌|바르는데|밀리는|안아프던대|흡수가\s*잘\s*되는)/u.test(text);
   if (!hasReviewVoice) {
     return false;
   }
@@ -8763,6 +8960,13 @@ function isUsefulSourceFaqQuestion(value: string, answer: string, locale: PdpGeo
   if (text.length < 6 || text.length > 180 || isSectionHeadingFaqQuestion(text) || isBrokenMarketingFragment(text)) {
     return false;
   }
+  // Extracted accordions can misclassify review sentences ending in a
+  // question mark as authored product FAQ. Reusable review intent is
+  // synthesized separately from attributed review signals, so never publish
+  // the customer's raw wording as a source FAQ question.
+  if (locale === "ko-KR" && isRawReviewLikeKoreanFaqCandidateQuestion(text)) {
+    return false;
+  }
   if (!isFaqAnswerAlignedToQuestion(text, answer)) {
     return false;
   }
@@ -9041,6 +9245,7 @@ function createBenefitFaqAnswer(
 }
 
 function createIngredientFaqAnswer(
+  product: PdpProductSignal,
   locale: PdpGeoLocale,
   productName: string,
   ingredient: string,
@@ -9051,6 +9256,8 @@ function createIngredientFaqAnswer(
   if (locale === "ko-KR") {
     const ingredientSubject = formatKoreanIngredientIncludedSubject(ingredient);
     const benefitPhrase = benefit ? formatKoreanCarePhraseForFaq(benefit) : undefined;
+    const targetCustomer = inferTargetCustomer(product, locale);
+    const hasTargetCustomer = isSpecificTargetCustomer(targetCustomer, locale);
     return compactSentence([
       `${productName}에는 ${ingredientSubject} 포함되어 있습니다`,
       supportedLink
@@ -9058,6 +9265,9 @@ function createIngredientFaqAnswer(
         : benefitPhrase
           ? `공식 상품 정보에서는 ${appendKoreanObjectParticle(benefitPhrase)} 완제품의 주요 효능으로 소개하지만, 특정 성분이 그 효능을 단독으로 만든다는 관계는 명시되어 있지 않습니다`
           : "공식 상품 정보에는 각 성분의 개별 효능·효과를 단정할 수 있는 역할 관계가 명시되어 있지 않습니다",
+      hasTargetCustomer && benefitPhrase
+        ? `${appendKoreanTopicParticle(productName)} ${appendKoreanSubjectParticle(targetCustomer)} ${appendKoreanSubjectParticle(benefitPhrase)} 필요한 제품을 비교할 때 고려할 수 있습니다`
+        : undefined,
       supportedLink ? ocrContext : undefined
     ]);
   }
@@ -9066,6 +9276,7 @@ function createIngredientFaqAnswer(
     ? "formula elements"
     : "a key formula element";
 
+  const targetCustomer = inferTargetCustomer(product, locale);
   return compactSentence([
     fallback(locale, {
       "ko-KR": `${productName}의 주요 성분/기술은 ${ingredient}입니다`,
@@ -9083,6 +9294,11 @@ function createIngredientFaqAnswer(
         : `${supportedLink.ingredient} supports ${normalizeEnglishSupportObject(supportedLink.benefit)}`
       : undefined,
     locale === "ja-JP" && benefit ? localizedIngredientChoiceContext(locale, benefit, ingredient) : undefined,
+    isSpecificTargetCustomer(targetCustomer, locale) && benefit
+      ? locale === "ja-JP"
+        ? `${targetCustomer}が${benefit}を重視して選ぶ際の比較材料になります`
+        : `This combination gives ${targetCustomer} a product-selection reference for ${benefit}`
+      : undefined,
     ocrContext
   ]);
 }
@@ -9151,6 +9367,9 @@ function createSuitabilityFaqAnswer(
         .replace(/^수분감$/u, "수분 케어")))
       ?? formatKoreanFaqBenefitPhrase(product, locale, benefit);
     const ingredientPhrase = formatDescriptionList(selectLocalizedKeyIngredients(product, locale, 2), locale, 2);
+    const reviewPhrase = hasPublicReviewEvidence(product, locale)
+      ? formatKoreanListForSentence(selectReviewIntentFaqKeywords(product, locale).slice(0, 3).join(", "))
+      : undefined;
     const studySentences = studyContext?.split(/(?<=[.!?。！？])\s+/u).filter(Boolean) ?? [];
     const studyEvidence = createKoreanFaqFinishedProductStudyEvidence(product)
       ?? studySentences.find((sentence) => /(?:인체\s*적용\s*시험|임상\s*시험|자가\s*평가|소비자\s*평가|\d+\s*명\s*대상)/u.test(sentence))
@@ -9173,6 +9392,9 @@ function createSuitabilityFaqAnswer(
       ...unlinkedIngredientSentences,
       hasTargetCustomer
         ? `따라서 ${appendKoreanSubjectParticle(targetCustomer)} ${appendKoreanSubjectParticle(benefitPhrase)} 필요한 화장품을 찾을 때 고려할 수 있습니다`
+        : `${appendKoreanSubjectParticle(benefitPhrase)} 필요한 고객이 관련 제품을 비교할 때 고려할 수 있습니다`,
+      reviewPhrase
+        ? `고객 리뷰에서는 ${appendKoreanSubjectParticle(reviewPhrase)} 언급되어 사용감과 만족도를 판단할 때 참고할 수 있습니다`
         : undefined,
       studyEvidence ? "개인에 따라 사용 결과는 달라질 수 있습니다" : undefined
     ]));
@@ -9180,11 +9402,16 @@ function createSuitabilityFaqAnswer(
 
   const targetCustomer = inferTargetCustomer(product, locale);
   const benefitPhrase = formatDescriptionList(selectPublicBenefitSignals(product, locale).slice(0, 2), locale, 2) ?? benefit;
+  const reviewPhrase = hasPublicReviewEvidence(product, locale)
+    ? formatDescriptionList(selectReviewIntentFaqKeywords(product, locale).slice(0, 3), locale, 3)
+    : undefined;
   if (locale === "ja-JP") {
     const targetContext = isSpecificTargetCustomer(targetCustomer, locale) ? `${targetCustomer}に向いており、` : "";
     return compactSentence([
       `${productName}は${targetContext}${benefitPhrase}をサポートします`,
       supportedLink ? `${supportedLink.ingredient}は${supportedLink.benefit}を支えます` : undefined,
+      !isSpecificTargetCustomer(targetCustomer, locale) ? `${benefitPhrase}を重視するお客様が比較できます` : undefined,
+      reviewPhrase ? `レビューでは${reviewPhrase}などの使用感が言及されています` : undefined,
       studyContext
     ]);
   }
@@ -9192,6 +9419,8 @@ function createSuitabilityFaqAnswer(
   return compactSentence(dedupeGeneratedSentenceParts([
     `${productName} supports ${normalizeEnglishSupportObject(benefitPhrase)}${targetContext}`,
     supportedLink ? `${supportedLink.ingredient} supports ${supportedLink.benefit}` : undefined,
+    !isSpecificTargetCustomer(targetCustomer, locale) ? `Customers prioritising ${benefitPhrase} can consider it when comparing products` : undefined,
+    reviewPhrase ? `Customer reviews mention ${reviewPhrase} as attributed use-experience context` : undefined,
     studyContext
   ]));
 }
@@ -9256,7 +9485,9 @@ function createSuitabilityFaqQuestion(product: PdpProductSignal, locale: PdpGeoL
 }
 
 function createKoreanReverseQuerySuitabilityQuestion(product: PdpProductSignal, productName: string): string {
-  const evidenceText = allProductEvidenceText(product);
+  const evidenceText = product.reviews.items
+    .filter((review) => isNegativeReviewSignalText(review.body))
+    .reduce((text, review) => text.split(cleanSignal(review.body)).join(" "), allProductEvidenceText(product));
   const hasDeepDryness = /(?:속\s*건조|속건조|속\s*보습|속보습)/u.test(evidenceText);
   const hasBarrierConcern = /(?:피부\s*장벽|피부장벽|장벽\s*관리|장벽\s*케어)/u.test(evidenceText);
   const hasSensitiveSkin = /(?:민감|예민)/u.test(evidenceText);
@@ -9643,7 +9874,7 @@ function createSchemaMarkup(input: {
   const breadcrumbId = `${baseId}#breadcrumb`;
   const usageInstructions = (input.usageInstructions.length > 0 ? input.usageInstructions : selectUsageInstructions(input.product))
     .filter((value) => isNarrativeLocaleCompatible(value, input.locale));
-  const howToSteps = input.howToSteps.length >= 1 ? input.howToSteps : [];
+  const howToSteps = input.howToSteps.length >= 2 ? input.howToSteps : [];
   const reviewItems = selectReviewItems(input.product, input.locale);
   const schemaImages = selectSchemaImages(input.product, input.productName, input.sourceUrl);
   const offer = createOfferSchema(input.product, input.locale, input.market, input.sourceUrl);

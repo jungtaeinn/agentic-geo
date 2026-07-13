@@ -1,4 +1,4 @@
-import { generatePdpGeoArtifacts } from "./generate";
+import { ensurePdpGeoFaqPlanCoverage, generatePdpGeoArtifacts } from "./generate";
 import { refinePdpGeoCopy } from "./copy-refiner";
 import { createPdpGeoPublicCopyProvenance, finalProofreadPdpGeoArtifacts } from "./final-proofreader";
 import { createPdpGeoEvidenceLedger, planPdpGeoContent } from "./content-planner";
@@ -72,12 +72,12 @@ const pipelineSteps: Array<Pick<PdpGeoGenerationStep, "id" | "title" | "descript
   {
     id: "generate",
     title: "GEO 산출물 생성 및 최종 교정",
-    description: "JSON-LD/HTML 생성 후 선택적으로 별도 fluency-only proofreading 모델 호출"
+    description: "JSON-LD 생성 후 선택적으로 별도 fluency-only proofreading 모델 호출"
   },
   {
     id: "validate",
     title: "문법 검증",
-    description: "JSON-LD와 HTML 구조 검증"
+    description: "JSON-LD 구조와 공개 문구 검증"
   },
   {
     id: "repair",
@@ -91,7 +91,7 @@ const pipelineSteps: Array<Pick<PdpGeoGenerationStep, "id" | "title" | "descript
   }
 ];
 
-/** Generates GEO-ready schema markup and PDP HTML content from arbitrary product JSON. */
+/** Generates GEO-ready schema markup from arbitrary product JSON. */
 export async function generatePdpGeo(
   input: PdpGeoGenerationInput,
   options: PdpGeoGeneratorOptions = {}
@@ -297,6 +297,24 @@ export async function generatePdpGeo(
     ragChunks: selectedRagChunks,
     policyRules: policyChecklist.injectedRules
   }, options);
+  const plannedFaqCountBeforeCoverage = contentPlanning.plan.faq.filter((item) => item.include).length;
+  contentPlanning.plan = ensurePdpGeoFaqPlanCoverage({
+    plan: contentPlanning.plan,
+    product: normalized.product,
+    locale: normalized.locale,
+    market: normalized.market,
+    ragChunks: selectedRagChunks,
+    reasoning,
+    evidenceLedger
+  });
+  const plannedFaqCountAfterCoverage = contentPlanning.plan.faq.filter((item) => item.include).length;
+  if (plannedFaqCountAfterCoverage > plannedFaqCountBeforeCoverage) {
+    contentPlanning.evidence.push({
+      field: "content.plan.faq",
+      source: "rag",
+      value: `Completed source-backed FAQ coverage from ${plannedFaqCountBeforeCoverage} to ${plannedFaqCountAfterCoverage} item(s), ordered as target customer, composition and benefits, then additional applicable product questions.`
+    });
+  }
   let generated = generatePdpGeoArtifacts({
     product: normalized.product,
     locale: normalized.locale,
@@ -377,13 +395,13 @@ export async function generatePdpGeo(
     finalProofreading.diagnostics.applied
       ? `근거와 구조를 잠근 상태에서 ${finalProofreading.diagnostics.acceptedFields.length}개 필드의 최종 문장 교정을 적용했습니다.`
       : contentPlanning.applied
-      ? "근거 ID 기반 Content/Schema Plan으로 적합한 Product, WebPage, FAQ, HowTo와 가시 콘텐츠를 생성했습니다."
+      ? "근거 ID 기반 Schema Plan으로 적합한 Product, WebPage, FAQ, HowTo를 생성했습니다."
       : copyRefinement.applied
         ? "보수적 스키마 적합성 판단 후 Gen AI 문장 refinement를 적용했습니다."
         : "보수적 스키마 적합성 판단으로 근거가 확인된 산출물을 생성했습니다."
   );
 
-  process.start("validate", "최종 교정 이후 JSON-LD와 HTML을 읽기 전용으로 검증합니다.");
+  process.start("validate", "최종 교정 이후 JSON-LD와 공개 문구를 읽기 전용으로 검증합니다.");
   const validated = validatePdpGeoArtifacts({
     schemaMarkup: generated.schemaMarkup,
     content: generated.content,

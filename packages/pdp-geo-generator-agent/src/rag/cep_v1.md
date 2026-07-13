@@ -92,7 +92,7 @@ Category Entry Points, or CEPs, describe buying, discovery, usage, or memory sit
 - Review-derived query units: infer indirect queries from customer situation plus category without product or brand mentions, and infer direct queries with the product or brand explicitly named. Combine the inferred query with product facts, core CEP keywords, and a short answer-ready evidence sentence; keep the query kind and keyword reasoning in diagnostics.
 - `Product.positiveNotes`: use source-backed benefit and review-backed positive points.
 - `FAQPage.mainEntity`: phrase questions around the customer's likely category-entry problem, ingredient concern, review question, or routine moment.
-- `HowTo.step`: one concrete source action becomes one step; an explicit source sequence preserves its count and order. A general usage moment without an action is not HowTo.
+- `HowTo.step`: require a concrete goal and at least two explicitly ordered source actions, preserving their count and order. Keep a single action as visible usage guidance without HowTo structured data. A general usage moment without an action is not HowTo.
 
 ### 5.2 HTML Content
 

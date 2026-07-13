@@ -51,7 +51,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 type SourceMode = "auto" | "url" | "restApi" | "manual-json";
 type RunStatus = "idle" | "running" | "done" | "error";
-type OutputView = "schema" | "content" | "diagnostics";
+type OutputView = "schema" | "diagnostics";
 type MagazineOutputView = "reddit" | "readiness" | "diagnostics";
 type SettingsTab = "run" | "ai" | "rag";
 type UiLanguage = "ko" | "en";
@@ -813,8 +813,8 @@ const generatorStepCopy = {
     embed: ["임베딩 구성", "로컬 또는 managed vector store 임베딩 전략 적용"],
     retrieve: ["RAG 검색", "상품/locale/schema 목표에 맞는 관련 문서 검색"],
     rerank: ["리랭킹", "schema, locale, terminology, GEO 관련성을 기준으로 재정렬"],
-    generate: ["GEO 산출물 생성 및 최종 교정", "JSON-LD/HTML 생성 후 설정된 non-mock provider에서 근거가 연결된 필드를 별도 fluency-only 모델로 자동 검수"],
-    validate: ["문법 검증", "JSON-LD와 HTML 구조 검증"],
+    generate: ["GEO 산출물 생성 및 최종 교정", "JSON-LD 생성 후 설정된 non-mock provider에서 근거가 연결된 필드를 별도 fluency-only 모델로 자동 검수"],
+    validate: ["문법 검증", "JSON-LD 구조와 공개 문구 검증"],
     repair: ["검증 결과 기록", "자동 수정 없이 validation findings를 diagnostics에 기록"],
     artifact: ["최종 아티팩트 생성", "복사 가능한 schemaMarkup과 content 결과 생성"]
   },
@@ -826,8 +826,8 @@ const generatorStepCopy = {
     embed: ["Build embeddings", "Apply local or managed vector store embedding strategy"],
     retrieve: ["Retrieve RAG", "Search relevant guidance for product, locale, and schema targets"],
     rerank: ["Rerank", "Sort by schema, locale, terminology, and GEO relevance"],
-    generate: ["Generate and proofread GEO artifacts", "Create JSON-LD/HTML, then automatically review evidence-bound fields with the configured non-mock fluency model"],
-    validate: ["Validate syntax", "Validate JSON-LD and HTML structure"],
+    generate: ["Generate and proofread GEO artifacts", "Create JSON-LD, then automatically review evidence-bound fields with the configured non-mock fluency model"],
+    validate: ["Validate syntax", "Validate JSON-LD structure and public schema copy"],
     repair: ["Record validation findings", "Record diagnostics without mutating the final public copy"],
     artifact: ["Create final artifact", "Create copy-ready schemaMarkup and content output"]
   }
@@ -1038,7 +1038,7 @@ export function GeoGeneratorConsole() {
     extractor: selectedMagazineLog?.extractor,
     magazine: selectedMagazineResult.magazine.diagnostics
   }, null, 2) : "";
-  const generatorOutputText = outputView === "schema" ? schemaText : outputView === "content" ? selectedResult?.generator.content.html ?? "" : diagnosticsText;
+  const generatorOutputText = outputView === "schema" ? schemaText : diagnosticsText;
   const extractorOutputText = extractorOutputView === "result" ? extractorJsonText : extractorDiagnosticsText;
   const magazineOutputText = magazineOutputView === "reddit" ? magazinePostText : magazineOutputView === "readiness" ? magazineReadinessText : magazineDiagnosticsText;
   const canSubmitComposer = activeMode === "extractor"
@@ -2496,7 +2496,7 @@ export function GeoGeneratorConsole() {
                         <strong>{selectedResult.generator.content.sections.productName}</strong>
                       </div>
                       <div className="windowActions">
-                        {(["schema", "content", "diagnostics"] as OutputView[]).map((view) => (
+                        {(["schema", "diagnostics"] as OutputView[]).map((view) => (
                           <button className={outputView === view ? "active" : ""} type="button" key={view} onClick={() => setOutputView(view)}>
                             <span>{view}</span>
                           </button>
@@ -2757,8 +2757,8 @@ export function GeoGeneratorConsole() {
                     <span>{text.panel.output}</span>
                     {selectedResult ? (
                   <>
-                    <div className="outputTabs three" role="tablist" aria-label="Output view">
-                      {(["schema", "content", "diagnostics"] as OutputView[]).map((view) => (
+                    <div className="outputTabs" role="tablist" aria-label="Output view">
+                      {(["schema", "diagnostics"] as OutputView[]).map((view) => (
                         <button className={outputView === view ? "active" : ""} type="button" key={view} title={view} onClick={() => setOutputView(view)}>
                           {compactOutputViewLabel(view)}
                         </button>
@@ -2767,7 +2767,7 @@ export function GeoGeneratorConsole() {
                     {outputView === "diagnostics" ? (
                       <GeoDiagnosticLog diagnostics={selectedDiagnostics} process={selectedLog?.generatorProcess} text={text} uiLanguage={uiLanguage} onOpenDetail={openPanelDetail} />
                     ) : (
-                      <GeoOutputSummary result={selectedResult} view={outputView} text={text} uiLanguage={uiLanguage} onOpenDetail={openPanelDetail} />
+                      <GeoOutputSummary result={selectedResult} text={text} uiLanguage={uiLanguage} onOpenDetail={openPanelDetail} />
                     )}
                     <button
                       className={`copyPanelButton${isGeneratorPanelCopied ? " copied" : ""}`}
@@ -3528,106 +3528,21 @@ export function GeoGeneratorConsole() {
   );
 }
 
-function ResultArtifact({ result, text }: { result: GeoGeneratorResult; text: (typeof uiCopy)[UiLanguage] }) {
-  return (
-    <div className="resultArtifact">
-      <div className="artifactTop">
-        <div>
-          <span>{text.artifact.label}</span>
-          <strong>{result.generator.content.sections.productName}</strong>
-        </div>
-        <button
-          className="artifactCopyButton"
-          type="button"
-          onClick={() => copyText(JSON.stringify({
-            schemaMarkup: result.generator.schemaMarkup,
-            content: result.generator.content
-          }, null, 2))}
-        >
-          <Copy size={14} />
-          <span>{text.artifact.copy}</span>
-        </button>
-      </div>
-      <pre>{JSON.stringify({
-        schemaMarkup: result.generator.schemaMarkup,
-        content: result.generator.content
-      }, null, 2)}</pre>
-    </div>
-  );
-}
-
 function GeoOutputSummary({
   onOpenDetail,
   result,
   text,
-  uiLanguage,
-  view
+  uiLanguage
 }: Readonly<{
   onOpenDetail: (detail: PanelDetail) => void;
   result: GeoGeneratorResult;
   text: (typeof uiCopy)[UiLanguage];
   uiLanguage: UiLanguage;
-  view: OutputView;
 }>) {
   const diagnostics = result.generator.diagnostics;
   const sections = result.generator.content.sections;
   const productName = sections.productName || diagnostics.normalizedProduct.name;
   const runDuration = formatRunDurationValue(result.runDurationMs);
-
-  if (view === "content") {
-    return (
-      <div className="outputSummary">
-        <strong>{productName}</strong>
-        <div className="outputMetricGrid">
-          {runDuration && (
-            <OutputMetricButton
-              label={uiLanguage === "ko" ? "소요" : "Elapsed"}
-              value={runDuration}
-              detail={createPanelDetail("Run detail", uiLanguage === "ko" ? "최종 실행 시간" : "Final run time", productName, {
-                runDurationMs: result.runDurationMs,
-                runDuration
-              }, {
-                durationMs: result.runDurationMs ?? 0
-              })}
-              onOpenDetail={onOpenDetail}
-            />
-          )}
-          <OutputMetricButton
-            label={uiLanguage === "ko" ? "섹션" : "Sections"}
-            value={countContentSections(sections)}
-            detail={createPanelDetail("Content detail", uiLanguage === "ko" ? "Content 섹션" : "Content sections", productName, sections, {
-              sections: countContentSections(sections)
-            })}
-            onOpenDetail={onOpenDetail}
-          />
-          <OutputMetricButton
-            label="FAQ"
-            value={countTextItems(sections.faq)}
-            detail={createPanelDetail("Content detail", "FAQ", productName, sections.faq, {
-              items: countTextItems(sections.faq)
-            })}
-            onOpenDetail={onOpenDetail}
-          />
-          <OutputMetricButton
-            label="HowTo"
-            value={countTextItems(sections.howToUse)}
-            detail={createPanelDetail("Content detail", "HowTo", productName, sections.howToUse, {
-              steps: countTextItems(sections.howToUse)
-            })}
-            onOpenDetail={onOpenDetail}
-          />
-          <OutputMetricButton
-            label="HTML"
-            value={formatCompactNumber(result.generator.content.html.length)}
-            detail={createPanelDetail("Content detail", "HTML", productName, result.generator.content.html, {
-              length: result.generator.content.html.length
-            })}
-            onOpenDetail={onOpenDetail}
-          />
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="outputSummary">
@@ -4364,9 +4279,7 @@ function createGeneratorProcessPanelDetail(
       repairEvidence: diagnostics.evidence.filter((item) => item.source === "repair" || item.source === "schema-validator" || item.source === "html-validator"),
       finalArtifacts: result
         ? {
-          schemaNodeCount: countSchemaNodes(result.generator.schemaMarkup.jsonLd),
-          contentSections: result.generator.content.sections,
-          htmlLength: result.generator.content.html.length
+          schemaNodeCount: countSchemaNodes(result.generator.schemaMarkup.jsonLd)
         }
         : undefined
     }, {
@@ -7815,7 +7728,6 @@ function getMagazineQualityCopy(language: UiLanguage) {
 function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): GeoQualityEvaluation {
   const copy = getGeoQualityCopy(language);
   const diagnostics = result.generator.diagnostics;
-  const sections = result.generator.content.sections;
   const graph = getSchemaGraph(result.generator.schemaMarkup.jsonLd);
   const schemaTypes = new Set(graph.flatMap((node) => getSchemaNodeTypes(node)));
   const productNode = findSchemaNode(graph, "Product");
@@ -7825,55 +7737,36 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
   const breadcrumbNode = findSchemaNode(graph, "BreadcrumbList");
   const schemaTypeList = Array.from(schemaTypes).join(", ") || copy.none;
   const productText = [
-    sections.description,
-    sections.quickFacts,
-    sections.benefits,
-    sections.ingredients,
     productNode ? collectTextValues(productNode).join(" ") : "",
     webPageNode ? collectTextValues(webPageNode).join(" ") : ""
   ].join("\n");
-  const publicText = [
-    result.generator.content.html,
-    Object.values(sections).join("\n"),
-    graph.flatMap((node) => collectTextValues(node)).join("\n")
-  ].join("\n");
-  const faqQuestions = [
-    ...collectSchemaFaqQuestions(faqNode),
-    ...collectSectionFaqQuestions(sections.faq)
-  ];
+  const publicText = graph.flatMap((node) => collectTextValues(node)).join("\n");
+  const faqQuestions = collectSchemaFaqQuestions(faqNode);
   const schemaFaqCount = countSchemaItems(faqNode?.["mainEntity"]);
-  const visibleFaqCount = countTextItems(sections.faq);
   const schemaHowToCount = countSchemaItems(howToNode?.["step"]);
-  const visibleHowToCount = countTextItems(sections.howToUse);
-  const faqCount = Math.max(faqQuestions.length, visibleFaqCount);
-  const howToCount = Math.max(schemaHowToCount, visibleHowToCount);
-  // Visible usage/Q&A may legitimately exist without optional structured data.
-  // Parity is required only when an FAQPage or HowTo node is actually emitted.
-  const faqSchemaVisibleParity = schemaFaqCount === 0 || normalizedArraysEqual(
-    collectSchemaFaqPairs(faqNode),
-    collectSectionFaqPairs(sections.faq)
-  );
-  const howToSchemaVisibleParity = schemaHowToCount === 0 || normalizedArraysEqual(
-    collectSchemaHowToSteps(howToNode),
-    collectSectionHowToSteps(sections.howToUse)
-  );
   const faqStructureValid = !faqNode || countValidSchemaFaqItems(faqNode) === schemaFaqCount && schemaFaqCount > 0;
-  const howToStructureValid = !howToNode || countValidHowToSteps(howToNode) === schemaHowToCount && schemaHowToCount >= 2;
+  const howToStructureValid = !howToNode
+    || getRecordString(howToNode, "name").trim().length > 0
+      && countValidHowToSteps(howToNode) === schemaHowToCount
+      && schemaHowToCount >= 2;
   const danglingLocalReferences = countDanglingLocalSchemaReferences(graph);
   const imageCount = Math.max(countSchemaItems(productNode?.["image"]), diagnostics.normalizedProduct.images.length);
   const offerCount = countSchemaItems(productNode?.["offers"]);
   const breadcrumbCount = Math.max(countSchemaItems(breadcrumbNode?.["itemListElement"]), diagnostics.normalizedProduct.breadcrumbs.length);
   const additionalPropertyCount = countSchemaItems(productNode?.["additionalProperty"]);
   const positiveNotesCount = countSchemaItems(productNode?.["positiveNotes"]);
-  const validationRepairs = diagnostics.validationRepairs?.length ?? 0;
-  const validationWarnings = Math.max(0, diagnostics.validationWarnings.length - validationRepairs);
+  const validationRepairs = (diagnostics.validationRepairs ?? [])
+    .filter((repair) => !isDisabledHtmlContentValidationScope(repair.field)).length;
+  const scoredValidationWarnings = diagnostics.validationWarnings
+    .filter((warning) => !isDisabledHtmlContentValidationScope(warning));
+  const validationWarnings = Math.max(0, scoredValidationWarnings.length - validationRepairs);
   const hasCleanValidation = validationWarnings === 0 && validationRepairs === 0;
   const validationDetailLines = collectValidationDetailLines(diagnostics, copy);
   const validationImprovementDirections = validationWarnings > 0 ? collectValidationImprovementLines(diagnostics, copy, validationRepairs) : [];
   const artifactHits = collectPublicArtifactHits(publicText, faqQuestions, language);
   const metricIssues = collectMetricIntegrityIssues(publicText, language);
-  const ingredientCount = diagnostics.normalizedProduct.ingredients.length + countTextItems(sections.ingredients);
-  const benefitCount = diagnostics.normalizedProduct.benefits.length + diagnostics.normalizedProduct.effects.length + countTextItems(sections.benefits) + positiveNotesCount;
+  const ingredientCount = diagnostics.normalizedProduct.ingredients.length;
+  const benefitCount = diagnostics.normalizedProduct.benefits.length + diagnostics.normalizedProduct.effects.length + positiveNotesCount;
   const hasIngredientBenefitBridge = hasIngredientBenefitChoiceBridge(productText);
   const hasCustomerCue = hasCustomerChoiceCue(productText);
   const hasSelectionCue = hasSelectionCriteriaCue(productText);
@@ -7909,7 +7802,10 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
   const hasAtomicEvidenceCoverage = evidenceLedger.length > 0 && plannedEvidenceUnits.length > 0;
   const plannedFaqCount = modelContentPlan?.faq.filter((item) => item.include).length;
   const faqPlanConsistent = !modelContentPlan || schemaFaqCount === plannedFaqCount;
-  const howToPlanConsistent = !modelContentPlan || Boolean(howToNode) === modelContentPlan.howTo.eligible;
+  const howToPlanConsistent = !modelContentPlan
+    || (modelContentPlan.howTo.eligible
+      ? Boolean(howToNode) && schemaHowToCount === modelContentPlan.howTo.steps.length
+      : !howToNode);
   const hasClaimMetrics = /(?:\+?\d+(?:\.\d+)?\s*[%％])/.test(publicText);
   const hasStudySample = /\b\d{2,4}\s+(?:women|men|participants|subjects|users|respondents|people)\b/i.test(publicText)
     || /(?:^|[^\d])\d{2,4}\s*(?:명|인|참여자|대상|사용자|응답자|여성|남성)(?=$|[^\p{L}\p{N}])/u.test(publicText);
@@ -7921,7 +7817,7 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
     || /(?:시험|측정|조사|평가)?\s*기간(?:은|:)?\s*20\d{2}[./-]\d{1,2}[./-]\d{1,2}\s*(?:~|-|–|—|부터|에서)\s*20\d{2}[./-]\d{1,2}[./-]\d{1,2}/.test(publicText);
   const hasReportedDetails = /\b(?:reported details|clinical|instrumental|home usage|survey|self-assessment|participants|subjects)\b/i.test(publicText)
     || /(?:확인 지표|임상|인체\s*적용|자가\s*평가|테스트|시험|참여자|대상|사용자)/.test(publicText);
-  const hasProductDescription = Boolean(productNode && getRecordString(productNode, "description").trim().length > 0) || sections.description.trim().length > 0;
+  const hasProductDescription = Boolean(productNode && getRecordString(productNode, "description").trim().length > 0);
   const hasProductIdentity = Boolean(productNode
     && getRecordString(productNode, "@id").trim()
     && getRecordString(productNode, "name").trim());
@@ -7939,8 +7835,6 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
     - (!hasWebPageIdentity ? 14 : 0)
     - (!hasProductDescription ? 10 : 0)
     - Math.min(16, danglingLocalReferences * 8)
-    - (!faqSchemaVisibleParity ? 8 : 0)
-    - (!howToSchemaVisibleParity ? 8 : 0)
     - (!faqStructureValid ? 8 : 0)
     - (!howToStructureValid ? 8 : 0)
     - (!faqPlanConsistent ? 10 : 0)
@@ -7981,10 +7875,9 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
 
   const geoEvidence = uniqueQualityItems([
     copy.geoSchemaEvidence(graph.length, schemaTypeList),
-    copy.geoEntityEvidence(faqCount, howToCount, breadcrumbCount),
+    copy.geoEntityEvidence(schemaFaqCount, schemaHowToCount, breadcrumbCount),
     copy.geoCommerceEvidence(imageCount, offerCount, additionalPropertyCount),
     copy.schemaReferenceEvidence(danglingLocalReferences),
-    copy.schemaParityEvidence(faqSchemaVisibleParity, howToSchemaVisibleParity),
     copy.planApplicabilityEvidence(faqPlanConsistent, howToPlanConsistent, Boolean(modelContentPlan)),
     hasCleanValidation ? copy.cleanValidationEvidence : validationWarnings > 0 ? copy.warningEvidence(validationWarnings) : undefined,
     validationRepairs > 0 ? copy.repairEvidence(validationRepairs) : undefined
@@ -8015,8 +7908,6 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
     ...artifactHits,
     !productNode ? copy.missingProductSchema : undefined,
     !webPageNode ? copy.missingWebPageSchema : undefined,
-    !faqSchemaVisibleParity ? copy.faqParityImprovement : undefined,
-    !howToSchemaVisibleParity ? copy.howToParityImprovement : undefined,
     !faqStructureValid ? copy.faqApplicabilityImprovement : undefined,
     !howToStructureValid ? copy.howToApplicabilityImprovement : undefined,
     !faqPlanConsistent ? copy.faqPlanImprovement : undefined,
@@ -8053,8 +7944,6 @@ function evaluateGeoQuality(result: GeoGeneratorResult, language: UiLanguage): G
     + Number(!hasProductIdentity)
     + Number(!hasWebPageIdentity)
     + Number(!hasProductDescription)
-    + Number(!faqSchemaVisibleParity)
-    + Number(!howToSchemaVisibleParity)
     + Number(!faqStructureValid)
     + Number(!howToStructureValid)
     + Number(!faqPlanConsistent)
@@ -8119,7 +8008,8 @@ function collectValidationDetailLines(
   diagnostics: PdpGeoDiagnostics,
   copy: ReturnType<typeof getGeoQualityCopy>
 ): string[] {
-  const repairs = diagnostics.validationRepairs ?? [];
+  const repairs = (diagnostics.validationRepairs ?? [])
+    .filter((repair) => !isDisabledHtmlContentValidationScope(repair.field));
   const repairLines = repairs.map((repair, index) => copy.validationRepairDetail(
     index + 1,
     compactQualityText(repair.field),
@@ -8127,8 +8017,10 @@ function collectValidationDetailLines(
     compactQualityText(repair.issue),
     compactQualityText(repair.action)
   ));
-  const warningOffset = repairLines.length >= diagnostics.validationWarnings.length ? diagnostics.validationWarnings.length : repairLines.length;
-  const warningLines = diagnostics.validationWarnings.slice(warningOffset).map((warning, index) => copy.validationWarningDetail(
+  const warnings = diagnostics.validationWarnings
+    .filter((warning) => !isDisabledHtmlContentValidationScope(warning));
+  const warningOffset = repairLines.length >= warnings.length ? warnings.length : repairLines.length;
+  const warningLines = warnings.slice(warningOffset).map((warning, index) => copy.validationWarningDetail(
     repairLines.length + index + 1,
     compactQualityText(warning)
   ));
@@ -8142,8 +8034,10 @@ function collectValidationImprovementLines(
   copy: ReturnType<typeof getGeoQualityCopy>,
   repairCount = diagnostics.validationRepairs?.length ?? 0
 ): string[] {
-  const unresolvedWarnings = diagnostics.validationWarnings.slice(Math.min(repairCount, diagnostics.validationWarnings.length));
-  const scopes = unresolvedWarnings.length > 0 ? unresolvedWarnings : diagnostics.validationWarnings;
+  const warnings = diagnostics.validationWarnings
+    .filter((warning) => !isDisabledHtmlContentValidationScope(warning));
+  const unresolvedWarnings = warnings.slice(Math.min(repairCount, warnings.length));
+  const scopes = unresolvedWarnings.length > 0 ? unresolvedWarnings : warnings;
   const directions = uniqueQualityItems(scopes.flatMap((scope) => {
     const direction = inferValidationDirection(scope, copy);
     return direction ? [direction] : [];
@@ -8153,7 +8047,12 @@ function collectValidationImprovementLines(
     return directions;
   }
 
-  return diagnostics.validationWarnings.length > 0 ? [copy.validationGenericDirection] : [];
+  return warnings.length > 0 ? [copy.validationGenericDirection] : [];
+}
+
+function isDisabledHtmlContentValidationScope(value: string): boolean {
+  return /^content(?:\.|\b)/iu.test(value.trim())
+    || /(?:generated\s+html|html\s+content|accordion\s+html)/iu.test(value);
 }
 
 function inferValidationDirection(
@@ -8236,7 +8135,7 @@ function getGeoQualityCopy(language: UiLanguage) {
       validationIssueLabel: "경고 항목",
       validationDirectionLabel: "검증 기반 개선 방향",
       none: "없음",
-      geoCriteria: "GEO 진단 기준: 필수 상품/페이지 엔티티, 그래프 참조, 공개 콘텐츠 일치, 검증 안정성을 봅니다. FAQ/HowTo는 존재만으로 가점하지 않고 생성된 경우 구조와 일치 여부만 점검합니다.",
+      geoCriteria: "GEO 진단 기준: 필수 상품/페이지 엔티티, 그래프 참조, Schema 구조, 검증 안정성을 봅니다. HTML CONTENT는 현재 생성·노출·점수화하지 않습니다. FAQ/HowTo는 존재만으로 가점하지 않고 생성된 경우 구조와 계획 일치 여부만 점검합니다.",
       cepCriteria: "CEP 진단 기준: 근거에 있는 성분·효능·고객 선택 맥락의 연결을 봅니다. 외부 시장의 CEP 공통성·경쟁성이나 실제 인용률을 예측하지 않습니다.",
       eeatCriteria: "E-E-A-T 진단 기준: 현재 제공되는 근거 레코드, 수치 클레임의 표본·기간 문맥, 검증 안정성을 봅니다. 원자 단위 주장-출처 일치는 아직 점수화하지 않습니다.",
       scoreSummary: (score: number, issueCount: number) => issueCount > 0
@@ -8246,7 +8145,7 @@ function getGeoQualityCopy(language: UiLanguage) {
       geoEntityEvidence: (faq: number, howTo: number, breadcrumb: number) => `선택 엔티티 현황: FAQ ${faq}개, HowTo ${howTo}단계, Breadcrumb ${breadcrumb}개 — 존재 자체는 가점하지 않음`,
       geoCommerceEvidence: (images: number, offers: number, properties: number) => `이미지 ${images}개, Offer ${offers}개, 추가 속성 ${properties}개로 PDP 식별성 보강`,
       schemaReferenceEvidence: (count: number) => count > 0 ? `로컬 스키마 참조 ${count}개가 대상 노드와 연결되지 않음` : "로컬 스키마 참조가 모두 대상 노드와 연결됨",
-      schemaParityEvidence: (faq: boolean, howTo: boolean) => `Schema/가시 콘텐츠 일치: FAQ ${faq ? "일치" : "불일치"}, HowTo ${howTo ? "일치" : "불일치"}`,
+      schemaParityEvidence: (_faq: boolean, _howTo: boolean) => "HTML CONTENT 일치 검사는 현재 평가에서 제외됨",
       planApplicabilityEvidence: (faq: boolean, howTo: boolean, available: boolean) => available
         ? `콘텐츠 계획/Schema 적용 일치: FAQ ${faq ? "일치" : "불일치"}, HowTo ${howTo ? "일치" : "불일치"}`
         : "콘텐츠 적용 계획이 없어 FAQ/HowTo의 의미상 적합성은 점수화하지 않음",
@@ -8273,8 +8172,8 @@ function getGeoQualityCopy(language: UiLanguage) {
       atomicEvidenceUnavailable: "현재 결과에는 주장별 evidence ID가 없어 원자 단위 출처 일치율은 계산하지 않음",
       missingProductSchema: "Product 스키마가 없으면 상품 엔티티를 우선 보강하세요.",
       missingWebPageSchema: "WebPage 스키마가 없으면 페이지 목적과 대표 설명을 보강하세요.",
-      faqParityImprovement: "FAQ를 생성한 경우 최종 Schema Q&A와 화면에 보이는 Q&A의 개수와 내용을 같은 최종 모델에서 렌더링하세요.",
-      howToParityImprovement: "HowTo를 생성한 경우 최종 Schema 단계와 화면에 보이는 사용 단계가 일치하도록 같은 최종 모델에서 렌더링하세요.",
+      faqParityImprovement: "HTML CONTENT가 다시 활성화될 때 최종 Schema Q&A와 같은 모델에서 렌더링하세요.",
+      howToParityImprovement: "HTML CONTENT가 다시 활성화될 때 최종 HowTo 단계와 같은 모델에서 렌더링하세요.",
       faqApplicabilityImprovement: "FAQPage는 실제 Q&A가 있을 때만 유지하고 각 Question에 비어 있지 않은 직접 답변을 연결하세요.",
       howToApplicabilityImprovement: "HowTo는 달성할 목표와 둘 이상의 실제 순차 행동이 근거에 있을 때만 유지하고, 단순 사용 메모라면 제거하세요.",
       faqPlanImprovement: "콘텐츠 계획에서 포함 승인된 FAQ와 최종 FAQPage 항목을 일치시키고 제외된 질문은 다시 채우지 마세요.",
@@ -8299,7 +8198,7 @@ function getGeoQualityCopy(language: UiLanguage) {
       eeatTimeImprovement: "수치 클레임에는 사용 기간이나 측정 시점을 함께 남기세요.",
       eeatRagImprovement: "근거 기반 클레임 RAG가 선택되도록 evidence-backed claims 신호를 보강하세요.",
       atomicEvidenceImprovement: (count: number) => `근거 연결이 완전하지 않은 계획 단위 ${count}개를 Evidence Ledger의 실제 ID에 연결하거나 공개 출력에서 제외하세요.`,
-      geoFallbackImprovement: "현재 필수 엔티티, 그래프 참조, 공개 콘텐츠 일치 상태를 회귀 검증하고 선택 스키마는 근거상 적용 가능한 경우에만 유지하세요.",
+      geoFallbackImprovement: "현재 필수 엔티티와 그래프 참조를 회귀 검증하고 선택 스키마는 근거상 적용 가능한 경우에만 유지하세요.",
       cepFallbackImprovement: "현재 성분-효능-선택 연결을 유지하되 고객 선택 문장을 반복 실행에서도 보존하세요.",
       eeatFallbackImprovement: "현재 근거 구조를 유지하되 수치/표본/기간 표현이 원문과 계속 일치하는지 회귀 검증하세요.",
       faqHeadingArtifact: (heading: string) => `FAQ에 원문 섹션 헤딩처럼 보이는 "${heading}" 항목이 노출되어 질문형 문장으로 정제 필요`,
@@ -8330,7 +8229,7 @@ function getGeoQualityCopy(language: UiLanguage) {
     validationIssueLabel: "Warning items",
     validationDirectionLabel: "Validation-based improvements",
     none: "none",
-    geoCriteria: "GEO diagnostic criteria: required product/page identity, graph references, visible-content parity, and validation stability. FAQ/HowTo presence earns no points; emitted nodes are checked only for structure and parity.",
+    geoCriteria: "GEO diagnostic criteria: required product/page identity, graph references, schema structure, and validation stability. HTML CONTENT is currently not generated, shown, or scored. FAQ/HowTo presence earns no points; emitted nodes are checked only for structure and plan consistency.",
     cepCriteria: "CEP diagnostic criteria: source-present ingredient, benefit, and customer-choice context. This does not predict external-market CEP commonality, competitiveness, or citation rate.",
     eeatCriteria: "E-E-A-T diagnostic criteria: currently available evidence records, sample/time context for numeric claims, and validation stability. Atomic claim-to-source entailment is not scored yet.",
     scoreSummary: (score: number, issueCount: number) => issueCount > 0
@@ -8340,7 +8239,7 @@ function getGeoQualityCopy(language: UiLanguage) {
     geoEntityEvidence: (faq: number, howTo: number, breadcrumb: number) => `Optional entity inventory: FAQ ${faq}, HowTo ${howTo} step${howTo === 1 ? "" : "s"}, Breadcrumb ${breadcrumb}; presence itself earns no points`,
     geoCommerceEvidence: (images: number, offers: number, properties: number) => `Images ${images}, offers ${offers}, additional properties ${properties} strengthen PDP identity`,
     schemaReferenceEvidence: (count: number) => count > 0 ? `${count} local schema reference${count === 1 ? "" : "s"} lack a target node` : "All local schema references resolve to target nodes",
-    schemaParityEvidence: (faq: boolean, howTo: boolean) => `Schema/visible-content parity: FAQ ${faq ? "matched" : "mismatched"}, HowTo ${howTo ? "matched" : "mismatched"}`,
+    schemaParityEvidence: (_faq: boolean, _howTo: boolean) => "HTML CONTENT parity is currently excluded from evaluation",
     planApplicabilityEvidence: (faq: boolean, howTo: boolean, available: boolean) => available
       ? `Content-plan/schema applicability: FAQ ${faq ? "matched" : "mismatched"}, HowTo ${howTo ? "matched" : "mismatched"}`
       : "No content applicability plan is available, so semantic FAQ/HowTo suitability is not scored",
@@ -8367,8 +8266,8 @@ function getGeoQualityCopy(language: UiLanguage) {
     atomicEvidenceUnavailable: "The current result has no per-claim evidence ID, so atomic claim-to-source coverage is not calculated",
     missingProductSchema: "Add Product schema first when the product entity is missing.",
     missingWebPageSchema: "Add WebPage schema with page purpose and representative description.",
-    faqParityImprovement: "When FAQ is emitted, render final Schema Q&A and visible Q&A from the same final model so counts and content match.",
-    howToParityImprovement: "When HowTo is emitted, render final Schema steps and visible usage steps from the same final model.",
+    faqParityImprovement: "When HTML CONTENT is re-enabled, render it from the same final FAQ schema model.",
+    howToParityImprovement: "When HTML CONTENT is re-enabled, render it from the same final HowTo schema model.",
     faqApplicabilityImprovement: "Keep FAQPage only for real Q&A and connect every Question to a non-empty direct answer.",
     howToApplicabilityImprovement: "Keep HowTo only when evidence contains a goal and at least two genuinely ordered user actions; remove it for a simple usage note.",
     faqPlanImprovement: "Match final FAQPage entries to FAQ items approved for inclusion by the content plan; do not backfill omitted questions.",
@@ -8393,7 +8292,7 @@ function getGeoQualityCopy(language: UiLanguage) {
     eeatTimeImprovement: "Keep usage period or measurement timing next to numeric claims.",
     eeatRagImprovement: "Strengthen evidence-backed claims signals so RAG selects the right proof.",
     atomicEvidenceImprovement: (count: number) => `Connect ${count} incompletely grounded plan unit${count === 1 ? "" : "s"} to real Evidence Ledger IDs or omit them from public output.`,
-    geoFallbackImprovement: "Regression-check required entities, graph references, and visible-content parity; keep optional schema only when source evidence makes it applicable.",
+    geoFallbackImprovement: "Regression-check required entities and graph references; keep optional schema only when source evidence makes it applicable.",
     cepFallbackImprovement: "Keep the current ingredient-benefit-choice bridge and preserve customer-choice wording across reruns.",
     eeatFallbackImprovement: "Keep the current evidence structure and regression-check metric, sample, and time expressions against source.",
     faqHeadingArtifact: (heading: string) => `FAQ exposes source-section heading "${heading}"; rewrite it as a user question.`,
@@ -8402,10 +8301,6 @@ function getGeoQualityCopy(language: UiLanguage) {
     metricSplitIssue: (value: string) => `Metric "${value}" appears split and should be checked against source evidence.`,
     lowAgreementIssue: (value: string) => `Evidence phrase "${value}" looks like a suspicious single-digit agreement claim; verify the source metric.`
   };
-}
-
-function countContentSections(sections: PdpGeoGenerationResult["content"]["sections"]): number {
-  return Object.values(sections).filter((value) => value.trim().length > 0).length;
 }
 
 function countTextItems(value: string): number {
@@ -8522,50 +8417,6 @@ function collectSchemaFaqQuestions(faqNode: Record<string, unknown> | undefined)
   });
 }
 
-function collectSchemaFaqPairs(faqNode: Record<string, unknown> | undefined): string[] {
-  if (!faqNode || !Array.isArray(faqNode["mainEntity"])) return [];
-  return faqNode["mainEntity"].flatMap((entity) => {
-    if (!isRecord(entity) || !isRecord(entity["acceptedAnswer"])) return [];
-    const question = getRecordString(entity, "name").trim();
-    const answer = getRecordString(entity["acceptedAnswer"], "text").trim();
-    return question && answer ? [`${question}\n${answer}`] : [];
-  });
-}
-
-function collectSectionFaqPairs(value: string): string[] {
-  const pairs: string[] = [];
-  let question = "";
-  for (const line of value.split(/\n+/).map((item) => item.trim()).filter(Boolean)) {
-    if (/^Q[.:]/i.test(line)) {
-      question = line.replace(/^Q[.:]\s*/i, "").trim();
-    } else if (/^A[.:]/i.test(line) && question) {
-      pairs.push(`${question}\n${line.replace(/^A[.:]\s*/i, "").trim()}`);
-      question = "";
-    }
-  }
-  return pairs;
-}
-
-function collectSchemaHowToSteps(howToNode: Record<string, unknown> | undefined): string[] {
-  if (!howToNode || !Array.isArray(howToNode["step"])) return [];
-  return howToNode["step"].flatMap((step) => isRecord(step) && getRecordString(step, "text").trim()
-    ? [getRecordString(step, "text").trim()]
-    : []);
-}
-
-function collectSectionHowToSteps(value: string): string[] {
-  return value.split(/\n+/)
-    .map((line) => line.replace(/^\s*(?:step\s*)?\d+\s*(?:단계|段階)?[.):、-]?\s*/i, "").trim())
-    .filter(Boolean);
-}
-
-function normalizedArraysEqual(left: string[], right: string[]): boolean {
-  return left.length === right.length && left.every((value, index) => (
-    value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()
-    === (right[index] ?? "").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()
-  ));
-}
-
 function countValidSchemaFaqItems(faqNode: Record<string, unknown>): number {
   const entities = faqNode["mainEntity"];
   if (!Array.isArray(entities)) {
@@ -8622,13 +8473,6 @@ function collectSchemaIdReferences(value: unknown): string[] {
 
   const id = getRecordString(value, "@id").trim();
   return id ? [id] : [];
-}
-
-function collectSectionFaqQuestions(faqText: string): string[] {
-  return faqText
-    .split(/\n+/)
-    .map((line) => line.replace(/^\s*(?:Q\.|Question:|\d+\.|-|\*)\s*/i, "").trim())
-    .filter((line) => line.length > 0 && !/^A\.|^Answer:/i.test(line));
 }
 
 function collectPublicArtifactHits(publicText: string, faqQuestions: string[], language: UiLanguage): string[] {

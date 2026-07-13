@@ -97,7 +97,7 @@ export function createPdpGeoReasoning(input: CreatePdpGeoReasoningInput): PdpGeo
       ragSources: ragSourcesByPrinciple.howTo,
       productEvidence: evidence.usage.slice(0, 6),
       fallbackSources: productEvidenceSources,
-      rationale: "HowTo is enabled only when concrete source usage evidence exists. One source instruction remains one step, and only an explicitly ordered source sequence may produce multiple steps; brand identity and general RAG guidance must not create, split, merge, or reorder usage actions."
+      rationale: "HowTo is enabled only when a concrete goal and at least two explicitly ordered source actions exist. A single instruction remains ordinary visible usage guidance; brand identity and general RAG guidance must not create, split, merge, or reorder usage actions."
     }),
     createDecision({
       principle: "evidence-backed claims",

@@ -231,7 +231,7 @@ FAQ answers should start with the direct answer, then add one short cited eviden
 
 ## HowTo Best Practice
 
-Create HowTo from concrete source directions: one application instruction becomes one step, and an explicit multi-step procedure preserves its source count and order. Do not turn frequency, amount, warnings, tests, or routine-position notes without a concrete action into steps, and do not add benefit, ingredient, or texture claims.
+Create HowTo only when a concrete goal and at least two explicitly ordered source actions exist, preserving the procedure's source count and order. Keep one application instruction as ordinary visible usage guidance without HowTo structured data. Do not turn frequency, amount, warnings, tests, or routine-position notes without a concrete action into steps, and do not add benefit, ingredient, or texture claims.
 
 Good step shape:
 

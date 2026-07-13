@@ -82,7 +82,7 @@ export function createPdpGeoRagQuery(product: PdpProductSignal, locale: PdpGeoLo
     "Need schema.org Product FAQPage HowTo BreadcrumbList WebPage, E-E-A-T, CEP, GEO, locale terminology, additionalProperty, positiveNotes.",
     "Need OCR sentence diagnostics, answer-ready FAQ intent, positive or neutral customer review FAQ intent, WebPage/Product description separation, source-supported benefit/effect wording, source-faithful HowTo eligibility, and public wording without internal diagnostic labels.",
     "Product.description order: product introduction and type -> target customer and concrete concern/CEP -> ingredient and formula composition -> supported finished-product benefits/effects and evidence -> concise attributed review summary last. Keep directions out of Product.description.",
-    "WebPage.description covers the product page, source-backed brand, and actual page-scope information without repeating the Product.description buyer narrative. HowTo uses one concrete source instruction as Step 1, preserves only explicit numbered/sequential source steps, and omits unordered usage notes.",
+    "WebPage.description covers the product page, source-backed brand, and actual page-scope information without repeating the Product.description buyer narrative. HowTo requires at least two explicitly ordered source actions and preserves their count and order; a single instruction remains visible usage copy without HowTo structured data.",
     "Use official OpenAI, Google Search Central, Gemini, and Perplexity docs for retrieval mode, embeddings, grounding, structured data, and answer-ready source support guidance."
   ].filter(Boolean).join("\n");
 }
@@ -196,7 +196,7 @@ function createTargetSubquery(
     howToUse: {
       id: "target-howto",
       target,
-      query: `${baseFacts} Update only HowTo.step and how-to-use PDP content from direct source usage. One concrete source instruction becomes exactly Step 1. Preserve count and order only for explicitly numbered or sequential source steps; omit multiple unmarked or unordered notes and never infer a routine from action-stage order. Keep schema.org HowTo compatibility. ${usageText}`,
+      query: `${baseFacts} Update only HowTo.step and how-to-use PDP content from direct source usage. Emit HowTo only for a concrete goal plus at least two explicitly numbered or sequential source actions, preserving their count and order. Keep a single instruction as visible usage guidance without HowTo structured data; omit multiple unmarked or unordered notes and never infer a routine from action-stage order. Keep schema.org HowTo compatibility. ${usageText}`,
       intents: ["howTo", "schema", "evidence"],
       fieldTargets: ["HowTo.step", "PDP.content"],
       reason: "Usage instructions changed, so HowTo-specific RAG should be retrieved without broad regeneration."

@@ -41,7 +41,7 @@ describe("finalProofreadPdpGeoArtifacts", () => {
     expect(unconfigured.content).toBe(input.content);
   });
 
-  it("accepts only fluency edits and synchronizes schema, visible sections, HTML, and scriptTag", async () => {
+  it("accepts only fluency edits and synchronizes schema, internal sections, and scriptTag", async () => {
     const input = applicationInput();
     const result = await finalProofreadPdpGeoArtifacts(input, {
       customFinalProofreader: {
@@ -80,8 +80,8 @@ describe("finalProofreadPdpGeoArtifacts", () => {
     expect(result.content.sections.description).toBe("Glow Serum is a serum for dry skin.");
     expect(result.content.sections.faq).toContain("Q. Is Glow Serum suitable for dry skin?");
     expect(result.content.sections.faq).toContain("A. Glow Serum is intended for dry skin.");
-    expect(result.content.sections.howToUse).toBe("1. Apply Glow Serum to clean skin.");
-    expect(result.content.html).toContain("Glow Serum is a serum for dry skin.");
+    expect(result.content.sections.howToUse).toBe("1. Apply Glow Serum to clean skin.\n2. Press gently until absorbed");
+    expect(result.content.html).toBe("");
     expect(JSON.parse(result.schemaMarkup.scriptTag.match(/>([\s\S]*)<\/script>/)?.[1] ?? "")).toEqual(result.schemaMarkup.jsonLd);
     const finalTrace = result.finalPublicCopyProvenance.find((item) => item.fieldPath === "Product.description");
     expect(finalTrace).toMatchObject({
@@ -764,7 +764,10 @@ describe("generator final proofreading integration", () => {
         brand: "Glow Lab",
         description: "A moisturizing serum for dry skin.",
         ingredients: ["Niacinamide"],
-        usage: ["Apply Glow Serum to clean skin."]
+        usage: [
+          "Step 1: Apply Glow Serum to clean skin.",
+          "Step 2: Press gently until absorbed."
+        ]
       },
       hints: { locale: "en-US", market: "US", schemaTargets: ["WebPage", "Product", "FAQPage", "HowTo"] }
     }, {
@@ -867,12 +870,20 @@ function applicationInput(overrides: { productDescription?: string } = {}): PdpG
       {
         "@type": "HowTo",
         name: "How to use Glow Serum",
-        step: [{
-          "@type": "HowToStep",
-          position: 1,
-          name: "Step 1",
-          text: "Apply Glow Serum to clean skin"
-        }]
+        step: [
+          {
+            "@type": "HowToStep",
+            position: 1,
+            name: "Step 1",
+            text: "Apply Glow Serum to clean skin"
+          },
+          {
+            "@type": "HowToStep",
+            position: 2,
+            name: "Step 2",
+            text: "Press gently until absorbed"
+          }
+        ]
       }
     ]
   };
@@ -882,14 +893,15 @@ function applicationInput(overrides: { productDescription?: string } = {}): PdpG
     quickFacts: "Glow Serum quick facts.",
     benefits: "Moisturizing care.",
     ingredients: "Niacinamide.",
-    howToUse: "1. Apply Glow Serum to clean skin",
+    howToUse: "1. Apply Glow Serum to clean skin\n2. Press gently until absorbed",
     faq: "Q. Is Glow Serum suitable for dry skin??\nA. Glow Serum is intended for dry skin skin."
   };
   const evidenceLedger = [
     evidence("ev-product-description", "description", productDescription, "product.description"),
     evidence("ev-webpage-description", "source", "This official product page presents Glow Serum. This official product page presents Glow Serum.", "product.sourceTexts[0]"),
     evidence("ev-faq", "faq", "Is Glow Serum suitable for dry skin??\nGlow Serum is intended for dry skin skin.", "product.faq[0]"),
-    evidence("ev-usage", "usage", "Apply Glow Serum to clean skin", "product.usage[0]")
+    evidence("ev-usage", "usage", "Apply Glow Serum to clean skin", "product.usage[0]"),
+    evidence("ev-usage-2", "usage", "Press gently until absorbed", "product.usage[1]")
   ];
   const input: PdpGeoFinalProofreadingApplicationInput = {
     product: {
@@ -902,7 +914,7 @@ function applicationInput(overrides: { productDescription?: string } = {}): PdpG
       benefits: [],
       effects: [],
       ingredients: ["Niacinamide"],
-      usage: ["Apply Glow Serum to clean skin"],
+      usage: ["Apply Glow Serum to clean skin", "Press gently until absorbed"],
       metrics: [],
       faq: [],
       reviews: { items: [], keywords: [] },

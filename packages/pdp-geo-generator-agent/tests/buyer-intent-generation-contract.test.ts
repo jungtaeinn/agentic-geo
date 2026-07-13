@@ -22,7 +22,7 @@ describe("buyer-intent generation contracts", () => {
     expect(normalized.product.description).toBe("A face serum.");
   });
 
-  it("publishes one source usage instruction as exactly one HowTo step", async () => {
+  it("keeps one source usage instruction visible without publishing HowTo schema", async () => {
     const run = await generatePdpGeo({
       product: {
         name: "Hydra Serum",
@@ -34,14 +34,7 @@ describe("buyer-intent generation contracts", () => {
     });
 
     const howTo = graphNodes(run).find((node) => node["@type"] === "HowTo");
-    const steps = (howTo?.step ?? []) as JsonValue[];
-
-    expect(steps).toHaveLength(1);
-    expect(steps[0]).toMatchObject({
-      "@type": "HowToStep",
-      position: 1,
-      text: "Apply one pump to the face and gently pat until absorbed"
-    });
+    expect(howTo).toBeUndefined();
     expect(run.result.content.sections.howToUse.trim()).toBe("1. Apply one pump to the face and gently pat until absorbed");
   });
 
@@ -62,6 +55,7 @@ describe("buyer-intent generation contracts", () => {
     const howTo = graphNodes(run).find((node) => node["@type"] === "HowTo");
     const steps = (howTo?.step ?? []) as Array<Record<string, JsonValue>>;
 
+    expect(howTo?.name).toBe("How to use Barrier Cream");
     expect(steps).toHaveLength(2);
     expect(steps.map((step) => step.position)).toEqual([1, 2]);
     expect(steps.map((step) => String(step.text))).toEqual([

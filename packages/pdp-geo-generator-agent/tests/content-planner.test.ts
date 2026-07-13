@@ -63,20 +63,18 @@ describe("evidence-bound content planning", () => {
     expect(result.plan.howTo.steps).toEqual([]);
   });
 
-  it("keeps one polite Korean application direction as a single source-backed step", async () => {
+  it("keeps one polite Korean application direction out of HowTo", async () => {
     const direction = "세럼을 얼굴에 고르게 바릅니다.";
     const result = await planPdpGeoContent(planningRequest({
       ...product,
       usage: [direction]
     }), {});
 
-    expect(result.plan.howTo.eligible).toBe(true);
-    expect(result.plan.howTo.steps.map((step) => step.text)).toEqual([direction]);
-    expect(result.plan.howTo.steps[0]?.position).toBe(1);
-    expect(result.plan.howTo.steps[0]?.evidenceIds).not.toHaveLength(0);
+    expect(result.plan.howTo.eligible).toBe(false);
+    expect(result.plan.howTo.steps).toEqual([]);
   });
 
-  it("keeps one polite Korean application direction through validation as a single HowTo step", async () => {
+  it("keeps one polite Korean application direction visible without HowTo schema", async () => {
     const direction = "세럼을 얼굴에 고르게 바릅니다.";
     const run = await generatePdpGeo({
       product: {
@@ -88,13 +86,7 @@ describe("evidence-bound content planning", () => {
     const graph = run.result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
     const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
 
-    expect(howTo).toBeDefined();
-    expect(howTo.step).toHaveLength(1);
-    expect(howTo.step[0]).toMatchObject({
-      "@type": "HowToStep",
-      position: 1,
-      text: direction.replace(/\.$/, "")
-    });
+    expect(howTo).toBeUndefined();
     expect(run.result.content.sections.howToUse).toBe(`1. ${direction.replace(/\.$/, "")}`);
   });
 
@@ -220,10 +212,14 @@ describe("evidence-bound content planning", () => {
     expect(productNode.description).toContain("건조한 피부에 수분을 공급");
     expect(webPage.description).toContain("하이드라 세럼 상품 페이지");
     expect(webPage.description).toMatch(/주요 성분·기술은 세라마이드.*효능·효과는 수분 케어/u);
-    expect((faq.mainEntity as Array<Record<string, unknown>>).length).toBeGreaterThanOrEqual(1);
-    expect(JSON.stringify(faq.mainEntity)).toContain("하이드라 세럼은 어떤 피부 고민에 적합한가요");
-    expect(howTo.step).toHaveLength(1);
-    expect(String(howTo.step[0]?.text)).toContain("세럼을 얼굴에 고르게 바릅니다");
+    const faqItems = faq.mainEntity as Array<Record<string, any>>;
+    expect(faqItems.length).toBeGreaterThanOrEqual(2);
+    expect(String(faqItems[0]?.name)).toContain("하이드라 세럼은 어떤 피부 고민에 적합한가요");
+    expect(String(faqItems[1]?.name)).toMatch(/구성 성분과 효능[·・]?효과/u);
+    expect(String(faqItems[1]?.acceptedAnswer?.text)).toMatch(/세라마이드/u);
+    expect(String(faqItems[1]?.acceptedAnswer?.text)).toMatch(/수분/u);
+    expect(howTo).toBeUndefined();
+    expect(run.result.content.sections.howToUse).toContain("세럼을 얼굴에 고르게 바릅니다");
     expect(run.result.diagnostics.contentPlan?.mode).toBe("model");
     expect(run.result.diagnostics.evidenceLedger?.length).toBeGreaterThan(5);
   });
@@ -260,9 +256,8 @@ describe("evidence-bound content planning", () => {
     });
 
     expect(result.plan.faq).toEqual([]);
-    expect(result.plan.howTo.eligible).toBe(true);
-    expect(result.plan.howTo.steps.map((step) => step.text)).toEqual(directUsage);
-    expect(result.plan.howTo.steps.every((step) => !step.evidenceIds.includes("ev-unknown"))).toBe(true);
+    expect(result.plan.howTo.eligible).toBe(false);
+    expect(result.plan.howTo.steps).toEqual([]);
     expect(result.warnings.join(" ")).toMatch(/omitted/i);
     expect(result.warnings.join(" ")).toMatch(/failed checks:.*known-evidence-ids/iu);
     expect(result.warnings.join(" ")).toContain("검증되지 않은 인증이 있나요?");
@@ -302,13 +297,11 @@ describe("evidence-bound content planning", () => {
     const graph = run.result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
     const howTo = graph.find((node) => node["@type"] === "HowTo");
 
-    expect(howTo).toBeDefined();
-    expect(JSON.stringify(howTo)).not.toContain(rejectedStep);
-    expect(JSON.stringify(howTo)).toContain(acceptedStep.replace(/\.$/, ""));
-    expect((howTo?.step as Array<Record<string, unknown>>)).toHaveLength(1);
+    expect(howTo).toBeUndefined();
     expect(run.result.content.sections.howToUse).not.toContain(rejectedStep);
+    expect(run.result.content.sections.howToUse).toContain(acceptedStep.replace(/\.$/, ""));
     expect(run.result.content.html).not.toContain(rejectedStep);
-    expect(run.result.diagnostics.contentPlan?.howTo.eligible).toBe(true);
+    expect(run.result.diagnostics.contentPlan?.howTo.eligible).toBe(false);
   });
 
   it("retries a rejected field with explicit evidence-gate feedback", async () => {

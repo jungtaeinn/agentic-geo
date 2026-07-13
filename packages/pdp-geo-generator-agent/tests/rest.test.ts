@@ -35,7 +35,7 @@ describe("createPdpGeoGeneratorRestHandler", () => {
     expect(response.status).toBe(200);
     expect(payload.results).toHaveLength(1);
     expect(payload.results[0]?.schemaMarkup.scriptTag).toContain("application/ld+json");
-    expect(payload.results[0]?.content.html).toContain("geo-content-accordion");
+    expect(payload.results[0]?.content.html).toBe("");
     expect(payload.failures).toEqual([]);
   });
 
@@ -102,7 +102,11 @@ describe("createPdpGeoGeneratorRestHandler", () => {
     const response = await handler(new Request("https://example.com/api/generate", {
       method: "POST",
       body: JSON.stringify({
-        product: { name: "Hydra Serum", description: "A serum for dry skin.", usage: ["Apply Hydra Serum to clean skin."] },
+        product: {
+          name: "Hydra Serum",
+          description: "A serum for dry skin.",
+          usage: ["Step 1: Apply Hydra Serum to clean skin.", "Step 2: Press gently until absorbed."]
+        },
         hints: { locale: "en-US" }
       })
     }));
@@ -240,7 +244,11 @@ describe("createPdpGeoGeneratorRestHandler", () => {
     const response = await handler(new Request("https://example.com/api/generate", {
       method: "POST",
       body: JSON.stringify({
-        product: { name: "Hydra Serum", description: "A serum for dry skin.", usage: ["Apply Hydra Serum to clean skin."] },
+        product: {
+          name: "Hydra Serum",
+          description: "A serum for dry skin.",
+          usage: ["Step 1: Apply Hydra Serum to clean skin.", "Step 2: Press gently until absorbed."]
+        },
         finalProofreading: {
           endpoint: "https://request-owned.openai.azure.com",
           apiKey: "request-secret"

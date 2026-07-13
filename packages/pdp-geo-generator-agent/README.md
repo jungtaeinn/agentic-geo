@@ -13,7 +13,7 @@
 
 > 구조화 데이터는 상품과 페이지의 의미를 명확히 하고 검색 기능의 적격성을 높이는 수단이지, ChatGPT·Gemini·Perplexity 또는 Google 검색의 인용·노출을 보장하는 장치가 아닙니다. [Google 공식 가이드](https://developers.google.com/search/docs/fundamentals/ai-optimization-guide)는 AI Overviews/AI Mode를 위한 별도 특수 스키마가 없다고 안내하며, 구조화 데이터와 사용자에게 보이는 본문이 일치해야 합니다. [Google FAQ rich result는 2026-05-07부터 더 이상 표시되지 않으므로](https://developers.google.com/search/updates), 이 패키지의 `FAQPage`는 가시적인 상품 Q&A를 표현하는 schema.org 의미 계층으로만 사용합니다. ChatGPT Search 검색 대상이 되려면 [운영 페이지에서 `OAI-SearchBot` 접근도 허용](https://help.openai.com/en/articles/12627856-publishers-and-developers-faq)해야 합니다.
 
-현재 생성 경로는 정규화된 상품 신호를 원자 단위 `Evidence Ledger`로 만든 뒤, 모델이 evidence ID를 참조하는 `Content/Schema Plan`에서 설명·FAQ·CEP·HowTo 적합성을 먼저 결정합니다. FAQ는 최소 개수를 채우지 않습니다. HowTo는 원문에 구체적인 사용 행동이 있을 때만 생성하며, 하나의 사용 지침은 Step 1 하나로, 원문에 명시된 다단계 절차는 원래 개수와 순서대로 유지합니다. 특정 브랜드/상품 문장을 고치는 예외 대신 evidence role, locale, graph integrity 계약으로 결과를 검증합니다.
+현재 생성 경로는 정규화된 상품 신호를 원자 단위 `Evidence Ledger`로 만든 뒤, 모델이 evidence ID를 참조하는 `Content/Schema Plan`에서 설명·FAQ·CEP·HowTo 적합성을 먼저 결정합니다. FAQ는 최소 개수를 채우지 않습니다. HowTo는 원문에 달성 목표와 명시적으로 순서가 있는 사용 행동이 둘 이상 있을 때만 생성하며, 원래 개수와 순서를 유지합니다. 하나의 사용 지침은 구조화하지 않고 일반 사용법 콘텐츠로 표시합니다. 특정 브랜드/상품 문장을 고치는 예외 대신 evidence role, locale, graph integrity 계약으로 결과를 검증합니다.
 
 ## 빠른 호출 가이드
 
@@ -370,7 +370,7 @@ OpenAI Responses, Gemini, Azure OpenAI, AI Studio는 provider-native JSON Schema
 
 | 필드 | 허용되는 근거 | 제거/보정되는 오염 예시 |
 | --- | --- | --- |
-| `HowTo.step` | 원문에 있는 구체적 사용 행동. 하나의 지침은 Step 1 하나, 명시된 다단계 절차는 원래 개수와 순서 유지 | 행동 없는 빈도·양·주의 메모, 임상 수치, 효능, 성분 설명, 리뷰 요약, 원문에 없는 단계 분할·병합 |
+| `HowTo.step` | 달성 목표와 명시적으로 순서가 있는 원문 사용 행동 둘 이상. 원래 개수와 순서 유지 | 단일 사용 지침, 행동 없는 빈도·양·주의 메모, 임상 수치, 효능, 성분 설명, 리뷰 요약, 원문에 없는 단계 분할·병합 |
 | `content.sections.howToUse`, Usage property | 근거가 있는 일반 사용 지침을 포함하며 HowTo가 부적합해도 표시 가능 | 임상 수치, 효능 문장, 성분 설명, 리뷰 요약 |
 | `content.sections.ingredients` | 성분명, formula technology, INCI/full ingredient, 성분 역할 설명 | 리뷰 표현, routine 문장, 검색 의도 문장, 효능 요약 |
 | `content.sections.benefits`, `positiveNotes` | 효능/효과, 고객이 이해할 수 있는 outcome, 짧은 evidence topic | 긴 임상 원문, 내부 diagnostic label, 원시 메트릭 문장 |

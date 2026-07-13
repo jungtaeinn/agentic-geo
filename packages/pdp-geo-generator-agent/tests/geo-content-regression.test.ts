@@ -307,7 +307,8 @@ describe("evidence-rich GEO regression contracts", () => {
       .filter((item): item is Record<string, JsonValue> => typeof item === "object" && item !== null && !Array.isArray(item));
     const faqText = JSON.stringify(faqItems);
 
-    expect(faqItems.some((item) => /주요\s*성분이나\s*기술.*역할/u.test(String(item.name ?? "")))).toBe(true);
+    expect(String(faqItems[0]?.name ?? "")).toMatch(/고객|추천|적합/u);
+    expect(String(faqItems[1]?.name ?? "")).toMatch(/구성\s*성분.*효능[·・]?효과/u);
     expect(faqText).toMatch(/세라마이드/u);
     expect(faqText).toMatch(/피부\s*장벽|보습/u);
     expect(faqText).not.toMatch(/고객\s*리뷰|긍정\s*리뷰|리뷰에서\s*반복/u);
@@ -1517,8 +1518,9 @@ describe("evidence-rich GEO regression contracts", () => {
 
       expect(suitabilityQuestions).toHaveLength(1);
       expect(questions.some((question) => testCase.locale === "ko-KR"
-        ? /주요 성분이나 기술.*역할/u.test(question)
-        : /ingredients? or technologies.*roles? are explicitly stated/iu.test(question))).toBe(true);
+        ? /구성 성분.*효능[·・]?효과/u.test(question)
+        : /key ingredients?.*supported benefits?/iu.test(question))).toBe(true);
+      expect(questions[0]).toBe(suitabilityQuestions[0]);
     }
   });
 
@@ -1574,11 +1576,11 @@ describe("evidence-rich GEO regression contracts", () => {
 
     expect(run.result.diagnostics.contentPlan?.mode).toBe("model");
     expect(run.result.diagnostics.contentPlan?.cep).toHaveLength(1);
-    expect(queries).toHaveLength(1);
-    expect(queries[0]?.source).toBe("model-inferred-cep");
-    expect(queries[0]?.question).toMatch(/피부가 건조할 때 촉촉한 사용감이 필요한 경우 어떤 세럼이 적합한가요\?/u);
-    expect(queries[0]?.answer).toMatch(/피부가 건조할 때 촉촉한 사용감을 고려한 세럼/u);
-    expect(`${queries[0]?.question} ${queries[0]?.answer}`).not.toMatch(/촉촉한 사용감 같은 사용감|주름/u);
+    const cepQuery = queries.find((query) => /피부가 건조할 때 촉촉한 사용감이 필요한 경우/u.test(query.question));
+    expect(cepQuery?.question).toMatch(/피부가 건조할 때 촉촉한 사용감이 필요한 경우 어떤 세럼이 적합한가요\?/u);
+    expect(cepQuery?.answer).toMatch(/피부가 건조할 때 촉촉한 사용감을 고려한 세럼/u);
+    expect(`${cepQuery?.question} ${cepQuery?.answer}`).not.toMatch(/촉촉한 사용감 같은 사용감|주름/u);
+    expect(queries.some((query) => query.kind === "direct")).toBe(true);
     expect(properties.some((item) => item.name === "Customer situation")).toBe(true);
     expect(properties.some((item) => item.name === "Review-derived recommendation context")).toBe(false);
     expect(properties.some((item) => item.propertyID === "indirectCustomerQuestion" || item.propertyID === "directProductQuestion")).toBe(false);
@@ -1608,12 +1610,14 @@ describe("evidence-rich GEO regression contracts", () => {
         }
       }
     });
-    const audienceQuery = audienceRun.result.diagnostics.inferredSearchQueries?.[0];
+    const audienceQuery = audienceRun.result.diagnostics.inferredSearchQueries?.find((query) =>
+      /^건조 피부 고객에게 피부 장벽 보습이 필요한 경우/u.test(query.question)
+    );
     expect(audienceQuery?.question).toMatch(/^건조 피부 고객에게 피부 장벽 보습이 필요한 경우/u);
     expect(audienceQuery?.answer).toMatch(/건조 피부 고객에게 필요한 피부 장벽 보습을 다루는 세럼/u);
   });
 
-  it("does not restore review-derived properties or queries when an empty model plan is accepted", async () => {
+  it("restores required product FAQ without restoring review-derived properties from an empty model plan", async () => {
     const run = await generatePdpGeo({
       product: {
         name: "하이드라 세럼",
@@ -1640,17 +1644,19 @@ describe("evidence-rich GEO regression contracts", () => {
       /^(?:FAQPage\.mainEntity|content\.sections\.faq|content\.html)$/u.test(repair.field));
 
     expect(run.result.diagnostics.contentPlan?.mode).toBe("model");
-    expect(run.result.diagnostics.contentPlan?.faq).toEqual([]);
-    expect(run.result.diagnostics.inferredSearchQueries).toEqual([]);
-    expect(faqPage).toBeUndefined();
-    expect(run.result.content.sections.faq).toBe("");
-    expect(run.result.content.html).not.toMatch(/(?:FAQ|자주\s*묻는\s*질문)/iu);
+    const plannedFaq = run.result.diagnostics.contentPlan?.faq ?? [];
+    expect(plannedFaq[0]?.intent).toBe("target-customer-recommendation");
+    expect(plannedFaq[1]?.intent).toBe("composition-benefit-effect");
+    expect(faqPage).toBeDefined();
+    expect(run.result.content.sections.faq).toMatch(/어떤 고객|추천/u);
+    expect(run.result.content.sections.faq).toMatch(/구성 성분과 효능[·・]?효과/u);
+    expect(JSON.stringify(run.result.diagnostics.inferredSearchQueries)).not.toMatch(/주름|효과를 느끼지 못/u);
     expect(faqRepairs).toHaveLength(0);
     expect(properties.some((item) => item.name === "Review-derived recommendation context")).toBe(false);
     expect(properties.some((item) => item.propertyID === "indirectCustomerQuestion" || item.propertyID === "directProductQuestion")).toBe(false);
   });
 
-  it("keeps exact model-approved FAQ membership without replenishing excluded source questions", async () => {
+  it("keeps the approved FAQ first while completing required and applicable FAQ coverage", async () => {
     const approvedQuestion = "배리어 로션은 어떤 고객에게 적합한가요?";
     const approvedAnswer = "배리어 로션은 건조하고 민감한 피부 고객에게 적합한 보습 로션입니다.";
     const excludedQuestion = "배리어 로션은 어떻게 사용하나요?";
@@ -1704,11 +1710,12 @@ describe("evidence-rich GEO regression contracts", () => {
       answer: String((item.acceptedAnswer as Record<string, JsonValue>).text)
     }));
 
-    expect(run.result.diagnostics.contentPlan?.faq.map((item) => item.question)).toEqual([approvedQuestion]);
-    expect(renderedFaq).toEqual([{ question: approvedQuestion, answer: approvedAnswer }]);
-    expect(run.result.content.sections.faq).toBe(`Q. ${approvedQuestion}\nA. ${approvedAnswer}`);
-    expect(run.result.content.html).toContain(approvedQuestion);
-    expect(run.result.content.html).not.toContain(excludedQuestion);
+    const plannedQuestions = run.result.diagnostics.contentPlan?.faq.map((item) => item.question) ?? [];
+    expect(plannedQuestions[0]).toBe(approvedQuestion);
+    expect(plannedQuestions[1]).toMatch(/구성 성분과 효능[·・]?효과/u);
+    expect(renderedFaq.map((item) => item.question)).toEqual(plannedQuestions);
+    expect(run.result.content.sections.faq).toContain(`Q. ${approvedQuestion}\nA. ${approvedAnswer}`);
+    expect(run.result.content.html).toBe("");
     expect((run.result.diagnostics.validationRepairs ?? []).filter((repair) =>
       /^(?:FAQPage\.mainEntity|content\.sections\.faq|content\.html)$/u.test(repair.field))).toHaveLength(0);
   });

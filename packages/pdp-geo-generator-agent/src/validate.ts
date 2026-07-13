@@ -30,7 +30,7 @@ interface PropertyValueNameRepair {
 
 const allowedGraphTypes = new Set(["WebPage", "Product", "FAQPage", "HowTo", "BreadcrumbList", "Question", "Answer", "HowToStep", "Offer", "AggregateRating", "Review", "Rating", "PropertyValue", "ItemList", "ListItem", "Brand", "Person"]);
 
-/** Validates and repairs generated JSON-LD and simple accordion HTML. */
+/** Validates and repairs generated JSON-LD. HTML CONTENT is currently disabled. */
 export function validateAndRepairPdpGeoArtifacts(input: ValidateAndRepairInput): ValidateAndRepairOutput {
   const validationWarnings: string[] = [];
   const validationRepairs: PdpGeoValidationRepair[] = [];
@@ -46,6 +46,9 @@ export function validateAndRepairPdpGeoArtifacts(input: ValidateAndRepairInput):
     jsonLd,
     scriptTag: `<script type="application/ld+json">${escapeScriptJson(JSON.stringify(jsonLd, null, 2))}</script>`
   };
+  // Sections remain an internal composition/proofreading model. They are
+  // repaired and synchronized for pipeline stability but are not rendered as
+  // HTML CONTENT or included in public quality scoring.
   const repairedSections = repairContentSections(input.content.sections, locale, validationWarnings, validationRepairs);
   const validatedGraph: Array<Record<string, unknown>> = Array.isArray(jsonLd["@graph"])
     ? jsonLd["@graph"].flatMap((node) => isRecord(node) ? [node] : [])
@@ -58,24 +61,11 @@ export function validateAndRepairPdpGeoArtifacts(input: ValidateAndRepairInput):
   for (const repair of parity.repairs) {
     addRepair(validationWarnings, validationRepairs, repair, repair.action);
   }
-  const sections = parity.sections;
-  const sanitizedHtml = sanitizeAccordionHtml(input.content.html, validationWarnings, validationRepairs);
   const content = {
     ...input.content,
-    sections,
-    html: createAccordionHtml(sections, locale)
+    sections: parity.sections,
+    html: ""
   };
-  if (sanitizedHtml !== input.content.html || content.html !== input.content.html) {
-    addRepair(validationWarnings, validationRepairs, {
-      field: "content.html",
-      source: "html-validator",
-      issue: "Generated HTML was not trusted as final output because it may contain unsafe markup or may not match the repaired section data.",
-      action: "Rebuilt the accordion HTML from repaired content.sections so public HTML matches validated copy.",
-      before: input.content.html,
-      after: content.html,
-      evidence: ["content.sections", "html sanitizer"]
-    }, "Generated HTML was rebuilt from repaired content sections.");
-  }
 
   return {
     schemaMarkup,
@@ -93,7 +83,9 @@ export function validateAndRepairPdpGeoArtifacts(input: ValidateAndRepairInput):
 export function validatePdpGeoArtifacts(input: ValidateAndRepairInput): ValidatePdpGeoArtifactsOutput {
   const isolatedInput = JSON.parse(JSON.stringify(input)) as ValidateAndRepairInput;
   const dryRun = validateAndRepairPdpGeoArtifacts(isolatedInput);
-  const validationFindings: PdpGeoValidationFinding[] = dryRun.validationRepairs.map((repair) => ({
+  const validationFindings: PdpGeoValidationFinding[] = dryRun.validationRepairs
+    .filter((repair) => !isDisabledHtmlContentField(repair.field))
+    .map((repair) => ({
     field: repair.field,
     source: repair.source,
     issue: repair.issue,
@@ -101,7 +93,7 @@ export function validatePdpGeoArtifacts(input: ValidateAndRepairInput): Validate
     before: repair.before,
     suggestedAfter: repair.after,
     evidence: repair.evidence
-  }));
+    }));
   const validationWarnings = validationFindings.map((finding) => `${finding.field}: ${finding.issue}`);
 
   if (!scriptTagMatchesJsonLd(input.schemaMarkup)) {
@@ -121,6 +113,10 @@ export function validatePdpGeoArtifacts(input: ValidateAndRepairInput): Validate
     validationWarnings: Array.from(new Set(validationWarnings)),
     validationFindings
   };
+}
+
+function isDisabledHtmlContentField(field: string): boolean {
+  return /^content(?:\.|\b)/iu.test(field.trim());
 }
 
 function scriptTagMatchesJsonLd(schemaMarkup: PdpGeoSchemaMarkup): boolean {
@@ -582,6 +578,11 @@ function repairGraphNode(
   }
 
   if (node["@type"] === "HowTo" && Array.isArray(node.step)) {
+    const originalSteps = node.step.filter(isRecord);
+    const originalPositions = originalSteps.map((item) => numberValue(item.position));
+    const originalPositionsWereSequential = originalSteps.every((item, index) =>
+      numberValue(item.position) === index + 1
+    );
     let nextPosition = 1;
     const seenStepKeys = new Set<string>();
     const stepCandidates: Array<{
@@ -668,6 +669,20 @@ function repairGraphNode(
         text: part
       }];
     });
+    if (originalSteps.length >= 2
+      && !originalPositionsWereSequential
+      && Array.isArray(node.step)
+      && node.step.length >= 2) {
+      addRepair(warnings, repairs, {
+        field: "HowTo.step.position",
+        source: "schema-validator",
+        issue: "HowTo step positions were missing or not contiguous in source order.",
+        action: "Renumbered retained HowTo steps contiguously in their source array order.",
+        before: toJsonValue(originalPositions),
+        after: toJsonValue(node.step.map((item) => isRecord(item) ? item.position : undefined)),
+        evidence: ["HowTo.step.position", "ordered multi-step procedure contract"]
+      }, "HowTo step positions were normalized to contiguous source order.");
+    }
   }
 
   if (node["@type"] === "Product") {
@@ -2587,11 +2602,31 @@ function repairFaqAnswerReviewFieldRouting(question: string, answer: string, loc
   if (sentences.length === 0) {
     return answer.trim();
   }
-  const kept = sentences.filter((sentence) => !isReviewFaqAnswerSentence(sentence, locale));
+  const kept = sentences.filter((sentence) => !isReviewFaqAnswerSentence(sentence, locale)
+    || isAllowedTargetCustomerReviewSummary(question, sentence, locale));
   if (kept.length === sentences.length) {
     return answer;
   }
   return kept.join(" ").trim();
+}
+
+function isAllowedTargetCustomerReviewSummary(question: string, sentence: string, locale: PdpGeoLocale): boolean {
+  const targetQuestion = locale === "ko-KR"
+    ? /(?:어떤|어느)\s*(?:고객|대상)|(?:고객|피부)[^?？]{0,80}(?:추천|적합)|(?:추천|적합)[^?？]{0,80}(?:고객|피부)/u.test(question)
+    : locale === "ja-JP"
+      ? /(?:どのような|どんな|どの)\s*(?:お客様|方|肌)|(?:向いて|おすすめ)/u.test(question)
+      : /(?:who\s+is|best\s+suited|suitable\s+for|recommended\s+for|which\s+customers?)/iu.test(question);
+  if (!targetQuestion || isNegativeReviewSignalText(sentence)) {
+    return false;
+  }
+  if (locale === "ko-KR") {
+    return /^(?:실제\s*)?고객\s*리뷰에서는[^.!?。！？]{2,140}(?:언급|평가|표현)[^.!?。！？]{0,80}(?:참고|판단|확인|언급)[^.!?。！？]*[.!?。！？]?$/u.test(sentence)
+      && !/(?:ㅠㅠ|ㅎㅎ|ㅋㅋ|제발|원합니다|같아요|했어요|더라구|구요|사용중|재출시|대용량)/u.test(sentence);
+  }
+  if (locale === "ja-JP") {
+    return /^(?:レビュー|口コミ)では[^.!?。！？]{2,180}(?:言及|評価|表現)/u.test(sentence);
+  }
+  return /^(?:customer\s+reviews?|reviews?)\s+(?:mention|highlight|describe|note)[^.!?]{2,220}/iu.test(sentence);
 }
 
 function isReviewFaqAnswerSentence(value: string, locale: PdpGeoLocale): boolean {
@@ -2782,7 +2817,7 @@ function isRawReviewLikeKoreanFaqQuestion(value: string): boolean {
   }
 
   const hasReviewVoice = /(?:뽀득거리지도|미끌거리지도|무난하게|데일리로\s*사용|트러블\s*올라오지|성분이\s*착해서|약품\s*냄새|약품냄새|냄새|향이|아쉬운|좋아요|좋네요|좋은\s*것\s*같|같아요|같구요|같네요|더라구|더라고|구요|했어요|써봤|구매했|사용중|느낌)$/u.test(text)
-    || /(?:뽀득|미끌|촉촉|당김|크리미|거품|순해서|자극없이|데일리|무난|트러블|아쉬운|냄새|향이|좋아요|같아요|느낌)/u.test(text);
+    || /(?:뽀득|미끌|촉촉|당김|크리미|거품|순해서|자극없이|데일리|무난|트러블|아쉬운|냄새|향이|좋아요|같아요|느낌|바르는데|밀리는|안아프던대|흡수가\s*잘\s*되는)/u.test(text);
   if (!hasReviewVoice) {
     return false;
   }
@@ -4070,7 +4105,11 @@ function koreanMetaNarrationSourceSubjectPattern(): string {
   // frames as meta narration so sentence QA cannot corrupt valid copy.
   // "공식 상품 정보에서 ...로 설명됩니다" is evidence attribution,
   // not an internal generation frame, and must remain public copy.
-  return "(?:(?<!공식\\s)상품\\s*(?:페이지|상세|정보)|제품\\s*(?:자료|정보|의\\s*확인\\s*근거)|확인(?:된)?\\s*(?:결과\\/정보|상품\\s*정보|가능한\\s*정보|근거|정보|결과)|성분\\/효능\\s*근거|근거|내용|자료|리뷰\\s*(?:기반\\s*)?표현)";
+  // Bare meta nouns must end before whitespace or a Korean particle. Without
+  // this boundary, ordinary compounds such as `내용물` and `내용량` are
+  // mistaken for internal narration and their leading noun is removed.
+  const bareNounBoundary = "(?=\\s|은|는|이|가|을|를|에는|에서는|으로는)";
+  return `(?:(?<!공식\\s)상품\\s*(?:페이지|상세|정보)|제품\\s*(?:자료|정보|의\\s*확인\\s*근거)|확인(?:된)?\\s*(?:결과\\/정보|상품\\s*정보|가능한\\s*정보|근거|정보|결과)|성분\\/효능\\s*근거|내용${bareNounBoundary}|자료${bareNounBoundary}|리뷰\\s*(?:기반\\s*)?표현)`;
 }
 
 function rewriteKoreanMetaNarrationPhrase(phrase: string, mode: "provide" | "describe"): string {

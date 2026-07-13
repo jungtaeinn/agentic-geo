@@ -237,7 +237,7 @@ describe("readPdpGeoGeneratorRagProfile", () => {
     expect(query).toContain("Product.description order: product introduction and type -> target customer and concrete concern/CEP -> ingredient and formula composition -> supported finished-product benefits/effects and evidence -> concise attributed review summary last");
     expect(query).toContain("Keep directions out of Product.description");
     expect(query).toContain("WebPage.description covers the product page, source-backed brand, and actual page-scope information");
-    expect(query).toContain("omits unordered usage notes");
+    expect(query).toContain("a single instruction remains visible usage copy without HowTo structured data");
   });
 
   it("keeps default fallback RAG aligned with answer-ready content and public wording guardrails", () => {
@@ -251,7 +251,7 @@ describe("readPdpGeoGeneratorRagProfile", () => {
     expect(bestPractice?.content).toContain("Public Wording Guardrails");
     expect(bestPractice?.content).toContain("Schema.org + GEO Description Direction");
     expect(bestPractice?.content).toContain("FAQPage has no quota");
-    expect(bestPractice?.content).toContain("one concrete source instruction becomes one HowTo step");
+    expect(bestPractice?.content).toContain("HowTo requires at least two explicit ordered actions");
     expect(bestPractice?.content).toContain("OCR Sentence Diagnostics and English RAG Use");
     expect(bestPractice?.content).toContain("natural English commerce language");
     expect(bestPractice?.content).toContain("Do not reuse the same text for WebPage.description and Product.description");
@@ -302,7 +302,7 @@ describe("readPdpGeoGeneratorRagProfile", () => {
     expect(plan.queries.some((query) => query.target === "faq" && query.fieldTargets.includes("FAQPage.mainEntity"))).toBe(true);
     expect(plan.queries.some((query) => query.target === "howToUse" && query.fieldTargets.includes("HowTo.step"))).toBe(true);
     expect(plan.queries.find((query) => query.target === "howToUse")?.query)
-      .toContain("One concrete source instruction becomes exactly Step 1");
+      .toContain("at least two explicitly numbered or sequential source actions");
     expect(plan.queries.find((query) => query.target === "howToUse")?.query)
       .toContain("never infer a routine from action-stage order");
   });
