@@ -11,6 +11,13 @@ AESTURA output should preserve the default field evidence contract while adding 
 - Tie ingredient and technology claims only to current product-source details such as ceramide/barrier ingredients, DermaON or patented delivery systems, sensitivity testing, and clinical/reported results when those details appear in the product evidence. Use the matched brand identity document for derma-science mood, sensitive-skin vocabulary, practical tone, and brand image; do not use brand-only patents, official articles, or papers as product proof.
 - Build FAQ and HowTo around barrier-compromised customer questions: irritation concerns, dry/sensitive skin fit, routine layering, seasonal use, texture/finish, family or body-area suitability, and post-treatment caution when supported.
 - Keep claim safety strict. Do not imply drug-like treatment for eczema, acne, rosacea, wounds, or other conditions unless the supplied product source explicitly supports an approved claim.
+- For AESTURA Korea output, write customer-facing fields in natural Korean. Name the exact product in the opening and again in the main composition sentence so the ingredient statement remains attributable when quoted alone; do not begin product-specific FAQ with `이 제품`, `이 크림`, or `본 제품`.
+- When structured test facts include dates, population, method, institution, timings, and values, turn them into one natural Korean study sentence that preserves each date and number and explicitly pairs every timing with its value. Do not expose a parenthetical field dump such as `시점`, `대상`, `기간`, `방법`, and `기관`.
+- Build both descriptions around a supported CEP flow: the customer's concrete skin state or concern -> why this product type fits that need -> formula composition -> explicitly supported ingredient role -> finished-product result -> testing and attributed review context. This should read as one explanation, not as adjacent database-field summaries. Natural flow never permits a new causal claim.
+- In Korean `WebPage.description`, use `상품 페이지` only in the opening. Subsequent sentences should name the exact AESTURA product or use its customer concern, formula, test result, testing, offer, or review as the subject. Avoid `페이지 본문에서는`, `페이지에서 확인할 수 있는`, and `페이지에 공개된`.
+- Build AESTURA FAQ answers as one CEP explanation: customer concern -> why the product fits -> selected core formula and only explicit ingredient roles -> the most relevant finished-product result as proof -> bounded recommendation and any needed qualifier. Do not append the institution, period, sample, method, and outcome as a raw report sentence or enumerate every ingredient and effect.
+- Rewrite internal source questions into likely customer queries when the evidence supports the bridge. A water-cream formula plus an immediate cooling result may support `땀을 많이 흘리거나 더위를 많이 느끼는 고객에게 [정확한 상품명]은 추천할 만한가요?`; answer it as a recommendation for a cool, refreshing feel and never as sweat control or heat treatment.
+- For supported infant or pregnancy-use FAQ, name the exact product and state the test/use scope directly. Prefer `진행했습니다`, `사용할 수 있습니다`, `추천할 수 있습니다`, and `권장합니다` over observer endings such as `설명됩니다` and `안내됩니다`, while retaining any source-stated patch-test or professional-consultation precaution.
 
 ## Base Best Practice Model
 
@@ -40,7 +47,7 @@ GEO output should make the product easier to retrieve, understand, verify, and r
 
 - Prefer product-specific facts over generic SEO claims.
 - Treat ChatGPT Search, Gemini grounding, and Google AI Search as retrieval-and-citation environments: they reward crawlable, visible, source-backed content units, not hidden AI-only instructions or artificial markup tricks.
-- Compose Product.description from: product introduction/type -> target customer/concern -> ingredient or technology composition -> supported finished-product benefit/effect and evidence/test context -> attributed review summary last. Keep usage separate.
+- Compose Product.description from: product introduction/type -> target customer/concern -> composition -> supported finished-product benefit/effect -> source-stated research/article citation -> attributed review keywords last. Keep usage separate and preserve cited dates/numbers.
 - Never expose internal wording such as "GEO-ready", "PDP name", "schema optimization", or "for generative engines" inside public schema/content.
 - Do not use analysis labels such as "usage", "review", "benefit", or "keyword" as product category values.
 - Do not create FAQ, review, or HowTo content from isolated tokens. Use complete questions, answers, review summaries, and actionable usage steps.
@@ -54,6 +61,17 @@ Public JSON-LD values and PDP content should read like customer-facing product i
 - Prefer direct public wording such as "the formula includes", "key ingredients and technologies include", "customer reviews mention", "the product is suitable for", "use it", "the routine uses", or "the option differs by". Avoid passive report-like wording that says information is organized, presented, exposed, summarized, included, reported, or covered.
 - When adding expression variety, vary ingredient, benefit, texture, routine, and review wording naturally; do not add phrases whose only purpose is to look quotable.
 - Keep diagnostic terms in diagnostics only. Do not place diagnostic labels in `WebPage.description`, `Product.description`, `positiveNotes`, `additionalProperty.value`, `FAQPage.mainEntity`, or `HowTo.step`.
+
+## AESTURA BestPractice Tone
+
+Use a calm, assured dermocosmetic voice that feels practical to a customer and precise about evidence. The narrative should make the supported skin concern easy to recognize, explain the formula in accessible language, and move naturally into finished-product efficacy and testing without becoming a laboratory report.
+
+- Lead with the exact product and supported customer concern in clear Korean, then let composition and efficacy answer why the product is relevant.
+- Balance short product/target sentences with medium-length explanatory sentences for ingredient structure, measured outcomes, and test scope. Avoid both clipped field lists and oversized promotional sentences.
+- Use derma-science vocabulary only where current product evidence supports it, and explain technical structure through its stated product role rather than stacking technical nouns.
+- Keep the tone confident but bounded: exact human-application results and completed tests can support product evaluation, but must not become universal safety or treatment claims.
+- End with a natural customer evaluation of texture, comfort, moisture, or satisfaction when supported, so the description finishes in an experience-led voice rather than a report ending.
+- Generate each sentence anew from the product's CEP and evidence. Do not reuse the wording of examples in this document or force a standard AESTURA sentence template.
 
 ## Recommended JSON-LD Graph Shape
 
@@ -76,9 +94,7 @@ Schema.org treats `description` as the description of the item being marked up. 
 
 Role: describe the product page as the source that organizes information about the product.
 
-Recommended composition:
-
-`This [brand] [product name] product page introduces the [product type] and covers [actual supported information categories].`
+Recommended evidence arc, not a surface template: identify the exact AESTURA product page naturally, then let the supported customer concern lead into selected formula/effect facts, high-level routine timing, shared-study proof, completed testing, the matched option/price, and attributed review experience when each exists.
 
 Use `WebPage.description` to expose:
 
@@ -86,20 +102,30 @@ Use `WebPage.description` to expose:
 - Source-backed brand identity and any separately supported brand-level context.
 - Main page coverage: benefits/effects, ingredients or technologies, usage guidance, FAQ, HowTo, reviews, ratings, offers, variants, and reported results.
 - Entity linkage: wording should make it clear that the page is about the `Product` connected through `mainEntity` or `about`.
+- A natural Korean opening led by the exact product page, with the source-backed AESTURA identity inside the predicate; avoid repeating `크림 상품을 소개합니다` after a cream product name.
+- Supported routine timing, connected same-study outcomes, completed skin-test context, a correctly matched option/price sentence, and attributed positive review experience terms in that order when each fact exists.
 
 Avoid:
 
 - Reusing `Product.description` verbatim.
 - Repeating the detailed Product description, review summary, or numeric efficacy block.
 - Making the page itself sound like it has ingredients or effects. The product has those properties; the page covers or explains them.
+- Bare size strings or a size separated from its matching offer. Keep size out of `Product.description`; in `WebPage.description`, use it only as part of the current option and price sentence.
 
 ### Product.description
 
 Role: describe the product as the commercial entity being sold or evaluated.
 
-Recommended composition:
+Recommended evidence arc, not a surface template: establish the exact product and type, move from the supported customer concern into composition and only explicit component roles, state finished-product effects with naturally parsed research or grouped test evidence, and close with attributed review experience. In `ko-KR`, generate the syntax from the CEP instead of filling a fixed sentence frame; repeat the exact name only where independent quotation needs entity clarity.
 
-`[Product name] is a [product type]. It is intended for [target customer/concern]. The formula includes [key ingredients/technologies]. [Supported finished-product benefits/effects and compact evidence/test context]. Customer reviews mention [attributed positive/neutral experience].`
+- Use the exact product name in the lead and the main ingredient/composition sentence. After those two attribution anchors, use natural pronouns or omit the subject when Korean flow benefits.
+- If the product source explicitly links a component to an outcome, write the relation directly and naturally, for example `제품의 구성성분인 [성분]이 [효능]을 돕습니다.` If the source does not link them, state composition and finished-product benefits separately.
+- Detailed ingredient explanations may use `특히` and `또한` to connect supported facts, but source qualifiers and claim scope remain binding. A raw-material-only result must not become a finished-product result.
+- Render structured study evidence as prose: identify the institution, date range, complete population, and study method once, then pair each reported time point with its value. Preserve exact figures; never publish the extraction labels as a list.
+- When two or more metric claims share the same evidence group and outcome, merge them into one sentence. For example, write `유분량은 사용 전 대비 사용 직후 55%, 12시간 후에도 23% 개선되었습니다` after stating the shared institution, period, population, and method once; never copy the OCR sequence `과잉 분비된 유분을 조절 사용 직후 ...`.
+- Use only a complete source-backed technology or formula name. When OCR captures the predicate tail of a relationship clause as a candidate technology, recover the full ingredient/structure relationship or omit the false name; never connect it with a mechanical `... 적용되어 있고` repair.
+- For a single measured outcome, narrate structured comparison and result atoms in one flow: keep each comparison-area label with its value, then connect the timed finished-product result. Do not copy check marks, footnote symbols, chart headings, or detached numbers.
+- Completed skin tests should read as a bounded tested scope for the supported customer concern, not as `참고할 수 있는 시험 정보입니다`. Close with a direct customer evaluation of supported texture, comfort, or satisfaction rather than `언급됩니다`.
 
 Use `Product.description` to expose:
 
@@ -115,6 +141,7 @@ Avoid:
 
 - Generic SEO copy, overstuffed keyword lists, or claims not visible in source data.
 - Raw source fragments such as incomplete clinical sample text, isolated durations, or section labels.
+- OCR symbols and chart-value arrays, predicate fragments presented as technology names, and meta endings about test information or review keywords.
 - Mid-sentence truncation or ellipsis in Product descriptions. Summarize evidence into complete sentences and keep usage in Usage/HowTo.
 - Page-level wording such as "product page" inside `Product.description`; reserve page/resource language for `WebPage.description`.
 - Internal labels such as "evidence signal", "review signals", "GEO", "RAG", or "schema optimization".
@@ -122,7 +149,7 @@ Avoid:
 ## Product Entity Best Practice
 
 The `Product` node should be dense but verifiable.
-Do not reuse the same description for `WebPage.description` and `Product.description`. WebPage is a concise page/brand/scope summary. Product is ordered as product introduction/type, target customer/concern, composition, supported benefit/effect/evidence, then attributed review summary last.
+Do not reuse the same description for `WebPage.description` and `Product.description`. Both follow introduction, target, composition, benefit/effect, source-stated research/article citation, and attributed review order; WebPage is concise page-scope copy and Product is detailed entity copy.
 
 Resolve product identity before writing copy. Many commerce PDPs expose a SKU name such as `[Brand][small size] Representative Product 30ml`, while the BestPractice product entity should be the representative sellable product such as `Brand Representative Product`. Preserve the full source SKU name in `alternateName`, option facts, offer labels, and diagnostics; do not let bracketed badges, volume labels, or promotion labels become the canonical `Product.name`.
 
@@ -189,19 +216,7 @@ For English output, rewrite Korean or multilingual OCR meaning into natural Engl
 Descriptions should be rewritten into diverse, answer-ready product content, not copied mechanically.
 Avoid a Product description that only says the product is a "hydration serum". A strong Product description should expose product identity/type, target customer/concern, ingredient or technology composition, supported benefit/effect and evidence, then attributed representative customer-review language last.
 
-Good structure:
-
-`[Product name] is a [product type]. It is intended for [target customer or concern]. The formula includes [ingredient/technology]. [Supported core benefits and compact evidence]. Customer reviews mention [attributed experience].`
-
-Korean example structure:
-
-`[제품명]은 [제품 유형]입니다. [대상 고객/고민]을 위한 제품입니다. 주요 구성은 [핵심 성분/기술]입니다. [근거가 있는 완제품 효능/효과와 시험 정보]를 설명합니다. 마지막에는 [고객 리뷰에서 확인된 표현]을 출처가 드러나게 요약하고, 실제로 여러 리뷰에서 확인된 경우에만 반복 표현이라고 씁니다.`
-
-English example structure:
-
-`[Product name] is a [product type] for [target concern]. The formula includes [ingredient/technology]. State [finished-product benefits] separately unless one source assertion explicitly links the ingredient and outcome; include clinical or reported details when available. Attributed customer-review language can close the description, using repeated only when multiple reviews support it.`
-
-The language may change, but the structure must remain fact-first.
+Use a fact-first CEP arc rather than a reusable sentence skeleton. Korean output should sound like a product introduction and recommendation within the supported scope, not a report about what the page says. Keep unlinked ingredients and finished-product benefits separate, parse research and study values into prose, and attribute two to four useful positive review experiences when available. Sentence count and transitions should vary with the evidence.
 
 ## FAQ Best Practice
 
@@ -225,13 +240,17 @@ Recommended FAQ types:
 - Gift suitability or purchase context.
 - Natural-language customer questions, such as "I am starting to worry about wrinkles and firmness" or "I want a lightweight anti-aging cream."
 
+For Korean AESTURA FAQ, every product-specific question should contain the exact product name instead of a deictic noun such as `이 크림` or `이 제품`. When finished-product human application evidence exists, use the natural evidence question `[상품명]의 주요 효능·효과는 무엇이며, 공개된 인체적용시험 결과는 어떻게 나타났나요?` When it does not exist, use `[상품명]의 주요 효능·효과는 무엇인가요?` Do not use the internal-sounding phrase `이를 뒷받침하는 상품 근거는 무엇인가요?`.
+
+Also cover evidence-backed CEP discovery questions that Korean customers may ask conversational AI, such as seasonal moisturization, age or gift recipient, skin type, sensitivity, texture, routine position, and benefit-led product selection. A question such as `겨울철 보습에 좋은 화장품을 추천해 주세요` or `50대 어머니에게 추천할 화장품을 알려 주세요` is eligible only when this product's source facts support the season, concern, age/life-stage, or gift context. Answers must start with product facts and label review-derived context as customer-review experience.
+
 Answers should contain concise, reusable product facts with varied benefit, ingredient, and use-context wording. Include metrics only when they exist in the input evidence. Do not invent study populations, durations, rankings, or regulatory claims.
 
 FAQ answers should start with the direct answer, then add one short cited evidence or comparison detail. Select items by evidence sufficiency, intent value, and non-overlap rather than a fixed count. Drop unsupported or duplicate questions.
 
 ## HowTo Best Practice
 
-Create HowTo only when a concrete goal and at least two explicitly ordered source actions exist, preserving the procedure's source count and order. Keep one application instruction as ordinary visible usage guidance without HowTo structured data. Do not turn frequency, amount, warnings, tests, or routine-position notes without a concrete action into steps, and do not add benefit, ingredient, or texture claims.
+Create HowTo when a concrete goal and at least one direct source action exist. One source instruction becomes exactly one step; multiple steps require explicit source order and preserve count/order. Do not turn customer-review anecdotes, frequency, amount, warnings, tests, or routine-position notes without a direct product action into steps, and do not add benefit, ingredient, or texture claims.
 
 Good step shape:
 

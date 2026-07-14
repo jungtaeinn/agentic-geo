@@ -145,17 +145,62 @@ function selectPolicyRulesForInjection(
   maxRules: number
 ): { injected: PdpGeoPolicyRule[]; excludedRuleIds: string[] } {
   const promptRelevant = rules.filter((rule) => !isRetrievalOnlyRule(rule));
-  const critical = promptRelevant.filter((rule) => rule.severity === "critical");
+  const budget = Math.max(0, maxRules);
+  const critical = promptRelevant
+    .filter((rule) => rule.severity === "critical")
+    .sort(comparePolicyRuleForCoverage);
   const guidance = promptRelevant
     .filter((rule) => rule.severity === "guidance")
-    .sort((a, b) => b.priority - a.priority);
-  const guidanceBudget = Math.max(0, maxRules - critical.length);
-  const injected = [...critical, ...guidance.slice(0, guidanceBudget)];
+    .sort(comparePolicyRuleForCoverage);
+
+  // Small prompt budgets previously either exceeded maxRules or let whichever
+  // document had the most critical bullets crowd out the rest. Reserve one
+  // representative per document (strategic GEO/E-E-A-T/CEP first), then fill
+  // by severity and priority while keeping the hard budget.
+  const documentRepresentatives = [...promptRelevant]
+    .sort((left, right) =>
+      Number(right.severity === "critical") - Number(left.severity === "critical")
+      || comparePolicyRuleForCoverage(left, right))
+    .filter((rule, index, candidates) => candidates.findIndex((candidate) => candidate.document === rule.document) === index)
+    .slice(0, budget);
+  const injected: PdpGeoPolicyRule[] = [...documentRepresentatives];
   const injectedIds = new Set(injected.map((rule) => rule.id));
+  for (const rule of critical) {
+    if (injected.length >= budget) break;
+    if (!injectedIds.has(rule.id)) {
+      injected.push(rule);
+      injectedIds.add(rule.id);
+    }
+  }
+
+  for (const rule of guidance) {
+    if (injected.length >= budget) break;
+    if (!injectedIds.has(rule.id)) {
+      injected.push(rule);
+      injectedIds.add(rule.id);
+    }
+  }
   return {
     injected,
     excludedRuleIds: rules.filter((rule) => !injectedIds.has(rule.id)).map((rule) => rule.id)
   };
+}
+
+function comparePolicyRuleForCoverage(left: PdpGeoPolicyRule, right: PdpGeoPolicyRule): number {
+  const kindPriority: Record<string, number> = {
+    "geo-research": 100,
+    eeat: 99,
+    cep: 98,
+    schema: 90,
+    "best-practice": 88,
+    locale: 82,
+    terminology: 80,
+    "official-docs": 78
+  };
+  return (kindPriority[right.kind] ?? 0) - (kindPriority[left.kind] ?? 0)
+    || right.priority - left.priority
+    || left.document.localeCompare(right.document)
+    || left.id.localeCompare(right.id);
 }
 
 function createPolicyCoverage(
@@ -221,7 +266,8 @@ export function formatPolicyChecklistPayload(rules: PdpGeoPolicyRule[]): Record<
   }
   return {
     instruction: [
-      "policyChecklist is the complete compiled requirement set from every loaded RAG policy document; it is authoritative over any summary of those documents.",
+      "policyChecklist is the budget-bounded compiled requirement set selected across the loaded RAG policy documents; it is authoritative over any looser summary of the same selected rules.",
+      "The selector preserves cross-document coverage before filling remaining capacity by severity and priority; apply each included rule without assuming that an omitted rule was contradicted.",
       "Apply every [critical] rule as a hard constraint on the requested fields. Apply [guidance] rules unless product evidence makes them inapplicable.",
       "[brand-context] entries are brand positioning/tone background, not requirements: use them for vocabulary and mood, and never convert them into product claims or facts.",
       "Before returning JSON, re-check each [critical] rule against your draft and report any rule you could not satisfy in ruleCompliance.violatedRuleIds."

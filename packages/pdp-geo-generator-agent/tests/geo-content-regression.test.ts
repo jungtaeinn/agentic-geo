@@ -19,9 +19,10 @@ afterEach(() => {
 
 function expectKoreanWebPageScopeDescription(description: string, productName: string, brand?: string): void {
   expect(description).toContain(productName);
-  expect(description.split(productName).length - 1).toBe(1);
+  expect(description.split(productName).length - 1).toBeGreaterThanOrEqual(1);
+  expect(description.split(productName).length - 1).toBeLessThanOrEqual(4);
   expect(description).toMatch(/상품\s*페이지/u);
-  expect(description).toMatch(/페이지\s*본문에서는|페이지에서\s*확인할\s*수\s*있는\s*주요\s*성분·기술|페이지에\s*공개된\s*주요\s*효능·효과/u);
+  expect(description).not.toMatch(/페이지\s*본문에서는|페이지에서\s*확인할\s*수\s*있는|페이지에\s*공개된/u);
   expect(description).not.toMatch(/구매\s*판단에\s*필요한|상품별\s*FAQ|가격·구매\s*정보를\s*함께\s*제공/u);
   if (brand) {
     expect(description).toContain(brand);
@@ -99,6 +100,37 @@ describe("evidence-rich GEO regression contracts", () => {
     expect(result.plan.productDescription.text).toMatch(/리뷰/u);
     expect(result.plan.faq.map((item) => item.intent)).toEqual(expect.arrayContaining(["target-customer", "concern-ingredient-benefit"]));
     expect(result.plan.cep).toHaveLength(1);
+  });
+
+  it("omits an audited model description when Korean fluency artifacts survive generation", async () => {
+    const product = evidenceRichProduct();
+    const evidenceLedger = createPdpGeoEvidenceLedger(product, "ko-KR");
+    const evidenceIds = evidenceLedger.map((item) => item.id);
+    const plan = planPayload({
+      productDescription: {
+        include: true,
+        text: "하이드라 배리어 크림은 건조하고 민감한 피부 고객을 위한 크림입니다. 세라마이드 캡슐과 하는 기술이 적용되어 있고 ☑ 피부 장벽 보습 120시간 ※ 시험 결과입니다. 완료된 테스트는 참고할 수 있는 시험 정보입니다. 실제 고객 리뷰에서는 촉촉한 사용감이 언급됩니다.",
+        intent: "product-target-formula-evidence-review",
+        evidenceIds,
+        confidence: 0.9,
+        omitReason: ""
+      }
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      output: [{ content: [{ type: "output_text", text: JSON.stringify(plan) }] }]
+    }), { status: 200 })));
+
+    const result = await planPdpGeoContent({
+      product,
+      locale: "ko-KR",
+      evidenceLedger,
+      ragChunks: []
+    }, {
+      contentPlanning: { enabled: true, provider: "openai", apiKey: "key", model: "gpt-test" }
+    });
+
+    expect(result.plan.productDescription.include).toBe(false);
+    expect(result.plan.warnings.some((warning) => warning.includes("OCR artifact") && warning.includes("dependent predicate fragment"))).toBe(true);
   });
 
   it("uses accepted model CEP paths in search diagnostics and factual customer-situation properties", async () => {
@@ -201,9 +233,9 @@ describe("evidence-rich GEO regression contracts", () => {
 
     expectKoreanWebPageScopeDescription(webPageDescription, "하이드라 배리어 크림", "테스트랩");
     expect(webPageDescription).not.toBe("하이드라 배리어 크림에 대해 제공된 정보를 확인할 수 있는 상품 페이지입니다.");
-    expect(webPageDescription).toMatch(/건조하고\s*민감한\s*피부\s*고객을\s*대상\s*고객으로\s*안내/u);
-    expect(webPageDescription).toMatch(/주요\s*성분·기술은\s*고밀도\s*세라마이드/u);
-    expect(webPageDescription).toMatch(/고객\s*리뷰에서는[^.]*촉촉한\s*사용감/u);
+    expect(webPageDescription).toMatch(/하이드라\s*배리어\s*크림은\s*건조하고\s*민감한\s*피부\s*고객을\s*위한\s*제품으로,[^.]*고밀도\s*세라마이드[^.]*피부\s*장벽[^.]*돕습니다/u);
+    expect(webPageDescription).not.toMatch(/고객을\s*위한\s*제품입니다\.\s*주요\s*성분·기술/u);
+    expect(webPageDescription).toMatch(/고객\s*리뷰에서\s*고객들은[^.]*촉촉[^.]*사용감[^.]*긍정적으로\s*평가했습니다/u);
 
     expect(propertyValue("Key ingredients")).toContain("세라마이드");
     expect(propertyValue("Key ingredients")).not.toMatch(/(?:^|,\s*)(?:흡수력|유지력|보습\s*캡슐)(?:,|$)/u);
@@ -217,6 +249,77 @@ describe("evidence-rich GEO regression contracts", () => {
     expect(faqText).toMatch(/효능|효과|보습|장벽/u);
     expect(faqQuestions.slice(0, 3).join(" ")).toMatch(/어떤\s*고객|누구|적합|고민인\s*고객/u);
     expect(faqQuestions.slice(0, 3).join(" ")).toMatch(/성분|세라마이드/u);
+  });
+
+  it("reconstructs Korean Product.description from structured evidence without OCR fragments or report-style endings", async () => {
+    const productName = "하이드라 리페어 수딩크림";
+    const relation = "특허 받은 고밀도 세라마이드 캡슐은 세라마이드, 콜레스테롤, 지방산과 피부지질 유사 층판형 구조를 연결해 피부 장벽의 빈틈을 촘촘하게 하는 기술로 제시됩니다.";
+    const structure = "고밀도 세라마이드 캡슐은 롱체인 세라마이드와 링커 세라마이드로 구성됩니다.";
+    const sourceText = "샐 틈 없이 탄탄하게, 피부 장벽을 강화 ☑ 1회 사용 직후 손상된 피부 장벽 2.7배 개선 79% 28% 무도포 대조 부위 크림 사용 부위 ※ ㈜글로벌의학연구센터, 2025.09.15-10.14, 수분이 부족한 민감 지성 피부 고민이 있는 만 20~39세 성인 여성 30명 대상 인체적용시험 결과";
+    const sample = "수분이 부족한 민감 지성 피부 고민이 있는 만 20~39세 성인 여성 30명";
+    const product: PdpProductSignal = {
+      name: productName,
+      description: `${productName}은 수분이 부족한 민감 지성 피부 고객을 위한 크림입니다.`,
+      brand: "테스트랩",
+      category: "크림",
+      images: [],
+      options: [],
+      benefits: ["피부 장벽 케어", "속보습"],
+      effects: ["손상된 피부 장벽 개선"],
+      ingredients: ["압축 히알루론산", "고밀도 세라마이드 캡슐", "롱체인 세라마이드", "링커 세라마이드"],
+      usage: ["세안 후 적당량을 피부에 골고루 펴 바릅니다."],
+      metrics: [sourceText],
+      faq: [],
+      reviews: {
+        items: [
+          { body: "촉촉하고 자극 없이 편안해서 만족스러웠습니다.", rating: 5 },
+          { body: "산뜻하면서도 보습감이 좋아 만족합니다.", rating: 5 }
+        ],
+        keywords: ["촉촉한 사용감", "자극 없이 편안한 사용감", "만족도"]
+      },
+      breadcrumbs: [],
+      sourceTexts: [relation, structure, sourceText],
+      semanticFacts: {
+        ingredients: ["압축 히알루론산", "고밀도 세라마이드 캡슐", "롱체인 세라마이드", "링커 세라마이드"],
+        benefits: ["피부 장벽 케어", "속보습"],
+        effects: ["손상된 피부 장벽 개선"],
+        skinTypes: ["수분이 부족한 민감 지성 피부"],
+        usageSteps: ["세안 후 적당량을 피부에 골고루 펴 바릅니다."],
+        safetyTests: ["극민감 피부 테스트 완료", "민감 피부 자극 테스트 완료", "여드름성 피부 사용 적합 테스트 완료", "논코메도제닉 테스트 완료"],
+        metricClaims: [{
+          label: "손상된 피부 장벽 개선",
+          subject: productName,
+          value: "2.7",
+          unit: "배",
+          metric: "손상된 피부 장벽 개선",
+          direction: "개선",
+          timing: "1회 사용 직후",
+          baseline: "무도포 대조 부위 28%",
+          comparator: "크림 사용 부위 79%",
+          sample,
+          period: "2025.09.15-10.14",
+          method: "인체적용시험",
+          institution: "㈜글로벌의학연구센터",
+          evidenceGroup: "완제품 인체적용시험 2025.09.15-10.14",
+          sentence: "1회 사용 직후 손상된 피부 장벽이 2.7배 개선되었습니다.",
+          sourceText
+        }],
+        evidenceSentences: [relation, structure, "1회 사용 직후 손상된 피부 장벽이 2.7배 개선되었으며, 무도포 대조 부위 28%와 크림 사용 부위 79%가 함께 측정되었습니다."],
+        ingredientBenefitLinks: []
+      }
+    };
+
+    const run = await generatePdpGeo({ product, hints: { locale: "ko-KR" } });
+    const graph = run.result.schemaMarkup.jsonLd["@graph"] as JsonValue[];
+    const nodes = graph.filter((node): node is Record<string, JsonValue> => typeof node === "object" && node !== null && !Array.isArray(node));
+    const description = String(nodes.find((node) => node["@type"] === "Product")?.description ?? "");
+
+    expect(description).not.toMatch(/하는\s*기술(?:이|가)?\s*적용|적용되어\s*있고/u);
+    expect(description).not.toMatch(/[☑※□■]|참고할\s*수\s*있는\s*(?:시험|테스트)\s*정보|고객\s*리뷰에서는[^.]*언급됩니다/u);
+    expect(description).toMatch(/\(주\)글로벌의학연구센터[^.]*2025년\s*9월\s*15일[^.]*성인\s*여성\s*30명[^.]*인체적용시험/u);
+    expect(description).toMatch(/크림\s*사용\s*부위는\s*79%[^.]*무도포\s*대조\s*부위는\s*28%[^.]*1회\s*사용\s*직후\s*손상된\s*피부\s*장벽은\s*2\.7배\s*개선되었습니다/u);
+    expect(description).toMatch(/민감하거나\s*트러블이\s*고민인\s*피부까지\s*고려한\s*테스트\s*범위를\s*갖췄습니다/u);
+    expect(description).toMatch(/실제\s*고객\s*리뷰에서\s*고객들은[^.]*긍정적으로\s*평가했습니다/u);
   });
 
   it("places an official efficacy measurement after the supported benefit and before reviews", async () => {
@@ -270,7 +373,7 @@ describe("evidence-rich GEO regression contracts", () => {
     expect((run.result.diagnostics.validationRepairs ?? []).filter((repair) => /description/u.test(repair.field))).toHaveLength(0);
   });
 
-  it("connects Korean ingredient, benefit, and source-backed concern without repeating the product entity", async () => {
+  it("connects Korean ingredient, benefit, and source-backed concern with one named composition reminder", async () => {
     const run = await generatePdpGeo({
       product: evidenceRichProduct(),
       hints: { locale: "ko-KR" }
@@ -282,10 +385,11 @@ describe("evidence-rich GEO regression contracts", () => {
     const productDescription = String(productNode.description ?? "");
     const webPageDescription = String(webPage.description ?? "");
 
-    expect(productDescription.match(/하이드라\s*배리어\s*크림/gu)?.length ?? 0).toBe(1);
+    expect(productDescription.match(/하이드라\s*배리어\s*크림/gu)?.length ?? 0).toBe(2);
+    expect(productDescription).toMatch(/하이드라\s*배리어\s*크림의\s*주요\s*성분은/u);
     expect(productDescription).toMatch(/주요\s*성분은\s*고밀도\s*세라마이드\s*캡슐과\s*콜레스테롤이며,\s*피부\s*장벽\s*케어와\s*(?:속보습을|수분\s*케어를)\s*도와\s*건조하고\s*민감한\s*피부가\s*고민인\s*고객에게\s*적합합니다/u);
     expectKoreanWebPageScopeDescription(webPageDescription, "하이드라 배리어 크림", "테스트랩");
-    expect(webPageDescription).toMatch(/주요\s*성분·기술은\s*고밀도\s*세라마이드\s*캡슐.*콜레스테롤/u);
+    expect(webPageDescription).toMatch(/주요\s*성분·기술(?:인|로)\s*고밀도\s*세라마이드\s*캡슐.*콜레스테롤/u);
     expect(`${productDescription}\n${webPageDescription}`).not.toMatch(/이러한\s*효능[·・]?효과를\s*바탕으로/u);
     expect(productDescription.indexOf("세라마이드")).toBeLessThan(productDescription.indexOf("피부 장벽 케어"));
     expect(productDescription.indexOf("피부 장벽 케어")).toBeLessThan(productDescription.indexOf("고객 리뷰"));
@@ -356,7 +460,7 @@ describe("evidence-rich GEO regression contracts", () => {
     expect(productDescription).toMatch(/여성\s*32명/u);
     expect(productDescription).toMatch(/사용\s*직후\s*보습량은\s*사용\s*전\s*대비\s*2배\s*증가/u);
     expect(productDescription).toMatch(/단\s*10분\s*만에\s*손상\s*장벽은\s*사용\s*전\s*대비\s*2배\s*개선/u);
-    expect(productDescription).toMatch(/건조하고\s*민감한\s*피부(?:가\s*고민인)?\s*고객에게\s*적합합니다/u);
+    expect(productDescription).toMatch(/건조하고\s*민감한\s*피부\s*고객을\s*위한\s*크림입니다/u);
     expect(productDescription).not.toMatch(/190%|ex\s*vivo/iu);
     expect(productDescription.indexOf("고밀도 세라마이드 캡슐")).toBeLessThan(productDescription.indexOf("피부 장벽 케어"));
     expect(productDescription.indexOf("피부 장벽 케어")).toBeLessThan(productDescription.indexOf("120시간"));
@@ -371,6 +475,515 @@ describe("evidence-rich GEO regression contracts", () => {
     expect(reportedDetails).not.toMatch(/(?:확인|평가)\s*지표\s*:/u);
     expect(reportedDetails).not.toMatch(/건조하고\s*민감한\s*피부\s*고객에게\s*적합합니다/u);
     expect((run.result.diagnostics.validationRepairs ?? []).filter((repair) => /description/u.test(repair.field))).toHaveLength(0);
+  });
+
+  it("writes named Korean ingredient narratives and maps multi-timepoint clinical values into natural prose", async () => {
+    const productName = "에스트라 아토베리어365 하이드로 수딩크림";
+    const compressedHyaluronicAcid = "압축 히알루론산은 특허 기술로 1/100 사이즈로 압축한 히알루론산의 흡수 빠른 수분 충전으로 탁월한 수분 지속 효과를 표방하며 원료적 특성에 한한다고 안내됩니다.";
+    const capsuleStructure = "고밀도 세라마이드 캡슐은 롱체인 세라마이드와 링커 세라마이드로 구성됩니다.";
+    const moistureBarrierIngredients = "제품의 수분 장벽 성분으로 더마온, 히알루론산, 판테놀이 표시됩니다.";
+    const patentedCapsule = "고밀도 세라마이드 캡슐은 세라마이드·콜레스테롤·지방산의 피부지질 구성성분과 피부지질 유사 층판형 구조를 결합해 피부 장벽의 빈틈을 촘촘하게 하는 특허 받은 캡슐로 설명됩니다.";
+    const balanceSource = "유수분 밸런스 개선 81.0 35.8 61.7 사용 전 사용 직후 사용 12시간 후";
+    const sample = "스스로 수분이 부족한 지성 피부라고 느끼고 민감 고민이 있고, 눈에 띄는 모공이 있는 만 20~39세 성인 여성 30명";
+    const product: PdpProductSignal = {
+      name: productName,
+      description: "민감하고 수분이 부족한 지성 피부의 유수분 밸런스를 위한 장벽 수분 크림입니다.",
+      brand: "AESTURA",
+      category: "크림",
+      images: [],
+      options: [],
+      benefits: ["피부 장벽 케어", "수분 케어"],
+      effects: ["유수분 밸런스 개선"],
+      ingredients: [
+        "압축 히알루론산",
+        "고밀도 세라마이드 캡슐",
+        "롱체인 세라마이드",
+        "링커 세라마이드",
+        "세라마이드",
+        "콜레스테롤",
+        "지방산",
+        "더마온",
+        "히알루론산",
+        "판테놀"
+      ],
+      usage: [],
+      metrics: [balanceSource],
+      faq: [],
+      breadcrumbs: [],
+      sourceTexts: [compressedHyaluronicAcid, capsuleStructure, moistureBarrierIngredients, patentedCapsule, balanceSource],
+      reviews: {
+        items: [{ body: "촉촉하고 자극 없이 편안해서 만족합니다." }],
+        keywords: ["촉촉한 사용감", "편안한 사용감"]
+      },
+      semanticFacts: {
+        ingredients: [
+          "압축 히알루론산",
+          "고밀도 세라마이드 캡슐",
+          "롱체인 세라마이드",
+          "링커 세라마이드",
+          "세라마이드",
+          "콜레스테롤",
+          "지방산",
+          "더마온",
+          "히알루론산",
+          "판테놀"
+        ],
+        benefits: ["피부 장벽 케어", "수분 케어"],
+        effects: ["유수분 밸런스 개선"],
+        skinTypes: ["수분 부족형 민감 지성 피부", "복합성 피부"],
+        usageSteps: [],
+        metricClaims: [{
+          label: "유수분 밸런스",
+          subject: productName,
+          value: "81.0 / 35.8 / 61.7",
+          metric: "유수분 밸런스 지표",
+          direction: "개선",
+          timing: "사용 전, 사용 직후, 사용 12시간 후",
+          baseline: "사용 전",
+          period: "2025.09.15-10.14",
+          sample,
+          method: "인체적용시험",
+          institution: "㈜글로벌의학연구센터",
+          evidenceGroup: "유수분 인체적용시험",
+          sentence: "유수분 밸런스 개선 지표로 81.0, 35.8, 61.7이 사용 전·사용 직후·사용 12시간 후와 함께 표시됩니다.",
+          sourceText: balanceSource
+        }],
+        evidenceSentences: [compressedHyaluronicAcid, capsuleStructure, moistureBarrierIngredients, patentedCapsule, balanceSource],
+        ingredientBenefitLinks: []
+      }
+    };
+
+    const run = await generatePdpGeo({ product, hints: { locale: "ko-KR", market: "KR" } });
+    const graph = run.result.schemaMarkup.jsonLd["@graph"] as JsonValue[];
+    const nodes = graph
+      .filter((node): node is Record<string, JsonValue> => typeof node === "object" && node !== null && !Array.isArray(node));
+    const productNode = nodes.find((node) => node["@type"] === "Product")!;
+    const faqPage = nodes.find((node) => node["@type"] === "FAQPage")!;
+    const description = String(productNode.description ?? "");
+    const faqQuestions = (faqPage.mainEntity as JsonValue[])
+      .filter((item): item is Record<string, JsonValue> => typeof item === "object" && item !== null && !Array.isArray(item))
+      .map((item) => String(item.name));
+
+    expect(description).toContain(`${productName}의 주요 성분은 압축 히알루론산과 고밀도 세라마이드 캡슐입니다`);
+    expect(description).toContain("고밀도 세라마이드 캡슐은 롱체인 세라마이드와 링커 세라마이드로 구성됩니다");
+    expect(description).toContain("제품의 구성성분인 더마온, 히알루론산, 판테놀이 수분 장벽 강화 효능을 돕습니다");
+    expect(description).toContain("특히 압축 히알루론산은 특허 기술로 1/100 사이즈로 압축한 히알루론산의 흡수 빠른 수분 충전으로 탁월한 수분 지속 효과가 있습니다");
+    expect(description).toContain("또한 고밀도 세라마이드 캡슐은 세라마이드·콜레스테롤·지방산의 피부지질 구성성분과 피부지질 유사 층판형 구조를 결합해 피부 장벽의 빈틈을 촘촘하게 하는 특허 받은 캡슐입니다");
+    expect(description).not.toContain("원료 특성으입니다");
+    expect(description).toContain("압축 히알루론산과 고밀도 세라마이드 캡슐이 포함된 " + productName + "은 피부 장벽 케어와 수분 케어에 효과적입니다");
+    expect(description).not.toContain("압축 히알루론산과 고밀도 세라마이드 캡슐을 통해");
+    expect(description).toContain(`(주)글로벌의학연구센터가 2025년 9월 15일부터 2025년 10월 14일까지 ${sample}을 대상으로 진행한 인체적용시험에서 유수분 밸런스 개선 지표는 사용 전 81.0, 사용 직후 35.8, 사용 12시간 후 61.7로 각각 측정되었습니다`);
+    expect(description).not.toMatch(/유수분 밸런스\s+81\.0\s*\/\s*35\.8\s*\/\s*61\.7\s*\(시점|비교 기준|기간\s*2025\.09\.15/u);
+    expect(faqQuestions).toContain(`${productName}의 주요 효능·효과는 무엇이며, 공개된 인체적용시험 결과는 어떻게 나타났나요?`);
+    expect(faqQuestions.join("\n")).not.toMatch(/이를 뒷받침하는 상품 근거/u);
+  });
+
+  it("normalizes Korean eu-ro explanatory endings without producing a broken copula", async () => {
+    const productName = "하이드라 원료 특성 크림";
+    const structure = "고밀도 세라마이드 캡슐은 롱체인 세라마이드와 링커 세라마이드로 구성됩니다.";
+    const rawMaterialCharacteristic = "압축 히알루론산은 빠른 수분 충전과 수분 지속을 돕는 원료 특성으로 설명됩니다.";
+    const product: PdpProductSignal = {
+      name: productName,
+      description: "수분이 부족한 피부 고객을 위한 수분 크림입니다.",
+      category: "크림",
+      images: [],
+      options: [],
+      benefits: ["수분 케어"],
+      effects: [],
+      ingredients: ["압축 히알루론산", "고밀도 세라마이드 캡슐", "롱체인 세라마이드", "링커 세라마이드"],
+      usage: [],
+      metrics: [],
+      faq: [],
+      breadcrumbs: [],
+      sourceTexts: [structure, rawMaterialCharacteristic],
+      reviews: { items: [], keywords: [] },
+      semanticFacts: {
+        ingredients: ["압축 히알루론산", "고밀도 세라마이드 캡슐", "롱체인 세라마이드", "링커 세라마이드"],
+        benefits: ["수분 케어"],
+        effects: [],
+        skinTypes: ["수분이 부족한 피부"],
+        usageSteps: [],
+        metricClaims: [],
+        evidenceSentences: [structure, rawMaterialCharacteristic],
+        ingredientBenefitLinks: []
+      }
+    };
+
+    const run = await generatePdpGeo({ product, hints: { locale: "ko-KR" } });
+    const graph = run.result.schemaMarkup.jsonLd["@graph"] as JsonValue[];
+    const productNode = graph
+      .filter((node): node is Record<string, JsonValue> => typeof node === "object" && node !== null && !Array.isArray(node))
+      .find((node) => node["@type"] === "Product")!;
+    const description = String(productNode.description ?? "");
+
+    expect(description).toContain("압축 히알루론산은 빠른 수분 충전과 수분 지속을 돕는 원료 특성입니다");
+    expect(description).not.toContain("원료 특성으입니다");
+  });
+
+  it("turns AESTURA oil-dehydration CEP and same-study oil metrics into connected WebPage and Product narratives", async () => {
+    const productName = "에스트라 아토베리어365 하이드로 수딩크림";
+    const sample = "스스로 수분이 부족한 지성 피부라고 느끼고 민감 고민이 있고, 눈에 띄는 모공이 있는 만 20~39세 성인 여성 30명";
+    const oilSource = `과잉 분비된 유분을 조절 사용 직후 유분량 55% 개선 12시간 후에도 23% 개선 ※㈜글로벌의학연구센터, 2025.09.15-10.14, ${sample} 대상 인체적용시험 결과`;
+    const product: PdpProductSignal = {
+      name: productName,
+      brand: "AESTURA",
+      description: "민감하고 수분이 부족한 지성 피부의 유수분 밸런스를 맞추고 속수분을 채워주는 장벽 수분 크림입니다.",
+      category: "크림",
+      images: [],
+      options: ["80 mL"],
+      benefits: ["피부 장벽 케어", "수분 케어"],
+      effects: ["유수분 밸런스 개선", "과잉 유분 컨트롤"],
+      ingredients: ["압축 히알루론산", "고밀도 세라마이드 캡슐", "롱체인 세라마이드", "링커 세라마이드"],
+      usage: ["아침과 저녁 세안 후 크림 단계에서 골고루 펴 바릅니다."],
+      metrics: [oilSource],
+      faq: [],
+      breadcrumbs: [],
+      sourceTexts: [
+        "추천 피부 타입은 수분 부족형 민감 지성 피부이며, 수부지/복합성 피부에 끈적임 없이 산뜻한 수분 수딩 크림으로 추천됩니다.",
+        "압축 히알루론산은 빠른 수분 충전과 수분 지속을 돕습니다.",
+        "고밀도 세라마이드 캡슐은 롱체인 세라마이드와 링커 세라마이드로 구성되며 장벽 보습을 돕습니다.",
+        oilSource
+      ],
+      reviews: {
+        items: [{ body: "촉촉하면서도 자극 없이 편안하고 산뜻하게 사용할 수 있어 만족합니다." }],
+        keywords: ["촉촉한 사용감", "자극 없이 편안한 사용감"]
+      },
+      semanticFacts: {
+        ingredients: ["압축 히알루론산", "고밀도 세라마이드 캡슐", "롱체인 세라마이드", "링커 세라마이드"],
+        benefits: ["피부 장벽 케어", "수분 케어"],
+        effects: ["유수분 밸런스 개선", "과잉 유분 컨트롤"],
+        skinTypes: ["수분 부족형 민감 지성 피부", "수부지/복합성 피부"],
+        usageSteps: ["아침과 저녁 세안 후 크림 단계에서 골고루 펴 바릅니다."],
+        safetyTests: ["극민감 피부 테스트 완료", "민감 피부 자극 테스트 완료", "여드름성 피부 사용 적합 테스트 완료", "논코메도제닉 테스트 완료"],
+        metricClaims: [
+          {
+            label: "사용 직후 유분량 개선",
+            subject: "과잉 분비된 유분",
+            value: "55",
+            unit: "%",
+            metric: "유분량 개선",
+            direction: "개선",
+            timing: "사용 직후",
+            baseline: "사용 전",
+            period: "2025.09.15-10.14",
+            sample,
+            method: "인체적용시험",
+            institution: "㈜글로벌의학연구센터",
+            evidenceGroup: "쿨링·붉은기·유수분·유분 인체적용시험",
+            sentence: "과잉 분비된 유분은 사용 직후 유분량 55% 개선으로 제시됩니다.",
+            sourceText: oilSource
+          },
+          {
+            label: "12시간 후 유분량 개선",
+            subject: "과잉 분비된 유분",
+            value: "23",
+            unit: "%",
+            metric: "유분량 개선",
+            direction: "개선",
+            timing: "사용 12시간 후",
+            baseline: "사용 전",
+            period: "2025.09.15-10.14",
+            sample,
+            method: "인체적용시험",
+            institution: "㈜글로벌의학연구센터",
+            evidenceGroup: "쿨링·붉은기·유수분·유분 인체적용시험",
+            sentence: "과잉 분비된 유분은 12시간 후에도 23% 개선으로 제시됩니다.",
+            sourceText: oilSource
+          }
+        ],
+        evidenceSentences: [oilSource],
+        ingredientBenefitLinks: [
+          { ingredient: "압축 히알루론산", benefit: "수분 케어", sentence: "압축 히알루론산은 빠른 수분 충전과 수분 지속을 돕습니다." },
+          { ingredient: "고밀도 세라마이드 캡슐", benefit: "피부 장벽 케어", sentence: "고밀도 세라마이드 캡슐은 장벽 보습을 돕습니다." }
+        ]
+      }
+    };
+
+    const run = await generatePdpGeo({ product, hints: { locale: "ko-KR", market: "KR" } });
+    const graph = run.result.schemaMarkup.jsonLd["@graph"] as JsonValue[];
+    const nodes = graph.filter((node): node is Record<string, JsonValue> => typeof node === "object" && node !== null && !Array.isArray(node));
+    const productDescription = String(nodes.find((node) => node["@type"] === "Product")?.description ?? "");
+    const webPageDescription = String(nodes.find((node) => node["@type"] === "WebPage")?.description ?? "");
+    const groupedStudy = `(주)글로벌의학연구센터가 2025년 9월 15일부터 2025년 10월 14일까지 ${sample}을 대상으로 진행한 인체적용시험에서 유분량은 사용 전 대비 사용 직후 55%, 12시간 후에도 23% 개선되었습니다`;
+
+    expect(productDescription).toMatch(/유분이 많지만 수분이 부족한/u);
+    expect(productDescription).toMatch(/수분 부족형 민감 지성 피부|수부지·복합성 피부/u);
+    expect(productDescription).toContain(groupedStudy);
+    expect(productDescription).not.toContain("과잉 분비된 유분을 조절 사용 직후");
+    expect(productDescription).not.toMatch(/크림입니다\. 특히/u);
+    expect(productDescription.indexOf("수분이 부족한")).toBeLessThan(productDescription.indexOf("압축 히알루론산"));
+    expect(productDescription.indexOf("압축 히알루론산")).toBeLessThan(productDescription.indexOf("55%"));
+    expect(productDescription.indexOf("55%")).toBeLessThan(productDescription.indexOf("실제 고객 리뷰"));
+
+    expect(webPageDescription).toContain(`${productName} 상품 페이지`);
+    expect(webPageDescription).toContain(productName);
+    expect(webPageDescription).toContain(groupedStudy);
+    expect(webPageDescription).not.toMatch(/페이지 본문에서는|페이지에서 확인할 수 있는|페이지에 공개된/u);
+    expect(webPageDescription).not.toContain("과잉 분비된 유분을 조절 사용 직후");
+  });
+
+  it("turns AESTURA FAQ evidence into CEP recommendations instead of source and formula dumps", async () => {
+    const productName = "에스트라 아토베리어365 하이드로 수딩크림";
+    const studyPeriod = "2025.09.15-10.14";
+    const sample = "스스로 수분이 부족한 지성 피부라고 느끼고 민감 고민이 있고, 눈에 띄는 모공이 있는 만 20~39세 성인 여성 30명";
+    const coolingFormula = "쿨링을 주는 화학적 성분은 사용하지 않고 수분감을 높인 워터 크림 특화 제형을 통해 피부에 닿음과 동시에 시원하고 산뜻한 쿨링감을 줄 수 있게 설계되었습니다.";
+    const lifeStageAnswer = "소아과 피부 테스트를 진행한 품목으로 영유아, 어린이가 사용해도 무방하며, 임산부가 우려할 만한 성분도 함유되어 있지 않습니다. 우려가 되는 경우 귀 뒤나 팔 안쪽에 먼저 테스트하고 필요 시 전문가와 상담 후 사용하시기 바랍니다.";
+    const product: PdpProductSignal = {
+      name: productName,
+      brand: "AESTURA",
+      description: "민감하고 수분이 부족한 지성·수부지·복합성 피부를 위한 장벽 수분 크림입니다.",
+      category: "크림",
+      images: [],
+      options: ["80 mL"],
+      breadcrumbs: [],
+      ingredients: ["DermaON® + HA", "압축 히알루론산", "징크", "고밀도 세라마이드 캡슐"],
+      benefits: ["피부 장벽 관리", "수분 케어", "즉각적인 쿨링 진정"],
+      effects: ["일시적인 붉은기 완화", "과잉 유분 컨트롤", "72시간 수분 지속 효과"],
+      usage: [],
+      metrics: [
+        "제품 사용 직후 일시적 붉은기가 가온 후 대비 70.5% 개선되었습니다.",
+        "제품 사용 직후 즉각적인 쿨링 효과 -5.5°C"
+      ],
+      faq: [
+        { question: "쿨링 효과는 어떤 성분이 해주는 것인가요?", answer: coolingFormula },
+        { question: "영유아나 임산부가 사용해도 되나요?", answer: lifeStageAnswer }
+      ],
+      sourceTexts: [coolingFormula, lifeStageAnswer],
+      reviews: {
+        items: [{ body: "촉촉하고 자극 없이 편안하면서 산뜻하게 사용할 수 있어 만족합니다." }],
+        keywords: ["촉촉한 사용감", "자극 없이 편안한 사용감"]
+      },
+      semanticFacts: {
+        ingredients: ["DermaON® + HA", "압축 히알루론산", "징크", "고밀도 세라마이드 캡슐"],
+        benefits: ["피부 장벽 관리", "수분 케어", "즉각적인 쿨링 진정"],
+        effects: ["일시적인 붉은기 완화", "과잉 유분 컨트롤", "72시간 수분 지속 효과"],
+        skinTypes: ["지성 피부", "수부지", "복합성 피부", "민감 피부"],
+        usageSteps: [],
+        safetyTests: ["소아과 피부 테스트 완료"],
+        metricClaims: [
+          {
+            label: "제품 사용 직후 일시적 붉은기 완화",
+            subject: "일시적 붉은기",
+            value: "70.5",
+            unit: "%",
+            metric: "일시적 붉은기 완화",
+            direction: "개선",
+            timing: "제품 사용 직후",
+            baseline: "가온 후",
+            period: studyPeriod,
+            sample,
+            method: "인체적용시험",
+            institution: "㈜글로벌의학연구센터",
+            evidenceGroup: "쿨링·붉은기 인체적용시험",
+            sentence: "제품 사용 직후 일시적 붉은기는 가온 후 대비 70.5% 개선되었습니다.",
+            sourceText: "가온 후 제품 사용 직후 일시적 붉은기 완화 70.5%"
+          },
+          {
+            label: "제품 사용 직후 즉각적인 쿨링 효과",
+            subject: "즉각적인 쿨링 효과",
+            value: "-5.5",
+            unit: "°C",
+            metric: "즉각적인 쿨링 효과",
+            direction: "확인",
+            timing: "제품 사용 직후",
+            baseline: "가온 후",
+            period: studyPeriod,
+            sample,
+            method: "인체적용시험",
+            institution: "㈜글로벌의학연구센터",
+            evidenceGroup: "쿨링·붉은기 인체적용시험",
+            sentence: "제품 사용 직후 즉각적인 쿨링 효과는 -5.5°C로 확인되었습니다.",
+            sourceText: "제품 사용 직후 즉각적인 쿨링 효과 -5.5°C"
+          }
+        ],
+        evidenceSentences: [coolingFormula, lifeStageAnswer],
+        ingredientBenefitLinks: [
+          { ingredient: "압축 히알루론산", benefit: "수분 케어", sentence: "압축 히알루론산은 빠른 수분 충전과 수분 지속을 돕습니다." },
+          { ingredient: "징크", benefit: "과잉 유분 컨트롤", sentence: "징크는 과잉 유분 컨트롤을 돕습니다." },
+          { ingredient: "고밀도 세라마이드 캡슐", benefit: "피부 장벽 관리", sentence: "고밀도 세라마이드 캡슐은 피부 장벽 관리를 돕습니다." }
+        ]
+      }
+    };
+
+    const run = await generatePdpGeo({ product, hints: { locale: "ko-KR", market: "KR" } });
+    const graph = run.result.schemaMarkup.jsonLd["@graph"] as JsonValue[];
+    const faqPage = graph
+      .filter((node): node is Record<string, JsonValue> => typeof node === "object" && node !== null && !Array.isArray(node))
+      .find((node) => node["@type"] === "FAQPage")!;
+    const faqItems = (faqPage.mainEntity as JsonValue[])
+      .filter((item): item is Record<string, JsonValue> => typeof item === "object" && item !== null && !Array.isArray(item));
+    const answerFor = (pattern: RegExp): string => {
+      const item = faqItems.find((candidate) => pattern.test(String(candidate.name ?? "")));
+      return String((item?.acceptedAnswer as Record<string, JsonValue> | undefined)?.text ?? "");
+    };
+
+    const suitability = answerFor(/피부\s*장벽|민감한\s*피부/u);
+    const composition = answerFor(/구성\s*성분과\s*효능/u);
+    const cooling = answerFor(/땀을\s*많이\s*흘리거나\s*더위를\s*많이/u);
+    const lifeStage = answerFor(/영유아나\s*임산부/u);
+
+    expect(suitability).toContain(productName);
+    expect(suitability).toMatch(/\(주\)글로벌의학연구센터.*2025년\s*9월\s*15일부터\s*2025년\s*10월\s*14일까지.*70\.5%/u);
+    expect(suitability).toMatch(/이\s*결과는\s*민감\s*피부의\s*진정\s*관리\s*효능을\s*뒷받침합니다/u);
+    expect(suitability).not.toMatch(/눈에\s*띄는\s*모공|2025\.09\.15|설명됩니다|안내됩니다/u);
+
+    expect(composition).toMatch(/유분이\s*많지만\s*수분이\s*부족한/u);
+    expect(composition).toMatch(/주요\s*성분·기술로\s*구성한/u);
+    expect(composition).toMatch(/압축\s*히알루론산은[^.]*수분\s*케어를\s*돕습니다/u);
+    expect(composition).toMatch(/완제품은[^.]*피부\s*장벽[^.]*수분/u);
+    expect(composition).not.toMatch(/설명됩니다|안내됩니다|특정\s*성분이[^.]*단독/u);
+
+    expect(cooling, JSON.stringify(faqItems, null, 2)).toContain(productName);
+    expect(cooling).toMatch(/워터\s*크림\s*특화\s*제형/u);
+    expect(cooling).toMatch(/제품\s*사용\s*직후[^.]*-5\.5°C로\s*확인되었습니다/u);
+    expect(cooling).toMatch(/더위를\s*많이\s*느끼거나\s*땀을\s*흘린\s*뒤[^.]*추천할\s*수\s*있습니다/u);
+    expect(cooling).not.toMatch(/땀\s*(?:조절|억제|감소)|열(?:사병|치료)|화학적\s*성분/u);
+
+    expect(lifeStage).toContain(productName);
+    expect(lifeStage).toMatch(/소아과\s*피부\s*테스트를\s*진행했습니다/u);
+    expect(lifeStage).toMatch(/영유아와\s*어린이가\s*사용할\s*수\s*있으며[^.]*임산부/u);
+    expect(lifeStage).toMatch(/추천할\s*수\s*있습니다/u);
+    expect(lifeStage).toMatch(/귀\s*뒤나\s*팔\s*안쪽|전문가와\s*상담/u);
+    expect(lifeStage).not.toMatch(/설명됩니다|안내됩니다/u);
+  });
+
+  it("adopts an evidence-gated CEP WebPage narrative instead of rebuilding it from fixed sentence templates", async () => {
+    const productName = "에스트라 아토베리어365 하이드로 수딩크림";
+    const evidenceGroup = "완제품 인체적용시험 2025.09.15-10.14";
+    const sample = "스스로 수분이 부족한 지성 피부라고 느끼는 만 20~39세 성인 여성 30명";
+    const product: PdpProductSignal = {
+      name: productName,
+      brand: "AESTURA",
+      category: "크림",
+      description: "민감하고 수분이 부족한 지성 피부의 유수분 밸런스를 맞추고 속수분을 채워주는 장벽 수분 크림입니다.",
+      price: { raw: "33000.0", amount: 33000, currency: "KRW" },
+      images: [],
+      options: ["2.70 fl. oz. / 80 mL"],
+      breadcrumbs: [],
+      ingredients: ["DermaON® 기술", "압축 히알루론산", "저분자 히알루론산"],
+      benefits: ["피부 장벽 케어", "수분 케어", "진정 케어"],
+      effects: ["속수분 충전", "수분 지속"],
+      usage: ["아침, 저녁 세안 후 크림 사용 단계에서 적당량을 덜어 사용합니다."],
+      metrics: [
+        "완제품 인체적용시험에서 사용 직후 10층 속수분 충전 효과가 확인되었습니다.",
+        "같은 완제품 인체적용시험에서 1회 사용 후 수분 효과가 72시간 동안 지속되었습니다."
+      ],
+      faq: [],
+      sourceTexts: [
+        "아침, 저녁 세안 후 크림 사용 단계에서 적당량을 덜어 사용합니다.",
+        "극민감 테스트, 민감 피부 자극 테스트, 피부과 테스트 완료",
+        "완제품 인체적용시험에서 사용 직후 10층 속수분 충전과 1회 사용 후 72시간 수분 지속이 확인되었습니다."
+      ],
+      reviews: {
+        items: [
+          { body: "촉촉하고 자극 없이 편안해서 만족합니다." },
+          { body: "끈적임 없이 산뜻하고 흡수가 빨라요." },
+          { body: "발림성과 쿨링감이 좋고 보습력도 만족스러워요." }
+        ],
+        keywords: ["발림성", "쿨링감", "보습력", "만족"]
+      },
+      semanticFacts: {
+        ingredients: ["DermaON® 기술", "압축 히알루론산", "저분자 히알루론산"],
+        benefits: ["피부 장벽 케어", "수분 케어", "진정 케어"],
+        effects: ["속수분 충전", "수분 지속"],
+        skinTypes: ["민감하고 수분이 부족한 지성 피부", "복합성 피부"],
+        usageSteps: ["아침, 저녁 세안 후 크림 사용 단계에서 적당량을 덜어 사용합니다."],
+        safetyTests: ["극민감 테스트 완료", "민감 피부 자극 테스트 완료", "피부과 테스트 완료"],
+        metricClaims: [
+          {
+            label: "10층 속수분 충전",
+            subject: productName,
+            value: "10",
+            unit: "층",
+            metric: "속수분 충전 깊이",
+            direction: "충전",
+            timing: "사용 직후",
+            sample,
+            method: "인체적용시험",
+            institution: "㈜글로벌의학연구센터",
+            evidenceGroup,
+            sentence: "사용 직후 즉각적인 10층 속수분 충전 효과가 확인되었습니다.",
+            sourceText: "사용 직후 10층 속수분 충전"
+          },
+          {
+            label: "수분 지속",
+            subject: productName,
+            value: "72",
+            unit: "시간",
+            metric: "수분 지속",
+            direction: "지속",
+            timing: "1회 사용 후",
+            period: "72시간",
+            sample,
+            method: "인체적용시험",
+            institution: "㈜글로벌의학연구센터",
+            evidenceGroup,
+            sentence: "1회 사용 후 수분 효과가 72시간 동안 지속되었습니다.",
+            sourceText: "1회 사용 후 72시간 수분 지속"
+          }
+        ],
+        evidenceSentences: [
+          "완제품 인체적용시험에서 사용 직후 10층 속수분 충전과 1회 사용 후 72시간 수분 지속이 확인되었습니다.",
+          "극민감 테스트, 민감 피부 자극 테스트, 피부과 테스트 완료"
+        ],
+        ingredientBenefitLinks: []
+      }
+    };
+
+    const plannedDescription = [
+      `${productName} 상품 페이지는 AESTURA가 선보이는 장벽 수분 크림의 특징과 제품 선택에 필요한 정보를 한데 담고 있습니다.`,
+      "유분이 많지만 수분이 부족한 지성·복합성 피부 고객을 위한 이 제품은 DermaON® 기술, 압축 히알루론산, 저분자 히알루론산을 주요 성분·기술로 포함하고 피부 장벽 케어, 수분 케어와 진정 케어를 돕습니다.",
+      `${productName}은 아침과 저녁 세안 후 사용하는 것을 권장합니다.`,
+      "완제품 인체적용시험에서 사용 직후 10층 속수분 충전 효과가 입증되었으며, 같은 시험에서 1회 사용 후 수분 효과가 72시간 동안 지속되는 것으로 확인되었습니다.",
+      "또한 극민감 테스트, 민감 피부 자극 테스트, 피부과 테스트 등을 완료해 민감 피부를 고려한 안전성을 입증했습니다.",
+      `${productName}은 2.70 fl. oz. / 80 mL 옵션으로 구성되어 있으며, 33,000원에 판매되고 있습니다.`,
+      `고객 리뷰에서 고객들은 ${productName}의 촉촉하고 자극 없이 편안한 사용감, 산뜻한 마무리와 보습력을 긍정적으로 평가했습니다.`
+    ].join(" ");
+    const normalizedForLedger = normalizePdpProduct(product, { hints: { locale: "ko-KR", market: "KR" } }).product;
+    const evidenceIds = createPdpGeoEvidenceLedger(normalizedForLedger, "ko-KR").map((item) => item.id);
+    const plan = planPayload({
+      webPageDescription: {
+        include: true,
+        text: plannedDescription,
+        intent: "page-coverage-cep-narrative",
+        evidenceIds,
+        confidence: 0.98,
+        omitReason: ""
+      },
+      cep: [{
+        situation: "유분이 많지만 수분이 부족한 지성·복합성 피부",
+        need: "피부 장벽 케어, 수분 케어와 진정 케어",
+        constraint: "아침과 저녁 세안 후 사용하는 루틴",
+        evidenceIds,
+        confidence: 0.96
+      }]
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      output: [{ content: [{ type: "output_text", text: JSON.stringify(plan) }] }]
+    }), { status: 200 })));
+    const run = await generatePdpGeo({ product, hints: { locale: "ko-KR", market: "KR" } }, {
+      contentPlanning: { enabled: true, provider: "openai", apiKey: "key", model: "gpt-test" }
+    });
+    const graph = run.result.schemaMarkup.jsonLd["@graph"] as JsonValue[];
+    const webPage = graph
+      .filter((node): node is Record<string, JsonValue> => typeof node === "object" && node !== null && !Array.isArray(node))
+      .find((node) => node["@type"] === "WebPage")!;
+    const description = String(webPage.description ?? "");
+
+    expect(
+      run.result.diagnostics.contentPlan?.webPageDescription.include,
+      JSON.stringify(run.result.diagnostics.contentPlan?.warnings ?? [])
+    ).toBe(true);
+    expect(description).toBe(plannedDescription);
+    expect(description).toMatch(new RegExp(`${productName} 상품 페이지는 AESTURA가 선보이는 장벽 수분 크림의 특징과 제품 선택에 필요한 정보를 한데 담고 있습니다`, "u"));
+    expect(description).not.toMatch(/AESTURA의[^.]*크림 상품을 소개합니다/u);
+    expect(description).toMatch(new RegExp(`${productName}은 아침과 저녁 세안 후 사용하는 것을 권장합니다`, "u"));
+    expect(description).toMatch(/완제품 인체적용시험에서 사용 직후 10층 속수분 충전 효과가 입증되었으며, 같은 시험에서 1회 사용 후 수분 효과가 72시간 동안 지속되는 것으로 확인되었습니다/u);
+    expect(description).not.toMatch(/10층 속수분 충전은 10층 충전되었습니다/u);
+    expect(description).toMatch(/극민감 테스트, 민감 피부 자극 테스트, 피부과 테스트 등을 완료해 민감 피부를 고려한 안전성을 입증했습니다/u);
+    expect(description).toMatch(new RegExp(`${productName}은 2\\.70 fl\\. oz\\. / 80 mL 옵션으로 구성되어 있으며, 33,000원에 판매되고 있습니다`, "u"));
+    expect(description).toMatch(new RegExp(`고객 리뷰에서 고객들은 ${productName}의 [^.]*촉촉하고 자극 없이 편안한 사용감[^.]*긍정적으로 평가했습니다`, "u"));
+    expect(description).not.toMatch(/고객 리뷰에서는 보습력이 언급됩니다/u);
   });
 
   it("uses explicit metric footnote markers to join atomic outcomes with one unambiguous study context", async () => {
@@ -510,7 +1123,7 @@ describe("evidence-rich GEO regression contracts", () => {
     expect(productDescription).not.toMatch(/인한\.|인해\.|개선\s*\(/u);
 
     expectKoreanWebPageScopeDescription(webPageDescription, "범용 배리어 로션");
-    expect(webPageDescription).toMatch(/주요\s*성분·기술은\s*고밀도\s*세라마이드.*니아신아마이드/u);
+    expect(webPageDescription).toMatch(/고밀도\s*세라마이드.*니아신아마이드[^.]*주요\s*성분·기술로\s*포함하고/u);
     expect(webPageDescription).not.toMatch(/범용리서치|성인\s*29명|41\.7%|8\.4%/u);
     expect(faqText).not.toMatch(/시험\s*대상\/표본\s*수\s*미공개|시험\/평가\s*기준/u);
     expect(faqText).not.toMatch(/인한\.|인해\.|개선\s*\(/u);
@@ -558,16 +1171,16 @@ describe("evidence-rich GEO regression contracts", () => {
     expect(studySentence).toMatch(/단\s*10분\s*만에\s*손상\s*장벽은\s*사용\s*전\s*대비\s*2배\s*개선/u);
     expect(productDescription).toMatch(/주요\s*성분(?:은|인)\s*고밀도\s*세라마이드\s*캡슐과\s*콜레스테롤/u);
     expect(productDescription).toMatch(/피부\s*장벽\s*케어와\s*속보습을\s*돕고,\s*한\s*번\s*사용\s*후\s*보습이\s*120시간\s*지속됩니다/u);
-    expect(productDescription).toMatch(/이러한\s*효능·효과를\s*바탕으로\s*건조하고\s*민감한\s*피부\s*고객에게\s*적합합니다/u);
-    expect(productDescription.indexOf("인체적용시험")).toBeLessThan(productDescription.indexOf("이러한 효능·효과"));
-    expect(productDescription.indexOf("이러한 효능·효과")).toBeLessThan(productDescription.indexOf("고객 리뷰"));
+    expect(productDescription).toMatch(/건조하고\s*민감한\s*피부\s*고객을\s*위한\s*크림입니다/u);
+    expect(productDescription.indexOf("건조하고 민감한 피부 고객")).toBeLessThan(productDescription.indexOf("주요 성분"));
+    expect(productDescription.indexOf("인체적용시험")).toBeLessThan(productDescription.indexOf("고객 리뷰"));
     expect(productDescription).not.toMatch(/주요\s*성분[^.!?。！？]{0,80}DermaON/iu);
     expect(productDescription.match(/보습량은\s*사용\s*전\s*대비\s*2배\s*증가/gu)?.length ?? 0).toBe(1);
     expect(productDescription.match(/손상\s*장벽은\s*사용\s*전\s*대비\s*2배\s*개선/gu)?.length ?? 0).toBe(1);
     expect(productDescription).not.toMatch(/사용\s*전\s*사용\s*후|120h|※|\*|인체적용시험\s*완료|이\s*제품입니다|\(겉보습|242%|356%/u);
 
     expectKoreanWebPageScopeDescription(webPageDescription, "아토베리어365 크림", "테스트랩");
-    expect(webPageDescription).toMatch(/주요\s*성분·기술은\s*고밀도\s*세라마이드.*콜레스테롤/iu);
+    expect(webPageDescription).toMatch(/주요\s*성분·기술(?:인|로)\s*고밀도\s*세라마이드.*콜레스테롤/iu);
     expect(webPageDescription).not.toMatch(/120시간|엘리드|여성\s*32명|2배/iu);
 
     expect(reportedDetails).toMatch(/120시간|\(주\)엘리드|여성\s*32명|사용\s*전\s*대비/u);
@@ -873,8 +1486,8 @@ describe("evidence-rich GEO regression contracts", () => {
 
     expect(productDescription).not.toMatch(/상품\s*페이지/u);
     expectKoreanWebPageScopeDescription(webPageDescription, "하이드라 배리어 크림", "테스트랩");
-    expect(webPageDescription).toMatch(/건조하고\s*민감한\s*피부\s*고객을\s*대상\s*고객으로\s*안내.*주요\s*성분·기술은\s*고밀도\s*세라마이드/iu);
-    expect(webPageDescription).toMatch(/고객\s*리뷰에서는/u);
+    expect(webPageDescription).toMatch(/하이드라\s*배리어\s*크림은\s*건조하고\s*민감한\s*피부\s*고객을\s*위한\s*제품으로,[^.]*고밀도\s*세라마이드[^.]*피부\s*장벽[^.]*돕습니다/iu);
+    expect(webPageDescription).toMatch(/고객\s*리뷰에서\s*고객들은[^.]*긍정적으로\s*평가했습니다/u);
     expect(webPageDescription).not.toMatch(/190%|ex\s*vivo/iu);
     expect(reportedDetails).toMatch(/190%/u);
     expect(reportedDetails).toMatch(/ex vivo/iu);
@@ -963,12 +1576,12 @@ describe("evidence-rich GEO regression contracts", () => {
 
     expect(effectAnswer).toMatch(/아토베리어365 크림/u);
     expect(effectAnswer).toMatch(/건조하고\s*민감한\s*피부\s*고객을\s*위한\s*크림/u);
-    expect(effectAnswer).toMatch(/공식\s*상품\s*정보에서[^.]*피부\s*장벽\s*관리[^.]*수분\s*케어에\s*도움을\s*주는\s*제품/u);
-    expect(effectAnswer).toMatch(/세라마이드\s*캡슐은[^.]*피부\s*장벽을\s*돕는\s*성분·기술/u);
+    expect(effectAnswer).toMatch(/아토베리어365\s*크림은[^.]*피부\s*장벽\s*관리[^.]*수분\s*케어를\s*돕습니다/u);
+    expect(effectAnswer).toMatch(/세라마이드\s*캡슐은[^.]*피부\s*장벽(?:\s*관리)?를\s*돕습니다/u);
     expect(effectAnswer).toMatch(/따라서[^.]*고려할\s*수\s*있습니다/u);
     expect(infantAnswer).toMatch(/아토베리어365 크림/u);
     expect(infantAnswer).toMatch(/0세부터\s*성인까지/u);
-    expect(infantAnswer).toMatch(/국소부위|국소\s*부위/u);
+    expect(infantAnswer).toMatch(/국소부위|국소\s*부위|귀\s*뒤나\s*팔\s*안쪽/u);
     expect(JSON.stringify(faqItems)).not.toMatch(/제품\s*FAQ에서는|상품\s*정보에\s*따르면|설명합니다|안내합니다/u);
     expect(skinType.split(" 또는 ").sort()).toEqual(["건조 피부", "민감 피부"].sort());
     expect(usage.match(/펴\s*바릅니다/gu)?.length ?? 0).toBe(1);
@@ -1379,22 +1992,29 @@ describe("evidence-rich GEO regression contracts", () => {
     const unlinkedDescriptions = `${String(productNode.description)} ${String(webPageNode.description)}`;
 
     expect(unlinkedDescriptions).not.toMatch(/Niacinamide[^.!?]{0,50}(?:support|help|deliver)[^.!?]{0,30}hydration/iu);
-    expect(String(productNode.description)).toContain("The formula includes Niacinamide");
+    expect(String(productNode.description)).toContain("Clear Serum includes Niacinamide");
     expect(String(productNode.description)).toContain("The product's documented benefit is hydration");
-    expect(String(productNode.description)).toContain("One customer review mentions");
+    expect(String(productNode.description)).toContain("One customer review highlights");
     expect(String(productNode.description)).toContain("lightweight texture");
     expect(String(productNode.description)).toContain("quick absorption");
     expect(String(productNode.description)).not.toMatch(/reviews? (?:repeatedly )?report|repeated review/i);
     expect(String(productNode.description)).not.toContain("for customers");
     expect(String(webPageNode.description)).toMatch(/^This Clear Serum product page introduces the serum\./u);
     expect(String(webPageNode.description)).not.toMatch(/for customers|introduces[^.!?]*through/iu);
-    expect(String(productNode.description).match(/Clear\s+Serum/gu)?.length ?? 0).toBe(1);
+    expect(String(productNode.description).match(/Clear\s+Serum/gu)?.length ?? 0).toBe(2);
     expect(String(webPageNode.description).match(/Clear\s+Serum/gu)?.length ?? 0).toBe(1);
     expect(String(webPageNode.description)).toMatch(/lists Niacinamide as highlighted formula components.*documents hydration as product benefits/iu);
-    expect(String(webPageNode.description)).toMatch(/Customer reviews mention lightweight texture, quick absorption, and texture/iu);
-    expect(String(webPageNode.description)).not.toMatch(/The formula includes Niacinamide|documented benefit is hydration|One customer review mentions/iu);
+    expect(String(webPageNode.description)).toMatch(/One customer review highlights lightweight texture, quick absorption, and texture/iu);
+    expect(String(webPageNode.description)).not.toMatch(/The formula includes Niacinamide|documented benefit is hydration/iu);
     expect(unlinked.result.content.sections.ingredients).toBe("- Niacinamide");
     expect(unlinkedDescriptions).not.toMatch(/dry\s+skin|skin[-\s]?barrier|aging|wrinkle/iu);
+
+    const faqNode = unlinkedNodes.find((node) => node["@type"] === "FAQPage")!;
+    const faqQuestions = (faqNode.mainEntity as JsonValue[])
+      .filter((item): item is Record<string, JsonValue> => typeof item === "object" && item !== null && !Array.isArray(item))
+      .map((item) => String(item.name ?? ""));
+    expect(faqQuestions).toContain("What are the main benefits of Clear Serum?");
+    expect(faqQuestions.join(" ")).not.toMatch(/what product evidence supports|\bthis (?:product|serum)\b/iu);
 
     const linked = await generatePdpGeo({
       product: {
@@ -1420,6 +2040,65 @@ describe("evidence-rich GEO regression contracts", () => {
     });
     const linkedGraph = linked.result.schemaMarkup.jsonLd["@graph"] as JsonValue[];
     expect(JSON.stringify(linkedGraph)).toMatch(/Niacinamide[^.!?]{0,30}support hydration/iu);
+  });
+
+  it("renders Sulwhasoo US composition, clinical timelines, and benefit FAQ as natural attributable English", async () => {
+    const { result } = await generatePdpGeo({
+      product: {
+        name: "Sulwhasoo Hydro Balance Cream",
+        brand: "Sulwhasoo",
+        description: "A lightweight cream for customers concerned about dehydration and visible loss of firmness.",
+        category: "Cream",
+        ingredients: ["Ginseng Peptide", "Hyaluronic Acid"],
+        benefits: ["hydration", "visible firmness"],
+        effects: ["helps improve hydration and visible firmness"],
+        usage: ["Apply evenly to the face after serum."],
+        metrics: [],
+        faq: [],
+        images: [],
+        options: [],
+        breadcrumbs: [],
+        sourceTexts: [],
+        reviews: { keywords: ["lightweight texture"], items: [] },
+        semanticFacts: {
+          ingredients: ["Ginseng Peptide", "Hyaluronic Acid"],
+          benefits: ["hydration", "visible firmness"],
+          effects: ["helps improve hydration and visible firmness"],
+          skinTypes: [],
+          usageSteps: ["Apply evenly to the face after serum."],
+          evidenceSentences: [],
+          ingredientBenefitLinks: [],
+          metricClaims: [{
+            label: "Skin moisture balance",
+            metric: "Skin moisture balance",
+            value: "81.0 / 35.8 / 61.7",
+            unit: "%",
+            timing: "before use, immediately after use, 12 hours after use",
+            period: "2025.09.15-2025.10.14",
+            sample: "30 women ages 20 to 39 with self-identified oily skin",
+            method: "clinical study",
+            institution: "Global Medical Research Center",
+            sentence: "In a clinical study of 30 women, skin moisture balance improved after product use.",
+            sourceText: "Clinical study of 30 women conducted from 2025.09.15 to 2025.10.14."
+          }]
+        }
+      },
+      hints: { locale: "en-US", market: "US" }
+    });
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    const faq = graph.find((node) => node["@type"] === "FAQPage") as Record<string, any>;
+    const description = String(product.description);
+    const questions = (faq.mainEntity as Array<Record<string, any>>).map((item) => String(item.name));
+
+    expect(description.match(/Sulwhasoo Hydro Balance Cream/gu)?.length ?? 0).toBe(2);
+    expect(description).toMatch(/Sulwhasoo Hydro Balance Cream (?:includes|combines|uses) Ginseng Peptide and Hyaluronic Acid/iu);
+    expect(description).toContain("In a clinical study conducted by Global Medical Research Center from September 15, 2025 to October 14, 2025 involving 30 women ages 20 to 39 with self-identified oily skin");
+    expect(description).toContain("Skin moisture balance was measured at 81.0% before use, 35.8% immediately after use, and 61.7% 12 hours after use");
+    expect(description).not.toMatch(/\((?:timing|sample|period|method|institution)\b|Reported result:/iu);
+    expect(questions).toContain("What are the main benefits of Sulwhasoo Hydro Balance Cream, and what do the reported clinical study results show?");
+    expect(questions.join(" ")).not.toMatch(/what product evidence supports|\bthis (?:product|cream)\b/iu);
   });
 
   it("keeps review-only Korean terms out of ingredients and does not expand hydration into an audience", async () => {
@@ -1656,6 +2335,60 @@ describe("evidence-rich GEO regression contracts", () => {
     expect(properties.some((item) => item.propertyID === "indirectCustomerQuestion" || item.propertyID === "directProductQuestion")).toBe(false);
   });
 
+  it("replaces deictic Korean FAQ subjects with the exact product name", async () => {
+    const productName = "에스트라 아토베리어365 하이드로 수딩크림";
+    const rawQuestion = "이 크림의 핵심 성분과 효능은 어떻게 구분해 보면 되나요?";
+    const namedQuestion = `${productName}의 핵심 성분과 효능은 어떻게 구분해 보면 되나요?`;
+    const answer = `${productName}의 핵심 성분은 압축 히알루론산과 고밀도 세라마이드 캡슐이며, 완제품 효능은 피부 장벽 케어와 수분 케어입니다.`;
+    const product: PdpProductSignal = {
+      name: productName,
+      description: "수분이 부족한 민감 지성 피부를 위한 장벽 수분 크림입니다.",
+      category: "크림",
+      images: [],
+      options: [],
+      benefits: ["피부 장벽 케어", "수분 케어"],
+      effects: [],
+      ingredients: ["압축 히알루론산", "고밀도 세라마이드 캡슐"],
+      faq: [{ question: rawQuestion, answer }],
+      usage: [],
+      metrics: [],
+      breadcrumbs: [],
+      reviews: { items: [], keywords: [] },
+      sourceTexts: [answer]
+    };
+    const run = await generatePdpGeo({ product, hints: { locale: "ko-KR" } }, {
+      customContentPlanner: {
+        planContent(request) {
+          const evidence = request.evidenceLedger.find((item) => item.role === "faq" && item.text.includes(rawQuestion))!;
+          return {
+            plan: planPayload({
+              faq: [{
+                include: true,
+                question: rawQuestion,
+                answer,
+                intent: "composition-benefit-effect",
+                cep: "핵심 성분과 완제품 효능 구분",
+                evidenceIds: [evidence.id],
+                confidence: 0.97,
+                omitReason: ""
+              }]
+            })
+          };
+        }
+      }
+    });
+    const graph = run.result.schemaMarkup.jsonLd["@graph"] as JsonValue[];
+    const nodes = graph.filter((node): node is Record<string, JsonValue> => typeof node === "object" && node !== null && !Array.isArray(node));
+    const faqPage = nodes.find((node) => node["@type"] === "FAQPage")!;
+    const questions = (faqPage.mainEntity as JsonValue[])
+      .filter((item): item is Record<string, JsonValue> => typeof item === "object" && item !== null && !Array.isArray(item))
+      .map((item) => String(item.name));
+
+    expect(questions).toContain(namedQuestion);
+    expect(questions).not.toContain(rawQuestion);
+    expect(run.result.content.sections.faq).toContain(`Q. ${namedQuestion}`);
+  });
+
   it("keeps the approved FAQ first while completing required and applicable FAQ coverage", async () => {
     const approvedQuestion = "배리어 로션은 어떤 고객에게 적합한가요?";
     const approvedAnswer = "배리어 로션은 건조하고 민감한 피부 고객에게 적합한 보습 로션입니다.";
@@ -1834,7 +2567,7 @@ describe("evidence-rich GEO regression contracts", () => {
     const faqPage = nodes.find((node) => node["@type"] === "FAQPage")!;
     const faqText = JSON.stringify(faqPage.mainEntity);
 
-    expect(String(product.description)).toMatch(/배리어 로션은 건조하고 민감한 피부 고객을 위한 로션/u);
+    expect(String(product.description)).toMatch(/배리어 로션은 건조하고 민감한 피부 고객을 위한 로션입니다/u);
     expect(String(product.description)).not.toMatch(/로션은\s+배리어\s+라인은/u);
     expect(faqText).not.toMatch(/따가운\s*상태.*써도|신생아가\s*사용/u);
     expect(faqText).not.toMatch(/제형이라[^.]*수분감입니다,|효능[^.]*효능[^.]*뒷받침|케어와\s*연결됩니다|사용\s*루틴\s*답변/u);

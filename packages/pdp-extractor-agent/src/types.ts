@@ -160,6 +160,17 @@ export interface GeoSemanticIngredientBenefitLink {
   sourceText?: string;
 }
 
+export interface GeoSemanticCitation {
+  type?: "research" | "article";
+  title?: string;
+  publisher?: string;
+  author?: string;
+  publishedAt?: string;
+  url?: string;
+  finding?: string;
+  sourceText?: string;
+}
+
 export interface GeoSemanticFacts {
   ingredients: string[];
   benefits: string[];
@@ -169,6 +180,7 @@ export interface GeoSemanticFacts {
   metricClaims: GeoSemanticMetricClaim[];
   evidenceSentences: string[];
   ingredientBenefitLinks: GeoSemanticIngredientBenefitLink[];
+  citations?: GeoSemanticCitation[];
 }
 
 /** Keyword categories used by GEO downstream agents. */

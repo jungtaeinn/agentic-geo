@@ -132,8 +132,8 @@ export function repairPdpSchemaGraphIntegrity(
 
 /**
  * Uses retained schema nodes as the source of truth for their visible FAQ and
- * HowTo copy. Emitted HowTo requires at least two ordered actions; structured
- * data and visible usage must retain the same count when that node is present.
+ * HowTo copy. Emitted HowTo requires at least one source-backed action;
+ * structured data and visible usage retain the same count when present.
  */
 export function synchronizeStructuredContentWithGraph(input: {
   sections: PdpGeoContentSections;
@@ -225,7 +225,7 @@ function hasValidHowTo(node: SchemaNode): boolean {
     return false;
   }
   const steps = collectionItems(node.step).filter((item) => Boolean(stringValue(item.text)));
-  return steps.length >= 2
+  return steps.length >= 1
     && steps.every((step, index) => Number(step.position) === index + 1);
 }
 

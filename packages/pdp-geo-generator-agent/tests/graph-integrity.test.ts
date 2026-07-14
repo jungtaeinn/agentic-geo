@@ -160,7 +160,7 @@ describe("post-validation schema graph integrity", () => {
     expect(result.validationRepairs.some((repair) => repair.field === "WebPage.hasPart")).toBe(true);
   });
 
-  it("rebuilds visible FAQ, removes single-step HowTo, and retains visible usage", () => {
+  it("rebuilds visible FAQ and retains a valid single-step HowTo with matching visible usage", () => {
     const validQuestion = "What does Barrier Serum support?";
     const validAnswer = "Barrier Serum supports hydration for dry skin.";
     const validStep = "Apply one pump to clean skin morning and night.";
@@ -191,6 +191,7 @@ describe("post-validation schema graph integrity", () => {
         {
           "@type": "HowTo",
           "@id": `${baseId}#how-to-use`,
+          name: "How to use Barrier Serum",
           step: [
             { "@type": "HowToStep", text: "Ceramide supports the formula story." },
             { "@type": "HowToStep", text: validStep }
@@ -204,7 +205,9 @@ describe("post-validation schema graph integrity", () => {
     expect(result.content.sections.faq).toBe(`Q. ${validQuestion}\nA. ${validAnswer}`);
     expect(result.content.sections.howToUse).toBe(`1. ${validStep}`);
     expect(result.content.html).toBe("");
-    expect(graphOf(result).some((node) => node["@type"] === "HowTo")).toBe(false);
+    const howTo = graphOf(result).find((node) => node["@type"] === "HowTo");
+    expect(howTo).toBeDefined();
+    expect(howTo?.step).toEqual([expect.objectContaining({ position: 1, text: validStep })]);
   });
 
   it("removes a multi-step HowTo without a concrete goal", () => {

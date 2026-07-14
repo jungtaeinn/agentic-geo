@@ -408,7 +408,7 @@ describe("adversarial evidence-bound content planning", () => {
     expect(result.plan.howTo.steps).toEqual([]);
   });
 
-  it("keeps one direct product usage instruction out of HowTo even when unrelated source text contains a sequence", async () => {
+  it("keeps one direct product usage instruction as one step despite an unrelated source sequence", async () => {
     const source = product({
       usage: ["Apply one pump evenly to the face."],
       sourceTexts: [
@@ -419,8 +419,8 @@ describe("adversarial evidence-bound content planning", () => {
 
     const result = await planPdpGeoContent(planningRequest(source, "en-US"), {});
 
-    expect(result.plan.howTo.eligible).toBe(false);
-    expect(result.plan.howTo.steps).toEqual([]);
+    expect(result.plan.howTo.eligible).toBe(true);
+    expect(result.plan.howTo.steps.map((step) => step.text)).toEqual(["Apply one pump evenly to the face."]);
   });
 
   it("does not publish a raw wrong-locale description when the plan omits it", async () => {

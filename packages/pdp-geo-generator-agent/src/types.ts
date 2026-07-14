@@ -233,6 +233,18 @@ export interface PdpSemanticIngredientBenefitLink {
   sourceText?: string;
 }
 
+/** Source metadata retained for a research paper or editorial article cited by the PDP. */
+export interface PdpSemanticCitation {
+  type?: "research" | "article";
+  title?: string;
+  publisher?: string;
+  author?: string;
+  publishedAt?: string;
+  url?: string;
+  finding?: string;
+  sourceText?: string;
+}
+
 export interface PdpSemanticFacts {
   ingredients: string[];
   benefits: string[];
@@ -244,6 +256,7 @@ export interface PdpSemanticFacts {
   metricClaims: PdpSemanticMetricClaim[];
   evidenceSentences: string[];
   ingredientBenefitLinks: PdpSemanticIngredientBenefitLink[];
+  citations?: PdpSemanticCitation[];
 }
 
 /** Normalized product facts inferred from arbitrary product JSON. */

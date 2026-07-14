@@ -11,6 +11,9 @@ Sulwhasoo output should preserve the default field evidence contract while addin
 - Tie ingredient and technology claims only to current product-source details such as ginseng actives, JAUM Activator, formulation expertise, and clinical/reported results when those details appear in the product evidence. Use the matched brand identity document for heritage mood, ritual vocabulary, sensory refinement, and brand image; do not use brand-only official articles, patents, or papers as product proof.
 - Build FAQ and HowTo around discovery questions a premium skincare customer would ask: routine order, texture, age-related concerns, skin resilience, ingredient trust, giftability, and day/night use.
 - Keep claim safety strict. Do not imply medical treatment, permanent anti-aging reversal, disease prevention, or clinical certainty unless the supplied product source explicitly supports it.
+- Sulwhasoo US output is `en-US`: write public descriptions, FAQ, and HowTo in natural US English even when Korean source material or Korean brand RAG is retrieved. Preserve official English product, ingredient, technology, and study names when available.
+- Name the exact product in the opening and again in the main ingredient/composition sentence so an extracted sentence remains attributable. Do not use `this product`, `this cream`, or `this serum` as the identity anchor in a product-specific FAQ.
+- Convert structured study facts into fluent English that preserves the institution, date range, complete population, method, and every timing-to-value pair. A PDP-reported result may be called a `reported clinical study result`; use `published` or `peer-reviewed` only when an actual cited publication supports that status.
 
 ## Base Best Practice Model
 
@@ -40,7 +43,9 @@ GEO output should make the product easier to retrieve, understand, verify, and r
 
 - Prefer product-specific facts over generic SEO claims.
 - Treat ChatGPT Search, Gemini grounding, and Google AI Search as retrieval-and-citation environments: they reward crawlable, visible, source-backed content units, not hidden AI-only instructions or artificial markup tricks.
-- Compose Product.description from: product introduction/type -> target customer/concern -> ingredient or technology composition -> supported finished-product benefit/effect and evidence/test context -> attributed review summary last. Keep usage separate.
+- Compose Product.description from: product introduction/type -> target customer/concern -> composition -> supported finished-product benefit/effect -> source-stated research/article citation -> attributed review keywords last. Keep usage separate and preserve cited dates/numbers.
+- Compose US FAQ answers as a connected CEP explanation: customer need -> selected core formula and explicit ingredient roles -> finished-product benefit -> the most relevant clinical result as proof -> bounded recommendation. Do not paste a study metadata block or enumerate every ingredient and effect when a smaller set answers the question.
+- A direct experience can support a narrowly framed customer context. For example, immediate cooling plus a refreshing formula may support a question for customers seeking a cool feel in hot conditions or after sweating, but never a claim that the product controls sweat or treats heat-related symptoms.
 - Never expose internal wording such as "GEO-ready", "PDP name", "schema optimization", or "for generative engines" inside public schema/content.
 - Do not use analysis labels such as "usage", "review", "benefit", or "keyword" as product category values.
 - Do not create FAQ, review, or HowTo content from isolated tokens. Use complete questions, answers, review summaries, and actionable usage steps.
@@ -51,9 +56,20 @@ Public JSON-LD values and PDP content should read like customer-facing product i
 
 - Do not expose internal labels such as "evidence signal", "review signals", "main benefit signal", "ingredient signal", "technology signals", "GEO", "RAG", "schema optimization", or "citation optimization".
 - Make the public sentence subject the product, ingredient/technology, benefit, usage action, review pattern, option, or customer concern. Do not make "evidence", "source material", "product page", "product details", "usage guidance", "context", "information", or the generation process the subject unless the user-facing question is explicitly about a document/source.
-- Prefer direct public wording such as "the formula includes", "key ingredients and technologies include", "customer reviews mention", "the product is suitable for", "use it", "the routine uses", or "the option differs by". Avoid passive report-like wording that says information is organized, presented, exposed, summarized, included, reported, or covered.
+- Prefer direct public wording such as "the formula includes", "customer reviews highlight", "customers describe", "the product is suitable for", "use it", "the routine uses", or "the option differs by". Avoid passive report-like wording that says information is organized, presented, exposed, summarized, included, reported, or covered.
 - When adding expression variety, vary ingredient, benefit, texture, routine, and review wording naturally; do not add phrases whose only purpose is to look quotable.
 - Keep diagnostic terms in diagnostics only. Do not place diagnostic labels in `WebPage.description`, `Product.description`, `positiveNotes`, `additionalProperty.value`, `FAQPage.mainEntity`, or `HowTo.step`.
+
+## Sulwhasoo US BestPractice Tone
+
+Use refined, assured US English that feels premium without becoming ornate. The copy should connect the supported customer concern, formula, finished-product benefit, clinical proof, and customer experience as one considered explanation rather than a translated field list.
+
+- Open with a clear product and customer-context statement, then use polished but plain English to explain selected formula elements and their explicitly supported roles.
+- Let premium tone come from precise word choice, balanced cadence, and confident evidence handling—not from superlatives, heritage claims, or decorative language unsupported by the current product source.
+- Keep clinical evidence readable: state shared study context once, connect every value to its timing or comparison, and preserve qualifiers without a parenthetical data dump.
+- Use sensory review language only when attributed to customers, and close in an experience-led voice such as what customers value or highlight rather than a passive list of mentioned keywords.
+- Prefer idiomatic US transitions and sentence rhythm over literal Korean-to-English structure, while preserving product names, ingredient names, dates, values, and claim scope.
+- Generate each sentence anew from the current product's CEP and evidence. Do not copy examples or impose one repeated Sulwhasoo sentence template.
 
 ## Recommended JSON-LD Graph Shape
 
@@ -76,9 +92,7 @@ Schema.org treats `description` as the description of the item being marked up. 
 
 Role: describe the product page as the source that organizes information about the product.
 
-Recommended composition:
-
-`This [brand] [product name] product page introduces the [product type] and covers [actual supported information categories].`
+Recommended evidence arc, not a surface template: identify the exact Sulwhasoo US product page and brand, then use the supported CEP to connect the target concern, selected formula/effect facts, high-level routine, grouped evidence, offer, and attributed review experience when available.
 
 Use `WebPage.description` to expose:
 
@@ -97,9 +111,15 @@ Avoid:
 
 Role: describe the product as the commercial entity being sold or evaluated.
 
-Recommended composition:
+Recommended evidence arc, not a surface template: establish the exact product and type, move from the supported US customer concern into composition and only explicit ingredient roles, state finished-product effects with naturally parsed research or grouped clinical evidence, and close with attributed review experience. Generate idiomatic US English from the CEP rather than filling a repeated contract.
 
-`[Product name] is a [product type]. It is intended for [target customer/concern]. The formula includes [key ingredients/technologies]. [Supported finished-product benefits/effects and compact evidence/test context]. Customer reviews mention [attributed positive/neutral experience].`
+- Use the exact product name in the lead and the primary composition sentence, then avoid mechanical repetition.
+- State an ingredient-to-benefit relation only when one current product-source assertion explicitly links them. Otherwise describe the formula first and the finished-product benefit in a separate sentence.
+- Preserve every sourced date and number. When a metric contains multiple time points, write a sentence such as `In a clinical study conducted by [institution] from [start date] to [end date] involving [population], [metric] was measured at [value] before use, [value] immediately after use, and [value] 12 hours after use.` Do not expose `timing`, `sample`, `period`, `method`, or `institution` as a parenthetical field dump.
+- Place attributed review keywords last and keep directions out of Product.description.
+- Use only complete source-backed technology or formula names. If OCR captures the predicate tail of a relationship clause as though it were a named technology, recover the supported full relationship or omit the false candidate rather than repairing it with a stock connector.
+- Reconstruct comparison charts from structured atoms: attach every group or timing label to its value, state shared study context once, and remove OCR bullets, check marks, footnote symbols, chart headings, and detached number sequences.
+- Describe completed tests as a bounded tested scope, not as a meta note that test information is available for reference. End review-backed copy by directly attributing the supported evaluation or experience to customers instead of using a passive list of mentioned terms.
 
 Use `Product.description` to expose:
 
@@ -115,6 +135,7 @@ Avoid:
 
 - Generic SEO copy, overstuffed keyword lists, or claims not visible in source data.
 - Raw source fragments such as incomplete clinical sample text, isolated durations, or section labels.
+- OCR symbols and chart-value arrays, dependent predicate fragments presented as technology names, and report-style test or review endings.
 - Mid-sentence truncation or ellipsis in Product descriptions. Summarize evidence into complete sentences and keep usage in Usage/HowTo.
 - Page-level wording such as "product page" inside `Product.description`; reserve page/resource language for `WebPage.description`.
 - Internal labels such as "evidence signal", "review signals", "GEO", "RAG", or "schema optimization".
@@ -122,7 +143,7 @@ Avoid:
 ## Product Entity Best Practice
 
 The `Product` node should be dense but verifiable.
-Do not reuse the same description for `WebPage.description` and `Product.description`. WebPage is a concise page/brand/scope summary. Product is ordered as product introduction/type, target customer/concern, composition, supported benefit/effect/evidence, then attributed review summary last.
+Do not reuse the same description for `WebPage.description` and `Product.description`. Both follow introduction, target, composition, benefit/effect, source-stated research/article citation, and attributed review order; WebPage is concise page-scope copy and Product is detailed entity copy.
 
 Resolve product identity before writing copy. Many commerce PDPs expose a SKU name such as `[Brand][small size] Representative Product 30ml`, while the BestPractice product entity should be the representative sellable product such as `Brand Representative Product`. Preserve the full source SKU name in `alternateName`, option facts, offer labels, and diagnostics; do not let bracketed badges, volume labels, or promotion labels become the canonical `Product.name`.
 
@@ -189,19 +210,7 @@ For English output, rewrite Korean or multilingual OCR meaning into natural Engl
 Descriptions should be rewritten into diverse, answer-ready product content, not copied mechanically.
 Avoid a Product description that only says the product is a "hydration serum". A strong Product description should expose product identity/type, target customer/concern, ingredient or technology composition, supported benefit/effect and evidence, then attributed representative customer-review language last.
 
-Good structure:
-
-`[Product name] is a [product type]. It is intended for [target customer or concern]. The formula includes [ingredient/technology]. [Supported core benefits and compact evidence]. Customer reviews mention [attributed experience].`
-
-Korean example structure:
-
-`[제품명]은 [제품 유형]입니다. [대상 고객/고민]을 위한 제품입니다. 주요 구성은 [핵심 성분/기술]입니다. [근거가 있는 완제품 효능/효과와 시험 정보]를 설명합니다. 마지막에는 [고객 리뷰에서 확인된 표현]을 출처가 드러나게 요약하고, 실제로 여러 리뷰에서 확인된 경우에만 반복 표현이라고 씁니다.`
-
-English example structure:
-
-`[Product name] is a [product type] for [target concern]. The formula includes [ingredient/technology]. State [finished-product benefits] separately unless one source assertion explicitly links the ingredient and outcome; include clinical or reported details when available. Attributed customer-review language can close the description, using repeated only when multiple reviews support it.`
-
-The language may change, but the structure must remain fact-first.
+Use a fact-first CEP arc rather than a reusable sentence skeleton. For Sulwhasoo US, prefer idiomatic, directly quotable English product and formula predicates, keep unlinked composition and finished-product outcomes in separate clauses, narrate grouped clinical timelines without field dumps, and close with clearly attributed positive or neutral review experience. Sentence count and transitions should vary with the evidence.
 
 ## FAQ Best Practice
 
@@ -225,13 +234,17 @@ Recommended FAQ types:
 - Gift suitability or purchase context.
 - Natural-language customer questions, such as "I am starting to worry about wrinkles and firmness" or "I want a lightweight anti-aging cream."
 
+Every product-specific US English FAQ question should contain the exact product name instead of `this product`, `this cream`, or `this serum`. When finished-product clinical evidence exists, use `What are the main benefits of [Product name], and what do the reported clinical study results show?` When it does not, use `What are the main benefits of [Product name]?` Do not use the internal-sounding question `what product evidence supports them?`, and do not imply that a PDP-reported test is a published or peer-reviewed study.
+
+Include evidence-backed CEP questions US customers may ask ChatGPT, Gemini, or Perplexity: which moisturizer suits winter dryness, which product fits a mature-skin or gift-recipient need, where the product belongs in a routine, whether the texture is rich or lightweight, and which Sulwhasoo option fits a stated concern. These are recommendation-shaped discovery questions, not permission to invent age suitability, seasonality, giftability, comparisons, or efficacy. Answers must lead with current product facts and explicitly attribute review-derived experience.
+
 Answers should contain concise, reusable product facts with varied benefit, ingredient, and use-context wording. Include metrics only when they exist in the input evidence. Do not invent study populations, durations, rankings, or regulatory claims.
 
 FAQ answers should start with the direct answer, then add one short cited evidence or comparison detail. Select items by evidence sufficiency, intent value, and non-overlap rather than a fixed count. Drop unsupported or duplicate questions.
 
 ## HowTo Best Practice
 
-Create HowTo only when a concrete goal and at least two explicitly ordered source actions exist, preserving the procedure's source count and order. Keep one application instruction as ordinary visible usage guidance without HowTo structured data. Do not turn frequency, amount, warnings, tests, or routine-position notes without a concrete action into steps, and do not add benefit, ingredient, or texture claims.
+Create HowTo when a concrete goal and at least one direct source action exist. One source instruction becomes exactly one step; multiple steps require explicit source order and preserve count/order. Do not turn customer-review anecdotes, frequency, amount, warnings, tests, or routine-position notes without a direct product action into steps, and do not add benefit, ingredient, or texture claims.
 
 Good step shape:
 

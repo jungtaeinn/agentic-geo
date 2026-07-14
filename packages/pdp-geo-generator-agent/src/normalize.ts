@@ -10,6 +10,7 @@ import type {
   PdpGeoReviewItem,
   PdpProductSignal,
   PdpSemanticFacts,
+  PdpSemanticCitation,
   PdpSemanticIngredientBenefitLink,
   PdpSemanticMetricClaim
 } from "./types";
@@ -739,6 +740,9 @@ function isQuestionLikeSourceText(value: string): boolean {
   if (/[?？]\s*$/.test(text)) {
     return true;
   }
+  if (/^(?:how\s+to\s+use|directions?|usage\s+instructions?)\b\s*[.:：]?/iu.test(text)) {
+    return false;
+  }
   return /(?:무엇|뭐|어떤|어떻게|왜|언제|어디|누가|가능|괜찮|되나|되나요|인가요|있나요|해주는\s*것인가요|할까요|좋나요|궁금(?:합니다|해요)?|알고\s*싶(?:습니다|어요)?)\s*[.!。]?\s*$/.test(text)
     || /^(?:what|how|why|when|where|who|which|can|does|do|is|are)\b/i.test(text)
     || /\b(?:i\s+wonder|would\s+like\s+to\s+know|want\s+to\s+know)\b/i.test(text);
@@ -854,7 +858,8 @@ function isCustomerExperienceEvidence(value: string): boolean {
     return true;
   }
   return /\bI\s+(?:bought|used|tried|love|liked|recommend)\b/i.test(text)
-    || /(?:좋아요|좋았습니다|마음에\s*들|만족해|느낌이네요|같아요)\s*[.!。]?$/u.test(text);
+    || /(?:직접|저는|제가|구매(?:해|했)|사용해\s*보)[^.!?。！？]{0,160}(?:촉촉|편안|만족|좋(?:아|았|습니))/u.test(text)
+    || /(?:좋아요|좋았습니다|마음에\s*들|만족(?:해|했|합니다)|느낌이네요|같아요)\s*[.!。]?$/u.test(text);
 }
 
 function isAudienceEvidence(value: string): boolean {
@@ -883,9 +888,9 @@ function isAtomicMetricEvidenceText(value: string): boolean {
     || /^\d+(?:\.\d+)?\s*(?:%|배|weeks?|days?|hours?|주|일|시간)\.?$/i.test(text)) {
     return false;
   }
-  const quantifiedResult = /\d+(?:\.\d+)?\s*(?:%|배|times?|points?|점)(?:\*|\s|$|[.,;:])/i.test(text)
+  const quantifiedResult = /\d+(?:\.\d+)?\s*(?:%|배|times?|points?|점|층|layers?|시간|hours?|°\s*[CF]|degrees?\s+(?:Celsius|Fahrenheit))(?:\*|\s|$|[.,;:])/i.test(text)
     || /(?:increased?|decreased?|improved?|reduced?|higher|lower|boosted?|rose|fell|증가|감소|개선|완화|높|낮)[^.!?。！？]{0,32}\d+(?:\.\d+)?\s*(?:%|배|점)?/i.test(text);
-  const outcome = /(?:firm|elastic|wrinkle|fine\s*line|hydration|moisture|barrier|texture|radiance|plump|smooth|density|retention|soothing|탄력|주름|수분|보습|장벽|피부결|광채|밀도|잔존|진정|개선|효과)/i.test(text);
+  const outcome = /(?:firm|elastic|wrinkle|fine\s*line|hydration|moisture|barrier|texture|radiance|plump|smooth|density|retention|soothing|cooling|temperature|탄력|주름|수분|보습|장벽|피부결|광채|밀도|잔존|진정|쿨링|시원|온도|개선|효과)/i.test(text);
   const evidenceFrame = /(?:study|clinical|instrumental|assessment|evaluation|test(?:ed)?|participants?|subjects?|women|men|users?|agreed|reported|result|versus|\bvs\.?\b|시험|실험|평가|측정|대상|참여자|사용자|결과|대비)/i.test(text)
     || /(?:after|over|in)\s+\d+(?:\.\d+)?\s*(?:weeks?|days?|hours?)\b/i.test(text)
     || /\d+(?:\.\d+)?\s*(?:주|일|시간)\s*(?:후|동안)/u.test(text)
@@ -1043,6 +1048,7 @@ function normalizeSemanticFacts(source: unknown, insights: OcrSentenceInsightInp
         safetyTests: inferPdpEvidenceRoles(insight.text).roles.includes("safety") ? [insight.text] : [],
         metricClaims: insight.category === "metric" ? [{ sentence: insight.text, sourceText: insight.text }] : [],
         evidenceSentences: [insight.text],
+        citations: [],
         ingredientBenefitLinks: insight.category === "ingredient" && hasOutcomeLanguage(insight.text)
           ? [{ sentence: insight.text, sourceText: insight.text }]
           : [],
@@ -1066,7 +1072,8 @@ function normalizeSemanticFactsObject(value: Record<string, unknown>): Partial<P
     safetyTests: textArray(value.safetyTests),
     evidenceSentences: textArray(value.evidenceSentences),
     metricClaims: readSemanticMetricClaims(value.metricClaims),
-    ingredientBenefitLinks: readSemanticIngredientBenefitLinks(value.ingredientBenefitLinks)
+    ingredientBenefitLinks: readSemanticIngredientBenefitLinks(value.ingredientBenefitLinks),
+    citations: readSemanticCitations(value.citations)
   };
 }
 
@@ -1080,7 +1087,8 @@ function mergeSemanticFacts(...values: Array<Partial<PdpSemanticFacts> | undefin
     safetyTests: unique(values.flatMap((item) => item?.safetyTests ?? []).map(cleanText).filter(isUsefulSourceText)).slice(0, 24),
     metricClaims: uniqueSemanticMetricClaims(values.flatMap((item) => item?.metricClaims ?? [])).slice(0, 24),
     evidenceSentences: unique(values.flatMap((item) => item?.evidenceSentences ?? []).map(cleanText).filter(isUsefulSourceText)).slice(0, 32),
-    ingredientBenefitLinks: uniqueSemanticIngredientBenefitLinks(values.flatMap((item) => item?.ingredientBenefitLinks ?? [])).slice(0, 24)
+    ingredientBenefitLinks: uniqueSemanticIngredientBenefitLinks(values.flatMap((item) => item?.ingredientBenefitLinks ?? [])).slice(0, 24),
+    citations: uniqueSemanticCitations(values.flatMap((item) => item?.citations ?? [])).slice(0, 16)
   };
 }
 
@@ -1105,6 +1113,9 @@ export function sanitizePdpSemanticFacts(value: Partial<PdpSemanticFacts>): PdpS
   const ingredientBenefitLinks = uniqueSemanticIngredientBenefitLinks((value.ingredientBenefitLinks ?? [])
     .filter(isCoherentIngredientBenefitLink))
     .slice(0, 24);
+  const citations = uniqueSemanticCitations((value.citations ?? [])
+    .filter(isCoherentSemanticCitation))
+    .slice(0, 16);
 
   return {
     ingredients,
@@ -1118,7 +1129,8 @@ export function sanitizePdpSemanticFacts(value: Partial<PdpSemanticFacts>): PdpS
       .map(cleanSourceSignalText)
       .filter(isUsefulSourceText))
       .slice(0, 32),
-    ingredientBenefitLinks
+    ingredientBenefitLinks,
+    citations
   };
 }
 
@@ -1202,7 +1214,7 @@ function isStructuredAtomicMetricClaim(claim: PdpSemanticMetricClaim): boolean {
   if (/\b1\s+(?:weeks|days|hours)\b/i.test(`${context} ${publicText}`) || /["']\s*$/.test(publicText)) {
     return false;
   }
-  const quantified = /\d+(?:\.\d+)?\s*(?:%|배|times?|points?|점)(?:\s|$|[.,;:])/i.test(value);
+  const quantified = /\d+(?:\.\d+)?\s*(?:%|배|times?|points?|점|층|layers?|시간|hours?|°\s*[CF]|degrees?\s+(?:Celsius|Fahrenheit))(?:\s|$|[.,;:])/i.test(value);
   const contextualized = /\d|study|test|assessment|evaluation|participant|subject|user|week|day|hour|baseline|compar|시험|실험|평가|측정|대상|참여|대비|비교|주|일|시간/i.test(context);
   return quantified && contextualized && /[\p{L}]/u.test(outcome);
 }
@@ -1283,6 +1295,47 @@ function readSemanticIngredientBenefitLinks(value: unknown): PdpSemanticIngredie
       sentence: stringValue(item.sentence),
       sourceText: stringValue(item.sourceText)
     }];
+  });
+}
+
+function readSemanticCitations(value: unknown): PdpSemanticCitation[] {
+  const values = Array.isArray(value) ? value : [];
+  return values.flatMap((item): PdpSemanticCitation[] => {
+    if (!isRecord(item)) return [];
+    const type = stringValue(item.type);
+    return [{
+      type: type === "article" || type === "research" ? type : undefined,
+      title: stringValue(item.title),
+      publisher: stringValue(item.publisher),
+      author: stringValue(item.author),
+      publishedAt: stringValue(item.publishedAt),
+      url: stringValue(item.url),
+      finding: stringValue(item.finding),
+      sourceText: stringValue(item.sourceText)
+    }];
+  });
+}
+
+function isCoherentSemanticCitation(value: PdpSemanticCitation): boolean {
+  const sourceText = cleanSourceSignalText(value.sourceText ?? "");
+  const finding = cleanSourceSignalText(value.finding ?? "");
+  const title = cleanSourceSignalText(value.title ?? "");
+  if (!sourceText || (!finding && !title)) return false;
+  const roles = inferPdpEvidenceRoles(sourceText).roles;
+  return !roles.includes("review") && !roles.includes("commerce")
+    && /(?:research|study|paper|journal|article|news|press|doi|pubmed|연구|논문|학술|기사|보도|研究|論文|記事)/iu.test(sourceText);
+}
+
+function uniqueSemanticCitations(values: PdpSemanticCitation[]): PdpSemanticCitation[] {
+  const seen = new Set<string>();
+  return values.filter((citation) => {
+    const key = cleanText([
+      citation.type, citation.title, citation.publisher, citation.author,
+      citation.publishedAt, citation.url, citation.finding, citation.sourceText
+    ].filter(Boolean).join(" ")).toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
 }
 

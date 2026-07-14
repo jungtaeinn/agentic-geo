@@ -44,6 +44,7 @@ function semanticFactsFromInsights(insights: ClassifiedSentenceInsight[]): GeoSe
       sourceText: sentence
     })),
     evidenceSentences: unique(insights.map((item) => item.text)).slice(0, 16),
+    citations: [],
     ingredientBenefitLinks: unique(insights.filter((item) => item.category === "ingredient" && /(support|help|improve|care|효능|효과|개선|케어|장벽|보습|수분)/i.test(item.text)).map((item) => item.text)).slice(0, 8).map((sentence) => ({
       sentence,
       sourceText: sentence

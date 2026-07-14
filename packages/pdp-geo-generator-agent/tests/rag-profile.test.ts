@@ -82,10 +82,26 @@ describe("readPdpGeoGeneratorRagProfile", () => {
       .toContain("Sulwhasoo Best Practice v1");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandBestPractices.aestura)?.content)
       .toContain("AESTURA Best Practice v1");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandBestPractices.sulwhasoo)?.content)
+      .toContain("What are the main benefits of [Product name], and what do the reported clinical study results show?");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandBestPractices.sulwhasoo)?.content)
+      .toContain("Sulwhasoo US output is `en-US`");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandBestPractices.aestura)?.content)
+      .toContain("공개된 인체적용시험 결과는 어떻게 나타났나요?");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandBestPractices.aestura)?.content)
+      .toContain("정확한 상품명");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandBestPractices.aestura)?.content)
+      .toContain("페이지 본문에서는");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandBestPractices.aestura)?.content)
+      .toContain("유분량은 사용 전 대비 사용 직후 55%, 12시간 후에도 23% 개선되었습니다");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandLocaleExpressionGuidelines.sulwhasoo)?.content)
       .toContain("Sulwhasoo Locale Expression Guidelines v1");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandLocaleExpressionGuidelines.aestura)?.content)
       .toContain("AESTURA Locale Expression Guidelines v1");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandLocaleExpressionGuidelines.sulwhasoo)?.content)
+      .toContain("reported clinical study results");
+    expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandLocaleExpressionGuidelines.aestura)?.content)
+      .toContain("상품 근거");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandLocaleTerminologyMaps.sulwhasoo)?.content)
       .toContain("korean-ginseng-science");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandLocaleTerminologyMaps.aestura)?.content)
@@ -234,10 +250,10 @@ describe("readPdpGeoGeneratorRagProfile", () => {
     expect(query).toContain("positive or neutral customer review FAQ intent");
     expect(query).toContain("WebPage/Product description separation");
     expect(query).toContain("public wording without internal diagnostic labels");
-    expect(query).toContain("Product.description order: product introduction and type -> target customer and concrete concern/CEP -> ingredient and formula composition -> supported finished-product benefits/effects and evidence -> concise attributed review summary last");
+    expect(query).toContain("Product.description order: product introduction and type -> target customer and concrete concern/CEP -> ingredient and formula composition -> supported finished-product benefits/effects -> source-stated research/article citation -> concise attributed review keywords last");
     expect(query).toContain("Keep directions out of Product.description");
-    expect(query).toContain("WebPage.description covers the product page, source-backed brand, and actual page-scope information");
-    expect(query).toContain("a single instruction remains visible usage copy without HowTo structured data");
+    expect(query).toContain("WebPage.description uses page-scope language");
+    expect(query).toContain("one source instruction becomes one step");
   });
 
   it("keeps default fallback RAG aligned with answer-ready content and public wording guardrails", () => {
@@ -251,7 +267,7 @@ describe("readPdpGeoGeneratorRagProfile", () => {
     expect(bestPractice?.content).toContain("Public Wording Guardrails");
     expect(bestPractice?.content).toContain("Schema.org + GEO Description Direction");
     expect(bestPractice?.content).toContain("FAQPage has no quota");
-    expect(bestPractice?.content).toContain("HowTo requires at least two explicit ordered actions");
+    expect(bestPractice?.content).toContain("HowTo requires at least one direct action");
     expect(bestPractice?.content).toContain("OCR Sentence Diagnostics and English RAG Use");
     expect(bestPractice?.content).toContain("natural English commerce language");
     expect(bestPractice?.content).toContain("Do not reuse the same text for WebPage.description and Product.description");
@@ -302,7 +318,7 @@ describe("readPdpGeoGeneratorRagProfile", () => {
     expect(plan.queries.some((query) => query.target === "faq" && query.fieldTargets.includes("FAQPage.mainEntity"))).toBe(true);
     expect(plan.queries.some((query) => query.target === "howToUse" && query.fieldTargets.includes("HowTo.step"))).toBe(true);
     expect(plan.queries.find((query) => query.target === "howToUse")?.query)
-      .toContain("at least two explicitly numbered or sequential source actions");
+      .toContain("at least one concrete source action");
     expect(plan.queries.find((query) => query.target === "howToUse")?.query)
       .toContain("never infer a routine from action-stage order");
   });
@@ -333,11 +349,12 @@ describe("readPdpGeoGeneratorRagProfile", () => {
     const pageQuery = plan.queries.find((query) => query.target === "webPageDescription")?.query ?? "";
 
     expect(productQuery).toContain("product introduction and type -> target customer and concrete concern/CEP -> ingredient and formula composition");
-    expect(productQuery).toContain("concise attributed customer-review summary last");
-    expect(productQuery).toContain("Keep usage directions separate");
+    expect(productQuery).toContain("source-stated research/article citation -> concise attributed customer-review keywords last");
+    expect(productQuery).toContain("Keep usage separate");
     expect(pageQuery).toContain("identify the product page and source-backed brand");
-    expect(pageQuery).toContain("actual information scope available on the page");
-    expect(pageQuery).toContain("Do not repeat the Product.description buyer narrative");
+    expect(pageQuery).toContain("supported target customer -> ingredient/formula composition -> finished-product benefit/effect");
+    expect(pageQuery).toContain("source-stated research/article citation -> attributed review keywords last");
+    expect(pageQuery).toContain("Do not repeat Product.description wording");
   });
 
   it("splits long reference artifacts into bounded local RAG chunks", async () => {

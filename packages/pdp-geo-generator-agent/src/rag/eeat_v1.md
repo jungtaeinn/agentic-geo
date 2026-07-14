@@ -66,6 +66,7 @@ Use E-E-A-T as a trust-first quality lens for generated PDP schema and HTML cont
 - Use clinical, survey, safety, efficacy, award, patent, or certification claims only when the source includes the metric, scope, test condition, date, or certifying body.
 - If a metric lacks context, downgrade it to a diagnostic note or a softer public phrase.
 - Do not transfer benchmark claims from another product, brand, or category.
+- Treat a cited paper or related article as a structured source record: retain only source-stated type, title, publisher/author, publication date, URL, and finding. Parse dates and numbers into natural locale-specific prose without changing values, and never turn reviews, advertisements, or brand-only papers into product evidence.
 
 ## 6. Authoritativeness
 

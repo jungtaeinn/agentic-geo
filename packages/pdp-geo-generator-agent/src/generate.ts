@@ -22,6 +22,7 @@ import type {
   PdpGeoSchemaTarget,
   PdpGeoTerminologyDiagnostics,
   PdpProductSignal,
+  PdpSemanticCitation,
   PdpSemanticMetricClaim
 } from "./types";
 
@@ -261,15 +262,19 @@ export function generatePdpGeoArtifacts(input: GenerateArtifactsInput): Generate
   // rejected by the planner's evidence gate must not be restored by the
   // deterministic fallback, otherwise contentPlan, FAQPage and visible copy
   // describe different approved sets.
-  const faq = modelPlanned
+  const selectedFaq = modelPlanned
     ? plannedFaq
     : ensureFaq(input.product, input.locale, productName, guidance, optimizedUsageSteps);
+  const faq = selectedFaq.map((item) => ({
+    ...item,
+    question: nameFaqQuestionProductReference(item.question, input.locale, productName)
+  }));
   const plannedHowToSteps = input.contentPlan?.howTo.eligible
     ? normalizePlannedHowToSteps(input.contentPlan.howTo.steps.map((step) => ({ name: step.name, text: step.text })), input.locale)
     : [];
-  // A simple source-backed direction remains useful visible PDP copy even when
-  // it is not eligible for multi-step HowTo structured data.
-  const publicUsageSteps = plannedHowToSteps.length >= 2
+  // The source action count is preserved. A single direct instruction is both
+  // useful visible copy and a valid one-step HowTo procedure.
+  const publicUsageSteps = plannedHowToSteps.length >= 1
     ? plannedHowToSteps.map((step) => step.text)
     : optimizedUsageSteps;
   const inferredProductDescription = normalizeInferencePublicText(modelPlanned
@@ -287,25 +292,51 @@ export function generatePdpGeoArtifacts(input: GenerateArtifactsInput): Generate
       )
     )
     : applyAvoidTerms(createGeoDescription(input.product, productName, input.locale, localizedTerms, guidance, optimizedUsageSteps), terminologyConcepts, input.locale, terminology), input.locale);
-  // WebPage.description has a stable entity-role contract: page identity,
-  // source-backed brand identity, and actual page coverage. Keep it derived
-  // from the normalized product/page graph even when a model content plan is
-  // active so a second Product narrative cannot leak into the page entity.
+  // A model-planned WebPage description has already passed locale, evidence,
+  // numeric, CEP-context, and Product/WebPage distinction gates. Adopt that
+  // natural narrative when available; the deterministic composer remains the
+  // safe fallback for model-free or rejected plans.
   const inferredWebPageDescription = normalizeInferencePublicText(applyAvoidTerms(
-    createWebPageDescription(
-      input.product,
-      productName,
-      input.locale,
-      localizedTerms,
-      publicUsageSteps,
-      Boolean(input.contentPlan)
-    ),
+    modelPlanned
+      ? plannedDescriptionOrSource(
+        input.contentPlan?.webPageDescription,
+        input.product,
+        productName,
+        input.locale,
+        "webpage",
+        () => createWebPageDescription(
+          input.product,
+          productName,
+          input.locale,
+          localizedTerms,
+          publicUsageSteps,
+          Boolean(input.contentPlan)
+        )
+      )
+      : createWebPageDescription(
+        input.product,
+        productName,
+        input.locale,
+        localizedTerms,
+        publicUsageSteps,
+        false
+      ),
     terminologyConcepts,
     input.locale,
     terminology
   ), input.locale);
-  const productDescription = enforceDescriptionEntityMentionBudget(inferredProductDescription, productName, input.locale, 1);
-  const webPageDescription = enforceDescriptionEntityMentionBudget(inferredWebPageDescription, productName, input.locale, 2);
+  const productDescription = enforceDescriptionEntityMentionBudget(
+    inferredProductDescription,
+    productName,
+    input.locale,
+    input.locale === "ko-KR" ? 3 : input.locale === "en-US" || input.locale === "en-GB" ? 2 : 1
+  );
+  const webPageDescription = enforceDescriptionEntityMentionBudget(
+    inferredWebPageDescription,
+    productName,
+    input.locale,
+    input.locale === "ko-KR" ? 4 : 2
+  );
   const inferredSearchQueries = createInferredSearchQueryDiagnostics(input.product, input.locale, input.contentPlan);
   const sections: PdpGeoContentSections = {
     productName,
@@ -334,7 +365,7 @@ export function generatePdpGeoArtifacts(input: GenerateArtifactsInput): Generate
   recommendations.push(...createRecommendations(input.product, sections, detectedConcepts, input.locale, guidance));
   evidence.push(
     { field: "content.productName", source: "input", value: input.product.name },
-    { field: "content.description", source: "rag", value: `Description follows target customer + product identity + ingredient/technology + benefit/effect or citation-ready metric + high-level usage/comparison/review context. ${input.ragChunks.length} RAG chunks selected.` }
+    { field: "content.description", source: "rag", value: `Description follows product introduction + target customer + composition + benefit/effect + source-stated research/article citation + attributed review keywords. ${input.ragChunks.length} RAG chunks selected.` }
   );
   if (modelPlanned && plannedFaq.length > 0) {
     evidence.push({
@@ -396,7 +427,7 @@ export function generatePdpGeoArtifacts(input: GenerateArtifactsInput): Generate
     locale: input.locale,
     market: input.market,
     sourceUrl: input.sourceUrl,
-    targets: resolveSchemaTargets(input.hints?.schemaTargets, plannedHowToSteps.length >= 2)
+    targets: resolveSchemaTargets(input.hints?.schemaTargets, plannedHowToSteps.length >= 1)
   });
   const content = {
     // HTML CONTENT is intentionally disabled. Keep the empty field for API
@@ -429,6 +460,9 @@ function plannedDescriptionOrSource(
   }
   const evidenceBackedFallback = cleanSignal(createEvidenceBackedFallback());
   if (kind === "product" && isSafeEvidenceBackedProductDescription(evidenceBackedFallback, product, locale)) {
+    return evidenceBackedFallback;
+  }
+  if (kind === "webpage" && evidenceBackedFallback && isDescriptionLocaleCompatible(evidenceBackedFallback, product, locale)) {
     return evidenceBackedFallback;
   }
   const sourceDescription = cleanSignal(product.description ?? "");
@@ -564,39 +598,51 @@ function createGeoDescription(
     "en-GB": "the product's core care benefit"
   });
   const evidence = guidance.useEvidenceBackedClaims ? context.reportedDetail : undefined;
+  const koreanStructuredMetricTimeline = locale === "ko-KR" && guidance.useEvidenceBackedClaims
+    ? selectKoreanStructuredMetricNarrative(product, context.reportedDetail)
+    : undefined;
+  const englishStructuredMetricTimeline = (locale === "en-US" || locale === "en-GB") && guidance.useEvidenceBackedClaims
+    ? (product.semanticFacts?.metricClaims ?? [])
+      .map((claim) => formatEnglishStructuredMetricTimeline(claim, locale))
+      .find((value): value is string => Boolean(value))
+    : undefined;
 
   switch (locale) {
     case "ko-KR":
-      const productEvidenceDescriptions = createKoreanDetailedProductEvidenceDescriptions(product, context);
+      const productEvidenceDescriptions = createKoreanDetailedProductEvidenceDescriptions(product, context, productName);
       return connectKoreanBenefitAndEfficacyNarrative(compactSentence([
-        createKoreanProductLeadDescription(productName, context, benefit),
+        createKoreanProductLeadDescription(product, productName, context, benefit),
         ...productEvidenceDescriptions,
         createStandaloneProductBenefitDescription(locale, context, productEvidenceDescriptions),
-        createCitationReadyProductEvidenceDescription(locale, evidence),
-        createKoreanEfficacySuitabilityDescription(context),
+        koreanStructuredMetricTimeline ?? createCitationReadyProductEvidenceDescription(locale, evidence),
         createProductSafetyEvidenceDescription(product, locale),
+        context.researchCitation,
         createKoreanDetailedProductReviewDescription(context)
       ]));
     case "ja-JP":
       const japaneseIngredientDescription = createProductIngredientDescription(locale, context);
       return compactSentence([
         createJapaneseProductLeadDescription(productName, context),
+        createProductTargetCustomerDescription(locale, context),
         japaneseIngredientDescription,
         createStandaloneProductBenefitDescription(locale, context, [japaneseIngredientDescription]),
         createCitationReadyProductEvidenceDescription(locale, evidence),
         createProductSafetyEvidenceDescription(product, locale),
+        context.researchCitation,
         createLocalizedReviewDescription(locale, context)
       ]);
     case "en-GB":
     case "en-US":
     default:
-      const englishIngredientDescription = createProductIngredientDescription(locale, context);
+      const englishIngredientDescription = createProductIngredientDescription(locale, context, productName);
       return compactSentence([
         createEnglishProductLeadDescription(productName, context),
+        createProductTargetCustomerDescription(locale, context),
         englishIngredientDescription,
         createStandaloneProductBenefitDescription(locale, context, [englishIngredientDescription]),
-        createCitationReadyProductEvidenceDescription(locale, evidence),
+        englishStructuredMetricTimeline ?? createCitationReadyProductEvidenceDescription(locale, evidence),
         createProductSafetyEvidenceDescription(product, locale),
+        context.researchCitation,
         createLocalizedReviewDescription(locale, context)
       ]);
   }
@@ -662,13 +708,18 @@ function createWebPageDescription(
     case "ko-KR":
       return compactSentence([
         createKoreanWebPageCoverageLead(product, productName, context),
-        createKoreanWebPageEvidenceCoverageDescription(context),
-        createKoreanWebPageDecisionSupportDescription(product, context)
+        createKoreanWebPageEvidenceCoverageDescription(product, productName, context),
+        createKoreanWebPageDecisionSupportDescription(product, productName, context),
+        context.researchCitation ? createWebPageCitationDescription(context.researchCitation, locale) : undefined,
+        createKoreanWebPageReviewContextSentence(productName, context)
       ]);
     case "ja-JP":
       return compactSentence([
         createJapaneseWebPageCoverageLead(product, productName, context),
-        createJapaneseWebPageCoverageScopeDescription(product, context)
+        createJapaneseWebPageEvidenceCoverageDescription(context),
+        createJapaneseWebPageCoverageScopeDescription(product, context),
+        context.researchCitation ? createWebPageCitationDescription(context.researchCitation, locale) : undefined,
+        createLocalizedReviewDescription(locale, context)
       ]);
     case "en-GB":
     case "en-US":
@@ -676,7 +727,9 @@ function createWebPageDescription(
       return compactSentence([
         createEnglishWebPageCoverageLead(product, productName, context),
         createEnglishWebPageEvidenceCoverageDescription(context),
-        createEnglishWebPageDecisionSupportDescription(product, context)
+        createEnglishWebPageDecisionSupportDescription(product, context),
+        context.researchCitation ? createWebPageCitationDescription(context.researchCitation, locale) : undefined,
+        createLocalizedReviewDescription(locale, context)
       ]);
   }
 }
@@ -686,16 +739,6 @@ function connectKoreanBenefitAndEfficacyNarrative(value: string): string {
     .replace(/\s*돕습니다\.\s+(?=(?:한\s*번\s*사용\s*후|사용\s*직후|단\s*\d+(?:\.\d+)?\s*분\s*만에))/u, " 돕고, ")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function createKoreanEfficacySuitabilityDescription(context: DescriptionContext): string | undefined {
-  if (!context.reportedDetail || !hasKoreanGroupedEfficacyNarrative(context.reportedDetail)) {
-    return undefined;
-  }
-  const targetCustomer = simplifyKoreanTargetCustomerForSentence(context.targetCustomer);
-  return targetCustomer
-    ? `이러한 효능·효과를 바탕으로 ${targetCustomer}에게 적합합니다`
-    : undefined;
 }
 
 function hasKoreanGroupedEfficacyNarrative(value: string): boolean {
@@ -723,7 +766,8 @@ function isDescriptionReadyReportedDetail(value: string | undefined): boolean {
   if (!text) {
     return false;
   }
-  return !/(?:해당\s*결과|원료적\s*특성에\s*한한|원문\s*공개\s*범위|시험\s*대상\/표본\s*수|표기되어\s*있|결과(?:가|는)?\s*제시|수치(?:가|는)?\s*제시|public\s+source\s+text|does\s+not\s+disclose|reported\s+details?)/iu.test(text);
+  return !/[☑※□■]/u.test(text)
+    && !/(?:해당\s*결과|원료적\s*특성에\s*한한|원문\s*공개\s*범위|시험\s*대상\/표본\s*수|표기되어\s*있|결과(?:가|는)?\s*제시|수치(?:가|는)?\s*제시|public\s+source\s+text|does\s+not\s+disclose|reported\s+details?)/iu.test(text);
 }
 
 function isCitationReadyWebPageReportedDetail(value: string | undefined): boolean {
@@ -740,11 +784,12 @@ function isCitationReadyWebPageReportedDetail(value: string | undefined): boolea
 }
 
 function createKoreanWebPageCoverageLead(product: PdpProductSignal, productName: string, context: DescriptionContext): string {
-  const productIntro = createKoreanWebPageProductIntroNoun(product, context);
-  const pageEntity = product.brand && !productName.toLocaleLowerCase().includes(product.brand.toLocaleLowerCase())
-    ? `${product.brand}의 ${productName}`
-    : productName;
-  return `${pageEntity} 상품 페이지는 ${appendKoreanObjectParticle(productIntro)} 소개합니다`;
+  void context;
+  const brandSubject = product.brand && !productName.toLocaleLowerCase().includes(product.brand.toLocaleLowerCase())
+    ? `${appendKoreanSubjectParticle(product.brand)} 선보이는 `
+    : "";
+  const productType = cleanSignal(product.category ?? "") || "제품";
+  return `${productName} 상품 페이지는 ${brandSubject}${productType}의 특징과 제품 선택에 필요한 정보를 한데 담고 있습니다`;
 }
 
 function createKoreanWebPagePrimaryFactsPhrase(product: PdpProductSignal, context: DescriptionContext): string | undefined {
@@ -793,6 +838,28 @@ function simplifyKoreanTargetCustomerForSentence(value: string): string {
     return "건조 피부 고객";
   }
   return target;
+}
+
+function formatKoreanCepTargetCustomer(value: string): string {
+  const target = simplifyKoreanTargetCustomerForSentence(value);
+  const parts = target.split(/\s*또는\s*/u).map((part) => cleanSignal(part)).filter(Boolean);
+  if (parts.length >= 2 && parts.length <= 4 && parts.every((part) => /(?:피부|지성|건성|수부지|복합성|민감)/u.test(part))) {
+    const skinTypes = unique(parts.map((part) => part
+      .replace(/\s*고객$/u, "")
+      .replace(/\s*피부$/u, "")
+      .trim()).filter(Boolean));
+    if (skinTypes.length >= 2) {
+      return `${skinTypes.join("·")} 피부 고객`;
+    }
+  }
+  return target.replace(/수부지\s*\/\s*복합성/u, "수부지·복합성");
+}
+
+function createKoreanCepConcernModifier(product: PdpProductSignal): string | undefined {
+  const evidence = allProductEvidenceText(product);
+  const oilDehydrationCep = /(?:겉번들\s*속건조|과잉\s*유분|유분\s*컨트롤)/u.test(evidence)
+    && /(?:수분(?:이)?\s*부족|속\s*수분|속수분|유수분\s*밸런스)/u.test(evidence);
+  return oilDehydrationCep ? "유분이 많지만 수분이 부족한" : undefined;
 }
 
 function createKoreanWebPageBenefitContext(product: PdpProductSignal, context: DescriptionContext): string | undefined {
@@ -846,17 +913,6 @@ function dedupeKoreanBenefitConcepts(values: string[]): string[] {
   return selected;
 }
 
-function createKoreanWebPageProductIntroNoun(product: PdpProductSignal, context: DescriptionContext): string {
-  const productType = trimTrailingSentencePunctuation(cleanSignal(context.productType || "제품"));
-  const evidenceText = allProductEvidenceText(product);
-  const moisturePrefix = /(?:토너|스킨|toner)/i.test(productType) && /(?:수분|보습|속\s*보습|속보습|hydration|moisture)/i.test(evidenceText)
-    ? "수분 "
-    : "";
-  return cleanSignal(`${moisturePrefix}${productType} 상품`)
-    .replace(/\s*상품\s*상품$/u, " 상품")
-    .trim();
-}
-
 function shouldRecommendKoreanWebPageProduct(
   product: PdpProductSignal,
   context: DescriptionContext,
@@ -896,9 +952,13 @@ function createKoreanWebPageCoverageScopeDescription(product: PdpProductSignal, 
  * Ingredients and benefits intentionally remain parallel facts unless the
  * normalized product contains an explicit ingredient-benefit relationship.
  */
-function createKoreanWebPageEvidenceCoverageDescription(context: DescriptionContext): string | undefined {
+function createKoreanWebPageEvidenceCoverageDescription(
+  product: PdpProductSignal,
+  productName: string,
+  context: DescriptionContext
+): string | undefined {
   const targetCustomer = isSpecificTargetCustomer(context.targetCustomer, "ko-KR")
-    ? simplifyKoreanTargetCustomerForSentence(context.targetCustomer)
+    ? formatKoreanCepTargetCustomer(context.targetCustomer)
     : "";
   const ingredientPhrase = formatDescriptionList(selectWebPageIngredientTerms(context.ingredients, "ko-KR"), "ko-KR", 3);
   const benefitPhrase = formatKoreanNaturalList(dedupeKoreanBenefitConcepts(context.benefits
@@ -907,45 +967,84 @@ function createKoreanWebPageEvidenceCoverageDescription(context: DescriptionCont
       .replace(/^수분감$/u, "수분 케어")
       .trim())
     .filter(Boolean)).slice(0, 3));
-  const targetSentence = targetCustomer
-    ? `페이지 본문에서는 ${appendKoreanObjectParticle(targetCustomer)} 대상 고객으로 안내합니다`
+  const cepConcern = createKoreanCepConcernModifier(product);
+  const cepTargetCustomer = cepConcern?.startsWith("유분이")
+    ? targetCustomer.replace(/^수분\s*부족형\s*/u, "")
+    : targetCustomer;
+  const targetClause = targetCustomer
+    ? cepConcern && shouldRecommendKoreanWebPageProduct(product, context, benefitPhrase)
+      ? `${cepConcern} ${appendKoreanObjectParticle(cepTargetCustomer)} 위한 제품으로`
+      : `${appendKoreanObjectParticle(targetCustomer)} 위한 제품으로`
     : undefined;
-  const factSentence = ingredientPhrase && benefitPhrase
-    ? `페이지에서 확인할 수 있는 주요 성분·기술은 ${stripKoreanPatentQualifier(ingredientPhrase)}이며, 공개된 효능·효과는 ${benefitPhrase}입니다`
-    : ingredientPhrase
-      ? `페이지에서 확인할 수 있는 주요 성분·기술은 ${stripKoreanPatentQualifier(ingredientPhrase)}입니다`
-      : benefitPhrase
-        ? `페이지에 공개된 주요 효능·효과는 ${benefitPhrase}입니다`
-        : undefined;
-  return compactSentence([targetSentence, factSentence]);
+  const cleanIngredientPhrase = ingredientPhrase ? stripKoreanPatentQualifier(ingredientPhrase) : undefined;
+  const productSubject = appendKoreanTopicParticle(productName);
+
+  // Keep target, composition, and finished-product outcome in one CEP reading
+  // unit. A shared product subject connects independently supported facts
+  // without claiming that an ingredient caused the outcome. Only an explicit
+  // normalized ingredient-benefit relationship may use a causal bridge.
+  if (cleanIngredientPhrase && benefitPhrase) {
+    const formulaAndBenefit = context.ingredientBenefitRelationSupported
+      ? `주요 성분·기술인 ${appendKoreanObjectParticle(cleanIngredientPhrase)} 바탕으로 ${appendKoreanObjectParticle(benefitPhrase)} 돕습니다`
+      : `${appendKoreanObjectParticle(cleanIngredientPhrase)} 주요 성분·기술로 포함하고 ${appendKoreanObjectParticle(benefitPhrase)} 돕습니다`;
+    return targetClause
+      ? `${productSubject} ${targetClause}, ${formulaAndBenefit}`
+      : `${productSubject} ${formulaAndBenefit}`;
+  }
+  if (cleanIngredientPhrase) {
+    const formula = `${appendKoreanObjectParticle(cleanIngredientPhrase)} 주요 성분·기술로 포함합니다`;
+    return targetClause
+      ? `${productSubject} ${targetClause}, ${formula}`
+      : `${productSubject} ${formula}`;
+  }
+  if (benefitPhrase) {
+    const benefit = `${appendKoreanObjectParticle(benefitPhrase)} 돕습니다`;
+    return targetClause
+      ? `${productSubject} ${targetClause}, ${benefit}`
+      : `${productSubject} ${benefit}`;
+  }
+  return targetClause
+    ? `${productSubject} ${targetClause.replace(/으로$/u, "입니다")}`
+    : undefined;
 }
 
-function createKoreanWebPageDecisionSupportDescription(product: PdpProductSignal, context: DescriptionContext): string | undefined {
+function createKoreanWebPageDecisionSupportDescription(
+  product: PdpProductSignal,
+  productName: string,
+  context: DescriptionContext
+): string | undefined {
   return compactSentence([
-    createKoreanWebPageUsageContextSentence(context.usage),
-    ...createKoreanWebPageMetricSentences(product),
-    createKoreanWebPageSafetyOfferSentence(product),
-    createKoreanWebPageReviewContextSentence(context)
+    createKoreanWebPageUsageContextSentence(context.usage, productName),
+    ...createKoreanWebPageMetricSentences(product, context.reportedDetail),
+    createKoreanWebPageSafetyOfferSentence(product, productName)
   ]);
 }
 
-function createKoreanWebPageUsageContextSentence(usage: string | undefined): string | undefined {
+function createKoreanWebPageUsageContextSentence(usage: string | undefined, productName: string): string | undefined {
   const text = cleanSignal(usage ?? "");
   if (!text) return undefined;
-  const morningEvening = /(?:아침\s*[\/·・와과]\s*저녁|아침과\s*저녁|아침\s*및\s*저녁)/u.test(text);
+  const productSubject = appendKoreanTopicParticle(productName);
+  const morningEvening = /(?:아침\s*(?:[,/·・]|과|와|및)\s*저녁)/u.test(text);
   const afterCleansing = /세안\s*후/u.test(text);
   const afterTonerAndSerum = /토너[^.!?。！？]{0,30}세럼\s*단계\s*(?:이후|후|다음)/u.test(text);
   if (morningEvening && afterCleansing && afterTonerAndSerum) {
-    return "사용법은 아침과 저녁 세안 후 토너와 세럼 다음 단계에 바르는 순서로 안내됩니다";
+    return `${productSubject} 아침과 저녁 세안 후 토너와 세럼 다음 단계에서 사용하는 것을 권장합니다`;
+  }
+  if (morningEvening && afterCleansing) {
+    return `${productSubject} 아침과 저녁 세안 후 사용하는 것을 권장합니다`;
   }
   if (afterCleansing && afterTonerAndSerum) {
-    return "사용법은 세안 후 토너와 세럼 다음 단계에 바르는 순서로 안내됩니다";
+    return `${productSubject} 세안 후 토너와 세럼 다음 단계에서 사용하는 것을 권장합니다`;
   }
   const highLevel = text.match(/^(.{2,100}?(?:세안\s*후|토너\s*(?:후|다음)|세럼\s*(?:후|다음)|아침과\s*저녁))/u)?.[1];
-  return highLevel ? `사용 시점은 ${trimTrailingSentencePunctuation(highLevel)}로 안내됩니다` : undefined;
+  return highLevel ? `${productSubject} ${trimTrailingSentencePunctuation(highLevel)} 사용하는 것을 권장합니다` : undefined;
 }
 
-function createKoreanWebPageMetricSentences(product: PdpProductSignal): string[] {
+function createKoreanWebPageMetricSentences(product: PdpProductSignal, preferredEvidence?: string): string[] {
+  const groupedNarrative = selectKoreanStructuredMetricNarrative(product, preferredEvidence);
+  if (groupedNarrative) {
+    return [groupedNarrative];
+  }
   const outcomes = (product.semanticFacts?.metricClaims ?? [])
     .filter(hasSemanticClinicalClaimContext)
     .filter((claim) => !isIngredientPerformanceOnlyMetricClaim(claim))
@@ -958,7 +1057,7 @@ function createKoreanWebPageMetricSentences(product: PdpProductSignal): string[]
     .map(formatKoreanWebPageMetricOutcome)
     .filter((value): value is string => Boolean(value))
     .slice(0, 2);
-  return outcomes.map((outcome, index) => `${index === 0 ? "페이지에 공개된 완제품 인체적용시험" : "같은 시험"}에서 ${outcome}`);
+  return outcomes.map((outcome, index) => `${index === 0 ? "완제품 인체적용시험" : "같은 시험"}에서 ${outcome}`);
 }
 
 function formatKoreanWebPageMetricOutcome(claim: PdpSemanticMetricClaim): string | undefined {
@@ -966,11 +1065,17 @@ function formatKoreanWebPageMetricOutcome(claim: PdpSemanticMetricClaim): string
   const value = cleanSignal([claim.value, claim.unit].filter(Boolean).join(""));
   const direction = cleanSignal(claim.direction ?? "");
   if (!rawLabel || !value || !direction) return undefined;
+  const timing = cleanSignal(claim.timing ?? "");
+  const rawLabelWithTiming = timing && !rawLabel.includes(timing) ? `${timing} ${rawLabel}` : rawLabel;
+  const labelAlreadyContainsValue = numericClaimSignature(value)
+    .some((token) => numericClaimSignature(rawLabel).includes(token));
+  if (labelAlreadyContainsValue && rawLabel.includes(direction)) {
+    return `${appendKoreanSubjectParticle(rawLabelWithTiming)} 효과가 확인되었습니다`;
+  }
   const label = /지속/u.test(direction)
     ? rawLabel
     : rawLabel.replace(/\s*(증가|개선|감소|향상|회복|완화|상승)$/u, (suffix) => direction.includes(suffix.trim()) ? "" : suffix);
   if (!label) return undefined;
-  const timing = cleanSignal(claim.timing ?? "");
   const labelWithTiming = (timing && !label.includes(timing)
     && !numericClaimSignature(timing).some((token) => numericClaimSignature(label).includes(token))
     ? `${timing} ${label}`
@@ -984,7 +1089,7 @@ function formatKoreanWebPageMetricOutcome(claim: PdpSemanticMetricClaim): string
   return `${appendKoreanTopicParticle(labelWithTiming)} ${baselinePhrase}${value} ${koreanMetricOutcomePredicate(direction)}`;
 }
 
-function createKoreanWebPageSafetyOfferSentence(product: PdpProductSignal): string | undefined {
+function createKoreanWebPageSafetyOfferSentence(product: PdpProductSignal, productName: string): string | undefined {
   const safetyTests = unique((product.semanticFacts?.safetyTests ?? [])
     .map((value) => cleanSignal(value).match(/([가-힣][가-힣\s·・-]{0,40}테스트)(?:\s*완료)?/u)?.[1] ?? "")
     .map((value) => value.replace(/^(?:완료된\s*)/u, "").trim())
@@ -995,20 +1100,24 @@ function createKoreanWebPageSafetyOfferSentence(product: PdpProductSignal): stri
   const price = typeof product.price?.amount === "number" && Number.isFinite(product.price.amount)
     ? `${new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 }).format(product.price.amount)}원`
     : cleanSignal(product.price?.raw ?? "") || undefined;
-  const safetySentence = safetyPhrase ? `${safetyPhrase} 등의 완료 정보가 공개되어 있습니다` : undefined;
+  const safetySentence = safetyPhrase
+    ? `또한 ${safetyPhrase} 등을 완료해 민감 피부를 고려한 안전성을 입증했습니다`
+    : undefined;
   const offerSentence = options && price
-    ? `옵션은 ${options}이며, 판매가는 ${appendKoreanInstrumentParticle(price)} 표시됩니다`
+    ? `${appendKoreanTopicParticle(productName)} ${options} 옵션으로 구성되어 있으며, ${price}에 판매되고 있습니다`
     : options
-      ? `옵션은 ${appendKoreanInstrumentParticle(options)} 표시됩니다`
+      ? `${appendKoreanTopicParticle(productName)} ${options} 옵션으로 구성되어 있습니다`
       : price
-        ? `판매가는 ${appendKoreanInstrumentParticle(price)} 표시됩니다`
+        ? `${appendKoreanTopicParticle(productName)} ${price}에 판매되고 있습니다`
         : undefined;
   return compactSentence([safetySentence, offerSentence]);
 }
 
-function createKoreanWebPageReviewContextSentence(context: DescriptionContext): string | undefined {
-  const reviewPhrase = cleanSignal(context.reviewPhrase ?? "");
-  return reviewPhrase ? `고객 리뷰에서는 ${appendKoreanSubjectParticle(reviewPhrase)} 언급됩니다` : undefined;
+function createKoreanWebPageReviewContextSentence(productName: string, context: DescriptionContext): string | undefined {
+  const reviewPhrase = formatKoreanReviewSummaryPhrase(selectKoreanReviewSummaryTerms(context));
+  return reviewPhrase
+    ? `고객 리뷰에서 고객들은 ${productName}의 ${appendKoreanObjectParticle(reviewPhrase)} 긍정적으로 평가했습니다`
+    : undefined;
 }
 
 function createKoreanWebPageIngredientTechnologyProductSentence(
@@ -1083,7 +1192,7 @@ function createKoreanIngredientTechnologyCompositionClause(ingredientPhrase: str
 
   if (role === "ingredient") {
     return productReference
-      ? `${appendKoreanTopicParticle(productReference)} 주요 성분인 ${appendKoreanInstrumentParticle(normalizedIngredient)} 구성되어 있으며`
+      ? `${productReference}의 주요 성분은 ${normalizedIngredient}이며`
       : `주요 성분은 ${normalizedIngredient}이며`;
   }
   if (role === "formula") {
@@ -1127,7 +1236,7 @@ function createKoreanIngredientTechnologyCompositionSentence(productReference: s
   const productSubject = appendKoreanTopicParticle(productReference);
   const role = inferIngredientTechnologyRole(ingredientPhrase);
   if (role === "ingredient") {
-    return `${productReference}의 주요 성분은 ${appendKoreanInstrumentParticle(normalizedIngredient)} 구성됩니다`;
+    return `${productReference}의 주요 성분은 ${normalizedIngredient}입니다`;
   }
   if (role === "formula") {
     return `${productReference}에는 주요 기술로 ${appendKoreanSubjectParticle(normalizedIngredient)} 적용되어 있습니다`;
@@ -1466,6 +1575,21 @@ function createEnglishWebPageEvidenceCoverageDescription(context: DescriptionCon
   return compactSentence([targetSentence, factSentence]);
 }
 
+function createJapaneseWebPageEvidenceCoverageDescription(context: DescriptionContext): string | undefined {
+  const ingredientPhrase = formatDescriptionList(selectWebPageIngredientTerms(context.ingredients, "ja-JP"), "ja-JP", 3);
+  const targetSentence = isSpecificTargetCustomer(context.targetCustomer, "ja-JP")
+    ? `本文では${context.targetCustomer}を対象のお客様として案内します`
+    : undefined;
+  const factSentence = ingredientPhrase && context.benefitPhrase
+    ? `注目される成分・処方は${stripPatentApplicationQualifier(ingredientPhrase)}で、公開されている効能・効果は${context.benefitPhrase}です`
+    : ingredientPhrase
+      ? `注目される成分・処方は${stripPatentApplicationQualifier(ingredientPhrase)}です`
+      : context.benefitPhrase
+        ? `公開されている主な効能・効果は${context.benefitPhrase}です`
+        : undefined;
+  return compactSentence([targetSentence, factSentence]);
+}
+
 function createEnglishWebPageDecisionSupportDescription(product: PdpProductSignal, context: DescriptionContext): string | undefined {
   const usageContext = createEnglishHighLevelUsageContext(product);
   const usageSentence = usageContext ? `Directions place the product in ${usageContext}` : undefined;
@@ -1487,8 +1611,7 @@ function createEnglishWebPageDecisionSupportDescription(product: PdpProductSigna
     usageSentence,
     metricSentence ? `The page reports that ${lowercaseFirst(trimTrailingSentencePunctuation(metricSentence))}` : undefined,
     safetyPhrase ? `Completed testing includes ${safetyPhrase}` : undefined,
-    optionPhrase && price ? `Available options include ${optionPhrase}, with a listed price of ${price}` : optionPhrase ? `Available options include ${optionPhrase}` : price ? `The listed price is ${price}` : undefined,
-    context.reviewPhrase ? `Customer reviews mention ${context.reviewPhrase}` : undefined
+    optionPhrase && price ? `Available options include ${optionPhrase}, with a listed price of ${price}` : optionPhrase ? `Available options include ${optionPhrase}` : price ? `The listed price is ${price}` : undefined
   ]);
 }
 
@@ -1728,6 +1851,7 @@ interface DescriptionContext {
   ingredientFaqSentence?: string;
   pageFactPhrase?: string;
   reportedDetail?: string;
+  researchCitation?: string;
 }
 
 function createDescriptionContext(
@@ -1792,8 +1916,151 @@ function createDescriptionContext(
     benefitFaqSentence,
     ingredientFaqSentence,
     pageFactPhrase,
-    reportedDetail: first(reportedDetails) ?? (product.description && benefits.length === 0 ? normalizePublicEvidenceText(product.description, locale) : undefined)
+    reportedDetail: first(reportedDetails) ?? (product.description && benefits.length === 0 ? normalizePublicEvidenceText(product.description, locale) : undefined),
+    researchCitation: createResearchCitationDescription(product, locale)
   };
+}
+
+/**
+ * Formats only bibliographic facts and findings that remain traceable to the
+ * product source. Dates and numbers are preserved while label-heavy OCR text
+ * is converted into a natural sentence.
+ */
+function createResearchCitationDescription(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
+  const citation = (product.semanticFacts?.citations ?? [])
+    .find((item) => isUsableSemanticCitation(item, locale));
+  if (citation) {
+    return formatSemanticCitation(citation, locale);
+  }
+
+  const reviewKeys = new Set(product.reviews.items.map((item) => signalEntityKey(item.body)).filter(Boolean));
+  const rawCitation = unique([
+    ...(product.semanticFacts?.evidenceSentences ?? []),
+    ...product.sourceTexts
+  ])
+    .map((value) => cleanSignal(value).replace(/https?:\/\/\S+/giu, "").trim())
+    .flatMap((value) => unique([value, ...splitEvidenceIntoSentenceCandidates(value)]))
+    .find((value) => isNaturalRawCitationSentence(value, locale, reviewKeys));
+  return rawCitation ? formatRawCitationDescription(rawCitation, locale) : undefined;
+}
+
+function formatRawCitationDescription(value: string, locale: PdpGeoLocale): string {
+  const labeled = parseLabeledSemanticCitation(value, locale);
+  return (labeled ? formatSemanticCitation(labeled, locale) : undefined)
+    ?? ensurePublicSentence(value, locale);
+}
+
+/** Converts OCR-style bibliographic labels into prose without changing their values. */
+function parseLabeledSemanticCitation(value: string, locale: PdpGeoLocale): PdpSemanticCitation | undefined {
+  const text = cleanSignal(value);
+  const patterns = locale === "ko-KR"
+    ? {
+        title: /(?:연구명|논문명|기사명|제목)\s*[:：]\s*([^|;；\n]+)/iu,
+        publisher: /(?:학술지|발행처|매체|언론사|출처)\s*[:：]\s*([^|;；\n]+)/iu,
+        date: /(?:게재일|발행일|공개일|게시일|일자)\s*[:：]\s*([^|;；\n]+)/iu,
+        finding: /(?:연구\s*결과|주요\s*결과|결과|내용|요약)\s*[:：]\s*([^|;；\n]+)/iu
+      }
+    : locale === "ja-JP"
+      ? {
+          title: /(?:研究名|論文名|記事名|タイトル)\s*[:：]\s*([^|;；\n]+)/iu,
+          publisher: /(?:学術誌|掲載誌|発行元|媒体|出典)\s*[:：]\s*([^|;；\n]+)/iu,
+          date: /(?:掲載日|発行日|公開日|日付)\s*[:：]\s*([^|;；\n]+)/iu,
+          finding: /(?:研究結果|主な結果|結果|内容|要約)\s*[:：]\s*([^|;；\n]+)/iu
+        }
+      : {
+          title: /(?:study|paper|article|research)\s*title\s*[:：]\s*([^|;\n]+)/iu,
+          publisher: /(?:journal|publisher|publication|outlet|source)\s*[:：]\s*([^|;\n]+)/iu,
+          date: /(?:publication|published|release)\s*date\s*[:：]\s*([^|;\n]+)/iu,
+          finding: /(?:finding|result|summary)\s*[:：]\s*([^|;\n]+)/iu
+        };
+  const read = (pattern: RegExp): string | undefined => cleanSignal(text.match(pattern)?.[1] ?? "") || undefined;
+  const title = read(patterns.title);
+  const publisher = read(patterns.publisher);
+  const publishedAt = read(patterns.date);
+  const finding = read(patterns.finding);
+  const populated = [title, publisher, publishedAt, finding].filter(Boolean).length;
+  if (populated < 2 || !finding) return undefined;
+  return {
+    type: /(?:article|news|press|기사|보도|記事)/iu.test(text) ? "article" : "research",
+    title,
+    publisher,
+    publishedAt,
+    finding,
+    sourceText: text
+  };
+}
+
+function isUsableSemanticCitation(citation: PdpSemanticCitation, locale: PdpGeoLocale): boolean {
+  const provenance = cleanSignal(citation.sourceText ?? "");
+  const finding = cleanSignal(citation.finding ?? "");
+  const title = cleanSignal(citation.title ?? "");
+  if (!provenance || (!finding && !title) || !isNarrativeLocaleCompatible(finding || provenance, locale)) return false;
+  return citationMarkerPattern().test(provenance)
+    && !/(?:customer\s+review|shopper\s+review|고객\s*리뷰|구매\s*후기|カスタマーレビュー)/iu.test(provenance)
+    && !/(?:coupon|shipping|delivery|sale\s+price|쿠폰|배송|할인|판매가|クーポン|配送|割引)/iu.test(provenance);
+}
+
+function isNaturalRawCitationSentence(value: string, locale: PdpGeoLocale, reviewKeys: Set<string>): boolean {
+  if (!value || value.length < 24 || value.length > 360 || reviewKeys.has(signalEntityKey(value))) return false;
+  if (!citationMarkerPattern().test(value) || !isNarrativeLocaleCompatible(value, locale)) return false;
+  if (/(?:customer\s+review|shopper\s+review|고객\s*리뷰|구매\s*후기|カスタマーレビュー|coupon|shipping|delivery|쿠폰|배송|할인)/iu.test(value)) return false;
+  const hasBibliographicContext = /(?:doi|pubmed|journal|published|publication|article|news|press|학술지|논문|게재|발행|기사|보도자료|掲載|発行|記事)/iu.test(value);
+  const hasFinding = /\d+(?:[.,]\d+)?\s*(?:%|％|배|times?|명|participants?)|(?:found|reported|showed|improved|increased|decreased|확인|개선|증가|감소|향상|보고|確認|改善|増加|減少)/iu.test(value);
+  return hasBibliographicContext && hasFinding;
+}
+
+function citationMarkerPattern(): RegExp {
+  return /(?:research|study|paper|journal|article|news|press\s*release|doi|pubmed|연구|논문|학술|기사|보도자료|研究|論文|学術|記事)/iu;
+}
+
+function formatSemanticCitation(citation: PdpSemanticCitation, locale: PdpGeoLocale): string | undefined {
+  const finding = trimTrailingSentencePunctuation(cleanSignal(citation.finding ?? "")
+    .replace(/^(?:finding|result|summary|결과|연구\s*결과|요약|結果|要約)\s*[:：]\s*/iu, ""));
+  if (!finding) return undefined;
+  const title = trimTrailingSentencePunctuation(cleanSignal(citation.title ?? ""));
+  const publisher = trimTrailingSentencePunctuation(cleanSignal(citation.publisher ?? ""));
+  const author = trimTrailingSentencePunctuation(cleanSignal(citation.author ?? ""));
+  const date = formatCitationDate(citation.publishedAt, locale);
+  const source = publisher || author;
+  const kind = citation.type === "article"
+    ? fallback(locale, { "ko-KR": "관련 기사", "ja-JP": "関連記事", "en-US": "related article", "en-GB": "related article" })
+    : fallback(locale, { "ko-KR": "관련 연구", "ja-JP": "関連研究", "en-US": "related study", "en-GB": "related study" });
+
+  if (locale === "ko-KR") {
+    const attribution = [date, source].filter(Boolean).join(" ");
+    const citedWork = title ? `${kind} 「${title}」` : kind;
+    return `${attribution ? `${attribution}에 공개된 ` : ""}${citedWork}에서는 ${finding}`;
+  }
+  if (locale === "ja-JP") {
+    const attribution = [date, source].filter(Boolean).join("、");
+    const citedWork = title ? `${kind}「${title}」` : kind;
+    return `${attribution ? `${attribution}に公開された` : ""}${citedWork}では、${finding}`;
+  }
+  const titlePhrase = title ? `, “${title},”` : "";
+  const sourcePhrase = source ? ` by ${source}` : "";
+  const datePhrase = date ? ` on ${date}` : "";
+  return `A ${kind}${titlePhrase} published${sourcePhrase}${datePhrase} reports that ${lowercaseFirst(finding)}`;
+}
+
+function formatCitationDate(value: string | undefined, locale: PdpGeoLocale): string | undefined {
+  const text = cleanSignal(value ?? "");
+  if (!text) return undefined;
+  const match = text.match(/((?:19|20)\d{2})\s*(?:[-./]|년|年)\s*(\d{1,2})(?:\s*(?:[-./]|월|月)\s*(\d{1,2}))?/u);
+  if (!match) return text.length <= 32 ? text : undefined;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = match[3] ? Number(match[3]) : undefined;
+  if (month < 1 || month > 12 || day !== undefined && (day < 1 || day > 31)) return undefined;
+  if (locale === "ko-KR") return `${year}년 ${month}월${day ? ` ${day}일` : ""}`;
+  if (locale === "ja-JP") return `${year}年${month}月${day ? `${day}日` : ""}`;
+  const monthName = new Intl.DateTimeFormat(locale, { month: "long", timeZone: "UTC" })
+    .format(new Date(Date.UTC(year, month - 1, day ?? 1)));
+  return day ? `${monthName} ${day}, ${year}` : `${monthName} ${year}`;
+}
+
+function createWebPageCitationDescription(citation: string, locale: PdpGeoLocale): string {
+  void locale;
+  return citation;
 }
 
 function hasExplicitIngredientBenefitRelation(
@@ -1935,25 +2202,44 @@ function isSafetyOrCautionDescriptionSentence(value: string): boolean {
     || /(?:국소\s*부위|팔\s*안쪽|귀\s*(?:뒤|뒤쪽)|소량\s*테스트|패치\s*테스트|사용\s*전\s*테스트|사용을\s*중지|전문의와\s*상담|주의사항)/u.test(text);
 }
 
-function createKoreanProductLeadDescription(productName: string, context: DescriptionContext, fallbackBenefit: string): string {
-  const targetCustomer = simplifyKoreanTargetCustomerForSentence(context.targetCustomer);
-  if (targetCustomer) {
-    return `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(targetCustomer)} 위한 ${context.productType}입니다`;
-  }
+function createKoreanProductLeadDescription(
+  product: PdpProductSignal,
+  productName: string,
+  context: DescriptionContext,
+  fallbackBenefit: string
+): string {
   void fallbackBenefit;
+  const target = isSpecificTargetCustomer(context.targetCustomer, "ko-KR")
+    ? formatKoreanCepTargetCustomer(context.targetCustomer)
+    : "";
+  const concern = createKoreanCepConcernModifier(product);
+  if (target && concern && shouldRecommendKoreanWebPageProduct(product, context, concern)) {
+    const naturalTarget = concern.startsWith("유분이") ? target.replace(/^수분\s*부족형\s*/u, "") : target;
+    return `${appendKoreanTopicParticle(productName)} ${concern} ${appendKoreanObjectParticle(naturalTarget)} 위한 ${context.productType}입니다`;
+  }
+  if (target) {
+    return `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(target)} 위한 ${context.productType}입니다`;
+  }
   return `${appendKoreanTopicParticle(productName)} ${context.productType}입니다`;
 }
 
 function createJapaneseProductLeadDescription(productName: string, context: DescriptionContext): string {
-  return isSpecificTargetCustomer(context.targetCustomer, "ja-JP")
-    ? `${productName}は${context.targetCustomer}向けの${context.productType}です`
-    : `${productName}は${context.productType}です`;
+  return `${productName}は${context.productType}です`;
 }
 
 function createEnglishProductLeadDescription(productName: string, context: DescriptionContext): string {
-  return isSpecificTargetCustomer(context.targetCustomer, "en-US")
-    ? `${productName} is ${englishProductTypeWithArticle(context.productType)} for ${context.targetCustomer}`
-    : `${productName} is ${englishProductTypeWithArticle(context.productType)}`;
+  return `${productName} is ${englishProductTypeWithArticle(context.productType)}`;
+}
+
+function createProductTargetCustomerDescription(locale: PdpGeoLocale, context: DescriptionContext): string | undefined {
+  if (!isSpecificTargetCustomer(context.targetCustomer, locale)) return undefined;
+  const koreanTarget = simplifyKoreanTargetCustomerForSentence(context.targetCustomer);
+  return fallback(locale, {
+    "ko-KR": koreanTarget ? `특히 ${appendKoreanObjectParticle(koreanTarget)} 위한 제품입니다` : "",
+    "ja-JP": `対象となるお客様は${context.targetCustomer}です`,
+    "en-US": `It is intended for ${context.targetCustomer}`,
+    "en-GB": `It is intended for ${context.targetCustomer}`
+  }) || undefined;
 }
 
 function createKoreanLeadFromBenefitFaq(productName: string, context: DescriptionContext): string | undefined {
@@ -1977,7 +2263,11 @@ function createKoreanLeadFromBenefitFaq(productName: string, context: Descriptio
   return `${appendKoreanTopicParticle(productName)} ${trimTrailingSentencePunctuation(sentence)}`;
 }
 
-function createKoreanProductIngredientDescription(product: PdpProductSignal, context: DescriptionContext): string | undefined {
+function createKoreanProductIngredientDescription(
+  product: PdpProductSignal,
+  context: DescriptionContext,
+  productName: string
+): string | undefined {
   const ingredientPhrase = selectKoreanWebPageIngredientTechnologyPhrase(product, context) ?? context.ingredientPhrase;
   if (!ingredientPhrase && !context.ingredientFaqSentence) {
     return undefined;
@@ -1993,7 +2283,7 @@ function createKoreanProductIngredientDescription(product: PdpProductSignal, con
       ingredientPhrase,
       careFocus,
       targetCustomer,
-      undefined,
+      productName,
       hasCompoundEfficacy ? false : context.ingredientBenefitRelationSupported,
       hasCompoundEfficacy
     );
@@ -2010,7 +2300,8 @@ function createKoreanProductIngredientDescription(product: PdpProductSignal, con
  */
 function createKoreanDetailedProductEvidenceDescriptions(
   product: PdpProductSignal,
-  context: DescriptionContext
+  context: DescriptionContext,
+  productName: string
 ): string[] {
   const directIngredients = selectDirectKoreanProductIngredientSignals(product, 12);
   const technologies = selectKoreanProductTechnologySignals(product, 2);
@@ -2026,7 +2317,7 @@ function createKoreanDetailedProductEvidenceDescriptions(
     || relations.length >= 2;
 
   if (!hasRichProductEvidence) {
-    const concise = createKoreanProductIngredientDescription(product, context);
+    const concise = createKoreanProductIngredientDescription(product, context, productName);
     return concise ? [concise] : [];
   }
 
@@ -2036,18 +2327,28 @@ function createKoreanDetailedProductEvidenceDescriptions(
   const benefitContext = createKoreanWebPageBenefitContext(product, context)
     ?? (context.benefitPhrase ? formatKoreanCareFocus(context.benefitPhrase) : undefined);
   const composition = ingredientPhrase && technologyPhrase
-    ? `주요 성분은 ${ingredientPhrase}이며, ${appendKoreanSubjectParticle(technologyPhrase)} 적용되어 있습니다`
+    ? `${productName}의 주요 성분은 ${ingredientPhrase}이며, 제품 포뮬러에는 ${appendKoreanSubjectParticle(technologyPhrase)} 적용되어 있습니다`
     : ingredientPhrase
-      ? `주요 성분은 ${ingredientPhrase}입니다`
+      ? `${productName}의 주요 성분은 ${ingredientPhrase}입니다`
       : technologyPhrase
-        ? `${appendKoreanTopicParticle(technologyPhrase)} 제품 포뮬러에 적용되어 있습니다`
+        ? `${productName}의 포뮬러에는 ${appendKoreanSubjectParticle(technologyPhrase)} 적용되어 있습니다`
         : undefined;
+  // Keep formula composition and sub-structure as complete clauses. Turning
+  // every first sentence into an "...있고" connector creates dangling prose
+  // whenever OCR has mistaken an attributive verb for a technology name.
+  const compositionNarrative = compactSentence([composition, structure]);
+  const benefitDescription = benefitContext
+    ? ingredientPhrase
+      ? relations.length > 0
+        ? `이처럼 ${appendKoreanSubjectParticle(ingredientPhrase)} 포함된 ${appendKoreanTopicParticle(productName)} ${benefitContext}에 효과적입니다`
+        : `완제품은 ${appendKoreanObjectParticle(benefitContext)} 돕습니다`
+      : `${appendKoreanObjectParticle(benefitContext)} 돕습니다`
+    : undefined;
 
   return unique([
-    composition,
-    structure,
+    compositionNarrative,
     ...relations,
-    benefitContext ? `${appendKoreanObjectParticle(benefitContext)} 돕습니다` : undefined
+    benefitDescription
   ].filter((value): value is string => Boolean(value)));
 }
 
@@ -2129,7 +2430,9 @@ function selectKoreanProductTechnologySignals(product: PdpProductSignal, limit: 
       const name = cleanSignal(match[1] ?? "");
       const kind = cleanSignal(match[2] ?? "");
       const phrase = cleanSignal(`${name} ${kind}`);
-      if (!name || !kind || /^(?:제품|상품|피부|핵심|주요|적용|특허)$/u.test(name)) {
+      if (!name || !kind
+        || /^(?:제품|상품|피부|핵심|주요|적용|특허)$/u.test(name)
+        || isKoreanPredicateTechnologyFragment(name)) {
         continue;
       }
       candidates.push(phrase);
@@ -2141,6 +2444,17 @@ function selectKoreanProductTechnologySignals(product: PdpProductSignal, limit: 
   return dedupePublicListValues(candidates)
     .filter((value) => value.length >= 4 && value.length <= 64)
     .slice(0, limit);
+}
+
+/**
+ * OCR frequently turns the tail of a relationship clause (for example,
+ * "...촘촘하게 하는 기술") into a false named-technology candidate. These
+ * predicate fragments are grammatical context, not public formula names.
+ */
+function isKoreanPredicateTechnologyFragment(value: string): boolean {
+  const name = cleanSignal(value);
+  return /^(?:하|하는|한|되|되는|된|있|있는|돕|돕는|위하|위한|통하|통한|적용하|적용한|사용하|사용한)$/u.test(name)
+    || /(?:하는|되는|있는|돕는|위한|통한|하게|하도록|되도록)$/u.test(name);
 }
 
 function createKoreanProductIngredientStructureDescription(
@@ -2246,17 +2560,27 @@ function productEvidenceFactIndex(sentence: string, fact: string): number {
 }
 
 function normalizeKoreanProductRelationSentence(value: string): string | undefined {
-  const text = trimTrailingSentencePunctuation(cleanSignal(value))
+  let text = trimTrailingSentencePunctuation(cleanSignal(value))
     .replace(/민감피부/gu, "민감 피부")
     .replace(/피부장벽/gu, "피부 장벽")
     .replace(/장벽보습/gu, "장벽 보습")
+    .replace(/(?:을|를)\s*표방하며\s*원료적\s*특성에\s*한한다고\s*안내됩니다$/u, "가 있습니다")
     .replace(/강화시켜\s*줍니다$/u, "강화하는 데 도움을 줍니다")
     .replace(/제공한다고\s*제시됩니다$/u, "제공하는 것으로 소개됩니다")
     .replace(/효과적인\s*성분으로\s*제시됩니다$/u, "효과적인 성분으로 소개됩니다")
     .replace(/효과적인\s*성분(?:이라고|으로)?\s*(?:설명|안내)(?:되어\s*있습니다|됩니다|합니다)$/u, "효과적인 성분입니다")
     .replace(/([^.!?。！？]+?)(?:이라고|라고)\s*(?:설명|안내)되어\s*있습니다$/u, "$1입니다")
+    .replace(/(?:으)?로\s*설명됩니다$/u, "입니다")
     .replace(/\s+/g, " ")
     .trim();
+  const moistureBarrierIngredients = text.match(/^제품의\s*수분\s*장벽\s*성분으로\s+(.+?)(?:이|가)\s*(?:표시|제시)(?:됩니다|되어\s*있습니다)$/u)?.[1];
+  if (moistureBarrierIngredients) {
+    text = `제품의 구성성분인 ${appendKoreanSubjectParticle(moistureBarrierIngredients)} 수분 장벽 강화 효능을 돕습니다`;
+  } else if (/^압축\s*히알루론산은/u.test(text)) {
+    text = `특히 ${text}`;
+  } else if (/^고밀도\s*세라마이드\s*캡슐은/u.test(text) && /특허/u.test(text)) {
+    text = `또한 ${text}`;
+  }
   if (!text || isLowQualityPublicEvidenceText(text) || hasTruncationMarker(text)) {
     return undefined;
   }
@@ -2273,7 +2597,17 @@ function createProductSafetyEvidenceDescription(product: PdpProductSignal, local
       .map((value) => trimTrailingSentencePunctuation(value).replace(/\s*완료$/u, "").trim())
       .filter(Boolean);
     const phrase = formatKoreanNaturalList(testNames);
-    return phrase ? `이 제품은 ${appendKoreanObjectParticle(phrase)} 완료했습니다` : undefined;
+    if (!phrase) return undefined;
+    const hasSensitiveTest = testNames.some((value) => /(?:극민감|민감\s*피부)/u.test(value));
+    const hasBlemishTest = testNames.some((value) => /(?:여드름성|논코메도제닉)/u.test(value));
+    const decisionContext = hasSensitiveTest && hasBlemishTest
+      ? "민감하거나 트러블이 고민인 피부까지 고려한 테스트 범위를 갖췄습니다"
+      : hasSensitiveTest
+        ? "민감 피부를 고려한 테스트 범위를 갖췄습니다"
+        : hasBlemishTest
+          ? "트러블이 고민인 피부를 고려한 테스트 범위를 갖췄습니다"
+          : "제품 사용 범위를 확인하는 테스트를 마쳤습니다";
+    return `또한 ${appendKoreanObjectParticle(phrase)} 완료해 ${decisionContext}`;
   }
   const phrase = formatDescriptionList(signals, locale, 6);
   if (!phrase) {
@@ -2286,8 +2620,8 @@ function createProductSafetyEvidenceDescription(product: PdpProductSignal, local
 
 function createKoreanDetailedProductReviewDescription(context: DescriptionContext): string | undefined {
   return createKoreanReviewSummaryDescription(context)
-    ?.replace(/^한\s*고객\s*리뷰에서는/u, "실제 고객 리뷰 한 건에서는")
-    .replace(/^고객\s*리뷰에서는/u, "실제 고객 리뷰에서는");
+    ?.replace(/^한\s*고객은\s*리뷰에서/u, "실제 고객 리뷰 한 건에서는")
+    .replace(/^고객\s*리뷰에서\s*고객들은/u, "실제 고객 리뷰에서 고객들은");
 }
 
 function formatKoreanCareFocus(value: string): string {
@@ -2362,7 +2696,7 @@ function createEnglishIngredientTechnologyProductSentence(
   return `${sentence}${nonCausalBenefit}${detailClause}`;
 }
 
-function createProductIngredientDescription(locale: PdpGeoLocale, context: DescriptionContext): string | undefined {
+function createProductIngredientDescription(locale: PdpGeoLocale, context: DescriptionContext, productName?: string): string | undefined {
   if (!context.ingredientPhrase && !context.ingredientDetail) {
     return undefined;
   }
@@ -2393,7 +2727,7 @@ function createProductIngredientDescription(locale: PdpGeoLocale, context: Descr
         return `The formula includes ${formatEnglishFactComplement(normalizeFormulaDetailText(context.ingredientDetail))}`;
       }
       return createEnglishIngredientTechnologyProductSentence(
-        "The formula",
+        productName ?? "The formula",
         context.ingredientPhrase ?? "",
         benefitSupportPhrase,
         context.ingredientDetail,
@@ -3014,7 +3348,7 @@ function createKoreanWebPageEvidenceDescription(evidenceSentence: string): strin
     .trim();
   return evidencePhrase
     ? createKoreanEvidenceResultSentence(evidencePhrase)
-    : "페이지에 공개된 측정/평가 결과를 포함합니다";
+    : "완제품의 측정·평가 결과가 함께 제시됩니다";
 }
 
 function createKoreanEvidenceResultSentence(value: string, label = "측정/평가 결과"): string {
@@ -3454,8 +3788,8 @@ function createLocalizedReviewDescription(locale: PdpGeoLocale, context: Descrip
   }
   if ((locale === "en-US" || locale === "en-GB") && context.reviewPhrase) {
     return context.reviewBodies.length === 1
-      ? `One customer review mentions ${context.reviewPhrase}`
-      : `Customer reviews mention ${context.reviewPhrase}`;
+      ? `One customer review highlights ${context.reviewPhrase}`
+      : `Customers highlight ${context.reviewPhrase} in reviews`;
   }
   if (context.representativeReviewPhrase) {
     switch (locale) {
@@ -3475,10 +3809,10 @@ function createLocalizedReviewDescription(locale: PdpGeoLocale, context: Descrip
   }
 
   return fallback(locale, {
-    "ko-KR": `고객 리뷰에서는 ${context.reviewPhrase} 관련 경험이 언급됩니다`,
+    "ko-KR": `고객 리뷰에서 고객들은 ${appendKoreanObjectParticle(context.reviewPhrase)} 긍정적으로 평가했습니다`,
     "ja-JP": `レビューでは${context.reviewPhrase}などの表現が見られ、使用感と期待できるケア文脈を補足します`,
-    "en-US": `Customer reviews mention ${context.reviewPhrase}`,
-    "en-GB": `Customer reviews mention ${context.reviewPhrase}`
+    "en-US": `Customers highlight ${context.reviewPhrase} in reviews`,
+    "en-GB": `Customers highlight ${context.reviewPhrase} in reviews`
   });
 }
 
@@ -3494,7 +3828,18 @@ function formatEnglishRepresentativeReviewClause(value: string): string {
 }
 
 function createKoreanReviewSummaryDescription(context: DescriptionContext): string | undefined {
-  const reviewTerms = dedupePublicListValues([
+  const reviewTerms = selectKoreanReviewSummaryTerms(context);
+  const reviewPhrase = formatKoreanReviewSummaryPhrase(reviewTerms);
+  if (!reviewPhrase) {
+    return undefined;
+  }
+  return context.reviewBodies.length === 1
+    ? `한 고객은 리뷰에서 ${appendKoreanObjectParticle(reviewPhrase)} 긍정적으로 평가했습니다`
+    : `고객 리뷰에서 고객들은 ${appendKoreanObjectParticle(reviewPhrase)} 긍정적으로 평가했습니다`;
+}
+
+function selectKoreanReviewSummaryTerms(context: DescriptionContext): string[] {
+  return dedupePublicListValues([
     ...context.reviewKeywords,
     ...context.reviewBodies.flatMap(extractKoreanReviewSummarySignals),
     ...context.representativeReviews.flatMap((value) => [
@@ -3509,13 +3854,6 @@ function createKoreanReviewSummaryDescription(context: DescriptionContext): stri
     .sort((left, right) => right.score - left.score || left.index - right.index)
     .map((item) => item.value)
     .slice(0, 4);
-  const reviewPhrase = formatKoreanReviewSummaryPhrase(reviewTerms);
-  if (!reviewPhrase) {
-    return undefined;
-  }
-  return context.reviewBodies.length === 1
-    ? `한 고객 리뷰에서는 ${appendKoreanSubjectParticle(reviewPhrase)} 언급됩니다`
-    : `고객 리뷰에서는 ${appendKoreanSubjectParticle(reviewPhrase)} 언급됩니다`;
 }
 
 function extractKoreanReviewSummarySignals(value: string): string[] {
@@ -4854,6 +5192,7 @@ function isRepresentativeReviewPhrase(value: string): boolean {
 }
 
 function selectEvidenceSignal(product: PdpProductSignal, locale: PdpGeoLocale = "en-US"): string | undefined {
+  const researchCitation = createResearchCitationDescription(product, locale);
   const structuredMetric = first(selectStructuredReportedMetricDetails(product, locale, 1));
   const reportedDetail = first(selectReportedDetails(product, 1));
   const sourceBackedSentences = selectOptimizedSourceBackedClaimSentences(product, locale, 7);
@@ -4869,6 +5208,7 @@ function selectEvidenceSignal(product: PdpProductSignal, locale: PdpGeoLocale = 
   const review = first(selectPublicReviewKeywords(product, locale).slice(0, 3));
 
   return first([
+    researchCitation,
     structuredMetric,
     reportedDetail,
     sourceBackedSentence,
@@ -6062,6 +6402,7 @@ function isDescriptionEfficacyEvidence(value: string): boolean {
   if (!text
     || !hasQuantifiedReportedSignal(text)
     || !hasMinimumReportedEvidenceContext(text)
+    || isLabeledBibliographicCitationText(text)
     || isCommerceMetricArtifact(text)
     || isNonCitationEvidenceArtifact(text)
     || isQuestionLikeText(text)) {
@@ -6083,6 +6424,17 @@ function isDescriptionEfficacyEvidence(value: string): boolean {
   const isIngredientConcentrationOnly = /(?:ppm|mg\/?(?:mL|g)?|함량|농도|concentration)/iu.test(text)
     && !/(?:개선|증가|감소|향상|회복|지속|보습|수분|장벽|improv|increase|decrease|reduc|hydration|moisture|barrier)/iu.test(text);
   return hasMeasuredOutcome && !isIngredientConcentrationOnly;
+}
+
+function isLabeledBibliographicCitationText(value: string): boolean {
+  const text = cleanSignal(value);
+  const labels = [
+    /(?:연구명|논문명|기사명|제목)\s*[:：]/u,
+    /(?:학술지|발행처|매체|언론사|출처|게재일|발행일|공개일|게시일)\s*[:：]/u,
+    /(?:研究名|論文名|記事名|タイトル|学術誌|掲載誌|発行元|媒体|出典|掲載日|発行日|公開日)\s*[:：]/u,
+    /(?:(?:study|paper|article|research)\s*title|journal|publisher|publication\s*date|published\s*date|outlet|source)\s*[:：]/iu
+  ].filter((pattern) => pattern.test(text)).length;
+  return labels >= 2;
 }
 
 function scoreDescriptionEfficacyEvidence(value: string): number {
@@ -6160,6 +6512,18 @@ function selectStructuredReportedMetricDetails(product: PdpProductSignal, locale
 }
 
 function formatSemanticMetricClaim(claim: PdpSemanticMetricClaim, locale: PdpGeoLocale): string | undefined {
+  if (locale === "ko-KR") {
+    const timelineNarrative = formatKoreanStructuredMetricTimeline(claim);
+    if (timelineNarrative) {
+      return timelineNarrative;
+    }
+  }
+  if (locale === "en-US" || locale === "en-GB") {
+    const timelineNarrative = formatEnglishStructuredMetricTimeline(claim, locale);
+    if (timelineNarrative) {
+      return timelineNarrative;
+    }
+  }
   const sourceSentence = cleanSignal(claim.sentence ?? "");
   const label = first([
     claim.label,
@@ -6182,6 +6546,288 @@ function formatSemanticMetricClaim(claim: PdpSemanticMetricClaim, locale: PdpGeo
     : context ? `${label || value} (${context})` : label || value;
 
   return prefixStructuredMetricSummary(detail, locale);
+}
+
+function formatKoreanStructuredMetricTimeline(claim: PdpSemanticMetricClaim): string | undefined {
+  const values = cleanSignal(claim.value ?? "")
+    .split(/\s*\/\s*/u)
+    .map(cleanSignal)
+    .filter(Boolean);
+  const timings = cleanSignal(claim.timing ?? "")
+    .split(/\s*(?:,|，|·)\s*/u)
+    .map(cleanSignal)
+    .filter(Boolean);
+  if (values.length < 2 || timings.length !== values.length) {
+    return undefined;
+  }
+
+  const metric = cleanSignal(claim.metric ?? claim.label ?? claim.subject ?? "측정 지표");
+  const direction = cleanSignal(claim.direction ?? "");
+  const metricLabel = direction && !metric.includes(direction) ? `${metric.replace(/\s*지표$/u, "")} ${direction} 지표` : metric;
+  const unit = cleanSignal(claim.unit ?? "");
+  const timeline = timings
+    .map((timing, index) => `${timing} ${values[index]}${unit}`)
+    .join(", ");
+  const institution = cleanSignal(claim.institution ?? "")
+    .replace(/^㈜\s*/u, "(주)")
+    .replace(/\s+/g, " ")
+    .trim();
+  const period = formatKoreanStudyPeriod(cleanSignal(claim.period ?? ""));
+  const sample = cleanSignal(claim.sample ?? "");
+  const method = cleanSignal(claim.method ?? "");
+  const studyContext = method && sample
+    ? [
+      institution ? appendKoreanSubjectParticle(institution) : undefined,
+      period,
+      `${appendKoreanObjectParticle(sample)} 대상으로 진행한 ${method}`
+    ].filter((part): part is string => Boolean(part)).join(" ")
+    : undefined;
+  const result = `${appendKoreanTopicParticle(metricLabel)} ${timeline}로 각각 측정되었습니다`;
+  return ensurePublicSentence(studyContext ? `${studyContext}에서 ${result}` : result, "ko-KR");
+}
+
+/**
+ * Render a single structured finished-product result without falling back to
+ * its OCR source block. Comparator labels and values are kept together, while
+ * shared study metadata is stated once as ordinary prose.
+ */
+function formatKoreanSingleStructuredMetricNarrative(claim: PdpSemanticMetricClaim): string | undefined {
+  const value = cleanSignal([claim.value, claim.unit].filter(Boolean).join(""));
+  const direction = cleanSignal(claim.direction ?? "");
+  const rawMetric = cleanSignal(claim.metric ?? claim.label ?? claim.subject ?? "")
+    .replace(/피부장벽/gu, "피부 장벽");
+  if (!value || !direction || !rawMetric || cleanSignal(claim.value ?? "").includes("/")) {
+    return undefined;
+  }
+
+  const timing = cleanSignal(claim.timing ?? "");
+  const metric = rawMetric
+    .replace(new RegExp(`\\s*${escapeRegExp(direction)}$`, "u"), "")
+    .trim() || rawMetric;
+  const metricWithTiming = timing && !metric.includes(timing) ? `${timing} ${metric}` : metric;
+  const result = `${appendKoreanTopicParticle(metricWithTiming)} ${value} ${koreanMetricOutcomePredicate(direction)}`;
+  const baseline = parseKoreanMetricComparisonAtom(claim.baseline);
+  const comparator = parseKoreanMetricComparisonAtom(claim.comparator);
+  const measuredResult = baseline && comparator
+    ? `${appendKoreanTopicParticle(comparator.label)} ${comparator.value}, ${appendKoreanTopicParticle(baseline.label)} ${baseline.value}로 나타났으며, ${result}`
+    : formatKoreanWebPageMetricOutcome(claim) ?? result;
+  const studyContext = formatKoreanStructuredStudyContext(claim);
+  // Without structured provenance, keep the existing evidence parser in
+  // control; it can recover a shared footnote from source text across several
+  // atoms. Emitting this atom alone would silently drop institution/sample.
+  if (!studyContext) return undefined;
+  return ensurePublicSentence(`${studyContext}에서 ${measuredResult}`, "ko-KR");
+}
+
+function parseKoreanMetricComparisonAtom(value: string | undefined): { label: string; value: string } | undefined {
+  const text = cleanSignal(value ?? "");
+  const match = text.match(/-?\d+(?:\.\d+)?\s*(?:%|％|배|층|°C|도)/iu);
+  if (!text || !match?.[0]) return undefined;
+  const label = cleanSignal(text.replace(match[0], " "))
+    .replace(/\s*(?:대비|비교)$/u, "")
+    .trim();
+  return label ? { label, value: cleanSignal(match[0]) } : undefined;
+}
+
+function formatKoreanStructuredStudyContext(claim: PdpSemanticMetricClaim): string | undefined {
+  const institution = cleanSignal(claim.institution ?? "")
+    .replace(/^㈜\s*/u, "(주)")
+    .replace(/\s+/g, " ")
+    .trim();
+  const period = formatKoreanStudyPeriod(cleanSignal([
+    claim.period,
+    claim.evidenceGroup,
+    claim.sourceText,
+    claim.sentence
+  ].filter(Boolean).join(" ")));
+  const sample = cleanSignal(claim.sample ?? "");
+  const method = cleanSignal(claim.method ?? "");
+  if (!method || !sample) return undefined;
+  return [
+    institution ? appendKoreanSubjectParticle(institution) : undefined,
+    period,
+    `${appendKoreanObjectParticle(sample)} 대상으로 진행한 ${method}`
+  ].filter((part): part is string => Boolean(part)).join(" ");
+}
+
+function selectKoreanStructuredMetricNarrative(product: PdpProductSignal, preferredEvidence?: string): string | undefined {
+  const claims = product.semanticFacts?.metricClaims ?? [];
+  const candidates: Array<{ narrative: string; claims: PdpSemanticMetricClaim[]; index: number }> = claims
+    .filter(hasSemanticClinicalClaimContext)
+    .filter((claim) => !isIngredientPerformanceOnlyMetricClaim(claim))
+    .flatMap((claim) => {
+      const index = claims.indexOf(claim);
+      return [
+        formatKoreanStructuredMetricTimeline(claim),
+        formatKoreanSingleStructuredMetricNarrative(claim)
+      ].filter((narrative): narrative is string => Boolean(narrative))
+        .map((narrative) => ({ narrative, claims: [claim], index }));
+    })
+    .filter((item): item is { narrative: string; claims: PdpSemanticMetricClaim[]; index: number } => Boolean(item.narrative));
+  const grouped = new Map<string, Array<{ claim: PdpSemanticMetricClaim; index: number }>>();
+  claims.forEach((claim, index) => {
+    const metric = cleanSignal(claim.metric ?? claim.subject ?? claim.label ?? "")
+      .replace(/\s*(?:증가|감소|개선|향상|회복|완화|상승|지속)$/u, "");
+    const group = cleanSignal(claim.evidenceGroup ?? "");
+    if (!metric || !group || cleanSignal(claim.value ?? "").includes("/")) return;
+    const key = `${signalEntityKey(group)}:${signalEntityKey(metric)}`;
+    grouped.set(key, [...(grouped.get(key) ?? []), { claim, index }]);
+  });
+  for (const items of grouped.values()) {
+    if (items.length < 2) continue;
+    const narrative = formatKoreanGroupedMetricTimeline(items.map((item) => item.claim));
+    if (narrative) {
+      candidates.push({ narrative, claims: items.map((item) => item.claim), index: items[0]?.index ?? claims.length });
+    }
+  }
+  if (candidates.length === 0) return undefined;
+
+  const preferred = cleanSignal(preferredEvidence ?? "").replace(/\s+/gu, "");
+  return candidates
+    .map((candidate) => {
+      const candidateFacts = candidate.claims.flatMap((claim) => [
+        claim.metric,
+        claim.subject,
+        claim.label,
+        claim.value,
+        claim.unit,
+        claim.direction,
+        claim.sentence
+      ].filter((value): value is string => Boolean(value)));
+      const numericMatches = numericClaimSignature(candidateFacts.join(" "))
+        .filter((token) => preferred.includes(token.replace(/\s+/gu, ""))).length;
+      const phraseMatches = candidateFacts
+        .map((value) => signalEntityKey(value))
+        .filter((value) => value.length >= 3 && preferred.includes(value)).length;
+      return { ...candidate, score: numericMatches * 8 + phraseMatches * 2 + Math.max(0, candidate.claims.length - 1) * 3 };
+    })
+    .sort((left, right) => right.score - left.score || left.index - right.index)[0]?.narrative;
+}
+
+function formatKoreanGroupedMetricTimeline(claims: PdpSemanticMetricClaim[]): string | undefined {
+  if (claims.length < 2) return undefined;
+  const representative = claims[0];
+  if (!representative) return undefined;
+  const rows = claims.map((claim, index) => {
+    const timing = cleanSignal(claim.timing ?? "");
+    const value = cleanSignal([claim.value, claim.unit].filter(Boolean).join(""));
+    const direction = cleanSignal(claim.direction ?? "");
+    if (!timing || !value || !direction) return undefined;
+    const naturalTiming = index === 0
+      ? timing
+      : timing.replace(/^사용\s*/u, "").replace(/후$/u, "후에도");
+    return { timing: naturalTiming, value, direction };
+  });
+  if (rows.some((row) => !row)) return undefined;
+  const completeRows = rows.filter((row): row is { timing: string; value: string; direction: string } => Boolean(row));
+  const direction = completeRows[0]?.direction ?? "";
+  if (!direction || completeRows.some((row) => row.direction !== direction)) return undefined;
+
+  const metric = cleanSignal(representative.metric ?? representative.subject ?? representative.label ?? "측정 지표")
+    .replace(new RegExp(`\\s*${escapeRegExp(direction)}$`, "u"), "")
+    .trim();
+  const baselines = unique(claims.map((claim) => cleanSignal(claim.baseline ?? claim.comparator ?? "")).filter(Boolean));
+  const baselinePhrase = baselines.length === 1
+    ? `${baselines[0]}${/(?:대비|비교)$/u.test(baselines[0] ?? "") ? "" : " 대비"} `
+    : "";
+  const timeline = completeRows.map((row) => `${row.timing} ${row.value}`).join(", ");
+  const institution = cleanSignal(representative.institution ?? "")
+    .replace(/^㈜\s*/u, "(주)")
+    .replace(/\s+/g, " ")
+    .trim();
+  const period = formatKoreanStudyPeriod(cleanSignal(representative.period ?? ""));
+  const sample = cleanSignal(representative.sample ?? "");
+  const method = cleanSignal(representative.method ?? "");
+  const studyContext = method && sample
+    ? [
+      institution ? appendKoreanSubjectParticle(institution) : undefined,
+      period,
+      `${appendKoreanObjectParticle(sample)} 대상으로 진행한 ${method}`
+    ].filter((part): part is string => Boolean(part)).join(" ")
+    : undefined;
+  const result = `${appendKoreanTopicParticle(metric)} ${baselinePhrase}${timeline} ${koreanMetricOutcomePredicate(direction)}`;
+  return ensurePublicSentence(studyContext ? `${studyContext}에서 ${result}` : result, "ko-KR");
+}
+
+function formatEnglishStructuredMetricTimeline(claim: PdpSemanticMetricClaim, locale: "en-US" | "en-GB"): string | undefined {
+  const values = cleanSignal(claim.value ?? "")
+    .split(/\s*\/\s*/u)
+    .map(cleanSignal)
+    .filter(Boolean);
+  const timings = cleanSignal(claim.timing ?? "")
+    .split(/\s*(?:,|，|·)\s*/u)
+    .map(formatEnglishMetricTiming)
+    .filter(Boolean);
+  if (values.length < 2 || timings.length !== values.length) {
+    return undefined;
+  }
+
+  const metric = cleanSignal(claim.metric ?? claim.label ?? claim.subject ?? "the measured result");
+  const direction = cleanSignal(claim.direction ?? "");
+  const metricLabel = direction && !metric.toLocaleLowerCase().includes(direction.toLocaleLowerCase())
+    ? `${metric.replace(/\s+(?:metric|measure)$/iu, "")} ${direction}`
+    : metric;
+  const unit = cleanSignal(claim.unit ?? "");
+  const timeline = formatEnglishList(timings.map((timing, index) => `${values[index]}${unit} ${timing}`));
+  if (!timeline) {
+    return undefined;
+  }
+
+  const institution = cleanSignal(claim.institution ?? "").replace(/^㈜\s*/u, "").trim();
+  const period = formatEnglishStudyPeriod(cleanSignal(claim.period ?? ""), locale);
+  const sample = cleanSignal(claim.sample ?? "");
+  const method = normalizeEnglishStudyMethod(cleanSignal(claim.method ?? ""));
+  const studyType = method || "study";
+  const article = /^[aeiou]/iu.test(studyType) ? "an" : "a";
+  const studyContext = method || sample || institution || period
+    ? [
+      `In ${article} ${studyType}`,
+      institution ? `conducted by ${institution}` : undefined,
+      period ? `from ${period}` : undefined,
+      sample ? `involving ${sample}` : undefined
+    ].filter((part): part is string => Boolean(part)).join(" ")
+    : undefined;
+  const result = `${metricLabel} was measured at ${timeline}`;
+  return ensurePublicSentence(studyContext ? `${studyContext}, ${result}` : capitalizeFirst(result), locale);
+}
+
+function formatEnglishMetricTiming(value: string): string {
+  return cleanSignal(value)
+    .replace(/^사용\s*전$/u, "before use")
+    .replace(/^사용\s*직후$/u, "immediately after use")
+    .replace(/^사용\s*(\d+(?:\.\d+)?)\s*시간\s*후$/u, "$1 hours after use")
+    .replace(/^사용\s*(\d+(?:\.\d+)?)\s*일\s*후$/u, "$1 days after use")
+    .replace(/^도포\s*전$/u, "before application")
+    .replace(/^도포\s*직후$/u, "immediately after application")
+    .replace(/^도포\s*(\d+(?:\.\d+)?)\s*시간\s*후$/u, "$1 hours after application");
+}
+
+function formatEnglishStudyPeriod(value: string, locale: "en-US" | "en-GB"): string | undefined {
+  const range = value.match(/(20\d{2})[./-](\d{1,2})[./-](\d{1,2})\s*[-~–—]\s*(?:(20\d{2})[./-])?(\d{1,2})[./-](\d{1,2})/u);
+  if (!range) {
+    return undefined;
+  }
+  const start = formatCitationDate(`${range[1]}-${range[2]}-${range[3]}`, locale);
+  const end = formatCitationDate(`${range[4] ?? range[1]}-${range[5]}-${range[6]}`, locale);
+  return start && end ? `${start} to ${end}` : undefined;
+}
+
+function normalizeEnglishStudyMethod(value: string): string | undefined {
+  const method = cleanSignal(value)
+    .replace(/인체\s*적용\s*시험|임상\s*시험/gu, "clinical study")
+    .replace(/자가\s*평가/gu, "self-assessment")
+    .replace(/소비자\s*평가/gu, "consumer study")
+    .replace(/사용성\s*시험/gu, "usage study")
+    .replace(/^(?:an?|the)\s+/iu, "")
+    .trim();
+  return method && isNarrativeLocaleCompatible(method, "en-US") ? lowercaseFirst(method) : undefined;
+}
+
+function formatEnglishList(values: string[]): string | undefined {
+  if (values.length === 0) return undefined;
+  if (values.length === 1) return values[0];
+  if (values.length === 2) return `${values[0]} and ${values[1]}`;
+  return `${values.slice(0, -1).join(", ")}, and ${values.at(-1)}`;
 }
 
 function formatSemanticMetricContext(claim: PdpSemanticMetricClaim, locale: PdpGeoLocale): string {
@@ -6336,7 +6982,7 @@ function isReportedEvidenceCandidate(value: string): boolean {
 }
 
 function hasQuantifiedReportedSignal(value: string): boolean {
-  return /%|\d+(?:\.\d+)?\s*배|\b\d+(?:\.\d+)?\s*(?:weeks?|days?|hours?|users?|women|men|subjects?|participants?|reviews?|ratings?)\b|평점\s*\d|리뷰\s*\d|\d+(?:\.\d+)?\s*(?:명|회|주|일|시간)|사용\s*\d+(?:\.\d+)?\s*(?:시간|일|주)\s*후/i.test(value);
+  return /%|\d+(?:\.\d+)?\s*(?:배|층)|\b\d+(?:\.\d+)?\s*(?:weeks?|days?|hours?|layers?|users?|women|men|subjects?|participants?|reviews?|ratings?)\b|평점\s*\d|리뷰\s*\d|\d+(?:\.\d+)?\s*(?:명|회|주|일|시간)|사용\s*\d+(?:\.\d+)?\s*(?:시간|일|주)\s*후/i.test(value);
 }
 
 function hasContextualReportedSignal(value: string): boolean {
@@ -6345,7 +6991,7 @@ function hasContextualReportedSignal(value: string): boolean {
     .trim();
   if (!text || !hasQuantifiedReportedSignal(text)) return false;
   if (/^[+\-−]?\d+(?:[.,]\d+)?\s*(?:%|％|배|시간|일|주|weeks?|days?|hours?)$/iu.test(text)) return false;
-  return /(?:잔존|보습|수분|장벽|피부|탄력|주름|피부결|진정|회복|개선|감소|증가|상승|향상|완화|지속|도달|사용|도포|세정|시험|테스트|평가|대상|참여자|리뷰|평점|비교|대비|ex\s*vivo|clinical|study|test|assessment|participant|user|review|rating|retention|hydration|moisture|barrier|wrinkle|firmness|improv|increase|decrease|after|versus|\bvs\.?\b)/iu.test(text);
+  return /(?:잔존|보습|수분|장벽|피부|탄력|주름|피부결|진정|충전|회복|개선|감소|증가|상승|향상|완화|지속|도달|사용|도포|세정|시험|테스트|평가|대상|참여자|리뷰|평점|비교|대비|ex\s*vivo|clinical|study|test|assessment|participant|user|review|rating|retention|hydration|moisture|barrier|wrinkle|firmness|improv|increase|decrease|after|versus|\bvs\.?\b)/iu.test(text);
 }
 
 function hasMinimumReportedEvidenceContext(value: string): boolean {
@@ -7285,7 +7931,15 @@ function allProductEvidenceText(product: PdpProductSignal): string {
     ...(product.semanticFacts?.skinTypes ?? []),
     ...(product.semanticFacts?.usageSteps ?? []),
     ...(product.semanticFacts?.safetyTests ?? []),
-    ...(product.semanticFacts?.evidenceSentences ?? [])
+    ...(product.semanticFacts?.evidenceSentences ?? []),
+    ...(product.semanticFacts?.citations ?? []).flatMap((citation) => [
+      citation.title,
+      citation.publisher,
+      citation.author,
+      citation.publishedAt,
+      citation.finding,
+      citation.sourceText
+    ])
   ].filter((value): value is string => Boolean(value)).map(cleanSignal).join(" ");
 }
 
@@ -7309,7 +7963,8 @@ function nonReviewProductEvidenceText(product: PdpProductSignal): string {
     ...(product.semanticFacts?.effects ?? []),
     ...(product.semanticFacts?.skinTypes ?? []),
     ...(product.semanticFacts?.safetyTests ?? []),
-    ...(product.semanticFacts?.evidenceSentences ?? [])
+    ...(product.semanticFacts?.evidenceSentences ?? []),
+    ...(product.semanticFacts?.citations ?? []).flatMap((citation) => [citation.finding, citation.sourceText])
   ]
     .filter((value): value is string => Boolean(value))
     .map(cleanSignal)
@@ -7421,7 +8076,8 @@ function hasCareOrFormulaSignal(value: string): boolean {
 
 function hasKoreanSurfaceQualityIssue(value: string): boolean {
   const text = cleanSignal(value);
-  return /제품로|(?:합니다|줍니다|입니다)입니다|(?:세요|주세요)입니다|으로으로|로로|사용감\s+사용감|[가-힣]{2,}(?:을|를|이|가|은|는|으로|로)(?:가|이)\b/.test(text)
+  return /제품로|[가-힣]으입니다\b|(?:합니다|줍니다|입니다)입니다|(?:세요|주세요)입니다|으로으로|로로|사용감\s+사용감|[가-힣]{2,}(?:을|를|이|가|은|는|으로|로)(?:가|이)\b/.test(text)
+    || /개인\s*차가\s*있을\s*수\s*있다는\s*(?:단서|문구|주의\s*문구|조건)(?:가|이)?\s*(?:붙|달|제시|표기)/u.test(text)
     || isKoreanMetaNarrationText(text)
     || isKoreanInternalGenerationFrame(text);
 }
@@ -7443,6 +8099,7 @@ function isKoreanInternalGenerationFrame(value: string): boolean {
 function hasEnglishSurfaceQualityIssue(value: string): boolean {
   const text = cleanSignal(value);
   return isEnglishMetaNarrationText(text)
+    || /\b(?:a|the)\s+(?:disclaimer|caveat|qualifier|condition|note)\s+(?:is\s+attached|states?|says?|notes?|indicates?)[^.!?]{0,48}\bindividual\s+results\s+may\s+vary\b/i.test(text)
     || /\b(?:Evidence signal|Review signals|technology signals|main benefit signal|ingredient signal|product discovery context|comparison intent|comparison-led|use-feel language|benefit language|ingredient terms|benefit terms)\b/i.test(text);
 }
 
@@ -7857,7 +8514,7 @@ function normalizePlannedHowToSteps(
       text
     });
   }
-  return results.length >= 2 ? results : [];
+  return results.length >= 1 ? results : [];
 }
 
 function hasExplicitMultiStepUsageMarkers(value: string): boolean {
@@ -8002,7 +8659,7 @@ function ensureFaq(
   const reviewSignals = reviewIntentKeywords.join(", ");
   const reviewDerivedSearchQueries = createReviewDerivedSearchQueries(product, locale);
   const sourceFaqIntents = product.faq.flatMap(classifySourceFaqIntent);
-  const sourceFaq = selectSourceFaqForPublicUse(product.faq, locale, productName, faqStructuredClaimEvidence(product));
+  const sourceFaq = selectSourceFaqForPublicUse(product.faq, locale, productName, faqStructuredClaimEvidence(product), product);
   const ocrFaqContexts = createOcrFaqBlendContexts(product, locale);
   const textureFinish = selectTextureFinishSignal(product, locale);
   const routineSynergy = selectRoutineSynergySignal(product, locale);
@@ -8053,12 +8710,19 @@ function ensureFaq(
   }
 
   if (benefit) {
+    const hasReportedFinishedProductClinicalEvidence = hasFinishedProductClinicalEvidence(product, locale);
     const benefitCandidate = {
       question: fallback(locale, {
-        "ko-KR": `${productName}의 주요 효능·효과와 이를 뒷받침하는 상품 근거는 무엇인가요?`,
+        "ko-KR": hasReportedFinishedProductClinicalEvidence
+          ? `${productName}의 주요 효능·효과는 무엇이며, 공개된 인체적용시험 결과는 어떻게 나타났나요?`
+          : `${productName}의 주요 효능·효과는 무엇인가요?`,
         "ja-JP": `${productName}の主な効果と、それを裏付ける商品根拠は何ですか？`,
-        "en-US": `What are the main benefits of ${productName}, and what product evidence supports them?`,
-        "en-GB": `What are the main benefits of ${productName}, and what product evidence supports them?`
+        "en-US": hasReportedFinishedProductClinicalEvidence
+          ? `What are the main benefits of ${productName}, and what do the reported clinical study results show?`
+          : `What are the main benefits of ${productName}?`,
+        "en-GB": hasReportedFinishedProductClinicalEvidence
+          ? `What are the main benefits of ${productName}, and what do the reported clinical study results show?`
+          : `What are the main benefits of ${productName}?`
       }),
       answer: createBenefitFaqAnswer(product, locale, productName, benefit, ingredient, customerOutcomeEvidence, guidance, ocrFaqContexts.benefit)
     };
@@ -8192,9 +8856,15 @@ function orderRequiredFaqAnchors(items: PdpGeoFaqItem[], locale: PdpGeoLocale): 
 
 function ensureHighValueSourceFaqCoverage(ranked: PdpGeoFaqItem[], sourceFaq: PdpGeoFaqItem[], locale: PdpGeoLocale, limit: number): PdpGeoFaqItem[] {
   const result = [...ranked];
-  const highValueSourceItems = sourceFaq.filter((item) => isFaqLocaleCompatible(item, locale)
-    && /(?:신생아|영유아|유아|아기|어린이|임산부|수유부|newborns?|infants?|bab(?:y|ies)|children|pregnan|乳幼児|赤ちゃん|子ども|妊娠)/iu.test(item.question)
-    && /(?:사용|쓸\s*수|가능|use|suitable|使用|使え)/iu.test(item.question));
+  const highValueSourceItems = sourceFaq.filter((item) => {
+    if (!isFaqLocaleCompatible(item, locale)) return false;
+    const isLifeStageUse = /(?:신생아|영유아|유아|아기|어린이|임산부|수유부|newborns?|infants?|bab(?:y|ies)|children|pregnan|乳幼児|赤ちゃん|子ども|妊娠)/iu.test(item.question)
+      && /(?:사용|쓸\s*수|가능|use|suitable|使用|使え)/iu.test(item.question);
+    const isCoolingUseContext = locale === "ko-KR"
+      && /(?:땀을\s*많이|더위를\s*많이)/u.test(item.question)
+      && /(?:쿨링|시원|산뜻)/u.test(item.answer);
+    return isLifeStageUse || isCoolingUseContext;
+  });
   for (const item of highValueSourceItems) {
     const key = normalizeFaqQuestionKey(item.question);
     if (!key || result.some((candidate) => normalizeFaqQuestionKey(candidate.question) === key)) {
@@ -8481,6 +9151,9 @@ function isSuitabilityOverviewFaqQuestion(question: string, locale: PdpGeoLocale
   if (/(?:신생아|영유아|유아|아기|어린이|임산부|수유부|newborns?|infants?|bab(?:y|ies)|children|pregnan|乳幼児|赤ちゃん|子ども|妊娠)/iu.test(text)) {
     return false;
   }
+  if (/(?:땀을?\s*(?:많이\s*)?흘|더위|더운\s*환경|열감|after\s+sweating|sweat(?:ing|y)?|feel(?:s|ing)?\s+hot|hot\s+conditions?)/iu.test(text)) {
+    return false;
+  }
   if (locale === "ko-KR") {
     return /(?:어떤\s*(?:고객|피부|대상)|누구(?:에게)?|추천\s*(?:대상|고객)|적합|피부\s*타입)/u.test(text);
   }
@@ -8651,7 +9324,14 @@ function hasExternalAuthorityEvidenceSignal(product: PdpProductSignal, evidence:
     product.description,
     ...product.metrics,
     ...product.sourceTexts,
-    ...(product.semanticFacts?.evidenceSentences ?? [])
+    ...(product.semanticFacts?.evidenceSentences ?? []),
+    ...(product.semanticFacts?.citations ?? []).flatMap((citation) => [
+      citation.title,
+      citation.publisher,
+      citation.url,
+      citation.finding,
+      citation.sourceText
+    ])
   ].filter(Boolean).join(" "));
   if (!text || isCommerceMetricArtifact(text)) {
     return false;
@@ -8748,11 +9428,28 @@ function normalizeFaqQuestionKey(question: string): string {
     .trim();
 }
 
+function nameFaqQuestionProductReference(question: string, locale: PdpGeoLocale, productName: string): string {
+  const text = cleanSignal(question);
+  if (!text || !productName) {
+    return text;
+  }
+  const named = locale === "ko-KR"
+    ? text.replace(
+      /^(?:(?:이|본|해당)\s*(?:제품|상품|크림|세럼|토너|로션|앰플|에센스|클렌저)|본품)(?=(?:의|은|는|이|가|을|를|에|에서|으로|로|와|과)|\s)/u,
+      productName
+    )
+    : locale === "en-US" || locale === "en-GB"
+      ? text.replace(/\b(?:this|the)\s+(?:product|cream|serum|toner|lotion|ampoule|essence|cleanser)\b/giu, productName)
+      : text;
+  return normalizeInferencePublicText(named, locale);
+}
+
 function selectSourceFaqForPublicUse(
   faq: PdpGeoFaqItem[],
   locale: PdpGeoLocale,
   productName: string,
-  structuredClaimEvidence: string[] = []
+  structuredClaimEvidence: string[] = [],
+  product?: PdpProductSignal
 ): PdpGeoFaqItem[] {
   return faq.flatMap((item) => {
     if (!isRawSourceFaqPairUsable(item)) {
@@ -8760,10 +9457,12 @@ function selectSourceFaqForPublicUse(
     }
     const sourceQuestion = normalizeInferencePublicText(item.question, locale);
     const directAnswer = normalizeFaqAnswerForDirectVoice(item.answer, locale, productName);
-    const question = rewriteSourceFaqQuestionForBuyerConcern(sourceQuestion, directAnswer, locale, productName);
+    const question = rewriteSourceFaqQuestionForBuyerConcern(sourceQuestion, directAnswer, locale, productName, product);
     // Reframing a source question around a buyer concern must not strengthen
     // the source answer into a new recommendation claim.
-    const answer = directAnswer;
+    const answer = product
+      ? rewriteSourceFaqAnswerForBuyerDecision(product, question, directAnswer, locale, productName)
+      : directAnswer;
     if (!question || !answer
       || !isFaqLocaleCompatible({ question, answer }, locale, [productName])
       || !isUsefulSourceFaqQuestion(question, answer, locale, productName)
@@ -8865,7 +9564,8 @@ function rewriteSourceFaqQuestionForBuyerConcern(
   question: string,
   answer: string,
   locale: PdpGeoLocale,
-  productName: string
+  productName: string,
+  product?: PdpProductSignal
 ): string {
   if ((locale === "en-US" || locale === "en-GB")
     && /\b(?:all|every)\s+skin\s+types?\b/i.test(question)
@@ -8877,6 +9577,16 @@ function rewriteSourceFaqQuestionForBuyerConcern(
     && /대부분의?\s*피부\s*타입/u.test(answer)) {
     return `${appendKoreanTopicParticle(productName)} 어떤 피부 타입에 적합한가요?`;
   }
+  if (locale === "ko-KR" && product && isCoolingFormulaSourceFaq(question, answer)) {
+    return `땀을 많이 흘리거나 더위를 많이 느끼는 고객에게 ${appendKoreanTopicParticle(productName)} 추천할 만한가요?`;
+  }
+  if (locale === "ko-KR" && /(?:신생아|영유아|유아|아기|어린이|임산부|수유부)/u.test(question)
+    && /(?:사용|써도|가능)/u.test(question)) {
+    const hasInfant = /(?:신생아|영유아|유아|아기|어린이)/u.test(question);
+    const hasPregnancy = /(?:임산부|수유부)/u.test(question);
+    const audience = hasInfant && hasPregnancy ? "영유아나 임산부도" : hasInfant ? "영유아도" : "임산부도";
+    return `${appendKoreanTopicParticle(productName)} ${audience} 사용할 수 있나요?`;
+  }
   if (locale !== "ko-KR" || !/(?:효능|효과|도움|추천|적합)/u.test(question)) {
     return question;
   }
@@ -8885,6 +9595,121 @@ function rewriteSourceFaqQuestionForBuyerConcern(
     return question;
   }
   return `${appendKoreanSubjectParticle(concern)} 고민인 고객에게 ${appendKoreanTopicParticle(productName)} 어떤 효과가 있나요?`;
+}
+
+function isCoolingFormulaSourceFaq(question: string, answer: string): boolean {
+  const combined = cleanSignal(`${question} ${answer}`);
+  return /(?:쿨링|시원|냉감)/u.test(combined)
+    && /(?:워터\s*크림|수분감을?\s*높인|특화\s*제형|피부에\s*닿)/u.test(answer)
+    && /(?:성분|화학적|어떤\s*성분)/u.test(question);
+}
+
+function rewriteSourceFaqAnswerForBuyerDecision(
+  product: PdpProductSignal,
+  question: string,
+  answer: string,
+  locale: PdpGeoLocale,
+  productName: string
+): string {
+  if (locale !== "ko-KR") {
+    return answer;
+  }
+  if (/(?:땀을\s*많이|더위를\s*많이)/u.test(question) && /(?:쿨링|시원|냉감)/u.test(answer)) {
+    return createKoreanCoolingCepFaqAnswer(product, productName, answer);
+  }
+  if (/(?:신생아|영유아|유아|아기|어린이|임산부|수유부)/u.test(question)
+    && /(?:사용|써도|가능)/u.test(question)) {
+    return createKoreanLifeStageFaqAnswer(productName, answer);
+  }
+  return answer;
+}
+
+function createKoreanCoolingCepFaqAnswer(product: PdpProductSignal, productName: string, sourceAnswer: string): string {
+  const formulaSentence = /(?:워터\s*크림|수분감을?\s*높인)/u.test(sourceAnswer)
+    ? `${appendKoreanTopicParticle(productName)} 수분감을 높인 워터 크림 특화 제형이 피부에 닿는 즉시 시원하고 산뜻한 쿨링감을 주도록 설계되었습니다`
+    : `${appendKoreanTopicParticle(productName)} ${trimTrailingSentencePunctuation(sourceAnswer)}`;
+  const coolingEvidence = createKoreanCoolingStudyEvidence(product);
+  return compactSentence([
+    formulaSentence,
+    coolingEvidence,
+    "따라서 더위를 많이 느끼거나 땀을 흘린 뒤 시원하고 산뜻한 사용감을 원하는 고객에게 추천할 수 있습니다",
+    coolingEvidence ? "다만 쿨링 체감은 개인에 따라 달라질 수 있습니다" : undefined
+  ]);
+}
+
+function createKoreanCoolingStudyEvidence(product: PdpProductSignal): string | undefined {
+  const claim = (product.semanticFacts?.metricClaims ?? []).find((candidate) => {
+    const text = cleanSignal([candidate.label, candidate.subject, candidate.metric, candidate.sentence].filter(Boolean).join(" "));
+    return /(?:쿨링|피부\s*온도|온도\s*(?:감소|하강)|시원)/u.test(text)
+      && Boolean(cleanSignal(candidate.value ?? ""));
+  });
+  if (claim) {
+    const value = cleanSignal([claim.value, claim.unit].filter(Boolean).join(""));
+    const timing = cleanSignal(claim.timing ?? "");
+    const metric = cleanSignal(claim.metric ?? claim.subject ?? claim.label ?? "쿨링 효과")
+      .replace(timing, "")
+      .replace(/^사용\s*직후\s*/u, "")
+      .trim() || "쿨링 효과";
+    if (value) {
+      return `완제품 인체적용시험에서 ${timing ? `${timing} ` : ""}${appendKoreanSubjectParticle(metric)} ${value}로 확인되었습니다`;
+    }
+  }
+
+  const rawCoolingResult = unique([
+    ...product.metrics,
+    ...(product.semanticFacts?.metricClaims ?? []).flatMap((candidate) => [candidate.sentence, candidate.sourceText]),
+    ...(product.semanticFacts?.evidenceSentences ?? [])
+  ].filter((value): value is string => Boolean(value)))
+    .find((value) => /(?:쿨링|피부\s*온도|온도\s*(?:감소|하강)|시원)/u.test(value)
+      && /[+-]?\d+(?:\.\d+)?\s*°\s*C/iu.test(value));
+  if (!rawCoolingResult) return undefined;
+  const value = rawCoolingResult.match(/[+-]?\d+(?:\.\d+)?\s*°\s*C/iu)?.[0]?.replace(/\s+/gu, "");
+  if (!value) return undefined;
+  const timing = /(?:제품\s*)?사용\s*직후/u.test(rawCoolingResult) ? "제품 사용 직후 " : "";
+  return `완제품 인체적용시험에서 ${timing}즉각적인 쿨링 효과가 ${value}로 확인되었습니다`;
+}
+
+function createKoreanLifeStageFaqAnswer(productName: string, sourceAnswer: string): string {
+  const evidence = cleanSignal(sourceAnswer);
+  const hasSensitiveDevelopment = /민감하고\s*연약한\s*피부/u.test(evidence);
+  const hasPediatricTest = /소아과\s*피부\s*테스트/u.test(evidence);
+  const developmentSentence = hasSensitiveDevelopment && hasPediatricTest
+    ? `${appendKoreanTopicParticle(productName)} 민감하고 연약한 피부를 고려해 개발되어 소아과 피부 테스트를 진행했습니다`
+    : hasPediatricTest
+      ? `${appendKoreanTopicParticle(productName)} 소아과 피부 테스트를 진행했습니다`
+      : hasSensitiveDevelopment
+        ? `${appendKoreanTopicParticle(productName)} 민감하고 연약한 피부를 고려해 개발되었습니다`
+        : undefined;
+  const ageCoverage = /0\s*세부터\s*성인까지/u.test(evidence)
+    ? "0세부터 성인까지 사용할 수 있습니다"
+    : /(?:영유아|유아|어린이)[^.!?。！？]{0,60}(?:무방|사용)/u.test(evidence)
+      ? "영유아와 어린이가 사용할 수 있습니다"
+      : undefined;
+  const pregnancyCoverage = /임산부[^.!?。！？]{0,90}우려[^.!?。！？]{0,90}성분[^.!?。！？]{0,90}(?:함유되어\s*있지\s*않|함유하지\s*않)/u.test(evidence)
+    ? "임산부가 우려할 만한 성분도 함유하지 않았습니다"
+    : undefined;
+  const coverageSentence = ageCoverage && pregnancyCoverage
+    ? `${ageCoverage.replace(/있습니다$/u, "있으며")}, ${pregnancyCoverage}`
+    : ageCoverage ?? pregnancyCoverage;
+  const directFallback = !developmentSentence && !coverageSentence
+    ? `${appendKoreanTopicParticle(productName)} ${trimTrailingSentencePunctuation(evidence)}`
+    : undefined;
+  const localTest = /(?:귀\s*뒤|귀\s*뒷면)/u.test(evidence) && /팔\s*안쪽/u.test(evidence)
+    ? "처음 사용할 때는 귀 뒤나 팔 안쪽에 먼저 테스트하는 것을 권장합니다"
+    : /(?:국소\s*부위|패치\s*테스트|먼저\s*테스트)/u.test(evidence)
+      ? "처음 사용할 때는 피부의 작은 부위에 먼저 테스트하는 것을 권장합니다"
+      : undefined;
+  const consultation = /(?:전문가|의사|전문의)[^.!?。！？]{0,40}상담/u.test(evidence)
+    ? "우려가 있으면 전문가와 상담한 뒤 사용하는 것을 권장합니다"
+    : undefined;
+  return compactSentence([
+    developmentSentence,
+    coverageSentence,
+    directFallback,
+    "이러한 사용 범위가 필요한 고객에게 추천할 수 있습니다",
+    localTest,
+    consultation
+  ]);
 }
 
 function inferKoreanFaqCustomerConcern(value: string): string | undefined {
@@ -9203,20 +10028,22 @@ function createBenefitFaqAnswer(
 ): string {
   if (locale === "ko-KR") {
     const benefitPhrase = formatKoreanFaqBenefitPhrase(product, locale, benefit);
-    const targetClause = guidance.useTargetCustomerContext ? formatKoreanFaqTargetClause(product) : undefined;
     const productType = formatKoreanFaqProductType(product);
+    const inferredTarget = inferTargetCustomer(product, locale);
+    const targetCustomer = isSpecificTargetCustomer(inferredTarget, locale)
+      ? formatKoreanCepTargetCustomer(inferredTarget)
+      : undefined;
     const supportedLink = selectFaqIngredientBenefitLink(product, locale);
-    const finishedProductEvidence = createKoreanWebPageMetricSentences(product)
-      .map((sentence, index) => index === 0
-        ? sentence.replace(/^페이지에 공개된/u, "공개된")
-        : sentence)
-      .slice(0, 2);
+    const finishedProductEvidence = createKoreanFaqFinishedProductStudyEvidence(product, benefitPhrase);
     return compactSentence(dedupeGeneratedSentenceParts([
-      `${appendKoreanTopicParticle(productName)} 공식 상품 정보에서 ${targetClause ? `${targetClause} ` : ""}${appendKoreanObjectParticle(benefitPhrase)} 돕는 ${productType}으로 소개됩니다`,
+      targetCustomer && guidance.useTargetCustomerContext
+        ? `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(targetCustomer)} 위한 ${productType}으로, ${appendKoreanObjectParticle(benefitPhrase)} 돕습니다`
+        : `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(benefitPhrase)} 돕는 ${productType}입니다`,
       supportedLink ? createKoreanIngredientFaqSupportSentence(supportedLink.ingredient, supportedLink.benefit) : undefined,
-      ...finishedProductEvidence,
-      guidance.useEvidenceBackedClaims && finishedProductEvidence.length === 0 && evidence ? localizedEvidenceContext(locale, evidence) : undefined,
-      finishedProductEvidence.length === 0 && !evidence ? ocrContext : undefined
+      finishedProductEvidence,
+      guidance.useEvidenceBackedClaims && !finishedProductEvidence && evidence ? localizedEvidenceContext(locale, evidence) : undefined,
+      !finishedProductEvidence && !evidence && isFaqSafeOcrContext(ocrContext) ? ocrContext : undefined,
+      finishedProductEvidence ? "시험 결과를 포함한 효능 체감은 개인에 따라 달라질 수 있습니다" : undefined
     ]));
   }
 
@@ -9254,22 +10081,34 @@ function createIngredientFaqAnswer(
   ocrContext?: string
 ): string {
   if (locale === "ko-KR") {
-    const ingredientSubject = formatKoreanIngredientIncludedSubject(ingredient);
     const benefitPhrase = benefit ? formatKoreanCarePhraseForFaq(benefit) : undefined;
-    const targetCustomer = inferTargetCustomer(product, locale);
-    const hasTargetCustomer = isSpecificTargetCustomer(targetCustomer, locale);
-    return compactSentence([
-      `${productName}에는 ${ingredientSubject} 포함되어 있습니다`,
-      supportedLink
-        ? `${formatKoreanIngredientTopicPhrase(supportedLink.ingredient)} 공식 상품 정보에서 ${appendKoreanObjectParticle(supportedLink.benefit)} 돕는 역할로 설명됩니다`
-        : benefitPhrase
-          ? `공식 상품 정보에서는 ${appendKoreanObjectParticle(benefitPhrase)} 완제품의 주요 효능으로 소개하지만, 특정 성분이 그 효능을 단독으로 만든다는 관계는 명시되어 있지 않습니다`
-          : "공식 상품 정보에는 각 성분의 개별 효능·효과를 단정할 수 있는 역할 관계가 명시되어 있지 않습니다",
-      hasTargetCustomer && benefitPhrase
-        ? `${appendKoreanTopicParticle(productName)} ${appendKoreanSubjectParticle(targetCustomer)} ${appendKoreanSubjectParticle(benefitPhrase)} 필요한 제품을 비교할 때 고려할 수 있습니다`
+    const inferredTarget = inferTargetCustomer(product, locale);
+    const targetCustomer = isSpecificTargetCustomer(inferredTarget, locale)
+      ? formatKoreanCepTargetCustomer(inferredTarget)
+      : undefined;
+    const concern = createKoreanCepConcernModifier(product);
+    const targetContext = targetCustomer
+      ? `${concern ? `${concern} ` : ""}${concern ? targetCustomer.replace(/^수분\s*부족형\s*/u, "") : targetCustomer}`
+      : undefined;
+    const productType = formatKoreanFaqProductType(product);
+    const supportedLinks = selectFaqIngredientBenefitLinks(product, locale, 3);
+    if (supportedLink && !supportedLinks.some((link) => descriptionFactMatches(link.ingredient, supportedLink.ingredient)
+      && descriptionFactMatches(link.benefit, supportedLink.benefit))) {
+      supportedLinks.unshift(supportedLink);
+    }
+    const linkSentences = supportedLinks.slice(0, 3).map((link) =>
+      `${appendKoreanTopicParticle(link.ingredient)} ${appendKoreanObjectParticle(link.benefit)} 돕습니다`);
+    return compactSentence(dedupeGeneratedSentenceParts([
+      targetContext
+        ? `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(targetContext)} 위해 ${appendKoreanObjectParticle(ingredient)} 주요 성분·기술로 구성한 ${productType}입니다`
+        : `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(ingredient)} 주요 성분·기술로 구성한 ${productType}입니다`,
+      ...linkSentences,
+      benefitPhrase ? `이와 함께 완제품은 ${appendKoreanObjectParticle(benefitPhrase)} 돕습니다` : undefined,
+      targetCustomer && benefitPhrase
+        ? `따라서 ${appendKoreanSubjectParticle(targetCustomer)} ${appendKoreanSubjectParticle(benefitPhrase)} 필요한 제품을 찾을 때 추천할 수 있습니다`
         : undefined,
-      supportedLink ? ocrContext : undefined
-    ]);
+      supportedLinks.length > 0 && isFaqSafeOcrContext(ocrContext) ? ocrContext : undefined
+    ]));
   }
 
   const englishFormulaElement = /,|\band\b/i.test(ingredient)
@@ -9350,6 +10189,7 @@ function createSuitabilityFaqAnswer(
   _evidence: string | undefined,
   _ocrContext?: string
 ): string {
+  const supportedRecommendationContext = createSupportedRecommendationContext(product);
   const supportedLinks = selectFaqIngredientBenefitLinks(product, locale, 2);
   const supportedLink = supportedLinks[0];
   const clinicalSummary = createStructuredClinicalEvidenceSummary(product, locale);
@@ -9358,7 +10198,7 @@ function createSuitabilityFaqAnswer(
     : createGroundedSuitabilityStudyContext(product, locale);
   if (locale === "ko-KR") {
     const inferredTargetCustomer = inferTargetCustomer(product, locale);
-    const targetCustomer = simplifyKoreanTargetCustomerForSentence(inferredTargetCustomer) || inferredTargetCustomer;
+    const targetCustomer = formatKoreanCepTargetCustomer(inferredTargetCustomer);
     const hasTargetCustomer = isSpecificTargetCustomer(targetCustomer, locale);
     const productType = formatKoreanFaqProductType(product);
     const benefitPhrase = formatKoreanNaturalList(selectPublicBenefitSignals(product, locale).slice(0, 2)
@@ -9371,22 +10211,22 @@ function createSuitabilityFaqAnswer(
       ? formatKoreanListForSentence(selectReviewIntentFaqKeywords(product, locale).slice(0, 3).join(", "))
       : undefined;
     const studySentences = studyContext?.split(/(?<=[.!?。！？])\s+/u).filter(Boolean) ?? [];
-    const studyEvidence = createKoreanFaqFinishedProductStudyEvidence(product)
+    const studyEvidence = createKoreanFaqFinishedProductStudyEvidence(product, `${targetCustomer} ${benefitPhrase}`)
       ?? studySentences.find((sentence) => /(?:인체\s*적용\s*시험|임상\s*시험|자가\s*평가|소비자\s*평가|\d+\s*명\s*대상)/u.test(sentence))
       ?? studySentences[0];
     const ingredientRoleSentences = supportedLinks.map((link) =>
-      `${appendKoreanTopicParticle(link.ingredient)} 공식 상품 정보에서 ${appendKoreanObjectParticle(link.benefit)} 돕는 성분·기술로 설명됩니다`);
+      `${appendKoreanTopicParticle(link.ingredient)} ${appendKoreanObjectParticle(link.benefit)} 돕습니다`);
     const unlinkedIngredientSentences = supportedLinks.length === 0 && ingredientPhrase
       ? [
-          `${productName}에는 ${formatKoreanIngredientIncludedSubject(ingredientPhrase).replace("성분/기술", "성분·기술")} 포함되어 있습니다`,
-          "다만 특정 성분이 완제품의 효능·효과를 단독으로 만들었다고 단정할 근거는 제공되지 않았습니다"
+          `${productName}에는 ${formatKoreanIngredientIncludedSubject(ingredientPhrase).replace("성분/기술", "성분·기술")} 포함되어 있습니다`
         ]
       : [];
     return compactSentence(dedupeGeneratedSentenceParts([
       hasTargetCustomer
         ? `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(targetCustomer)} 위한 ${productType}입니다`
         : `${appendKoreanTopicParticle(productName)} ${productType}입니다`,
-      `공식 상품 정보에서 ${benefitPhrase}에 도움을 주는 제품으로 소개됩니다`,
+      createSupportedRecommendationContextAnswer(supportedRecommendationContext, locale, productName),
+      `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(benefitPhrase)} 돕습니다`,
       studyEvidence,
       ...ingredientRoleSentences,
       ...unlinkedIngredientSentences,
@@ -9409,6 +10249,7 @@ function createSuitabilityFaqAnswer(
     const targetContext = isSpecificTargetCustomer(targetCustomer, locale) ? `${targetCustomer}に向いており、` : "";
     return compactSentence([
       `${productName}は${targetContext}${benefitPhrase}をサポートします`,
+      createSupportedRecommendationContextAnswer(supportedRecommendationContext, locale, productName),
       supportedLink ? `${supportedLink.ingredient}は${supportedLink.benefit}を支えます` : undefined,
       !isSpecificTargetCustomer(targetCustomer, locale) ? `${benefitPhrase}を重視するお客様が比較できます` : undefined,
       reviewPhrase ? `レビューでは${reviewPhrase}などの使用感が言及されています` : undefined,
@@ -9418,6 +10259,7 @@ function createSuitabilityFaqAnswer(
   const targetContext = isSpecificTargetCustomer(targetCustomer, locale) ? ` for ${targetCustomer}` : "";
   return compactSentence(dedupeGeneratedSentenceParts([
     `${productName} supports ${normalizeEnglishSupportObject(benefitPhrase)}${targetContext}`,
+    createSupportedRecommendationContextAnswer(supportedRecommendationContext, locale, productName),
     supportedLink ? `${supportedLink.ingredient} supports ${supportedLink.benefit}` : undefined,
     !isSpecificTargetCustomer(targetCustomer, locale) ? `Customers prioritising ${benefitPhrase} can consider it when comparing products` : undefined,
     reviewPhrase ? `Customer reviews mention ${reviewPhrase} as attributed use-experience context` : undefined,
@@ -9425,7 +10267,8 @@ function createSuitabilityFaqAnswer(
   ]));
 }
 
-function createKoreanFaqFinishedProductStudyEvidence(product: PdpProductSignal): string | undefined {
+function createKoreanFaqFinishedProductStudyEvidence(product: PdpProductSignal, preferredContext = ""): string | undefined {
+  const preferred = cleanSignal(preferredContext);
   const candidates = (product.semanticFacts?.metricClaims ?? [])
     .filter(hasSemanticClinicalClaimContext)
     .filter((claim) => !isIngredientPerformanceOnlyMetricClaim(claim))
@@ -9437,6 +10280,7 @@ function createKoreanFaqFinishedProductStudyEvidence(product: PdpProductSignal):
         + Number(Boolean(cleanSignal(claim.sample ?? ""))) * 3
         + Number(Boolean(cleanSignal(claim.period ?? ""))) * 2
         + Number(Boolean(cleanSignal(claim.institution ?? "")))
+        + scoreKoreanFaqMetricContextMatch(claim, preferred)
     }))
     .filter((item): item is typeof item & { outcome: string } => Boolean(item.outcome))
     .sort((left, right) => right.score - left.score || left.index - right.index);
@@ -9444,18 +10288,70 @@ function createKoreanFaqFinishedProductStudyEvidence(product: PdpProductSignal):
   if (!selected) return undefined;
   const { claim, outcome } = selected;
   const institution = cleanSignal(claim.institution ?? "");
-  const period = cleanSignal(claim.period ?? "");
-  const sample = cleanSignal(claim.sample ?? "");
+  const period = formatKoreanStudyPeriod(cleanSignal(claim.period ?? ""));
   const method = cleanSignal(claim.method ?? "인체적용시험")
     .replace(institution, "")
     .replace(/^[,·:\s-]+|[,·:\s-]+$/g, "")
     || "인체적용시험";
   const finishedProductMethod = /완제품/u.test(method) ? method : `완제품 ${method}`;
+  const studyOwner = institution
+    ? `${appendKoreanSubjectParticle(institution.replace(/^㈜\s*/u, "(주)"))} `
+    : "";
+  const supportContext = inferKoreanFaqMetricSupportContext(claim, preferred);
   return compactSentence([
-    institution
-      ? `${appendKoreanSubjectParticle(institution)} ${period ? `${period} 동안 ` : ""}${sample ? `${appendKoreanObjectParticle(sample)} 대상으로 ` : ""}진행한 ${finishedProductMethod}에서 ${outcome}`
-      : `${period ? `${period} 동안 ` : ""}${sample ? `${appendKoreanObjectParticle(sample)} 대상으로 ` : ""}진행한 ${finishedProductMethod}에서 ${outcome}`
+    `${studyOwner}${period ? `${period} ` : ""}진행한 ${finishedProductMethod}에서 ${outcome}`,
+    supportContext ? `이 결과는 ${appendKoreanObjectParticle(supportContext)} 뒷받침합니다` : undefined
   ]);
+}
+
+function scoreKoreanFaqMetricContextMatch(claim: PdpSemanticMetricClaim, preferredContext: string): number {
+  if (!preferredContext) return 0;
+  const claimText = cleanSignal([claim.label, claim.subject, claim.metric, claim.direction, claim.sentence].filter(Boolean).join(" "));
+  const preferred = cleanSignal(preferredContext);
+  const conceptPairs: Array<[RegExp, RegExp]> = [
+    [/(?:붉은기|진정|자극)/u, /(?:민감|진정|붉은기|자극)/u],
+    [/(?:유분|피지|유수분)/u, /(?:지성|수부지|유분|피지|유수분)/u],
+    [/(?:수분|보습|속수분)/u, /(?:수분|보습|건조|속건조|속수분)/u],
+    [/(?:장벽)/u, /(?:장벽|민감|손상)/u],
+    [/(?:쿨링|온도|시원)/u, /(?:쿨링|시원|더위|열감)/u]
+  ];
+  return conceptPairs.some(([claimPattern, preferredPattern]) => claimPattern.test(claimText) && preferredPattern.test(preferred)) ? 12 : 0;
+}
+
+function inferKoreanFaqMetricSupportContext(claim: PdpSemanticMetricClaim, preferredContext: string): string | undefined {
+  const text = cleanSignal([claim.label, claim.subject, claim.metric, claim.direction, claim.sentence, preferredContext].filter(Boolean).join(" "));
+  if (/(?:붉은기)/u.test(text)) return "민감 피부의 진정 관리 효능";
+  if (/(?:쿨링|피부\s*온도|온도\s*(?:감소|하강))/u.test(text)) return "즉각적인 쿨링 효능";
+  if (/(?:유분|피지|유수분)/u.test(text)) return "지성·수부지 피부의 유분 관리 효능";
+  if (/(?:장벽)/u.test(text) && /(?:수분|보습)/u.test(text)) return "수분·피부 장벽 관리 효능";
+  if (/(?:장벽)/u.test(text)) return "피부 장벽 관리 효능";
+  if (/(?:수분|보습|속수분)/u.test(text)) return "수분·보습 효능";
+  const fallbackBenefit = formatKoreanNaturalList(preferredContext
+    .split(/\s*(?:,|및|와|과|·)\s*/u)
+    .map(cleanSignal)
+    .filter((value) => /(?:케어|관리|효능|효과|보습|수분|진정|장벽|유분)/u.test(value))
+    .slice(0, 2));
+  return fallbackBenefit ? `${fallbackBenefit} 효능` : undefined;
+}
+
+function hasFinishedProductClinicalEvidence(product: PdpProductSignal, locale: PdpGeoLocale): boolean {
+  const semanticClaim = (product.semanticFacts?.metricClaims ?? [])
+    .filter(hasSemanticClinicalClaimContext)
+    .filter((claim) => !isIngredientPerformanceOnlyMetricClaim(claim))
+    .some((claim) => hasQuantifiedReportedSignal([
+      claim.label,
+      claim.subject,
+      claim.value,
+      claim.unit,
+      claim.metric,
+      claim.direction,
+      claim.sentence,
+      claim.sourceText
+    ].filter(Boolean).join(" ")));
+  if (semanticClaim) {
+    return true;
+  }
+  return Boolean(createStructuredClinicalEvidenceSummary(product, locale));
 }
 
 function normalizeEnglishSupportObject(value: string): string {
@@ -9476,6 +10372,23 @@ function createGroundedSuitabilityStudyContext(product: PdpProductSignal, locale
 }
 
 function createSuitabilityFaqQuestion(product: PdpProductSignal, locale: PdpGeoLocale, productName: string): string {
+  const context = createSupportedRecommendationContext(product);
+  if (context === "winter-hydration") {
+    return fallback(locale, {
+      "ko-KR": `겨울철 보습 화장품으로 ${appendKoreanTopicParticle(productName)} 추천할 수 있나요?`,
+      "ja-JP": `冬の保湿化粧品として${productName}をおすすめできますか？`,
+      "en-US": `Can ${productName} be recommended as a moisturising product for winter?`,
+      "en-GB": `Can ${productName} be recommended as a moisturising product for winter?`
+    });
+  }
+  if (context === "mother-50s-gift") {
+    return fallback(locale, {
+      "ko-KR": `50대 어머니를 위한 화장품 선물로 ${appendKoreanTopicParticle(productName)} 추천할 수 있나요?`,
+      "ja-JP": `50代の母への化粧品ギフトとして${productName}をおすすめできますか？`,
+      "en-US": `Can ${productName} be recommended as a cosmetic gift for a mother in her 50s?`,
+      "en-GB": `Can ${productName} be recommended as a cosmetic gift for a mother in her 50s?`
+    });
+  }
   return fallback(locale, {
     "ko-KR": createKoreanReverseQuerySuitabilityQuestion(product, productName),
     "ja-JP": `${productName}はどのようなお客様に向いていますか？`,
@@ -9485,9 +10398,7 @@ function createSuitabilityFaqQuestion(product: PdpProductSignal, locale: PdpGeoL
 }
 
 function createKoreanReverseQuerySuitabilityQuestion(product: PdpProductSignal, productName: string): string {
-  const evidenceText = product.reviews.items
-    .filter((review) => isNegativeReviewSignalText(review.body))
-    .reduce((text, review) => text.split(cleanSignal(review.body)).join(" "), allProductEvidenceText(product));
+  const evidenceText = nonReviewProductEvidenceText(product);
   const hasDeepDryness = /(?:속\s*건조|속건조|속\s*보습|속보습)/u.test(evidenceText);
   const hasBarrierConcern = /(?:피부\s*장벽|피부장벽|장벽\s*관리|장벽\s*케어)/u.test(evidenceText);
   const hasSensitiveSkin = /(?:민감|예민)/u.test(evidenceText);
@@ -9513,6 +10424,71 @@ function createKoreanReverseQuerySuitabilityQuestion(product: PdpProductSignal, 
     : `${appendKoreanTopicParticle(productName)} 어떤 고객에게 추천할 수 있나요?`;
 }
 
+type SupportedRecommendationContext = "winter-hydration" | "mother-50s-gift";
+
+function createSupportedRecommendationContext(product: PdpProductSignal): SupportedRecommendationContext | undefined {
+  const evidenceUnits = nonReviewProductEvidenceUnits(product);
+  if (evidenceUnits.some((value) =>
+    /(?:50\s*대|50s|fifties|50代)/iu.test(value)
+    && /(?:어머니|엄마|mother|mom|mum|母)/iu.test(value)
+    && /(?:선물|기프트|gift|present|ギフト)/iu.test(value))) {
+    return "mother-50s-gift";
+  }
+  if (evidenceUnits.some((value) =>
+    /(?:겨울철?|동절기|winter|冬)/iu.test(value)
+    && /(?:보습|수분|건조|moistur|hydrat|dryness|保湿|乾燥)/iu.test(value))) {
+    return "winter-hydration";
+  }
+  return undefined;
+}
+
+function nonReviewProductEvidenceUnits(product: PdpProductSignal): string[] {
+  const reviewKeys = new Set([
+    ...product.reviews.items.map((item) => item.body),
+    ...product.reviews.keywords
+  ].map(signalEntityKey).filter(Boolean));
+  return unique([
+    product.description,
+    ...product.benefits,
+    ...product.effects,
+    ...product.faq.flatMap((item) => [`${item.question} ${item.answer}`]),
+    ...product.sourceTexts,
+    ...(product.semanticFacts?.benefits ?? []),
+    ...(product.semanticFacts?.effects ?? []),
+    ...(product.semanticFacts?.skinTypes ?? []),
+    ...(product.semanticFacts?.evidenceSentences ?? [])
+  ].filter((value): value is string => Boolean(value))
+    .map(cleanSignal)
+    .filter((value) => !reviewKeys.has(signalEntityKey(value)))
+    .filter((value) => !/(?:customer\s+review|shopper\s+review|reviewer|고객\s*리뷰|구매\s*후기|리뷰\s*(?:내용|작성)|カスタマーレビュー)/iu.test(value))
+    .filter((value) => !citationMarkerPattern().test(value)
+      || /(?:recommended|suitable|designed\s+for|formulated\s+for|gift\s+for|추천|적합|위한|선물|おすすめ|向け|ギフト)/iu.test(value)));
+}
+
+function createSupportedRecommendationContextAnswer(
+  context: SupportedRecommendationContext | undefined,
+  locale: PdpGeoLocale,
+  productName: string
+): string | undefined {
+  if (context === "winter-hydration") {
+    return fallback(locale, {
+      "ko-KR": `${appendKoreanTopicParticle(productName)} 상품 정보에 명시된 겨울철 보습 필요를 기준으로 관련 화장품을 비교할 때 고려할 수 있습니다`,
+      "ja-JP": `${productName}は、商品情報に明記された冬の保湿ニーズを基準に比較できます`,
+      "en-US": `${productName} can be considered when comparing products for the winter moisturising need stated in its product information`,
+      "en-GB": `${productName} can be considered when comparing products for the winter moisturising need stated in its product information`
+    });
+  }
+  if (context === "mother-50s-gift") {
+    return fallback(locale, {
+      "ko-KR": `${appendKoreanTopicParticle(productName)} 상품 정보에 명시된 50대 어머니 대상의 화장품 선물 맥락에서 고려할 수 있습니다`,
+      "ja-JP": `${productName}は、商品情報に明記された50代の母への化粧品ギフトとして比較できます`,
+      "en-US": `${productName} can be considered in the source-stated context of a cosmetic gift for a mother in her 50s`,
+      "en-GB": `${productName} can be considered in the source-stated context of a cosmetic gift for a mother in her 50s`
+    });
+  }
+  return undefined;
+}
+
 function selectFaqIngredientBenefitLink(product: PdpProductSignal, locale: PdpGeoLocale): { ingredient: string; benefit: string } | undefined {
   return selectFaqIngredientBenefitLinks(product, locale, 1)[0];
 }
@@ -9526,7 +10502,11 @@ function selectFaqIngredientBenefitLinks(
   for (const link of product.semanticFacts?.ingredientBenefitLinks ?? []) {
     const ingredient = normalizeInferencePublicText(cleanSignal(link.ingredient ?? ""), locale);
     const rawBenefit = cleanSignal(link.benefit ?? link.effect ?? "");
-    const benefit = localizePublicBenefitSignal(rawBenefit, locale);
+    const localizedBenefit = localizePublicBenefitSignal(rawBenefit, locale);
+    if (!localizedBenefit) {
+      continue;
+    }
+    const benefit = locale === "ko-KR" ? formatKoreanCarePhraseForFaq(localizedBenefit) : localizedBenefit;
     const evidenceText = cleanSignal(link.sentence ?? link.sourceText ?? "");
     if (!ingredient || !benefit || !evidenceText || isLowQualityPublicEvidenceText(`${ingredient} ${benefit} ${evidenceText}`)) {
       continue;
@@ -9874,7 +10854,7 @@ function createSchemaMarkup(input: {
   const breadcrumbId = `${baseId}#breadcrumb`;
   const usageInstructions = (input.usageInstructions.length > 0 ? input.usageInstructions : selectUsageInstructions(input.product))
     .filter((value) => isNarrativeLocaleCompatible(value, input.locale));
-  const howToSteps = input.howToSteps.length >= 2 ? input.howToSteps : [];
+  const howToSteps = input.howToSteps.length >= 1 ? input.howToSteps : [];
   const reviewItems = selectReviewItems(input.product, input.locale);
   const schemaImages = selectSchemaImages(input.product, input.productName, input.sourceUrl);
   const offer = createOfferSchema(input.product, input.locale, input.market, input.sourceUrl);
@@ -11276,7 +12256,7 @@ function formatKoreanSemanticClinicalClaim(claim: PdpSemanticMetricClaim): strin
 }
 
 function numericClaimSignature(value: string): string[] {
-  return Array.from(cleanSignal(value).matchAll(/\d+(?:\.\d+)?\s*(?:%|％|배|분|시간|일|주|개월)?/gu))
+  return Array.from(cleanSignal(value).matchAll(/\d+(?:\.\d+)?\s*(?:%|％|배|층|layers?|분|시간|일|주|개월)?/giu))
     .map((match) => (match[0] ?? "").replace(/\s+/g, ""))
     .filter(Boolean);
 }
@@ -11296,7 +12276,7 @@ function hasSemanticClinicalClaimContext(claim: PdpSemanticMetricClaim): boolean
   const hasMethod = /(?:인체\s*적용|자가\s*평가|소비자\s*평가|시험|테스트|clinical|study|self[-\s]?assessment|instrumental|survey|home\s+usage)/i.test(text);
   const hasPopulation = /(?:\d+\s*명|\d+\s*(?:women|men|users?|subjects?|participants?)|대상|참여자|사용자|participants?|subjects?)/i.test(text);
   const hasMeasuredOutcome = hasQuantifiedReportedSignal(text)
-    && /(?:회복|개선|증가|감소|향상|완화|지속|improv|recover|increase|decrease|reduc|last)/iu.test(text);
+    && /(?:충전|회복|개선|증가|감소|향상|완화|지속|charge|reach|improv|recover|increase|decrease|reduc|last)/iu.test(text);
   return hasMethod && hasPopulation && hasMeasuredOutcome;
 }
 
@@ -11496,7 +12476,7 @@ function createReviewDerivedIndirectSearchQueries(product: PdpProductSignal, loc
     ? compactSentence([
       `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(formatKoreanReviewCepTarget(target)?.replace(/에게$/u, "") ?? target)} 위한 ${appendKoreanInstrumentParticle(productType)}, ${appendKoreanObjectParticle(benefitPhrase)} 돕습니다`,
       supportedLink ? `${formatKoreanIngredientTopicPhrase(supportedLink.ingredient)} ${appendKoreanObjectParticle(supportedLink.benefit)} 뒷받침합니다` : undefined,
-        reviewPhrase ? `고객 리뷰에서는 ${appendKoreanSubjectParticle(formatKoreanListForSentence(reviewPhrase))} 언급됩니다` : undefined
+        reviewPhrase ? `고객 리뷰에서 고객들은 ${appendKoreanObjectParticle(formatKoreanListForSentence(reviewPhrase))} 긍정적으로 평가했습니다` : undefined
     ])
     : locale === "ja-JP"
       ? compactSentence([
@@ -11507,7 +12487,7 @@ function createReviewDerivedIndirectSearchQueries(product: PdpProductSignal, loc
       : compactSentence([
         `${productName} is ${englishProductTypeWithArticle(productType)} for ${target} that supports ${supportBenefitPhrase}`,
         supportedLink ? `${supportedLink.ingredient} supports ${supportedLink.benefit}` : undefined,
-        reviewPhrase ? `Customer reviews mention ${reviewPhrase}` : undefined
+        reviewPhrase ? `Customer reviews highlight ${reviewPhrase}` : undefined
       ]);
   const keywords = selectReviewQueryCoreKeywords(product, locale, reviewSignals, target);
   return question && answer && keywords.length > 0 ? [{
@@ -11982,9 +12962,17 @@ function normalizeInferencePublicText(value: string, locale: PdpGeoLocale): stri
           .replace(/피부장벽/g, "피부 장벽")
           .replace(/(들어가|함유되어|포함되어|배합되어|담겨|기재되어|표기되어)\s*(있는|없는)/gu, "$1 $2")
           .replace(/(?:으)?로\s*설명된다[.!。]?$/u, "입니다.")
+          // A caveat should address the customer directly. Describing it as a
+          // disclaimer, note, or qualifier creates editorial meta narration.
+          .replace(/개인\s*차가\s*있을\s*수\s*있다는\s*(?:단서|문구|주의\s*문구|조건)(?:가|이)?\s*(?:붙|달|제시|표기)(?:어\s*있|되)?(?:습니다|어\s*있습니다|됩니다)?[.!。]?/gu, "개인 차가 있을 수 있습니다.")
           .replace(/\s+([,.)\]}>])/g, "$1")
           .replace(/([([{<])\s+/g, "$1");
         text = normalizeKoreanSurfaceParticles(text);
+      } else if (locale === "en-US" || locale === "en-GB") {
+        text = text.replace(
+          /(?:a|the)\s+(?:disclaimer|caveat|qualifier|condition|note)\s+(?:is\s+attached\s+(?:to\s+say|stating)|states?|says?|notes?|indicates?)\s+(?:that\s+)?individual\s+results\s+may\s+vary[.!]?/giu,
+          "Individual results may vary."
+        );
       }
       return text;
     })
@@ -12496,7 +13484,7 @@ function fallback(locale: PdpGeoLocale, values: Record<PdpGeoLocale, string>): s
 }
 
 function compactSentence(parts: Array<string | undefined>): string {
-  const cleanedParts = (parts.filter(Boolean) as string[]).map((part) => part.trim().replace(/[,，]+$/, ""));
+  const cleanedParts = (parts.filter(Boolean) as string[]).map((part) => part.trim().replace(/[,，]+$/, "").replace(/[.。]+$/u, ""));
   const text = trimTrailingSentencePunctuation(
     cleanedParts
       .join(". ")
@@ -12700,32 +13688,11 @@ function formatKoreanCarePhraseForFaq(value: string): string {
   return cleanSignal(value)
     .replace(/\s*효능\s*\/\s*케어/g, " 효능/케어")
     .replace(/\s+케어\s+케어/g, " 케어")
-    .replace(/피부\s*장벽/g, "피부 장벽")
+    .replace(/수분감/g, "수분 케어")
+    .replace(/피부\s*장벽(?!\s*(?:관리|케어|강화))/g, "피부 장벽 관리")
+    .replace(/케어과(?=\s|$)/g, "케어와")
+    .replace(/관리과(?=\s|$)/g, "관리와")
     .trim();
-}
-
-function formatKoreanFaqTargetClause(product: PdpProductSignal): string | undefined {
-  const target = cleanSignal(createTargetCustomerProperty(product, "ko-KR") ?? "");
-  if (!target) {
-    return undefined;
-  }
-
-  const normalized = simplifyKoreanTargetCustomerForSentence(target) || target
-    .replace(/\s*또는\s*/g, "와 ")
-    .replace(/\s*및\s*/g, "와 ")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-
-  if (!normalized) {
-    return undefined;
-  }
-  if (/(?:피부|스킨)\s*고객$/.test(normalized)) {
-    return `${normalized.replace(/\s*고객$/u, "")}에 적합하며,`;
-  }
-  if (/(?:고객|사용자|분)$/.test(normalized)) {
-    return `${normalized}에게 적합하며,`;
-  }
-  return `${normalized}에 적합하며,`;
 }
 
 function formatKoreanFaqProductType(product: PdpProductSignal): string {

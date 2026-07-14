@@ -331,7 +331,10 @@ export async function generatePdpGeo(
     contentPlan: contentPlanning.plan,
     evidenceLedger
   });
+  const plannedDescriptionsApplied = contentPlanning.plan.productDescription.include
+    && contentPlanning.plan.webPageDescription.include;
   const shouldRunCopyRefinement = !contentPlanning.applied
+    || !plannedDescriptionsApplied
     || options.copyRefinement?.enabled === true;
   if (shouldRunCopyRefinement && shouldReportCopyRefinementCall(options)) {
     process.start("generate", `${runtimeProviderLabel(options.copyRefinement?.provider ?? options.provider)} final reasoning/copy refinement 모델을 호출합니다.`);
@@ -555,14 +558,17 @@ function mergeRetrievedRagChunks(chunks: PdpGeoRetrievedChunk[]): PdpGeoRetrieve
 
 const strategicRagKinds = new Set(["geo-research", "cep", "eeat"]);
 const coverageRagKindOrder: PdpGeoRetrievedChunk["kind"][] = [
-  "best-practice",
-  "schema",
-  "official-docs",
-  "locale",
-  "terminology",
+  // Reserve the cross-cutting reasoning spine first. With the default budget
+  // every family still fits; under a smaller budget GEO/EEAT/CEP must not be
+  // displaced by whichever operational document happened to score first.
   "geo-research",
   "eeat",
-  "cep"
+  "cep",
+  "schema",
+  "best-practice",
+  "locale",
+  "terminology",
+  "official-docs"
 ];
 
 const strategicCoverageDocuments = [
@@ -599,8 +605,8 @@ const strategicCoverageDocuments = [
   {
     kind: "best-practice",
     document: pdpGeoGeneratorRagManifest.documents.bestPractice,
-    query: "PDP GEO best practice field evidence contract, public wording guardrails, product and webpage description separation, FAQ, HowTo, and schema alignment.",
-    reason: "Ensure product-page field-contract guidance is present when strategy chunks rank higher."
+    query: "PDP GEO best practice for customer-facing sentence tone, vocabulary, cadence, natural evidence transitions, field evidence contracts, Product and WebPage description separation, FAQ, HowTo, and schema alignment.",
+    reason: "Ensure the active BestPractice public-copy voice and field-contract guidance are present when strategy chunks rank higher."
   },
   {
     kind: "locale",

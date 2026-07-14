@@ -444,7 +444,7 @@ function createProductEntityDescriptionFallback(productName: string, locale: Pdp
 
 function createDistinctWebPageDescriptionFallback(productName: string, locale: PdpGeoLocale): string {
   return fallback(locale, {
-    "ko-KR": `${productName} 상품 페이지에서는 상품의 주요 효능, 성분/기술, 사용 맥락, 리뷰, 옵션, 측정/평가 근거를 원문 범위 안에서 다룹니다.`,
+    "ko-KR": `${productName} 상품 페이지는 상품의 주요 효능과 성분·기술을 중심으로 사용 맥락, 리뷰, 옵션, 측정 결과를 함께 소개합니다.`,
     "ja-JP": `${productName}の商品ページでは、主なベネフィット、成分/技術、使用文脈、レビュー、選択肢、測定/評価根拠を原文の範囲で扱います。`,
     "en-US": `This ${productName} product page covers the product's key benefits, ingredients or technologies, routine context, reviews, variants, offers, and reported evidence when those details are available in the source.`,
     "en-GB": `This ${productName} product page covers the product's key benefits, ingredients or technologies, routine context, reviews, variants, offers, and reported evidence when those details are available in the source.`

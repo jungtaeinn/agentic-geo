@@ -855,6 +855,7 @@ function createFinalProofreadingPrompt(request: PdpGeoFinalProofreadingRequest):
       "Never create an ingredient-to-benefit relationship, suitability claim, efficacy claim, comparison, routine order, review consensus, or market claim that the original field did not state.",
       "Product.description must keep its existing semantic role order. WebPage.description must remain page/brand/information-scope copy rather than becoming another product description.",
       "FAQ question intent and its paired answer must not change. Do not add, remove, merge, split, or reorder FAQ items.",
+      "Keep customer caveats direct. Do not turn '개인 차가 있을 수 있습니다' or 'Individual results may vary' into editorial narration about an attached disclaimer, caveat, qualifier, condition, or note.",
       "HowTo fields are punctuation-only: do not change words, actions, amounts, timing, body area, count, or order.",
       "Do not edit reviewBody, names, offers, URLs, identifiers, or schema structure; those fields are intentionally absent.",
       "Write in the existing target locale only. Evidence IDs and immutable tokens are read-only constraints, not material for adding facts.",

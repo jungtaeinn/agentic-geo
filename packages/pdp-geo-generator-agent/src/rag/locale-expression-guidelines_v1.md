@@ -15,4 +15,5 @@ Use locale and market rules to choose natural PDP wording.
 
 - Keep product names readable. Do not overload names with every benefit keyword.
 - Keep FAQ questions in the customer's likely search language for the target locale.
+- In product-specific FAQ questions, use the exact product name rather than a deictic subject such as `이 제품`, `이 크림`, `this product`, or `this cream`.
 - Apply preferred terms after source-backed content is composed, then remove avoided medical or exaggerated terms.

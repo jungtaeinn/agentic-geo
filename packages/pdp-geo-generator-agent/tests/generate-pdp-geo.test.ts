@@ -107,7 +107,7 @@ describe("generatePdpGeo", () => {
     expect(String(englishProduct.description)).toMatch(/documented benefit is .*hydration/i);
     expect(String(englishProduct.description)).not.toMatch(/(?:includes|combines|uses)[^.]*\bto support\b/i);
     expect(String(englishProduct.description)).not.toMatch(/formula highlights|active-ingredient story|patent[-\s]?pending[^.]*formula's|key ingredients? (?:and|\/) technolog(?:y|ies)/i);
-    expect(englishHowTo).toBeUndefined();
+    expect(englishHowTo?.step).toHaveLength(1);
     expect(english.result.content.sections.howToUse).not.toMatch(/Hydroqual Floating Formula|uses patent[-\s]?pending/i);
     expect(String(englishProperties.Usage)).not.toMatch(/Hydroqual Floating Formula|uses patent[-\s]?pending/i);
 
@@ -276,14 +276,14 @@ describe("generatePdpGeo", () => {
     expect(product.description).not.toMatch(/설명됩니다|상품 정보에는|제품 자료에서는|확인 근거|정리합니다|내용이 포함|노출됩니다|로 제시됩니다|요약됩니다/);
     expect(benefitAnswer).toMatch(/건조하고 민감한 피부 고객을 위한/u);
     expect(String(benefitFaq.name)).toMatch(/고객|추천|적합/u);
-    expect(benefitAnswer).toMatch(/공식 상품 정보에서[^.]*보습|공식 상품 정보에서[^.]*수분/u);
+    expect(benefitAnswer).toMatch(/에스트라 아토베리어365 바디로션은[^.]*수분[^.]*피부 장벽[^.]*돕습니다/u);
     expect(benefitAnswer).toContain("피부 장벽");
     expect(benefitAnswer).toContain("바디로션입니다");
     expect(benefitAnswer).toMatch(/고객 리뷰에서는[^.]*촉촉한 사용감[^.]*흡수감[^.]*언급/u);
-    expect(ingredientAnswer).toContain("포함되어 있습니다");
+    expect(ingredientAnswer).toMatch(/주요 성분·기술로 구성한/u);
     expect(String(ingredientFaq.name)).toMatch(/구성\s*성분.*효능[·・]?효과/u);
-    expect(ingredientAnswer).toContain("완제품의 주요 효능");
-    expect(ingredientAnswer).toContain("관계는 명시되어 있지 않습니다");
+    expect(ingredientAnswer).toMatch(/완제품은[^.]*수분[^.]*피부 장벽[^.]*돕습니다/u);
+    expect(ingredientAnswer).not.toMatch(/관계는 명시되어 있지|특정 성분이[^.]*단독/u);
     expect(`${benefitAnswer} ${ingredientAnswer}`).not.toMatch(/상품 정보에는|제품 자료에서는|제시됩니다|설명됩니다|정리됩니다/);
     expect(result.content.sections.faq).toContain(benefitAnswer);
     expect(result.content.sections.faq).toContain(ingredientAnswer);
@@ -404,9 +404,11 @@ describe("generatePdpGeo", () => {
     const properties = Object.fromEntries((product.additionalProperty as Array<Record<string, any>>).map((item) => [item.name, item.value]));
     const howToText = JSON.stringify(howTo?.step ?? properties.Usage ?? result.content.sections.howToUse);
 
-    expect(String(webPage.description)).toContain("AESTURA의 에스트라 아토베리어365 캡슐 토너 상품 페이지");
-    expect(String(webPage.description)).toContain("수분 토너 상품을 소개합니다");
-    expect(String(webPage.description)).toMatch(/대상 고객으로 안내.*주요 성분·기술은.*공개된 효능·효과.*판매가는 30,000원으로 표시/u);
+    expect(String(webPage.description)).toContain("에스트라 아토베리어365 캡슐 토너 상품 페이지는 AESTURA가 선보이는");
+    expect(String(webPage.description)).toMatch(/에스트라 아토베리어365 캡슐 토너는[^.]*고객을 위한 제품/u);
+    expect(String(webPage.description)).toMatch(/[^.]+(?:을|를) 주요 성분·기술로 포함하고[^.]+돕습니다/u);
+    expect(String(webPage.description)).toContain("에스트라 아토베리어365 캡슐 토너는 30,000원에 판매되고 있습니다");
+    expect(String(webPage.description)).not.toMatch(/페이지 본문에서는|페이지에서 확인할 수 있는|페이지에 공개된/u);
     expect(String(webPage.description)).not.toMatch(/구매 판단에 필요한|가격·구매 정보/u);
     expect(String(webPage.description)).not.toMatch(/추천합니다|적합합니다|60\.5%|87\.3%/u);
     expect(String(webPage.description)).not.toContain("민감·건조 피부의 세안 후");
@@ -560,7 +562,7 @@ describe("generatePdpGeo", () => {
     const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any> | undefined;
     const properties = Object.fromEntries((product.additionalProperty as Array<Record<string, any>>).map((item) => [item.name, item.value]));
 
-    expect(howTo).toBeUndefined();
+    expect(howTo?.step).toHaveLength(1);
     expect(result.content.sections.howToUse).toContain("세안 후 첫 단계에서 토너를 사용합니다");
     expect(String(properties.Usage)).toContain("세안 후 첫 단계에서 토너를 사용합니다");
   });
@@ -643,26 +645,29 @@ describe("generatePdpGeo", () => {
     expect(webPage.breadcrumb).toEqual({ "@id": breadcrumb["@id"] });
     expect(faq.about).toEqual({ "@id": product["@id"] });
     expect(faq.isPartOf).toEqual({ "@id": webPage["@id"] });
-    expect(howTo).toBeUndefined();
-    expect(JSON.stringify(webPage.hasPart ?? [])).not.toContain("#how-to-use");
+    expect(howTo?.step).toHaveLength(1);
+    expect(JSON.stringify(webPage.hasPart ?? [])).toContain("#how-to-use");
     expect(result.content.sections.howToUse).toContain("아침과 저녁 스킨케어 마지막 단계");
     expect(String(product.description)).not.toContain("[소용량]");
     expect(String(product.description)).toContain("진세노믹스");
     expect(String(webPage.description)).not.toBe(String(product.description));
     expect(String(webPage.description)).toContain("설화수 자음생크림 상품 페이지");
-    expect(String(webPage.description)).toContain("소개합니다");
-    expect(String(webPage.description)).toMatch(/대상 고객으로 안내.*주요 성분·기술은 진세노믹스.*공개된 효능·효과.*옵션은 소용량 자음생크림 30ml, 자음생크림 50ml.*판매가는 270,000원.*고객 리뷰에서는/u);
+    expect(String(webPage.description)).not.toMatch(/크림\s*상품을\s*소개합니다/u);
+    expect(String(webPage.description)).toMatch(/설화수 자음생크림은[^.]*고객을 위한 제품/u);
+    expect(String(webPage.description)).toMatch(/진세노믹스[^.]*주요 성분·기술로 포함하고/u);
+    expect(String(webPage.description)).toMatch(/설화수 자음생크림은 소용량 자음생크림 30ml, 자음생크림 50ml 옵션으로 구성되어 있으며, 270,000원에 판매되고 있습니다.*고객 리뷰에서 고객들은/u);
+    expect(String(webPage.description)).not.toMatch(/페이지 본문에서는|페이지에서 확인할 수 있는|페이지에 공개된/u);
     expect(String(webPage.description)).not.toMatch(/핵심 성분\/(?:기술|포뮬러)|성분\/기술(?:을|를|로|으로)?[^.。！？]*(?:중심|설명|소개|제시)/);
     expect(String(webPage.description)).not.toMatch(/상품 정보로\s*(?:주요\s*)?효능,\s*성분\/기술,\s*사용 루틴/);
     expect(String(webPage.description)).not.toMatch(/HowTo|FAQ에서는|FAQ와 사용법/);
-    expect(String(webPage.description)).toMatch(/옵션은|판매가는/);
+    expect(String(webPage.description)).toMatch(/옵션으로 구성되어 있으며,[^.]*판매되고 있습니다/);
     expect(String(product.description)).not.toContain("상품 페이지");
     expect(String(webPage.description)).not.toMatch(/확인 근거|확인 지표|확인됩니다|결과 결과|정리합니다|내용이 포함|노출됩니다|로 제시됩니다|요약됩니다|CARE|저자극 세안/);
     expect(String(product.description)).not.toMatch(/제품로|줍니다입니다|화장품법|확인 근거|정리합니다|내용이 포함|노출됩니다|로 제시됩니다|요약됩니다|CARE|저자극 세안/);
     expect(faq.mainEntity.length).toBeGreaterThanOrEqual(5);
     expect(faq.mainEntity.length).toBeLessThanOrEqual(8);
     expect(faq.mainEntity.some((item: any) => /고민인\s*고객에게|고객에게[^?？]*적합/u.test(String(item.name))
-      && /공식\s*상품\s*정보에서[^.]*도움을\s*주는\s*제품/u.test(String(item.acceptedAnswer.text)))).toBe(true);
+      && /(?:돕습니다|도움을\s*줍니다)/u.test(String(item.acceptedAnswer.text)))).toBe(true);
     expect(String(webPage.description)).toContain("소용량 자음생크림 30ml");
     expect(faqText).not.toMatch(/화장품법|기재ㆍ표시/);
     expect(propertyNames).toContain("Recommended skin type");
@@ -748,18 +753,23 @@ describe("generatePdpGeo", () => {
     expect(result.content.sections.description).toBe(productDescription);
     expect(description).not.toBe(productDescription);
     const targetIndex = productDescription.indexOf("건조하고 민감한 피부");
-    const identityIndex = productDescription.indexOf("크림 미스트입니다", targetIndex);
+    const identityIndex = productDescription.indexOf("크림 미스트입니다");
+    const productNameIndex = productDescription.indexOf("아토베리어 365 크림 미스트");
     expect(targetIndex).toBeGreaterThanOrEqual(0);
-    expect(identityIndex).toBeGreaterThan(targetIndex);
+    expect(identityIndex).toBeGreaterThanOrEqual(0);
+    expect(productNameIndex).toBeLessThan(targetIndex);
+    expect(targetIndex).toBeLessThan(identityIndex);
     expect(identityIndex).toBeLessThan(productDescription.indexOf("세라마이드 10,000ppm"));
     expect(productDescription.search(/피부 장벽 케어|수분감 케어|보습 케어/)).toBeGreaterThan(targetIndex);
     expect(productDescription.indexOf("세라마이드 10,000ppm")).toBeLessThan(productDescription.search(/피부 장벽 케어|수분감 케어|보습 케어/));
     expect(productDescription).toMatch(/건조할 때 수시 보습.*루틴|리뷰(?:\s*한\s*건)?에서는/);
     expect(productDescription).not.toMatch(/상품\s*페이지|제품\s*페이지|페이지(?:에서는|에는|는)|PDP|product\s+page/i);
     expect(productDescription).not.toMatch(/눈을 감고|얼굴에 고루 분사|손으로 흡수|FAQ|HowTo|비건|동물실험|동물성 원료|GLOWPICK|post-cleanse/);
-    expect(description).toContain("AESTURA의 아토베리어 365 크림 미스트 상품 페이지");
-    expect(description).toContain("크림 미스트 상품");
-    expect(description).toMatch(/건조하고 민감한 피부 고객을 대상 고객으로 안내.*주요 성분·기술은.*공개된 효능·효과.*고객 리뷰에서는/u);
+    expect(description).toContain("아토베리어 365 크림 미스트 상품 페이지는 AESTURA가 선보이는");
+    expect(description).toMatch(/아토베리어 365 크림 미스트는[^.]*건조하고 민감한 피부 고객을 위한 제품/u);
+    expect(description).toMatch(/[^.]+(?:을|를) 주요 성분·기술로 포함하고[^.]+돕습니다/u);
+    expect(description).toMatch(/고객 리뷰에서 고객들은/u);
+    expect(description).not.toMatch(/페이지 본문에서는|페이지에서 확인할 수 있는|페이지에 공개된/u);
     expect(description).not.toMatch(/45개 리뷰/u);
     expect(description).not.toMatch(/피부 내성 테스트|하이포알러제닉 테스트|사용 맥락은[^.]*보완/);
     expect(description).not.toMatch(/세라마이드[^.]*피토스핑고신[^.]*콜레스테롤과[^.]*공법은/);
@@ -1227,7 +1237,7 @@ describe("generatePdpGeo", () => {
     expect(primaryRetrievalDocuments).not.toContain(pdpGeoGeneratorRagManifest.brandLocaleTerminologyMaps.aestura);
   });
 
-  it("keeps best-practice in the final inference context even when maxChunks is constrained", async () => {
+  it("keeps strategic GEO guidance in the final inference context when maxChunks is constrained", async () => {
     const cases = [
       {
         product: {
@@ -1238,7 +1248,6 @@ describe("generatePdpGeo", () => {
           ingredients: ["Ceramide"],
           usage: ["Apply after toner and serum."]
         },
-        expectedBestPracticeSource: pdpGeoGeneratorRagManifest.brandBestPractices.aestura,
         expectedBrandIdentitySource: pdpGeoGeneratorRagManifest.brandIdentities.aestura,
         unexpectedBestPracticeSource: pdpGeoGeneratorRagManifest.documents.bestPractice
       },
@@ -1251,7 +1260,6 @@ describe("generatePdpGeo", () => {
           ingredients: ["Ceramide"],
           usage: ["Apply after toner."]
         },
-        expectedBestPracticeSource: pdpGeoGeneratorRagManifest.documents.bestPractice,
         expectedBrandIdentitySource: undefined,
         unexpectedBestPracticeSource: pdpGeoGeneratorRagManifest.brandBestPractices.aestura
       }
@@ -1319,10 +1327,8 @@ describe("generatePdpGeo", () => {
       );
 
       const selectedSources = result.diagnostics.selectedRagChunks.map((chunk) => chunk.source);
-      expect(selectedSources).toContain(testCase.expectedBestPracticeSource);
+      expect(result.diagnostics.selectedRagChunks.some((chunk) => chunk.kind === "geo-research")).toBe(true);
       expect(selectedSources).not.toContain(testCase.unexpectedBestPracticeSource);
-      expect(result.diagnostics.selectedRagChunks.find((chunk) => chunk.source === testCase.expectedBestPracticeSource)?.kind)
-        .toBe("best-practice");
       if (testCase.expectedBrandIdentitySource) {
         expect(selectedSources).toContain(testCase.expectedBrandIdentitySource);
         expect(result.diagnostics.selectedRagChunks.find((chunk) => chunk.source === testCase.expectedBrandIdentitySource)?.metadata.queryPlanTarget)
@@ -1331,7 +1337,7 @@ describe("generatePdpGeo", () => {
         expect(selectedSources.some((source) => source.startsWith("brands/"))).toBe(false);
       }
       expect(result.diagnostics.reasoning?.selectedSources ?? [])
-        .toEqual(expect.arrayContaining([expect.stringContaining(testCase.expectedBestPracticeSource)]));
+        .toEqual(expect.arrayContaining([expect.stringContaining(pdpGeoGeneratorRagManifest.documents.geoResearch)]));
     }
   });
 
@@ -1419,7 +1425,7 @@ describe("generatePdpGeo", () => {
     expect(product.category).not.toBe("usage");
     expect(product.review?.[0]?.reviewBody).toContain("smooth");
     expect(serialized).not.toContain("\"reviewBody\":\"rating\"");
-    expect(howTo).toBeUndefined();
+    expect(howTo?.step).toHaveLength(1);
     expect(result.content.sections.howToUse).toContain("Use morning and night");
     expect(result.content.sections.howToUse).toContain("Warm three pumps");
     expect(serialized).not.toContain("\"text\":\"apply\"");
@@ -1503,7 +1509,7 @@ describe("generatePdpGeo", () => {
     expect(images).toEqual(["https://cdn.example.com/products/first-care-activating-serum-main.jpg"]);
     expect(product.review).toBeUndefined();
     expect(serialized).not.toMatch(/COMPLETE YOUR RITUAL|BALANCE WATER|TREATMENT SERUM|NewCGRCream|SWS_Thumbnail_GCF|Hydrating\.png/i);
-    expect(howTo).toBeUndefined();
+    expect(howTo?.step).toHaveLength(1);
     expect(result.content.sections.howToUse).toContain("Gently pat 2-3 pumps");
     expect(result.content.sections.howToUse).not.toContain("AFTER 6 WEEKS");
     expect(positiveNotes.filter((name: string) => /^elasticity$/i.test(name))).toHaveLength(1);
@@ -1578,9 +1584,9 @@ describe("generatePdpGeo", () => {
     expect(reportedDetails).not.toMatch(/\bagreed\b|Also|사용 전 사용 직후/i);
     expect(recommendationAnswer).toMatch(/세라마이드|피부 장벽|수분감/);
     expect(recommendationAnswer).not.toMatch(/60\.5%|87\.3%|사용 직후|사용 7일 후/);
-    expect(recommendationAnswer).toContain("특정 성분이 완제품의 효능·효과를 단독으로 만들었다고 단정할 근거는 제공되지 않았습니다");
+    expect(recommendationAnswer).not.toMatch(/특정\s*성분이[^.]*단독|설명됩니다|안내됩니다/u);
     expect(recommendationAnswer).not.toMatch(/효능 맥락을 뒷받침|성분 근거와 효능 맥락/);
-    expect(howTo).toBeUndefined();
+    expect(howTo?.step).toHaveLength(1);
     expect(result.content.sections.howToUse).toContain("손에 적당량");
     expect(result.content.sections.howToUse).not.toMatch(/60\.5%|87\.3%|190%|사용 전 사용 직후|사용법/);
     expect(normalizedUsage).toContain("손에 적당량");
@@ -1995,7 +2001,7 @@ describe("generatePdpGeo", () => {
     expect(webPage.description).not.toMatch(/92\.4%|28\s+participants?/i);
     expect(result.content.sections.quickFacts).toContain("AquaShield Ferment");
     expect(result.content.sections.quickFacts).toContain("92.4%");
-    expect(howTo).toBeUndefined();
+    expect(howTo?.step).toHaveLength(1);
     expect(result.content.sections.howToUse).toMatch(/rinse with water/i);
   });
 
@@ -2037,7 +2043,7 @@ describe("generatePdpGeo", () => {
     const howToText = result.content.sections.howToUse;
 
     expect(serialized).not.toMatch(/gentle cleas?ing oil/i);
-    expect(howTo).toBeUndefined();
+    expect(howTo?.step).toHaveLength(1);
     expect(howToText).toMatch(/gentle cleansing foam|massage foam/i);
     expect(result.content.sections.howToUse).not.toMatch(/gentle cleas?ing oil/i);
     expect(result.content.sections.howToUse).not.toMatch(/melt makeup/i);
@@ -2683,6 +2689,17 @@ describe("generatePdpGeo", () => {
             fieldTargets: ["Product.description"],
             metadata: {},
             score: 0.9
+          },
+          {
+            id: "best-practice-1",
+            source: "brands/sulwhasoo/best-practice_v1.md",
+            title: "Sulwhasoo US BestPractice Tone",
+            text: "Use refined, assured US English with balanced cadence, natural evidence transitions, and direct customer attribution.",
+            kind: "best-practice",
+            intents: ["locale", "claims"],
+            fieldTargets: ["Product.description", "WebPage.description"],
+            metadata: {},
+            score: 0.89
           }
         ],
         reasoning: undefined
@@ -2693,11 +2710,12 @@ describe("generatePdpGeo", () => {
 
     expect(capturedBody?.instructions).toContain("GEO research/geo-paper, CEP, and E-E-A-T");
     expect(capturedBody?.instructions).toContain("Top priority: make public copy more likely to be selected, quoted, or cited by AI answer engines");
+    expect(capturedBody?.instructions).toContain("active BestPractice guidance as the style benchmark");
     expect(capturedBody?.instructions).toContain("For Korean and English faqAnswers");
     expect(capturedBody?.instructions).toContain("Do not solve copy quality by copying a fixed template");
-    expect(capturedBody?.instructions).toContain("one connected five-part buyer-answer narrative");
-    expect(capturedBody?.instructions).toContain("product page and source-backed brand");
-    expect(capturedBody?.instructions).toContain("identify the supported target-customer, ingredient/technology, and benefit information");
+    expect(capturedBody?.instructions).toContain("one connected buyer-answer narrative that covers this semantic arc");
+    expect(capturedBody?.instructions).toContain("compact page-level counterpart");
+    expect(capturedBody?.instructions).toContain("source-stated research or related-article citation");
     expect(capturedBody?.instructions).toContain("Build each FAQ question backwards from a natural recommendation or comparison query");
     expect(capturedBody?.instructions).toContain("schemaProperties");
     expect(capturedBody?.instructions).toContain("faqAnswers");
@@ -2712,6 +2730,9 @@ describe("generatePdpGeo", () => {
     ]));
     expect(payload.strategicExposureGuidance).toHaveLength(3);
     expect(payload.strategicExposureGuidance.map((item: Record<string, unknown>) => item.kind)).toEqual(["geo-research", "cep", "eeat"]);
+    expect(payload.bestPracticeToneGuidance).toHaveLength(1);
+    expect(payload.bestPracticeToneGuidance[0].kind).toBe("best-practice");
+    expect(payload.toneApplicationPolicy.join(" ")).toContain("Never copy a BestPractice example");
   });
 
   it("sends CEP narrative, volume isolation, and generative FAQ intent guidance to copy refinement", async () => {
@@ -2794,8 +2815,8 @@ describe("generatePdpGeo", () => {
       const input = String(capturedBody?.input ?? "");
 
       expect(instructions).toContain("volume/size strings");
-      expect(instructions).toContain("one connected five-part buyer-answer narrative");
-      expect(instructions).toContain("product page and source-backed brand");
+      expect(instructions).toContain("one connected buyer-answer narrative that covers this semantic arc");
+      expect(instructions).toContain("compact page-level counterpart");
       expect(instructions).toContain("Build each FAQ question backwards from a natural recommendation or comparison query");
       expect(instructions).toContain("네, or 아니요,");
       expect(input).toContain("generativeQueryIntents");
@@ -3125,7 +3146,7 @@ describe("generatePdpGeo", () => {
     const positiveNotes = product.positiveNotes.itemListElement as Array<Record<string, any>>;
     const ocrDiagnostics = result.diagnostics.ocrSentences;
 
-    expect(result.content.sections.description).toMatch(/supports|formula|texture|routine|visible benefits|key actives|comfort/);
+    expect(result.content.sections.description).toMatch(/supports|includes|formula|texture|routine|visible benefits|key actives|comfort/);
     expect(result.content.sections.description).not.toContain("This advanced formula, working synergistically");
     expect(result.content.sections.description).not.toContain("concise ingredient/effect claim for product comparison");
     expect(result.content.sections.ingredients).toContain("Ginseng Peptide");
@@ -3394,7 +3415,7 @@ describe("generatePdpGeo", () => {
     expect(serialized).not.toMatch(/Evidence signal|Review signals|technology signals|main benefit signal|benefit terms|ingredient context|use-feel comparison|product discovery context|Product detail context|comparison intent|comparison-led|texture language|use-feel language|benefit language|ingredient terms|ingredient and technology term|product benefit term/i);
     expect(result.content.sections.faq).not.toContain("Can I use it daily?");
     expect(result.content.sections.faq).not.toContain("A. Apply morning and night after serum.");
-    expect(howTo).toBeUndefined();
+    expect(howTo?.step).toHaveLength(1);
     const usageFaq = faq.mainEntity.find((item: any) => item.name === "How should Ginseng Barrier Serum be used?");
     expect(usageFaq).toBeTruthy();
     expect(String(usageFaq?.acceptedAnswer?.text ?? "")).toContain("Apply morning and night after serum");
@@ -3542,7 +3563,7 @@ describe("generatePdpGeo", () => {
     expect(webPage.description).toContain("introduces the serum.");
     expect(webPage.description).not.toContain("introduces the serum for customers");
     expect(webPage.description).toMatch(/lists Korean Ginseng Actives.*Retinol.*highlighted formula components.*documents .*fine lines and wrinkles.*product benefits/i);
-    expect(webPage.description).toMatch(/Directions place the product in a morning and evening post-toner routine.*Customer reviews mention smooth, moisture, firmness, and absorbs/i);
+    expect(webPage.description).toMatch(/Directions place the product in a morning and evening post-toner routine.*One customer review highlights smooth, moisture, firmness, and absorbs/i);
     expect(webPage.description).not.toMatch(/100% of users|32 women/i);
     expect(webPage.description).not.toMatch(/The page states that|The page helps answer|helps answer|Usage guidance covers|product-detail evidence/i);
     expect(product.description).toContain("fine lines and wrinkles");
@@ -3555,7 +3576,7 @@ describe("generatePdpGeo", () => {
     expect(product.description).not.toContain("aroun…");
     expect(product.description).not.toContain("making the benefit and ingredient story understandable");
     expect(product.description).not.toContain("product page");
-    expect(product.description).toContain("One customer review mentions");
+    expect(product.description).toContain("One customer review highlights");
     expect(product.description).not.toMatch(/representative customer reviews|repeated review language/i);
     expect(product.description).toContain("smooth");
     expect(product.description).toContain("moisture");
@@ -3747,7 +3768,7 @@ describe("generatePdpGeo", () => {
 
     expect(targetCustomer).toMatch(/건조 피부|민감 피부/u);
     expect(targetCustomer).not.toMatch(/복합성 피부/u);
-    expect(compositionAnswer).toMatch(/건조 피부|민감 피부/u);
+    expect(compositionAnswer).toMatch(/건조하고 민감한 피부/u);
     expect(compositionAnswer).not.toMatch(/복합성 피부/u);
   });
 
@@ -3828,12 +3849,16 @@ describe("generatePdpGeo", () => {
     expect(result.content.sections.productName).toBe("에스트라 아토베리어365 하이드로 수딩크림");
     expect(product.name).toBe("에스트라 아토베리어365 하이드로 수딩크림");
     expect(product.category).toBe("크림");
-    expect(webPage.description).toContain("AESTURA의 에스트라 아토베리어365 하이드로 수딩크림 상품 페이지");
-    expect(webPage.description).toMatch(/민감 피부 고객을 대상 고객으로 안내.*주요 성분·기술은.*세라마이드.*히알루론산.*공개된 효능·효과는.*수분 케어.*피부 장벽 케어/u);
+    expect(webPage.description).toContain("에스트라 아토베리어365 하이드로 수딩크림 상품 페이지는 AESTURA가 선보이는");
+    expect(webPage.description).toMatch(/에스트라 아토베리어365 하이드로 수딩크림은[^.]*민감 피부 고객을 위한 제품/u);
+    expect(webPage.description).toMatch(/세라마이드[^.]*히알루론산[^.]*주요 성분·기술로 포함하고[^.]*돕습니다/u);
+    expect(webPage.description).toMatch(/수분 케어/u);
+    expect(webPage.description).toMatch(/피부 장벽 케어/u);
+    expect(webPage.description).not.toMatch(/페이지 본문에서는|페이지에서 확인할 수 있는|페이지에 공개된/u);
     expect(product.description).toMatch(/수분감|수분\s*케어/u);
     expect(product.description).toMatch(/세라마이드|히알루론산/);
-    expect(product.description).toMatch(/실제 고객 리뷰에서는[^.]*언급됩니다/);
-    expect(product.description).not.toMatch(/리뷰에서는[^.]*반복/u);
+    expect(product.description).toMatch(/실제 고객 리뷰에서 고객들은[^.]*긍정적으로 평가했습니다/);
+    expect(product.description).not.toMatch(/리뷰에서는[^.]*(?:반복|언급됩니다)/u);
     expect(product.description).not.toMatch(/핵심 성분\/기술|사용감 표현/);
     expect(product.description).not.toContain("\", \"");
     expect(product.description).not.toContain("대표 고객 리뷰에서는 \"");
@@ -3846,7 +3871,7 @@ describe("generatePdpGeo", () => {
     expect(result.content.sections.ingredients).toMatch(/고밀도 세라마이드 캡슐|히알루론산|수분감|피부 장벽|리뷰 표현|루틴/);
     expect(result.content.sections.faq).toMatch(/추천할 수 있는 크림|성분\/기술이 포함되어 있습니다|주요 효능/);
     expect(result.content.sections.faq).not.toMatch(/상품 상세의|상품 상세 근거/);
-    expect(result.content.sections.faq).toMatch(/수분감|장벽 케어|유분 컨트롤|피부 고민/);
+    expect(result.content.sections.faq).toMatch(/수분 케어|피부 장벽 관리|유분 컨트롤|피부 고민/);
     expect(result.content.sections.faq).not.toMatch(/성분 설명은|확인 키워드|성분 역할, 수분감, 사용감, 피부 고민 선택 기준|포인트입니다 결과|성분 근거와 효능 맥락|성분 역할과 기대 효능의 비교 기준을 제시합니다|What does|OCR|인용/);
     expect((graph.find((node) => node["@type"] === "FAQPage")?.mainEntity ?? []).length).toBeLessThanOrEqual(8);
     expect(result.content.sections.faq).not.toMatch(/속단김|리뉴널 욘기조|대표 고객 리뷰에서는|약품\s*냄새|아쉬운/);
@@ -4956,10 +4981,12 @@ describe("generatePdpGeo", () => {
 		      }
 		    });
 
-		    const graph = repaired.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const graph = repaired.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
     const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any> | undefined;
 
-    expect(howTo).toBeUndefined();
+    expect(howTo).toBeDefined();
+    expect(howTo?.step).toHaveLength(1);
+    expect(String((howTo?.step as Array<Record<string, any>>)[0]?.text)).toContain("적당량을 덜어 물과 함께 거품을 낸 뒤 얼굴에 부드럽게 마사지하고 미온수로 깨끗이 헹굽니다");
     expect(repaired.content.sections.howToUse).toContain("적당량을 덜어 물과 함께 거품을 낸 뒤 얼굴에 부드럽게 마사지하고 미온수로 깨끗이 헹굽니다.");
     expect(repaired.content.sections.howToUse).not.toMatch(/아직 본격적으로|초등학생 딸|sulyeon04130|wlsk7622|배송 빠르고|워낙 평이 좋아서|필요해서 구매/);
 		    expect(repaired.validationRepairs.some((repair) => repair.source === "field-contract-validator" && repair.field === "HowTo.step.text")).toBe(true);

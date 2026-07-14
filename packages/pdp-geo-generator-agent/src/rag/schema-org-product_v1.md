@@ -15,9 +15,9 @@ Use schema.org JSON-LD to represent PDP entities and grounded facts consistently
 
 ## 4. WebPage and Product Descriptions
 
-- Keep `WebPage.description` and `Product.description` distinct by entity role. Use `WebPage.description` for a compact but specific product-page introduction, source-backed brand identity, concrete supported information available on the page, and the remaining page scope. Use `Product.description` for the product entity itself in the order product introduction/type, target customer and concern, key ingredients or technologies, supported finished-product benefits/effects and compact evidence/test context, then an attributed customer-review summary.
+- Keep `WebPage.description` and `Product.description` distinct by entity role while following the shared evidence order introduction -> target customer -> composition -> benefit/effect -> source-stated research/article citation -> attributed review keywords last. WebPage uses compact page-scope language; Product uses detailed product-entity language. Preserve cited dates and numbers naturally without inventing metadata.
 - `WebPage.description` should describe the PDP as the content source connected to the product through `mainEntity` or `about`; mention FAQ, HowTo, offers, variants, or reported results only when the final visible page actually contains them.
-- `Product.description` should describe the product item itself; it should answer what it is, who it is for, what ingredients or technologies compose it, what supported benefits/effects or evidence apply, and what customers report. Usage belongs in Usage/HowTo rather than interrupting that sequence.
+- `Product.description` should answer what the product is, who it is for, what composes it, which benefits/effects apply, which source-stated research/article supports it when present, and which review keywords customers mention. Usage belongs in Usage/HowTo.
 - `Product.name` should use the GEO-recommended product name, not an overstuffed keyword phrase.
 - `Product.description` should be concise, factual, aligned with visible PDP content, and written as complete product-entity sentences. Do not include mid-sentence ellipses or page-level phrases such as "product page" in Product descriptions.
 
@@ -32,7 +32,7 @@ Use schema.org JSON-LD to represent PDP entities and grounded facts consistently
 
 - Use `FAQPage.mainEntity` only for final question-and-answer pairs that are also visible and directly supported by product evidence. There is no minimum item count; omit the node when no item passes.
 - Google stopped showing FAQ rich results on 2026-05-07. Retain `FAQPage` here only as schema.org-valid, visible product Q/A semantics for downstream consumers; do not describe it as Google FAQ rich-result optimization or as a citation guarantee.
-- Use `HowTo.step` only when the source supports a concrete goal and at least two explicitly ordered customer actions; preserve the original step count and order. Keep one application instruction as ordinary visible usage guidance without HowTo structured data. Omit HowTo for warnings, test conditions, vague frequency/compatibility notes, or other text without a concrete customer action.
+- Use `HowTo.step` when the source supports a concrete goal and at least one direct customer action. Preserve source cardinality: one instruction becomes exactly one step; multiple steps require explicit source order and retain count/order. Omit HowTo for customer-review anecdotes, warnings, tests, vague frequency/compatibility notes, or other text without a direct action.
 - Use `BreadcrumbList` when URL, brand, category, or product hierarchy exists.
 
 ## 7. Public Safety

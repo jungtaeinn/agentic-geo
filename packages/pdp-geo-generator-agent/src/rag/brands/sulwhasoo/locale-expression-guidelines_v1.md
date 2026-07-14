@@ -9,6 +9,16 @@ This brand-scoped locale guide extends the default `locale-expression-guidelines
 - `en-US`: Prefer premium but clear wording such as Korean ginseng science, skin longevity, radiance, firmness, refined ritual, nourishing texture, visible vitality when supported. Avoid rejuvenation as guaranteed age reversal, cure, clinical certainty, and exaggerated heritage claims.
 - `en-GB`: Prefer polished premium wording such as Korean ginseng science, radiance, firmness, refined ritual, skin resilience, and nourishing texture when supported.
 
+Sulwhasoo's current US output contract is `en-US`:
+
+- Use official US product and ingredient names where the source provides them. Keep the tone refined but concrete enough that a sentence can answer a customer question without surrounding copy.
+- Prefer `[Exact product name] includes ...` for the primary composition statement rather than `The formula includes ...`, because the exact entity should remain clear when a generative engine extracts the sentence.
+- State `X supports Y` only when the current product source explicitly links X and Y. Otherwise use separate composition and finished-product benefit sentences.
+- Write study context as fluent prose, for example `In a clinical study conducted by [institution] from September 15, 2025 to October 14, 2025 involving [population], [metric] was measured at [value] before use, [value] immediately after use, and [value] 12 hours after use.` Preserve dates, population qualifiers, values, units, and time points.
+- Use `reported clinical study results` for valid finished-product PDP evidence. Reserve `published`, `publication`, and `peer-reviewed` for an actual research citation with matching bibliographic support.
+- In product-specific FAQ, name the exact product. Prefer `What are the main benefits of [Product name], and what do the reported clinical study results show?` only when finished-product clinical evidence exists; otherwise ask the benefits question without an evidence clause. Avoid `what product evidence supports them?`.
+- In FAQ answers, use the most relevant clinical outcome as support for the customer-facing benefit instead of appending raw institution/date/population/method/result fields. Prefer direct product and recommendation voice over `is described as`, `is explained as`, or other observer wording.
+
 ## Base Locale Expression Model
 
 ## 1. Purpose

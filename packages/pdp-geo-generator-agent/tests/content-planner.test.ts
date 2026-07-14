@@ -15,6 +15,7 @@ import {
   type PdpGeoLocale,
   type PdpProductSignal
 } from "../src/index";
+import { selectProductNormalizationRagDocuments } from "../src/product-normalizer";
 
 const product: PdpProductSignal = {
   name: "하이드라 세럼",
@@ -39,6 +40,23 @@ afterEach(() => {
 });
 
 describe("evidence-bound content planning", () => {
+  it("reserves GEO, E-E-A-T, and CEP documents in a three-document normalization budget", () => {
+    const selected = selectProductNormalizationRagDocuments([
+      { name: "irrelevant-one.md", content: "generic content" },
+      { name: "best-practice_v1.md", content: "best practice" },
+      { name: "eeat_v1.md", content: "trust" },
+      { name: "irrelevant-two.md", content: "generic content" },
+      { name: "cep_v1.md", content: "customer entry points" },
+      { name: "geo-research_v1.md", content: "GEO research" }
+    ], 3);
+
+    expect(selected.map((document) => document.name)).toEqual([
+      "geo-research_v1.md",
+      "eeat_v1.md",
+      "cep_v1.md"
+    ]);
+  });
+
   it("builds stable atomic evidence with role and source provenance", () => {
     const first = createPdpGeoEvidenceLedger(product, "ko-KR");
     const second = createPdpGeoEvidenceLedger(product, "ko-KR");
@@ -47,6 +65,24 @@ describe("evidence-bound content planning", () => {
     expect(first.find((item) => item.sourcePath === "product.name")).toMatchObject({ role: "identity", confidence: 1 });
     expect(first.filter((item) => item.role === "usage")).toHaveLength(2);
     expect(new Set(first.map((item) => item.id)).size).toBe(first.length);
+  });
+
+  it("classifies source text by semantic job instead of surface words such as use or absorption", () => {
+    const ingredientRelation = "압축 히알루론산은 흡수 빠른 수분 충전과 수분 지속을 돕는 성분입니다.";
+    const finishedProductResult = "완제품 인체적용시험에서 1회 사용 직후 수분량이 55% 개선되었습니다.";
+    const direction = "세안 후 세럼을 얼굴에 고르게 바릅니다.";
+    const review = "직접 구매해 사용해 보니 촉촉하고 편안해서 만족해요.";
+    const ledger = createPdpGeoEvidenceLedger({
+      ...product,
+      usage: [],
+      sourceTexts: [ingredientRelation, finishedProductResult, direction, review]
+    }, "ko-KR");
+
+    expect(ledger.find((item) => item.text === ingredientRelation)?.role).toBe("ingredient");
+    expect(ledger.find((item) => item.text === ingredientRelation)?.role).not.toBe("usage");
+    expect(ledger.find((item) => item.text === finishedProductResult)?.role).toBe("metric");
+    expect(ledger.find((item) => item.text === direction)?.role).toBe("usage");
+    expect(ledger.find((item) => item.text === review)?.role).toBe("review");
   });
 
   it("keeps non-actionable unordered notes out of HowTo in conservative mode", async () => {
@@ -63,18 +99,35 @@ describe("evidence-bound content planning", () => {
     expect(result.plan.howTo.steps).toEqual([]);
   });
 
-  it("keeps one polite Korean application direction out of HowTo", async () => {
+  it("does not promote a customer-review usage anecdote into HowTo", async () => {
+    const reviewUsage = "저는 매일 밤 두 펌프를 얼굴에 바르고 흡수시켜요.";
+    const reviewedProduct = {
+      ...product,
+      usage: [],
+      sourceTexts: [reviewUsage],
+      reviews: { items: [{ body: reviewUsage }], keywords: [] }
+    };
+    const ledger = createPdpGeoEvidenceLedger(reviewedProduct, "ko-KR");
+    const result = await planPdpGeoContent(planningRequest(reviewedProduct), {});
+
+    expect(ledger.find((item) => item.text === reviewUsage)?.role).not.toBe("usage");
+    expect(result.plan.howTo.eligible).toBe(false);
+    expect(result.plan.howTo.steps).toEqual([]);
+  });
+
+  it("keeps one polite Korean application direction as one HowTo step", async () => {
     const direction = "세럼을 얼굴에 고르게 바릅니다.";
     const result = await planPdpGeoContent(planningRequest({
       ...product,
       usage: [direction]
     }), {});
 
-    expect(result.plan.howTo.eligible).toBe(false);
-    expect(result.plan.howTo.steps).toEqual([]);
+    expect(result.plan.howTo.eligible).toBe(true);
+    expect(result.plan.howTo.steps).toHaveLength(1);
+    expect(result.plan.howTo.steps[0]?.text).toBe(direction);
   });
 
-  it("keeps one polite Korean application direction visible without HowTo schema", async () => {
+  it("keeps one polite Korean application direction visible with one-step HowTo schema", async () => {
     const direction = "세럼을 얼굴에 고르게 바릅니다.";
     const run = await generatePdpGeo({
       product: {
@@ -86,7 +139,8 @@ describe("evidence-bound content planning", () => {
     const graph = run.result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
     const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
 
-    expect(howTo).toBeUndefined();
+    expect(howTo.step).toHaveLength(1);
+    expect(howTo.step[0].text).toBe(direction.replace(/\.$/, ""));
     expect(run.result.content.sections.howToUse).toBe(`1. ${direction.replace(/\.$/, "")}`);
   });
 
@@ -208,17 +262,20 @@ describe("evidence-bound content planning", () => {
     const productNode = graph.find((node) => node["@type"] === "Product") as Record<string, unknown>;
     const webPage = graph.find((node) => node["@type"] === "WebPage") as Record<string, unknown>;
 
-    expect(copyRefinerCalled).toBe(false);
+    // The product plan is usable, but the stiff WebPage wrapper is rejected.
+    // A partial plan must receive the model copy-repair pass instead of
+    // silently stopping at the deterministic description fallback.
+    expect(copyRefinerCalled).toBe(true);
     expect(productNode.description).toContain("건조한 피부에 수분을 공급");
     expect(webPage.description).toContain("하이드라 세럼 상품 페이지");
-    expect(webPage.description).toMatch(/주요 성분·기술은 세라마이드.*효능·효과는 수분 케어/u);
+    expect(webPage.description).toMatch(/세라마이드를 주요 성분·기술로 포함하고 수분 케어를 돕습니다/u);
     const faqItems = faq.mainEntity as Array<Record<string, any>>;
     expect(faqItems.length).toBeGreaterThanOrEqual(2);
     expect(String(faqItems[0]?.name)).toContain("하이드라 세럼은 어떤 피부 고민에 적합한가요");
     expect(String(faqItems[1]?.name)).toMatch(/구성 성분과 효능[·・]?효과/u);
     expect(String(faqItems[1]?.acceptedAnswer?.text)).toMatch(/세라마이드/u);
     expect(String(faqItems[1]?.acceptedAnswer?.text)).toMatch(/수분/u);
-    expect(howTo).toBeUndefined();
+    expect(howTo.step).toHaveLength(1);
     expect(run.result.content.sections.howToUse).toContain("세럼을 얼굴에 고르게 바릅니다");
     expect(run.result.diagnostics.contentPlan?.mode).toBe("model");
     expect(run.result.diagnostics.evidenceLedger?.length).toBeGreaterThan(5);
@@ -256,8 +313,9 @@ describe("evidence-bound content planning", () => {
     });
 
     expect(result.plan.faq).toEqual([]);
-    expect(result.plan.howTo.eligible).toBe(false);
-    expect(result.plan.howTo.steps).toEqual([]);
+    expect(result.plan.howTo.eligible).toBe(true);
+    expect(result.plan.howTo.steps).toHaveLength(1);
+    expect(result.plan.howTo.steps[0]?.text).toBe(directUsage[0]);
     expect(result.warnings.join(" ")).toMatch(/omitted/i);
     expect(result.warnings.join(" ")).toMatch(/failed checks:.*known-evidence-ids/iu);
     expect(result.warnings.join(" ")).toContain("검증되지 않은 인증이 있나요?");
@@ -297,11 +355,12 @@ describe("evidence-bound content planning", () => {
     const graph = run.result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
     const howTo = graph.find((node) => node["@type"] === "HowTo");
 
-    expect(howTo).toBeUndefined();
+    expect(howTo).toBeDefined();
+    expect(howTo?.step).toHaveLength(1);
     expect(run.result.content.sections.howToUse).not.toContain(rejectedStep);
     expect(run.result.content.sections.howToUse).toContain(acceptedStep.replace(/\.$/, ""));
     expect(run.result.content.html).not.toContain(rejectedStep);
-    expect(run.result.diagnostics.contentPlan?.howTo.eligible).toBe(false);
+    expect(run.result.diagnostics.contentPlan?.howTo.eligible).toBe(true);
   });
 
   it("retries a rejected field with explicit evidence-gate feedback", async () => {
@@ -509,7 +568,7 @@ describe("evidence-bound content planning", () => {
     expect(result.warnings.join("\n")).toContain("QUERY_HYPOTHESIS_ONLY");
   });
 
-  it("rejects a model description that mechanically restarts with the full product entity", async () => {
+  it("allows a second exact product mention when it preserves entity clarity across the CEP narrative", async () => {
     const request = planningRequest(product);
     const identity = request.evidenceLedger.find((item) => item.role === "identity")!;
     const description = request.evidenceLedger.find((item) => item.role === "description")!;
@@ -533,12 +592,233 @@ describe("evidence-bound content planning", () => {
       contentPlanning: { enabled: true, provider: "openai", apiKey: "key", model: "gpt-test" }
     });
 
+    expect(result.plan.productDescription.include).toBe(true);
+    expect(result.plan.productDescription.text).toContain("하이드라 세럼은 세라마이드를 포함합니다");
+    expect(result.warnings.join("\n")).not.toMatch(/repeats the full product entity/i);
+  });
+
+  it("accepts an audited multi-sentence CEP description when every claim unit is supported by a different evidence role", async () => {
+    const richProduct: PdpProductSignal = {
+      ...product,
+      description: "민감하고 수분이 부족한 피부를 위한 수분 세럼입니다.",
+      benefits: ["수분 공급", "피부 장벽 보습"],
+      effects: ["사용 직후와 12시간 후 수분량 개선"],
+      ingredients: ["세라마이드"],
+      reviews: { items: [{ body: "고객들은 촉촉하고 편안한 사용감으로 만족스럽게 평가했습니다." }], keywords: ["촉촉함", "편안한 사용감"] },
+      semanticFacts: {
+        ingredients: ["세라마이드"],
+        benefits: ["수분 공급", "피부 장벽 보습"],
+        effects: ["사용 직후와 12시간 후 수분량 개선"],
+        skinTypes: ["민감하고 수분이 부족한 피부"],
+        usageSteps: [],
+        metricClaims: [
+          {
+            label: "수분량 개선",
+            value: "55",
+            unit: "%",
+            direction: "개선",
+            timing: "사용 직후",
+            method: "완제품 인체적용시험",
+            evidenceGroup: "hydration-study",
+            sourceText: "완제품 인체적용시험에서 사용 직후 수분량이 55% 개선되었습니다."
+          },
+          {
+            label: "수분량 개선",
+            value: "23",
+            unit: "%",
+            direction: "개선",
+            timing: "12시간 후",
+            method: "완제품 인체적용시험",
+            evidenceGroup: "hydration-study",
+            sourceText: "같은 완제품 인체적용시험에서 12시간 후 수분량이 23% 개선되었습니다."
+          }
+        ],
+        evidenceSentences: ["민감하고 수분이 부족한 피부를 위한 수분 세럼입니다."],
+        ingredientBenefitLinks: [{
+          ingredient: "세라마이드",
+          benefit: "피부 장벽 보습",
+          sourceText: "세라마이드는 피부 장벽 보습을 돕습니다."
+        }]
+      }
+    };
+    const request = planningRequest(richProduct);
+    const evidenceIds = request.evidenceLedger.map((item) => item.id);
+    const plannedText = "하이드라 세럼은 민감하고 수분이 부족한 피부를 위한 수분 세럼입니다. 하이드라 세럼의 주요 성분은 세라마이드이며, 세라마이드는 피부 장벽 보습을 돕습니다. 완제품 인체적용시험에서는 수분량이 사용 직후 55%, 12시간 후 23% 개선되었습니다. 고객들은 촉촉하고 편안한 사용감으로 평가했습니다.";
+    const naturalPlan = planPayload({
+      productDescription: {
+        include: true,
+        text: plannedText,
+        intent: "audience-composition-proof-review",
+        evidenceIds,
+        confidence: 0.94,
+        omitReason: ""
+      }
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      output: [{ content: [{ type: "output_text", text: JSON.stringify(naturalPlan) }] }]
+    }), { status: 200 })));
+
+    const result = await planPdpGeoContent(request, {
+      contentPlanning: { enabled: true, provider: "openai", apiKey: "key", model: "gpt-test" }
+    });
+
+    expect(result.plan.productDescription.include).toBe(true);
+    expect(result.plan.productDescription.text).toBe(plannedText);
+    expect(result.warnings.join("\n")).not.toMatch(/Product\.description was omitted/i);
+  });
+
+  it("recovers an omitted field-level citation when a WebPage routine sentence matches existing usage evidence", async () => {
+    const routineProduct: PdpProductSignal = {
+      ...product,
+      usage: ["아침과 저녁 세안 후 세럼을 얼굴에 고르게 바릅니다."],
+      semanticFacts: {
+        ingredients: ["세라마이드"],
+        benefits: ["수분 공급"],
+        effects: [],
+        skinTypes: ["건조한 피부"],
+        usageSteps: ["아침과 저녁 세안 후 세럼을 얼굴에 고르게 바릅니다."],
+        metricClaims: [],
+        evidenceSentences: [],
+        ingredientBenefitLinks: []
+      }
+    };
+    const request = planningRequest(routineProduct);
+    const identity = request.evidenceLedger.find((item) => item.role === "identity")!;
+    const description = request.evidenceLedger.find((item) => item.role === "description")!;
+    const pageText = "하이드라 세럼 상품 페이지는 건조한 피부를 위한 수분 세럼 정보를 담고 있습니다. 하이드라 세럼은 아침과 저녁 세안 후 사용하는 것을 권장합니다.";
+    const pagePlan = planPayload({
+      webPageDescription: {
+        include: true,
+        text: pageText,
+        intent: "page-audience-routine-summary",
+        // Deliberately omit the usage ID to reproduce the field-level citation
+        // loss observed in the real planner response.
+        evidenceIds: [identity.id, description.id],
+        confidence: 0.92,
+        omitReason: ""
+      }
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      output: [{ content: [{ type: "output_text", text: JSON.stringify(pagePlan) }] }]
+    }), { status: 200 })));
+
+    const result = await planPdpGeoContent(request, {
+      contentPlanning: { enabled: true, provider: "openai", apiKey: "key", model: "gpt-test" }
+    });
+
+    expect(result.plan.webPageDescription.include).toBe(true);
+    expect(result.plan.webPageDescription.text).toBe(pageText);
+    expect(result.plan.webPageDescription.evidenceIds.some((id) =>
+      request.evidenceLedger.find((item) => item.id === id)?.role === "usage"
+    )).toBe(true);
+    expect(result.warnings.join("\n")).not.toMatch(/QUERY_HYPOTHESIS_ONLY: WebPage\.description/u);
+  });
+
+  it("still rejects a description that mechanically restarts every sentence with the full product entity", async () => {
+    const request = planningRequest(product);
+    const identity = request.evidenceLedger.find((item) => item.role === "identity")!;
+    const description = request.evidenceLedger.find((item) => item.role === "description")!;
+    const benefit = request.evidenceLedger.find((item) => item.role === "benefit")!;
+    const ingredient = request.evidenceLedger.find((item) => item.role === "ingredient")!;
+    const repeatedPlan = planPayload({
+      productDescription: {
+        include: true,
+        text: "하이드라 세럼은 건조한 피부에 수분을 공급하는 세럼입니다. 하이드라 세럼은 세라마이드를 포함합니다. 하이드라 세럼은 수분 공급을 돕습니다.",
+        intent: "product-entity-summary",
+        evidenceIds: [identity.id, description.id, benefit.id, ingredient.id],
+        confidence: 0.92,
+        omitReason: ""
+      }
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      output: [{ content: [{ type: "output_text", text: JSON.stringify(repeatedPlan) }] }]
+    }), { status: 200 })));
+
+    const result = await planPdpGeoContent(request, {
+      contentPlanning: { enabled: true, provider: "openai", apiKey: "key", model: "gpt-test" }
+    });
+
     expect(result.plan.productDescription.include).toBe(false);
     expect(result.warnings.join("\n")).toMatch(/repeats the full product entity/i);
   });
 });
 
 describe("provider-native structured output", () => {
+  it("keeps every available evidence role represented before generic source atoms can exhaust the prompt budget", async () => {
+    let body: Record<string, any> = {};
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body ?? "{}"));
+      return new Response(JSON.stringify({
+        output: [{ content: [{ type: "output_text", text: JSON.stringify(planPayload()) }] }]
+      }), { status: 200 });
+    }));
+    const crowdedProduct: PdpProductSignal = {
+      ...product,
+      options: ["80 mL"],
+      reviews: { items: [{ body: "직접 구매한 고객은 촉촉하고 편안한 사용감에 만족했습니다." }], keywords: ["촉촉함"] },
+      semanticFacts: {
+        ingredients: ["세라마이드"],
+        benefits: ["수분 공급"],
+        effects: ["피부 장벽 보습"],
+        skinTypes: ["건조한 피부"],
+        usageSteps: ["세안 후 세럼을 얼굴에 고르게 바릅니다."],
+        metricClaims: [{ label: "수분량 개선", value: "55", unit: "%", timing: "사용 직후", method: "인체적용시험", evidenceGroup: "hydration-study" }],
+        evidenceSentences: Array.from({ length: 80 }, (_, index) => `근거 자료 ${index + 1}은 상품 정보를 설명합니다.`),
+        ingredientBenefitLinks: [{ ingredient: "세라마이드", benefit: "피부 장벽 보습", sourceText: "세라마이드는 피부 장벽 보습을 돕습니다." }]
+      }
+    };
+    const planner = new ModelBackedContentPlanner({
+      provider: "openai",
+      apiKey: "key",
+      model: "gpt-test",
+      maxEvidenceItems: 20,
+      maxRagChunks: 1
+    });
+
+    await planner.planContent(planningRequest(crowdedProduct));
+
+    const payload = JSON.parse(String(body.input ?? "{}")) as { evidenceLedger: Array<{ role: string }> };
+    const roles = new Set(payload.evidenceLedger.map((item) => item.role));
+    expect([...roles]).toEqual(expect.arrayContaining([
+      "identity", "description", "audience", "ingredient", "benefit", "effect", "metric", "usage", "commerce", "review", "source"
+    ]));
+  });
+
+  it("protects BestPractice tone guidance alongside GEO, CEP, and E-E-A-T in a small planner context", async () => {
+    let body: Record<string, any> = {};
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body ?? "{}"));
+      return new Response(JSON.stringify({
+        output: [{ content: [{ type: "output_text", text: JSON.stringify(planPayload()) }] }]
+      }), { status: 200 });
+    }));
+    const planner = new ModelBackedContentPlanner({
+      provider: "openai",
+      apiKey: "key",
+      model: "gpt-test",
+      maxEvidenceItems: 20,
+      maxRagChunks: 3
+    });
+    const request = planningRequest(product);
+    request.ragChunks = [
+      { id: "noise", source: "noise.md", kind: "custom", text: "generic", metadata: {}, score: 0.99 },
+      { id: "geo", source: "geo-research_v1.md", kind: "geo-research", text: "answer-ready product facts", metadata: {}, score: 0.9 },
+      { id: "cep", source: "cep_v1.md", kind: "cep", text: "customer entry context", metadata: {}, score: 0.89 },
+      { id: "eeat", source: "eeat_v1.md", kind: "eeat", text: "bounded claim modality", metadata: {}, score: 0.88 },
+      { id: "best", source: "brands/aestura/best-practice_v1.md", kind: "best-practice", text: "Use a calm, assured dermocosmetic voice with natural evidence transitions.", metadata: {}, score: 0.87 }
+    ];
+
+    await planner.planContent(request);
+
+    const payload = JSON.parse(String(body.input ?? "{}")) as Record<string, any>;
+    expect(body.instructions).toContain("active best-practice guidance as the public-copy style benchmark");
+    expect(payload.taskGuidance.map((item: Record<string, unknown>) => item.kind)).toEqual(
+      expect.arrayContaining(["best-practice", "geo-research", "cep", "eeat"])
+    );
+    expect(payload.bestPracticeToneGuidance).toHaveLength(1);
+    expect(payload.toneApplicationPolicy).toContain("Do not copy examples");
+  });
+
   it.each([
     ["openai", { apiKey: "key", model: "gpt-test" }],
     ["gemini", { apiKey: "key", model: "gemini-test" }],

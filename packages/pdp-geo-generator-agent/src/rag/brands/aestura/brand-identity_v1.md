@@ -179,7 +179,9 @@ Generation guidance:
 
 ### Product.description
 
-The Product.description should follow this order: product introduction/type, target concern or customer, key ingredient or technology composition, source-backed finished-product benefit/effect and compact evidence/test context, then attributed review-backed texture or comfort language last. Keep usage separate. For AESTURA, the brand context can shape tone without turning brand-only science into product claims.
+The Product.description should follow this order: product introduction/type, target concern or customer, composition, supported finished-product benefit/effect, source-stated research/article citation, then attributed review-backed texture or comfort keywords last. Keep usage separate, preserve cited dates/numbers, and never turn brand-only science into product evidence.
+
+For Korean output, use the exact AESTURA product name in both the opening and the primary ingredient/composition sentence. Connect component roles to benefits only when the current product source states that relation. Convert structured dates, populations, methods, institutions, timings, and measurements into natural Korean prose instead of a parenthetical extraction-field sequence; every reported time point must stay paired with its original value.
 
 Good shape:
 
@@ -226,6 +228,8 @@ FAQ questions should reflect customer entry points:
 - What does the texture feel like, and does it layer well?
 - What testing, clinical metric, or dermatologist-related detail is available for this product?
 - How is this line different from another AESTURA line?
+
+Each product-specific Korean question must use the exact product name, not `이 제품`, `이 크림`, or `본 제품`. If the PDP contains finished-product human application evidence, ask `[상품명]의 주요 효능·효과는 무엇이며, 공개된 인체적용시험 결과는 어떻게 나타났나요?`; otherwise ask `[상품명]의 주요 효능·효과는 무엇인가요?`. Avoid `이를 뒷받침하는 상품 근거` because it reads like an internal evidence label rather than a customer question.
 
 FAQ answers must answer directly with product facts first, then brand context second.
 

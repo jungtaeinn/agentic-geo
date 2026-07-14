@@ -81,8 +81,8 @@ export function createPdpGeoRagQuery(product: PdpProductSignal, locale: PdpGeoLo
     product.reviews.keywords.length > 0 ? `Review keywords: ${product.reviews.keywords.slice(0, 6).join(", ")}.` : undefined,
     "Need schema.org Product FAQPage HowTo BreadcrumbList WebPage, E-E-A-T, CEP, GEO, locale terminology, additionalProperty, positiveNotes.",
     "Need OCR sentence diagnostics, answer-ready FAQ intent, positive or neutral customer review FAQ intent, WebPage/Product description separation, source-supported benefit/effect wording, source-faithful HowTo eligibility, and public wording without internal diagnostic labels.",
-    "Product.description order: product introduction and type -> target customer and concrete concern/CEP -> ingredient and formula composition -> supported finished-product benefits/effects and evidence -> concise attributed review summary last. Keep directions out of Product.description.",
-    "WebPage.description covers the product page, source-backed brand, and actual page-scope information without repeating the Product.description buyer narrative. HowTo requires at least two explicitly ordered source actions and preserves their count and order; a single instruction remains visible usage copy without HowTo structured data.",
+    "Product.description order: product introduction and type -> target customer and concrete concern/CEP -> ingredient and formula composition -> supported finished-product benefits/effects -> source-stated research/article citation -> concise attributed review keywords last. Keep directions out of Product.description.",
+    "WebPage.description uses page-scope language and Product.description uses product-entity language, but both follow the evidence order product introduction -> target customer -> composition -> benefit/effect -> source-stated research/article citation -> attributed review keywords last. Preserve cited dates and numbers exactly while rendering them naturally. HowTo requires at least one concrete source action: one source instruction becomes one step, while multiple steps require an explicitly ordered source sequence. Customer-review usage anecdotes are never HowTo evidence.",
     "Use official OpenAI, Google Search Central, Gemini, and Perplexity docs for retrieval mode, embeddings, grounding, structured data, and answer-ready source support guidance."
   ].filter(Boolean).join("\n");
 }
@@ -156,7 +156,7 @@ function createTargetSubquery(
     productDescription: {
       id: "target-product-description",
       target,
-      query: `${baseFacts} Update only Product.description with this ordered flow: product introduction and type -> target customer and concrete concern/CEP -> ingredient and formula composition -> supported finished-product benefits/effects and evidence -> concise attributed customer-review summary last. Keep usage directions separate, preserve E-E-A-T claim safety, and do not infer ingredient-benefit causality from co-occurrence. ${benefitText} ${ingredientText} ${reviewText}`,
+      query: `${baseFacts} Update only Product.description with this ordered flow: product introduction and type -> target customer and concrete concern/CEP -> ingredient and formula composition -> supported finished-product benefits/effects -> source-stated research/article citation -> concise attributed customer-review keywords last. Parse cited dates and numbers naturally without changing them. Keep usage separate, preserve E-E-A-T claim safety, and do not infer ingredient-benefit causality from co-occurrence. ${benefitText} ${ingredientText} ${reviewText}`,
       intents: ["claims", "evidence", "customer", "schema"],
       fieldTargets: ["Product.description", "Product.additionalProperty", "Product.positiveNotes"],
       reason: "Product description changed or needs regeneration without broad FAQ/HowTo updates."
@@ -164,7 +164,7 @@ function createTargetSubquery(
     webPageDescription: {
       id: "target-webpage-description",
       target,
-      query: `${baseFacts} Update only WebPage.description as a concise page-level summary: identify the product page and source-backed brand, then state the actual information scope available on the page. Do not repeat the Product.description buyer narrative, detailed efficacy block, or review summary. Keep schema role separation and public wording guardrails. ${benefitText} ${ingredientText}`,
+      query: `${baseFacts} Update only WebPage.description as a concise page-level counterpart in this order: identify the product page and source-backed brand -> supported target customer -> ingredient/formula composition -> finished-product benefit/effect -> source-stated research/article citation -> attributed review keywords last. Parse cited dates and numbers naturally without changing them. Do not repeat Product.description wording, exact HowTo actions, or raw report-like metric blocks. Keep schema role separation and public wording guardrails. ${benefitText} ${ingredientText} ${reviewText}`,
       intents: ["customer", "claims", "schema"],
       fieldTargets: ["WebPage.description", "PDP.content"],
       reason: "Page-level description changed or needs regeneration while preserving product facts."
@@ -196,7 +196,7 @@ function createTargetSubquery(
     howToUse: {
       id: "target-howto",
       target,
-      query: `${baseFacts} Update only HowTo.step and how-to-use PDP content from direct source usage. Emit HowTo only for a concrete goal plus at least two explicitly numbered or sequential source actions, preserving their count and order. Keep a single instruction as visible usage guidance without HowTo structured data; omit multiple unmarked or unordered notes and never infer a routine from action-stage order. Keep schema.org HowTo compatibility. ${usageText}`,
+      query: `${baseFacts} Update only HowTo.step and how-to-use PDP content from direct source usage. Emit HowTo for a concrete goal plus at least one concrete source action. Preserve count and order: one source instruction becomes exactly one step, while multiple steps require an explicitly numbered or sequential source procedure. Omit multiple unmarked or unordered notes, never infer a routine from action-stage order, and never use customer-review anecdotes as steps. Keep schema.org HowTo compatibility. ${usageText}`,
       intents: ["howTo", "schema", "evidence"],
       fieldTargets: ["HowTo.step", "PDP.content"],
       reason: "Usage instructions changed, so HowTo-specific RAG should be retrieved without broad regeneration."

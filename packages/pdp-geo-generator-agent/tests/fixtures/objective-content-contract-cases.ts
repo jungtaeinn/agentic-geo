@@ -23,7 +23,7 @@ export const ineligibleHowToCases: Array<{
         name: "Hydra Serum",
         category: "Serum",
         description: "A hydrating serum for dry-feeling skin.",
-        usage: ["Use daily after cleansing for hydration."]
+        usage: ["Suitable for daily post-cleansing routines."]
       },
       hints: { locale: "en-US" }
     }

@@ -67,7 +67,9 @@ Generation guidance:
 
 ### Product.description
 
-The Product.description should follow this order: product introduction/type, target skin concern or customer, key ingredient or technology composition, source-backed finished-product benefit/effect and compact evidence/test context, then attributed representative review or sensory language last. Keep usage separate. For Sulwhasoo, refined heritage can shape tone after concrete product facts, but brand-only science must not become a product claim.
+The Product.description should follow this order: product introduction/type, target skin concern or customer, composition, supported finished-product benefit/effect, source-stated research/article citation, then attributed representative review or sensory keywords last. Keep usage separate, preserve cited dates/numbers, and never turn brand-only science into product evidence.
+
+For the US market, write in natural `en-US`. Use the exact Sulwhasoo product name in both the opening and the primary ingredient/composition sentence, then continue without keyword-heavy repetition. Link an ingredient to an outcome only when the current product source states the relation. Render structured institution, date, population, method, timing, and measurement fields as fluent English while preserving every timing-to-value pair. `Reported clinical study results` is appropriate for PDP-reported finished-product evidence; `published` or `peer-reviewed` requires a real cited publication.
 
 Good shape:
 
@@ -112,6 +114,8 @@ FAQ questions should reflect customer entry points:
 - Where does it fit in a morning or evening skincare ritual?
 - What texture or finish do customers mention?
 - How does this product differ from another Sulwhasoo line or texture option?
+
+Every product-specific US English question must name the exact product rather than `this product`, `this cream`, or `this serum`. If finished-product clinical evidence exists, ask `What are the main benefits of [Product name], and what do the reported clinical study results show?`; otherwise ask `What are the main benefits of [Product name]?`. Avoid `what product evidence supports them?` because it sounds like an internal evidence audit rather than a natural customer question.
 
 FAQ answers must answer directly with product facts first, then brand context second.
 

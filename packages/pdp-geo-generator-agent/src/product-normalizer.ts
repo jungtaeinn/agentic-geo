@@ -7,6 +7,7 @@ import type {
   PdpGeoProductNormalizationResult,
   PdpGeoProductNormalizer,
   PdpSemanticFacts,
+  PdpSemanticCitation,
   PdpSemanticIngredientBenefitLink,
   PdpSemanticMetricClaim,
   PdpGeoTokenUsage,
@@ -71,6 +72,16 @@ const ingredientBenefitLinkOutputSchema = z.object({
   sentence: nullableText,
   sourceText: nullableText
 }).strict();
+const semanticCitationOutputSchema = z.object({
+  type: z.enum(["research", "article"]).nullable(),
+  title: nullableText,
+  publisher: nullableText,
+  author: nullableText,
+  publishedAt: nullableText,
+  url: nullableText,
+  finding: nullableText,
+  sourceText: nullableText
+}).strict();
 const semanticFactsOutputSchema = z.object({
   ingredients: z.array(z.string()),
   benefits: z.array(z.string()),
@@ -80,7 +91,8 @@ const semanticFactsOutputSchema = z.object({
   safetyTests: z.array(z.string()),
   metricClaims: z.array(metricClaimOutputSchema),
   evidenceSentences: z.array(z.string()),
-  ingredientBenefitLinks: z.array(ingredientBenefitLinkOutputSchema)
+  ingredientBenefitLinks: z.array(ingredientBenefitLinkOutputSchema),
+  citations: z.array(semanticCitationOutputSchema)
 }).strict();
 const productPatchOutputSchema = z.object({
   name: nullableText,
@@ -185,7 +197,10 @@ export async function normalizePdpProductWithAgent(
   try {
     const normalizationRequest = {
       ...request,
-      ragDocuments: request.ragDocuments.slice(0, options.productNormalization?.maxRagDocuments ?? defaultMaxRagDocuments)
+      ragDocuments: selectProductNormalizationRagDocuments(
+        request.ragDocuments,
+        options.productNormalization?.maxRagDocuments ?? defaultMaxRagDocuments
+      )
     };
     let result = await resolved.normalizer.normalizeProduct(normalizationRequest);
     let correctiveRetryWarning: string | undefined;
@@ -256,6 +271,78 @@ export async function normalizePdpProductWithAgent(
       called: true
     };
   }
+}
+
+/**
+ * Keeps the small normalization prompt representative of the complete corpus.
+ * Relying on file-system order made late brand/locale documents disappear even
+ * when they were more useful than an earlier provider reference.
+ */
+export function selectProductNormalizationRagDocuments(
+  documents: PdpGeoProductNormalizationRequest["ragDocuments"],
+  maxDocuments: number
+): PdpGeoProductNormalizationRequest["ragDocuments"] {
+  const limit = Math.max(0, maxDocuments);
+  if (limit === 0) return [];
+
+  const ranked = documents
+    .map((document, index) => ({ document, index, priority: productNormalizationRagPriority(document.name) }))
+    .sort((left, right) => right.priority - left.priority || left.index - right.index);
+  const selected: typeof documents = [];
+  const selectedNames = new Set<string>();
+  const selectedFamilies = new Set<string>();
+  const add = (document: (typeof documents)[number] | undefined, allowSameFamily = false) => {
+    if (!document || selected.length >= limit || selectedNames.has(document.name)) return;
+    const family = productNormalizationRagFamily(document.name);
+    if (!allowSameFamily && selectedFamilies.has(family)) return;
+    selected.push(document);
+    selectedNames.add(document.name);
+    selectedFamilies.add(family);
+  };
+
+  // GEO, E-E-A-T, and CEP are the cross-document reasoning spine. Reserve one
+  // slot for each before score-based filling so a small caller budget cannot
+  // accidentally turn normalization into schema-only extraction.
+  for (const family of ["geo", "eeat", "cep"]) {
+    add(ranked.find((item) => productNormalizationRagFamily(item.document.name) === family)?.document);
+  }
+  for (const item of ranked) add(item.document);
+  // If the budget is larger than the number of distinct families, retain useful
+  // second documents (for example a brand overlay plus the core best practice).
+  for (const item of ranked) add(item.document, true);
+  return selected;
+}
+
+function productNormalizationRagPriority(name: string): number {
+  const path = name.toLocaleLowerCase().replace(/\\/g, "/");
+  if (/brands\/[^/]+\/brand-identity/.test(path)) return 120;
+  if (!/(?:analysis-prompt|schema-org|geo-research|eeat|cep|best-practice|official-ai-search|locale-expression|locale-terminology)/.test(path)) return 115;
+  if (/analysis-prompt/.test(path)) return 110;
+  if (/geo-research/.test(path)) return 108;
+  if (/(?:^|\/)eeat/.test(path)) return 107;
+  if (/(?:^|\/)cep/.test(path)) return 106;
+  if (/brands\/[^/]+\/best-practice/.test(path)) return 105;
+  if (/best-practice/.test(path)) return 102;
+  if (/schema-org/.test(path)) return 100;
+  if (/locale-expression/.test(path)) return 96;
+  if (/locale-terminology/.test(path)) return 95;
+  if (/official-ai-search/.test(path)) return 80;
+  return 70;
+}
+
+function productNormalizationRagFamily(name: string): string {
+  const path = name.toLocaleLowerCase().replace(/\\/g, "/");
+  if (/brands\/[^/]+\/brand-identity/.test(path)) return "brand-identity";
+  if (/analysis-prompt/.test(path)) return "orchestration";
+  if (/geo-research/.test(path)) return "geo";
+  if (/(?:^|\/)eeat/.test(path)) return "eeat";
+  if (/(?:^|\/)cep/.test(path)) return "cep";
+  if (/best-practice/.test(path)) return "best-practice";
+  if (/schema-org/.test(path)) return "schema";
+  if (/locale-expression/.test(path)) return "locale-expression";
+  if (/locale-terminology/.test(path)) return "terminology";
+  if (/official-ai-search/.test(path)) return "official-docs";
+  return `custom:${path}`;
 }
 
 function productNormalizationNeedsCorrectiveRetry(result: PdpGeoProductNormalizationResult): boolean {
@@ -524,6 +611,7 @@ function createProductNormalizationPrompt(request: PdpGeoProductNormalizationReq
       "Return benefits, effects, and ingredients as complete audited arrays, including an empty array when every bootstrap value is misrouted. An explicit empty array clears that role; omitting a field preserves the bootstrap value.",
       "A metric must remain an atomic claim with its measured outcome and available period, sample, method, comparison, or caveat. A bare percentage, duration, volume, option size, or price is not a result metric. Product volume and SKU size belong to options/sourceTexts.",
       "When OCR or extracted copy compresses multiple measurements and a footnote into one run-on block, infer the evidence atoms before routing: create one semanticFacts.metricClaims item per independently measured endpoint and retain its label/subject, value/unit, direction, timing, baseline/comparator, sample, period, method, and caveat when the source supports them. Keep the original block only as sourceText/evidenceSentences provenance; never return that whole block as one public metric, effect, review, or usage item.",
+      "When the source explicitly cites a research paper or editorial article, preserve it as one semanticFacts.citations item. Parse only source-stated type, title, publisher, author, publication date, URL, and finding; preserve exact dates and numbers, keep sourceText provenance, and never invent missing bibliographic metadata or treat customer reviews and commerce copy as citations.",
       "Share institution, study dates, population/sample, method, or baseline across metricClaims only when the source groups those outcomes under the same footnote, study marker, or explicit study statement. Depth/delivery, formulation retention, duration, customer skin outcome, and review satisfaction are different evidence roles unless the source explicitly connects them. Do not attach an ambiguous percentage or comparison to a clinical study merely because it appears nearby in OCR order.",
       "Safety and suitability cautions such as patch testing are not HowTo steps. A skin type mentioned only in a caution is not automatically the recommended skin type. FAQ answers must be answer statements, never another question or a shopper's question fragment.",
       "Use the requested locale as the output-language contract: Korean PDP evidence produces ko-KR normalized public-language fields, and US PDP evidence produces en-US normalized public-language fields. Preserve source-language proper nouns and INCI names where translation would change identity."
@@ -764,7 +852,8 @@ function applySemanticFacts(
     safetyTests: sourceBackedStringArray(value.safetyTests ?? [], sourceCorpus, { allowShortOverlap: true }),
     evidenceSentences: sourceBackedStringArray(value.evidenceSentences ?? [], sourceCorpus),
     metricClaims: (value.metricClaims ?? []).flatMap((claim) => sourceBackedMetricClaim(claim, sourceCorpus)),
-    ingredientBenefitLinks: (value.ingredientBenefitLinks ?? []).flatMap((link) => sourceBackedIngredientBenefitLink(link, productFactCorpus))
+    ingredientBenefitLinks: (value.ingredientBenefitLinks ?? []).flatMap((link) => sourceBackedIngredientBenefitLink(link, productFactCorpus)),
+    citations: (value.citations ?? []).flatMap((citation) => sourceBackedSemanticCitation(citation, sourceCorpus))
   };
   const sanitizedBase = sanitizePdpSemanticFacts(candidate);
   const explicitlyVettedLinks = candidate.ingredientBenefitLinks ?? [];
@@ -804,6 +893,31 @@ function applySemanticFacts(
   if (semanticFactInputCount(value) > 0) {
     warnings.push("Model semanticFacts normalization was rejected because no role-coherent source-backed facts remained.");
   }
+}
+
+function sourceBackedSemanticCitation(citation: PdpSemanticCitation, sourceCorpus: string): PdpSemanticCitation[] {
+  const sourceText = sourceBackedString(citation.sourceText, sourceCorpus);
+  const finding = sourceBackedString(citation.finding, sourceCorpus, { allowShortOverlap: true });
+  const title = sourceBackedString(citation.title, sourceCorpus, { allowShortOverlap: true });
+  if (!sourceText || (!finding && !title)) {
+    return [];
+  }
+  const backedField = (value: string | undefined, allowUrlLike = false): string | undefined =>
+    sourceBackedString(value, sourceCorpus, { allowShortOverlap: true, allowUrlLike });
+  const rawUrl = cleanString(citation.url);
+  return [{
+    type: citation.type === "article" ? "article" : citation.type === "research" ? "research" : undefined,
+    title,
+    publisher: backedField(citation.publisher),
+    author: backedField(citation.author),
+    publishedAt: backedField(citation.publishedAt),
+    // Citation URLs are metadata, not free-form links. Require the exact URL
+    // to occur in source data so a model cannot synthesize a plausible DOI or
+    // publisher path from partial token overlap.
+    url: rawUrl && sourceCorpus.includes(rawUrl) ? rawUrl : undefined,
+    finding,
+    sourceText
+  }];
 }
 
 function sourceBackedMetricClaim(claim: PdpSemanticMetricClaim, sourceCorpus: string): PdpSemanticMetricClaim[] {
@@ -877,7 +991,8 @@ function semanticFactCount(value: PdpSemanticFacts): number {
     + value.usageSteps.length
     + (value.safetyTests?.length ?? 0)
     + value.metricClaims.length
-    + value.ingredientBenefitLinks.length;
+    + value.ingredientBenefitLinks.length
+    + (value.citations?.length ?? 0);
 }
 
 function semanticFactInputCount(value: Partial<PdpSemanticFacts>): number {
@@ -889,7 +1004,8 @@ function semanticFactInputCount(value: Partial<PdpSemanticFacts>): number {
     + (value.safetyTests?.length ?? 0)
     + (value.metricClaims?.length ?? 0)
     + (value.evidenceSentences?.length ?? 0)
-    + (value.ingredientBenefitLinks?.length ?? 0);
+    + (value.ingredientBenefitLinks?.length ?? 0)
+    + (value.citations?.length ?? 0);
 }
 
 function applyStringField<T extends keyof Pick<PdpProductSignal, "name" | "originalName" | "description" | "brand" | "category">>(

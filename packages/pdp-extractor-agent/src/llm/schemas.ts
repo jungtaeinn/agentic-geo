@@ -132,9 +132,27 @@ export const keywordClassificationJsonSchema = {
             },
             required: ["ingredient", "benefit", "effect", "sentence", "sourceText"]
           }
+        },
+        citations: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              type: { type: "string", enum: ["research", "article"] },
+              title: { type: "string" },
+              publisher: { type: "string" },
+              author: { type: "string" },
+              publishedAt: { type: "string" },
+              url: { type: "string" },
+              finding: { type: "string" },
+              sourceText: { type: "string" }
+            },
+            required: ["type", "title", "publisher", "author", "publishedAt", "url", "finding", "sourceText"]
+          }
         }
       },
-      required: ["ingredients", "benefits", "effects", "skinTypes", "usageSteps", "metricClaims", "evidenceSentences", "ingredientBenefitLinks"]
+      required: ["ingredients", "benefits", "effects", "skinTypes", "usageSteps", "metricClaims", "evidenceSentences", "ingredientBenefitLinks", "citations"]
     },
     summary: { type: "string" }
   },

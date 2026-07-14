@@ -4032,7 +4032,8 @@ function semanticFactsFromExtraction(product: ProductProfile, ocr: OcrExtraction
     usageSteps: product.usage,
     metricClaims: product.metrics.map((sentence) => ({ sentence, sourceText: sentence })),
     evidenceSentences: [],
-    ingredientBenefitLinks: []
+    ingredientBenefitLinks: [],
+    citations: []
   }, insightFacts, modelFacts);
 }
 
@@ -4045,6 +4046,7 @@ function semanticFactsFromSentenceInsights(insights: ClassifiedSentenceInsight[]
     usageSteps: insight.category === "usage" ? [insight.text] : [],
     metricClaims: insight.category === "metric" || hasMetricSignal(insight.text) ? [{ sentence: insight.text, sourceText: insight.text }] : [],
     evidenceSentences: [insight.text],
+    citations: [],
     ingredientBenefitLinks: insight.category === "ingredient" && hasBenefitOrEffectLanguage(insight.text)
       ? [{ sentence: insight.text, sourceText: insight.text }]
       : [],
@@ -4065,8 +4067,22 @@ function mergeSemanticFacts(...items: Array<Partial<GeoSemanticFacts> | undefine
     usageSteps: unique(items.flatMap((item) => arrayValues(item?.usageSteps)).map(cleanText)).slice(0, 12),
     metricClaims: uniqueSemanticMetricClaims(items.flatMap((item) => Array.isArray(item?.metricClaims) ? item.metricClaims : [])).slice(0, 16),
     evidenceSentences: unique(items.flatMap((item) => arrayValues(item?.evidenceSentences)).map(cleanText)).slice(0, 24),
-    ingredientBenefitLinks: uniqueSemanticIngredientBenefitLinks(items.flatMap((item) => Array.isArray(item?.ingredientBenefitLinks) ? item.ingredientBenefitLinks : [])).slice(0, 16)
+    ingredientBenefitLinks: uniqueSemanticIngredientBenefitLinks(items.flatMap((item) => Array.isArray(item?.ingredientBenefitLinks) ? item.ingredientBenefitLinks : [])).slice(0, 16),
+    citations: uniqueSemanticCitations(items.flatMap((item) => Array.isArray(item?.citations) ? item.citations : [])).slice(0, 12)
   };
+}
+
+function uniqueSemanticCitations(values: NonNullable<GeoSemanticFacts["citations"]>): NonNullable<GeoSemanticFacts["citations"]> {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const key = cleanText([
+      value.type, value.title, value.publisher, value.author, value.publishedAt,
+      value.url, value.finding, value.sourceText
+    ].filter(Boolean).join(" ")).toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function uniqueSemanticMetricClaims(values: GeoSemanticMetricClaim[]): GeoSemanticMetricClaim[] {

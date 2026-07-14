@@ -71,6 +71,22 @@ describe("compilePdpGeoPolicyChecklist", () => {
     expect(compiled.coverage.documents[0]?.document).toBe("fixture-policy_v1.md");
   });
 
+  it("reserves one representative per RAG document before filling a small rule budget", () => {
+    const documents = ["geo-research_v1.md", "eeat_v1.md", "cep_v1.md"].map((name, index) => ({
+      name,
+      content: [
+        `# Policy ${index + 1}`,
+        "",
+        `- This document must retain its source-backed strategic rule ${index + 1} in constrained prompts.`,
+        `- Do not replace document ${index + 1} with a rule from another source.`
+      ].join("\n")
+    }));
+    const compiled = compilePdpGeoPolicyChecklist(documents, { maxRules: 3 });
+
+    expect(compiled.injectedRules).toHaveLength(3);
+    expect(new Set(compiled.injectedRules.map((rule) => rule.document))).toEqual(new Set(documents.map((document) => document.name)));
+  });
+
   it("compiles the full default RAG profile with complete critical coverage", async () => {
     const profile = await readPdpGeoGeneratorRagProfile();
     const compiled = compilePdpGeoPolicyChecklist(profile.documents.map((document) => ({

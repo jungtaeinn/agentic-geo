@@ -86,13 +86,14 @@ Category Entry Points, or CEPs, describe buying, discovery, usage, or memory sit
 
 ### 5.1 Schema Fields
 
-- `WebPage.description`: identify the product page and source-backed brand, then summarize actual page coverage without repeating the product-detail CEP narrative.
-- `Product.description`: use product-specific CEPs in order: product introduction/type, target concern/customer, ingredient composition, supported benefit/effect/evidence, then attributed representative review preference.
+- `WebPage.description`: identify the product page and source-backed brand, then compactly follow target customer -> composition -> benefit/effect -> source-stated research/article citation -> attributed review keywords.
+- `Product.description`: use product-specific CEPs in order: product introduction/type -> target concern/customer -> ingredient composition -> supported benefit/effect -> source-stated research/article citation -> attributed representative review preference. Missing evidence is omitted rather than replaced with a general category association.
 - `Product.additionalProperty`: use objective CEP attributes such as skin type, concern, texture, ingredient, usage timing, size, technology, format, or review-derived recommendation context when repeated positive/neutral reviews support the customer situation.
 - Review-derived query units: infer indirect queries from customer situation plus category without product or brand mentions, and infer direct queries with the product or brand explicitly named. Combine the inferred query with product facts, core CEP keywords, and a short answer-ready evidence sentence; keep the query kind and keyword reasoning in diagnostics.
 - `Product.positiveNotes`: use source-backed benefit and review-backed positive points.
 - `FAQPage.mainEntity`: phrase questions around the customer's likely category-entry problem, ingredient concern, review question, or routine moment.
-- `HowTo.step`: require a concrete goal and at least two explicitly ordered source actions, preserving their count and order. Keep a single action as visible usage guidance without HowTo structured data. A general usage moment without an action is not HowTo.
+- FAQ query shapes such as "winter moisturiser recommendation" or "a cosmetic gift for a mother in her 50s" may be used only when the same current-product evidence unit explicitly supports the seasonal context or all life-stage/relationship/gift details. Otherwise retain only the supported concern and audience.
+- `HowTo.step`: require a concrete goal and at least one direct source action. One source instruction becomes exactly one step; multiple steps require explicit source order and preserve count/order. A general usage moment or customer-review anecdote without a direct product action is not HowTo.
 
 ### 5.2 HTML Content
 

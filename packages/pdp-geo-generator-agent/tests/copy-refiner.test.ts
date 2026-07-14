@@ -134,6 +134,63 @@ describe("copy refinement description gates", () => {
 });
 
 describe("corrective refinement pass", () => {
+  it("rewrites editorial caveat narration as a direct customer-facing FAQ ending", async () => {
+    const question = "에스트라 아토베리어365 캡슐 토너의 쿨링 결과에는 개인 차가 있나요?";
+    const directAnswer = "에스트라 아토베리어365 캡슐 토너는 사용 직후 시원한 쿨링감을 줄 수 있으며, 해당 쿨링 결과에는 개인 차가 있을 수 있습니다.";
+    const request = createRefinementRequest({
+      faq: [{ question, answer: directAnswer }]
+    });
+    request.product.effects.push("사용 직후 시원한 쿨링감을 줄 수 있습니다.");
+    request.product.sourceTexts.push("사용 직후 시원한 쿨링감을 줄 수 있으며, 해당 쿨링 결과에는 개인 차가 있을 수 있습니다.");
+    const calls: PdpGeoCopyRefinementRequest[] = [];
+
+    const result = await refinePdpGeoCopy(request, createOptions((incoming) => {
+      calls.push(incoming);
+      return {
+        faqAnswers: [{
+          sourceQuestion: question,
+          question,
+          answer: calls.length === 1
+            ? "에스트라 아토베리어365 캡슐 토너는 사용 직후 시원한 쿨링감을 줄 수 있으며, 해당 쿨링 결과에는 개인 차가 있을 수 있다는 단서가 붙습니다."
+            : directAnswer
+        }]
+      };
+    }));
+
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.refinementFeedback?.some((item) =>
+      item.field.includes("acceptedAnswer") && item.reason.includes("broken Korean sentence fragment")
+    )).toBe(true);
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const faqPage = graph.find((node) => node["@type"] === "FAQPage") as Record<string, any>;
+    const answer = String((faqPage.mainEntity as Array<Record<string, any>>)[0]!.acceptedAnswer.text);
+    expect(answer).toBe(directAnswer);
+    expect(answer).not.toContain("단서가 붙습니다");
+  });
+
+  it("retries Korean Product descriptions that retain OCR, predicate, test-note, or passive-review artifacts", async () => {
+    const request = createRefinementRequest();
+    request.product.reviews.items = [{ body: "촉촉하고 편안한 사용감이 만족스러웠습니다." }];
+    const badDescription = "에스트라 아토베리어365 캡슐 토너는 민감 피부용 토너입니다. 주요 성분은 PHA이며, 하는 기술이 적용되어 있고 ☑ 장벽 지표 93% ※ 시험 결과입니다. 완료된 테스트는 참고할 수 있는 시험 정보입니다. 실제 고객 리뷰에서는 촉촉한 사용감이 언급됩니다.";
+    const cleanDescription = "에스트라 아토베리어365 캡슐 토너는 건조하고 민감한 피부 고객을 위한 장벽보습 캡슐 토너로, 고밀도 세라마이드 캡슐이 장벽 보습을 돕고 세정에 의한 장벽 손상은 사용 직후 93% 회복되었습니다.";
+    const calls: PdpGeoCopyRefinementRequest[] = [];
+
+    const result = await refinePdpGeoCopy(request, createOptions((incoming) => {
+      calls.push(incoming);
+      return calls.length === 1
+        ? { schemaDescriptions: { product: badDescription } }
+        : { schemaDescriptions: { product: cleanDescription } };
+    }));
+
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.refinementFeedback?.some((item) =>
+      item.field === "Product.description" && item.reason.includes("broken Korean sentence fragment")
+    )).toBe(true);
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
+    expect(product.description).toBe(cleanDescription);
+  });
+
   it("retries rejected description refinement once with structured feedback", async () => {
     const request = createRefinementRequest();
     const cleanDescription = "에스트라 아토베리어365 캡슐 토너는 건조하고 민감한 피부 고객을 위한 장벽보습 캡슐 토너로, 고밀도 세라마이드 캡슐이 장벽 보습을 돕고 세정에 의한 장벽 손상은 사용 직후 93% 회복되었습니다.";
@@ -413,14 +470,14 @@ describe("approved copy contract preservation", () => {
       "건조하고 민감한 피부 고객에게 적합합니다.",
       "PHA와 고밀도 세라마이드 캡슐을 함유합니다.",
       "제품은 장벽 보습과 피부결 정돈에 도움을 줍니다.",
-      "고객 리뷰에서는 촉촉한 사용감이 언급됩니다."
+      "고객 리뷰에서 고객들은 촉촉한 사용감을 긍정적으로 평가했습니다."
     ].join(" ");
     const request = createRefinementRequest({ productDescription: baseDescription });
     const droppedIngredient = [
       "에스트라 아토베리어365 캡슐 토너는 장벽보습 캡슐 토너입니다.",
       "건조하고 민감한 피부 고객에게 적합합니다.",
       "제품은 장벽 보습과 피부결 정돈에 도움을 줍니다.",
-      "고객 리뷰에서는 촉촉한 사용감이 언급됩니다."
+      "고객 리뷰에서 고객들은 촉촉한 사용감을 긍정적으로 평가했습니다."
     ].join(" ");
 
     const result = await refinePdpGeoCopy(request, createOptions(() => ({
@@ -439,14 +496,14 @@ describe("approved copy contract preservation", () => {
       "건조하고 민감한 피부 고객에게 적합합니다.",
       "고밀도 세라마이드 캡슐을 함유합니다.",
       "제품은 장벽 보습에 도움을 줍니다.",
-      "고객 리뷰에서는 촉촉한 사용감이 언급됩니다."
+      "고객 리뷰에서 고객들은 촉촉한 사용감을 긍정적으로 평가했습니다."
     ].join(" ");
     const request = createRefinementRequest({ productDescription: baseDescription });
     const reviewBeforeBenefit = [
       "에스트라 아토베리어365 캡슐 토너는 장벽보습 캡슐 토너입니다.",
       "건조하고 민감한 피부 고객에게 적합합니다.",
       "고밀도 세라마이드 캡슐을 함유합니다.",
-      "고객 리뷰에서는 촉촉한 사용감이 언급됩니다.",
+      "고객 리뷰에서 고객들은 촉촉한 사용감을 긍정적으로 평가했습니다.",
       "제품은 장벽 보습에 도움을 줍니다."
     ].join(" ");
 
@@ -478,19 +535,19 @@ describe("approved copy contract preservation", () => {
     expect(result.warnings.some((warning) => warning.includes("unsupported causal ingredient-to-benefit relation") && warning.includes("PHA"))).toBe(true);
   });
 
-  it("rejects a detailed WebPage refinement that clones the Product buyer narrative", async () => {
+  it("accepts a page-scoped WebPage refinement that connects supported buyer-decision facts", async () => {
     const productDescription = [
       "에스트라 아토베리어365 캡슐 토너는 장벽보습 캡슐 토너입니다.",
       "건조하고 민감한 피부 고객에게 적합합니다.",
       "PHA와 고밀도 세라마이드 캡슐을 함유합니다.",
       "제품은 장벽 보습과 피부결 정돈에 도움을 줍니다.",
-      "고객 리뷰에서는 촉촉한 사용감이 언급됩니다."
+      "고객 리뷰에서 고객들은 촉촉한 사용감을 긍정적으로 평가했습니다."
     ].join(" ");
     const webPageDescription = "AESTURA의 에스트라 아토베리어365 캡슐 토너 상품 페이지는 상품 정보와 브랜드 정보, 사용법 및 FAQ를 제공합니다.";
     const request = createRefinementRequest({ productDescription, webPageDescription });
     const productClone = [
       "AESTURA의 에스트라 아토베리어365 캡슐 토너 상품 페이지는 건조하고 민감한 피부 고객을 위한 장벽보습 토너를 소개합니다.",
-      "PHA와 고밀도 세라마이드 캡슐을 함유하고 장벽 보습과 피부결 정돈에 도움을 주며, 고객 리뷰에서는 촉촉한 사용감이 언급됩니다."
+      "PHA와 고밀도 세라마이드 캡슐을 함유하고 장벽 보습과 피부결 정돈에 도움을 주며, 고객 리뷰에서 고객들은 촉촉한 사용감을 긍정적으로 평가했습니다."
     ].join(" ");
 
     const result = await refinePdpGeoCopy(request, createOptions(() => ({
@@ -499,8 +556,8 @@ describe("approved copy contract preservation", () => {
 
     const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
     const webPage = graph.find((node) => node["@type"] === "WebPage") as Record<string, any>;
-    expect(webPage.description).toBe(webPageDescription);
-    expect(result.warnings.some((warning) => warning.includes("detailed Product") || warning.includes("detailed Product target"))).toBe(true);
+    expect(webPage.description).toBe(productClone);
+    expect(result.warnings.some((warning) => warning.includes("detailed Product") || warning.includes("detailed Product target"))).toBe(false);
   });
 
   it("retains a product-specific FAQ answer when refinement becomes generic", async () => {
