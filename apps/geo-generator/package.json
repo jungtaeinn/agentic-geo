@@ -1,0 +1,49 @@
+{
+  "name": "@agentic-geo/geo-generator",
+  "author": "jungtaeinn",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "description": "Next.js multi-agent orchestration console for PDP extraction, RAG-grounded GEO schema/content generation, and validation diagnostics.",
+  "keywords": [
+    "agentic-geo",
+    "nextjs",
+    "geo-generator",
+    "sub-agent-orchestration",
+    "pdp-extraction",
+    "geo-content",
+    "schema-org",
+    "json-ld",
+    "rag",
+    "validation"
+  ],
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "scripts": {
+    "build": "next build",
+    "build:pages": "NEXT_PUBLIC_DEPLOY_TARGET=github-pages next build",
+    "dev": "next dev",
+    "lint": "eslint .",
+    "test": "next typegen && tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
+    "geo:benchmark": "tsx scripts/run-geo-benchmark.ts",
+    "geo:extract-rules": "tsx scripts/extract-engine-rules.ts"
+  },
+  "dependencies": {
+    "@agentic-geo/pdp-extractor-agent": "workspace:*",
+    "@agentic-geo/pdp-geo-eval-agent": "workspace:*",
+    "@agentic-geo/pdp-geo-generator-agent": "workspace:*",
+    "lucide-react": "1.28.0",
+    "next": "16.2.12",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "25.9.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.2.12",
+    "tsx": "4.23.1",
+    "typescript": "6.0.3"
+  }
+}

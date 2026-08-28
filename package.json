@@ -1,0 +1,39 @@
+{
+  "name": "agentic-geo",
+  "author": "jungtaeinn",
+  "license": "SEE LICENSE IN LICENSE",
+  "private": true,
+  "version": "0.2.0",
+  "description": "브랜드 PDP를 분석해 GEO·CEP·E-E-A-T 원칙과 브랜드 아이덴티티를 반영한 schema.org 구조화 데이터 및 최적화 콘텐츠를 생성·검증하는 개인 AI 에이전트 프로젝트입니다.",
+  "keywords": [
+    "agentic-geo",
+    "generative-engine-optimization",
+    "geo-orchestration",
+    "sub-agent",
+    "pdp-extraction",
+    "schema-org",
+    "json-ld",
+    "rag",
+    "product-content",
+    "validation"
+  ],
+  "packageManager": "pnpm@11.15.1",
+  "scripts": {
+    "build": "turbo run build",
+    "build:pages": "NEXT_PUBLIC_DEPLOY_TARGET=github-pages turbo run build --filter=@agentic-geo/geo-generator",
+    "build:pages:pdp": "NEXT_PUBLIC_DEPLOY_TARGET=github-pages turbo run build --filter=@agentic-geo/pdp-extractor",
+    "changeset": "changeset",
+    "dev": "turbo run dev --filter=@agentic-geo/geo-generator",
+    "dev:geo-generator": "turbo run dev --filter=@agentic-geo/geo-generator",
+    "dev:pdp-extractor": "turbo run dev --filter=@agentic-geo/pdp-extractor",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "version-packages": "changeset version"
+  },
+  "devDependencies": {
+    "@changesets/cli": "2.31.1",
+    "turbo": "2.10.9",
+    "typescript": "6.0.3"
+  }
+}

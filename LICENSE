@@ -1,0 +1,57 @@
+Agentic GEO Restricted Redistribution and Attribution License 1.0
+
+Copyright (c) 2026 jungtaeinn
+
+1. Definitions
+
+"Software" means this software and its associated documentation, source code,
+binary forms, modifications, and derivative works.
+
+"Commercial Redistribution" means selling, sublicensing, renting, distributing,
+or otherwise making the Software or a derivative work available to another
+party for payment, subscription revenue, commercial advantage, or as part of a
+paid product or hosted service.
+
+2. Permission Grant
+
+Subject to the conditions below, permission is granted to use, copy, and modify
+the Software, and to redistribute the Software or derivative works only when
+that redistribution is not Commercial Redistribution.
+
+3. Conditions
+
+a. Commercial Redistribution is prohibited unless the copyright holder gives
+   prior written permission under a separate agreement.
+
+b. Every copy, derivative work, public deployment, presentation, publication,
+   or other use of the Software must prominently state all of the following:
+
+   - that it is based on "Agentic GEO";
+   - the source repository URL: https://github.com/jungtaeinn/agentic-geo;
+   - "Copyright (c) 2026 jungtaeinn"; and
+   - a concise description of where the Software is used and the specific
+     purpose for which it is used.
+
+c. Redistributions must include this license text and must not remove or
+   obscure copyright, attribution, or usage-disclosure notices.
+
+d. Modified copies must be clearly marked as modified and must include the date
+   of the modification.
+
+e. This license grants no right to use the copyright holder's name, logos, or
+   trademarks to endorse or promote a product or service.
+
+4. Termination
+
+Any permission granted by this license terminates automatically upon breach.
+Rights are restored only after the breach is cured and the copyright holder
+provides written confirmation of reinstatement.
+
+5. No Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT. IN NO EVENT SHALL
+THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

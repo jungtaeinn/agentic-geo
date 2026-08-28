@@ -1,0 +1,44 @@
+{
+  "name": "@agentic-geo/pdp-extractor",
+  "author": "jungtaeinn",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "description": "Next.js console for running the PDP extraction agent and reviewing GEO-ready product intelligence, evidence, OCR, review, and FAQ signals.",
+  "keywords": [
+    "agentic-geo",
+    "nextjs",
+    "pdp-extractor",
+    "extraction-agent",
+    "product-intelligence",
+    "rest-api",
+    "rag",
+    "ocr",
+    "reviews",
+    "geo-raw-json"
+  ],
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "scripts": {
+    "build": "next build",
+    "build:pages": "NEXT_PUBLIC_DEPLOY_TARGET=github-pages next build",
+    "dev": "next dev",
+    "lint": "eslint .",
+    "test": "next typegen && tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit"
+  },
+  "dependencies": {
+    "@agentic-geo/pdp-extractor-agent": "workspace:*",
+    "lucide-react": "1.28.0",
+    "next": "16.2.12",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "25.9.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.2.12",
+    "typescript": "6.0.3"
+  }
+}
