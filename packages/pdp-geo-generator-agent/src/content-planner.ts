@@ -4,7 +4,7 @@ import {
 } from "./contracts/usage-contract";
 import { containsSerializedMetadata } from "./contracts/certification-contract";
 import { z } from "zod";
-import { inferPdpEvidenceRoles } from "./normalize";
+import { inferPdpEvidenceRoles, isCompressedMultiClaimMetricBlock, KOREAN_COPULA_ENDING_FORMS } from "./normalize";
 import { createPlanningPrompt } from "./prompts/content-planning";
 import type {
   PdpGeoAtomicEvidence,
@@ -23,6 +23,7 @@ import type {
   PdpProductSignal,
   PdpSemanticMetricClaim
 } from "./types";
+import { mergeTokenUsage } from "./token-usage";
 
 const PLANNING_TIMEOUT_MS = 300_000;
 /**
@@ -209,15 +210,52 @@ interface ModelPlannerConfig {
 }
 
 /** Converts the normalized product into traceable, stable atomic evidence. */
+/**
+ * 원장이 원자를 세는 키.
+ *
+ * `toLowerCase`로 눕힌다 — `toLocaleLowerCase`는 런타임 로케일에 따라 결과가
+ * 달라져(터키어에서 `I`는 `ı`가 된다) 같은 근거가 두 키를 만들 수 있다. 키는
+ * 로케일에 의존해선 안 된다.
+ *
+ * 구분자는 역할과 본문 사이에 본문에 나타날 수 없는 문자를 둔다.
+ */
+export function pdpGeoEvidenceKey(role: string, text: string): string {
+  return `${role}\u0000${text.toLowerCase()}`;
+}
+
 export function createPdpGeoEvidenceLedger(product: PdpProductSignal, locale: PdpGeoLocale): PdpGeoAtomicEvidence[] {
   const items: PdpGeoAtomicEvidence[] = [];
-  const seen = new Set<string>();
-  const add = (role: PdpGeoEvidenceRole, text: unknown, sourcePath: string, confidence: number) => {
+  // Maps a dedup key to the index of its atom in `items`, so a later duplicate
+  // that carries OCR image provenance can be merged into the already-recorded
+  // atom instead of being silently dropped by the first-wins rule. The atom's
+  // own identity (id/sourcePath/role/confidence) never changes on a merge —
+  // sourcePath is a ranking key read elsewhere (planningEvidenceSpecificity,
+  // selectPlanningReviewSituations' regex), not just a label.
+  const seen = new Map<string, number>();
+  const add = (
+    role: PdpGeoEvidenceRole,
+    text: unknown,
+    sourcePath: string,
+    confidence: number,
+    provenance?: { imageUrls?: string[]; ocrConfidence?: number }
+  ) => {
     const value = cleanText(typeof text === "string" || typeof text === "number" ? String(text) : "");
     if (!value) return;
-    const key = `${role}\u0000${value.toLocaleLowerCase()}`;
-    if (seen.has(key)) return;
-    seen.add(key);
+    const key = pdpGeoEvidenceKey(role, value);
+    const existingIndex = seen.get(key);
+    const existing = existingIndex !== undefined ? items[existingIndex] : undefined;
+    if (existingIndex !== undefined && existing) {
+      if (!provenance || (!provenance.imageUrls && provenance.ocrConfidence === undefined)) return;
+      const mergedImageUrls = mergeProvenanceImageUrls(existing.imageUrls, provenance.imageUrls);
+      const mergedOcrConfidence = mergeProvenanceOcrConfidence(existing.ocrConfidence, provenance.ocrConfidence);
+      items[existingIndex] = {
+        ...existing,
+        ...(mergedImageUrls ? { imageUrls: mergedImageUrls } : {}),
+        ...(mergedOcrConfidence !== undefined ? { ocrConfidence: mergedOcrConfidence } : {})
+      };
+      return;
+    }
+    seen.set(key, items.length);
     items.push({
       id: `ev-${role}-${stableHash(`${sourcePath}\u0000${value}`)}`,
       role,
@@ -225,15 +263,22 @@ export function createPdpGeoEvidenceLedger(product: PdpProductSignal, locale: Pd
       sourcePath,
       locale,
       productScope: "product",
-      confidence
+      confidence,
+      ...(provenance?.imageUrls ? { imageUrls: provenance.imageUrls } : {}),
+      ...(provenance?.ocrConfidence !== undefined ? { ocrConfidence: provenance.ocrConfidence } : {})
     });
   };
-  const addAnalyzed = (text: unknown, sourcePath: string, confidence: number) => {
+  const addAnalyzed = (
+    text: unknown,
+    sourcePath: string,
+    confidence: number,
+    provenance?: { imageUrls?: string[]; ocrConfidence?: number }
+  ) => {
     const value = cleanText(typeof text === "string" || typeof text === "number" ? String(text) : "");
     if (!value) return;
     const inference = inferPdpEvidenceRoles(value);
     const role = evidenceRoleFromAnalysis(inference.primaryRole);
-    add(role, value, sourcePath, confidenceForAnalyzedRole(confidence, role));
+    add(role, value, sourcePath, confidenceForAnalyzedRole(confidence, role), provenance);
   };
 
   add("identity", product.name, "product.name", 1);
@@ -263,15 +308,17 @@ export function createPdpGeoEvidenceLedger(product: PdpProductSignal, locale: Pd
   product.semanticFacts?.evidenceSentences.forEach((value, index) => addAnalyzed(value, `product.semanticFacts.evidenceSentences[${index}]`, 0.9));
   product.semanticFacts?.metricClaims.forEach((claim, index) => {
     const structuredMetric = formatMetricClaimEvidenceAtom(claim);
-    add("metric", structuredMetric, `product.semanticFacts.metricClaims[${index}]`, 0.98);
-    const provenance = claim.sourceText || claim.sentence;
-    if (provenance && cleanText(provenance) !== cleanText(structuredMetric)) {
-      add("source", provenance, `product.semanticFacts.metricClaims[${index}].sourceText`, 0.9);
+    const claimProvenance = claim.imageUrls ? { imageUrls: claim.imageUrls } : undefined;
+    add("metric", structuredMetric, `product.semanticFacts.metricClaims[${index}]`, 0.98, claimProvenance);
+    const sourceSentence = claim.sourceText || claim.sentence;
+    if (sourceSentence && cleanText(sourceSentence) !== cleanText(structuredMetric)) {
+      add("source", sourceSentence, `product.semanticFacts.metricClaims[${index}].sourceText`, 0.9, claimProvenance);
     }
   });
   product.semanticFacts?.ingredientBenefitLinks.forEach((link, index) => {
-    add("ingredient", link.ingredient, `product.semanticFacts.ingredientBenefitLinks[${index}].ingredient`, 0.94);
-    add("source", link.sourceText || link.sentence || [link.ingredient, link.benefit, link.effect].filter(Boolean).join("; "), `product.semanticFacts.ingredientBenefitLinks[${index}]`, 0.92);
+    const linkProvenance = link.imageUrls ? { imageUrls: link.imageUrls } : undefined;
+    add("ingredient", link.ingredient, `product.semanticFacts.ingredientBenefitLinks[${index}].ingredient`, 0.94, linkProvenance);
+    add("source", link.sourceText || link.sentence || [link.ingredient, link.benefit, link.effect].filter(Boolean).join("; "), `product.semanticFacts.ingredientBenefitLinks[${index}]`, 0.92, linkProvenance);
   });
   product.semanticFacts?.citations?.forEach((citation, index) => {
     const bibliographic = [
@@ -283,25 +330,48 @@ export function createPdpGeoEvidenceLedger(product: PdpProductSignal, locale: Pd
       citation.url,
       citation.finding
     ].filter(Boolean).join("; ");
-    add("source", citation.sourceText || bibliographic, `product.semanticFacts.citations[${index}]`, 0.98);
+    const citationProvenance = citation.imageUrls ? { imageUrls: citation.imageUrls } : undefined;
+    add("source", citation.sourceText || bibliographic, `product.semanticFacts.citations[${index}]`, 0.98, citationProvenance);
   });
   product.sourceTexts.forEach((value, index) => {
     const sourcePath = `product.sourceTexts[${index}]`;
+    const meta = product.sourceTextMeta?.[value];
+    const provenance = meta?.imageUrls || meta?.ocrConfidence !== undefined
+      ? { imageUrls: meta?.imageUrls, ocrConfidence: meta?.ocrConfidence }
+      : undefined;
     if (isReviewDerivedUsageText(value, product)) {
-      add("review", value, sourcePath, 0.82);
+      add("review", value, sourcePath, 0.82, provenance);
       return;
     }
     // A serialized key/value string is retrieval context, never a benefit or
     // effect claim; the normalizer already promoted its parsed atomic values
     // into the role-correct product fields above.
     if (containsSerializedMetadata(value)) {
-      add("source", value, sourcePath, 0.72);
+      add("source", value, sourcePath, 0.72, provenance);
       return;
     }
-    addAnalyzed(value, sourcePath, 0.72);
+    addAnalyzed(value, sourcePath, 0.72, provenance);
   });
 
   return items;
+}
+
+/** Unions two atoms' OCR image lineages, preserving order and dropping duplicates. */
+function mergeProvenanceImageUrls(existing: string[] | undefined, incoming: string[] | undefined): string[] | undefined {
+  if (!incoming || incoming.length === 0) return existing;
+  if (!existing || existing.length === 0) return incoming;
+  const merged = [...existing];
+  for (const url of incoming) {
+    if (!merged.includes(url)) merged.push(url);
+  }
+  return merged;
+}
+
+/** The transcription confidence a merged atom inherits is the weaker of its sources. */
+function mergeProvenanceOcrConfidence(existing: number | undefined, incoming: number | undefined): number | undefined {
+  if (existing === undefined) return incoming;
+  if (incoming === undefined) return existing;
+  return Math.min(existing, incoming);
 }
 
 function evidenceRoleFromAnalysis(role: ReturnType<typeof inferPdpEvidenceRoles>["primaryRole"]): PdpGeoEvidenceRole {
@@ -713,12 +783,19 @@ function sanitizeModelPlan(
     let evidenceIds = isPublicDescriptionField(name)
       ? recoverDescriptionEvidenceIds(text, suppliedEvidenceIds, request.evidenceLedger)
       : suppliedEvidenceIds;
+    // Entity repetition and field role are properties of the paragraph, so a
+    // failure there is not something the per-unit audit could repair. Fluency
+    // is not: it is judged sentence by sentence, and the unit audit already
+    // applies the same check to every unit it keeps. Requiring it of the whole
+    // text first meant one unfluent closing sentence suppressed the audit and
+    // dropped the entire description — including the study citation and the
+    // attributed review line the contract asks for — when dropping that one
+    // sentence was the available repair.
     const canApplyPartialDescriptionAudit = descriptionEntityRepetitionWithinBudget(text, request.product, name)
-      && descriptionFieldRoleIsSupported(text, request.product, name)
-      && descriptionFluencyIsSupported(text, name);
+      && descriptionFieldRoleIsSupported(text, request.product, name);
     const originalCitedEvidenceText = evidenceIds.map((id) => evidenceById.get(id)?.text ?? "").join(" ");
     const originalDescriptionPassesAudit = evidenceIds.length > 0
-      && numbersAreSupported(text, evidenceIds, evidenceById)
+      && numbersAreSupported(text, evidenceIds, evidenceById, request.product.name)
       && isTargetLocaleCopy(text, request.locale)
       && isCoherentPublicCopy(text, "statement")
       && contextAssociationsAreSupported(text, originalCitedEvidenceText)
@@ -737,16 +814,28 @@ function sanitizeModelPlan(
         locale: request.locale,
         field: name
       });
-      if (audited.droppedUnits.length > 0) {
+      // Every sentence the audit keeps has passed the same per-unit judgement
+      // on its own evidence, so how many of its neighbours failed says nothing
+      // about it. A majority-drop rule read that number anyway and discarded
+      // the whole field, which does not fall back to a composed paragraph: the
+      // renderer then republishes the source description verbatim — one
+      // marketing line, source typo included, no composition, no measurement,
+      // no attributed review wording. Publishing the sentences the ledger backs
+      // is the better of the two available outcomes, and the paragraph-scoped
+      // checks below still reject a remnant that is not usable public copy.
+      const salvageable = audited.text.length > 0;
+      if (audited.droppedUnits.length > 0 && salvageable) {
         gateWarnings.push(...audited.droppedUnits.map((unit) =>
           `${name} removed unsupported claim unit "${truncate(unit, 140)}" while retaining supported sentences.`));
       }
-      text = audited.text;
-      evidenceIds = audited.evidenceIds;
-      unitsPassedSemanticAudit = text.length > 0;
+      if (salvageable) {
+        text = audited.text;
+        evidenceIds = audited.evidenceIds;
+      }
+      unitsPassedSemanticAudit = salvageable;
     }
     const citedEvidenceText = evidenceIds.map((id) => evidenceById.get(id)?.text ?? "").join(" ");
-    const numbersSupported = numbersAreSupported(text, evidenceIds, evidenceById);
+    const numbersSupported = numbersAreSupported(text, evidenceIds, evidenceById, request.product.name);
     const localeSupported = isTargetLocaleCopy(text, request.locale);
     const coherent = isCoherentPublicCopy(text, "statement");
     const contextSupported = contextAssociationsAreSupported(text, citedEvidenceText);
@@ -801,7 +890,7 @@ function sanitizeModelPlan(
       gateWarnings.push(`${name} was omitted because it retained an OCR artifact, dependent predicate fragment, report-style test note, or passive review list instead of natural public copy.`);
     }
     if (field.include && text && !numbersSupported) {
-      gateWarnings.push(`${name} was omitted because ${numericSupportFailureReason(text, evidenceIds, evidenceById)}.`);
+      gateWarnings.push(`${name} was omitted because ${numericSupportFailureReason(text, evidenceIds, evidenceById, request.product.name)}.`);
     }
     if (field.include && text && !localeSupported) {
       gateWarnings.push(`${name} was omitted because it did not match the requested locale.`);
@@ -841,11 +930,17 @@ function sanitizeModelPlan(
         // factual relationship is stated only in the answer. Validate the
         // answer as the public claim unit so joining Q+A cannot create a false
         // numeric relationship across sentence boundaries.
-        ["numeric-relationship", numbersAreSupported(answer, evidenceIds, evidenceById)],
+        ["numeric-relationship", numbersAreSupported(answer, evidenceIds, evidenceById, request.product.name)],
         ["question-locale", isTargetLocaleCopy(question, request.locale)],
         ["answer-locale", isTargetLocaleCopy(answer, request.locale)],
         ["question-coherence", isCoherentPublicCopy(question, "question")],
         ["answer-coherence", isCoherentPublicCopy(answer, "statement")],
+        // A planned answer may quote a measurement, but not by pasting the
+        // panel it was printed on. The normalizer already decides what a
+        // before/after OCR panel is; the same predicate decides it here, so a
+        // block the metric gate refuses as one claim cannot re-enter public
+        // copy through an FAQ answer instead.
+        ["answer-transcription", !isCompressedMultiClaimMetricBlock(answer)],
         ["context-support", publicContextSupported],
         ["question-risk-support", claimRiskIsSupported(question, citedEvidenceText)],
         ["question-role-support", evidenceRolesSupportClaimTopics(question, evidenceIds.map((id) => evidenceById.get(id)).filter((value): value is PdpGeoAtomicEvidence => Boolean(value)))],
@@ -885,7 +980,7 @@ function sanitizeModelPlan(
         && isConcreteUsageAction(candidate.text)
         && isTargetLocaleCopy(`${candidate.name} ${candidate.text}`, request.locale)
         && isCoherentPublicCopy(candidate.text, "action")
-        && numbersAreSupported(candidate.text, candidate.evidenceIds, evidenceById)
+        && numbersAreSupported(candidate.text, candidate.evidenceIds, evidenceById, request.product.name)
         && evidenceSemanticallySupportsText(candidate.text, candidate.evidenceIds, evidenceById, request.product, semanticAuditPassed);
       if (raw.howTo.eligible && !supported) {
         gateWarnings.push(`HowTo step ${step.position} was omitted because it was not an actionable, locale-compatible usage step supported by its cited evidence.`);
@@ -936,7 +1031,7 @@ function sanitizeModelPlan(
       const supported = candidate.evidenceIds.length > 0
         && text.length > 0
         && isTargetLocaleCopy(text, request.locale)
-        && numbersAreSupported(text, candidate.evidenceIds, evidenceById)
+        && numbersAreSupported(text, candidate.evidenceIds, evidenceById, request.product.name)
         && contextSupported
         && evidenceSemanticallySupportsText(text, candidate.evidenceIds, evidenceById, request.product, semanticAuditPassed);
       if (!supported) {
@@ -999,7 +1094,7 @@ function retainAuditedDescriptionUnits(input: {
     const identitySupported = descriptionIdentityUnitIsSupported(unit, cited, input.product)
       || descriptionPageIntroductionUnitIsSupported(unit, cited, input.product);
     const supported = evidenceIds.length > 0
-      && numbersAreSupported(unit, evidenceIds, input.evidenceById)
+      && numbersAreSupported(unit, evidenceIds, input.evidenceById, input.product.name)
       && isTargetLocaleCopy(unit, input.locale)
       && isCoherentPublicCopy(unit, "statement")
       && contextAssociationsAreSupported(unit, citedText)
@@ -1083,8 +1178,7 @@ function hasSourceOrderProvenance(
 }
 
 function extractOrderedUsageSegments(value: string): string[] {
-  const matches = Array.from(value.matchAll(/(?:^|\s)(?:step\s*)?(\d+)\s*(?:단계|段階)?[.):、]?\s+([\s\S]*?)(?=\s+(?:step\s*)?\d+\s*(?:단계|段階)?[.):、]?\s+|$)/giu));
-  const numbered = withRecoveredLeadingUsageStep(value, matches);
+  const numbered = extractSequentialOrdinalSegments(value);
   if (numbered.length >= 2) {
     return numbered.filter(isConcreteUsageAction);
   }
@@ -1093,22 +1187,60 @@ function extractOrderedUsageSegments(value: string): string[] {
 }
 
 /**
- * Restores the step a numbered source procedure loses when extraction strips
- * its leading marker — a "사용법 1" heading split away from the actions, for
- * example. A surviving mid-string "2" marker is itself proof that the source
- * numbered its steps, and the text before it is the step numbered 1, so that
- * text is recovered as its own step instead of being merged into one note.
- * Only a first marker of exactly 2 is recoverable, because a single leading
- * fragment can stand in for exactly one missing step.
+ * 서수 마커는 1부터 이어지는 수열이다. 아무 숫자나 마커로 읽으면 상품명의
+ * "365"나 용량의 "200"이 다음 단계의 시작으로 오인되고, 그 앞에 전사된 패키지
+ * 라벨이 단계 본문으로 발행된다. 그래서 다음 마커는 "다음 서수"만 찾는다.
+ *
+ * 첫 마커가 전사에서 떨어져 나간 경우("사용법 1"이 제목으로 분리) 남아 있는
+ * "2"가 원문이 번호를 매겼다는 증거이므로, 그 앞의 문장을 1단계로 되살린다.
+ * 되살릴 수 있는 첫 마커가 정확히 2인 이유는, 앞선 조각 하나가 대신할 수 있는
+ * 빠진 단계가 하나뿐이기 때문이다.
  */
-function withRecoveredLeadingUsageStep(value: string, matches: RegExpMatchArray[]): string[] {
-  const segments = matches.map((match) => cleanText(match[2] ?? ""));
-  const [first] = matches;
-  if (!first || typeof first.index !== "number" || Number(first[1]) !== 2) {
-    return segments;
+function extractSequentialOrdinalSegments(value: string): string[] {
+  const text = cleanText(value);
+  const findMarker = (ordinal: number, from: number) => {
+    const match = new RegExp(`(?:^|\\s)(?:step\\s*)?${ordinal}\\s*(?:단계|段階)?[.):、]?\\s+`, "iu").exec(text.slice(from));
+    return match?.index === undefined
+      ? undefined
+      : { start: from + match.index, contentStart: from + match.index + match[0].length };
+  };
+
+  const leadingMarker = findMarker(1, 0);
+  const firstMarker = leadingMarker ?? findMarker(2, 0);
+  if (!firstMarker) {
+    return [];
   }
-  const lead = cleanText(value.slice(0, first.index));
-  return isConcreteUsageAction(lead) ? [lead, ...segments] : segments;
+
+  const segments: string[] = [];
+  if (!leadingMarker) {
+    const lead = cleanText(text.slice(0, firstMarker.start));
+    if (!isConcreteUsageAction(lead)) {
+      return [];
+    }
+    segments.push(lead);
+  }
+
+  let cursor = firstMarker.contentStart;
+  for (let ordinal = (leadingMarker ? 1 : 2) + 1; ; ordinal += 1) {
+    const nextMarker = findMarker(ordinal, cursor);
+    segments.push(closeAtFirstSentenceEnd(text.slice(cursor, nextMarker ? nextMarker.start : undefined)));
+    if (!nextMarker) {
+      break;
+    }
+    cursor = nextMarker.contentStart;
+  }
+
+  return segments.filter(Boolean);
+}
+
+/**
+ * 한 단계는 자기 문장에서 끝난다. 마커 사이에 전사된 주변 텍스트(패키지 라벨,
+ * 캡션)는 그 문장 뒤에 붙어 오므로, 첫 문장 종결에서 잘라 단계 본문에서 뺀다.
+ */
+function closeAtFirstSentenceEnd(value: string): string {
+  const text = cleanText(value);
+  const sentenceEnd = text.search(/[.!?。！？](?:\s|$)/u);
+  return sentenceEnd >= 0 ? cleanText(text.slice(0, sentenceEnd + 1)) : text;
 }
 
 function extractIndividuallyNumberedUsageSequence(values: string[]): string[] {
@@ -1120,12 +1252,40 @@ function extractIndividuallyNumberedUsageSequence(values: string[]): string[] {
       ? [{ position, text, sourceIndex }]
       : [];
   }).sort((left, right) => left.position - right.position || left.sourceIndex - right.sourceIndex);
-  if (numbered.length < 2
-    || numbered[0]?.position !== 1
-    || !numbered.every((item, index) => item.position === index + 1)) {
+  const steps = dedupeRewordedNumberedSteps(numbered);
+  if (steps.length < 2
+    || steps[0]?.position !== 1
+    || !steps.every((item, index) => item.position === index + 1)) {
     return [];
   }
-  return uniqueText(numbered.map((item) => item.text));
+  return uniqueText(steps.map((item) => item.text));
+}
+
+/**
+ * 같은 번호에 같은 동작이 두 어투로 실린 경우 하나로 접는다.
+ *
+ * 한 상품 페이지에서 같은 단계가 두 번 들어오는 일은 흔하다 — 분류 모델이 다시
+ * 쓴 문장("미세 분사합니다")과 원문 어투("미세 분사를 합니다")가 각각 번호를
+ * 달고 오기 때문이다. 그러면 서수가 1,1,2,2가 되어 연속성 검사가 실패하고,
+ * 원문이 분명히 번호를 매긴 절차가 한 단계로 뭉친다(1027 실측: 한 단계에 세
+ * 문장이 이어붙었다).
+ *
+ * 접는 것은 **같은 번호이면서 같은 동작일 때만**이다. 같은 번호에 서로 다른
+ * 동작이 실려 있으면 원문의 순서를 알 수 없으므로, 그대로 남겨 연속성 검사가
+ * 실패하게 둔다 — 없는 순서를 지어내는 것보다 하나의 노트로 발행하는 편이 낫다.
+ */
+function dedupeRewordedNumberedSteps(
+  numbered: Array<{ position: number; text: string; sourceIndex: number }>
+): Array<{ position: number; text: string; sourceIndex: number }> {
+  const kept: Array<{ position: number; text: string; sourceIndex: number }> = [];
+  for (const item of numbered) {
+    const sameStep = kept.some((existing) =>
+      existing.position === item.position && usageActionsAreSemanticallyEquivalent(existing.text, item.text));
+    if (!sameStep) {
+      kept.push(item);
+    }
+  }
+  return kept;
 }
 
 function extractExplicitUsageSequence(values: string[]): string[] {
@@ -1194,6 +1354,11 @@ function usageActionSemanticKey(value: string): string {
     .replace(/(?:적당량|소량)(?:의\s*내용물)?(?:을|를)?\s*(?:덜어|취해)?/gu, " ")
     .replace(/\b(?:an?\s+)?(?:appropriate|small)\s+amount\b/giu, " ")
     .replace(/(?:부드럽게|고르게|충분히|gently|evenly|thoroughly)/giu, " ")
+    // 경동사 구문을 한 형태로 모은다. "분사를 합니다"와 "분사합니다"는 같은
+    // 동작인데, 목적격 조사와 띄어쓰기만 다른 두 표기를 다른 동작으로 세면
+    // 원문이 번호를 매긴 절차가 서수 중복으로 무너진다(1027 실측).
+    .replace(/([가-힣]+)(?:을|를)\s*(하|합|해|했)/gu, "$1$2")
+    .replace(/([가-힣]+)\s+(하|합|해|했)/gu, "$1$2")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -1207,18 +1372,51 @@ function matchingEvidenceIds(text: string, evidence: PdpGeoAtomicEvidence[]): st
   return exact.length > 0 ? exact : [];
 }
 
-function numbersAreSupported(text: string, evidenceIds: string[], evidenceById: Map<string, PdpGeoAtomicEvidence>): boolean {
-  const tokens = numericClaimTokens(text);
-  if (tokens.length === 0) return true;
+/**
+ * Numbers that appear as part of the product's own name ("모이베리어 365
+ * 크림 미스트") are identity notation, not numeric claims: the name is
+ * verified identity from the normalized input, so public copy may repeat it
+ * without a citing atom. Masking name occurrences before token extraction
+ * keeps genuinely claimed numbers fully gated — a unit-bearing claim such as
+ * "365일 보습" tokenizes with its unit and is untouched by this mask.
+ */
+function maskProductIdentityMentions(text: string, productName: string): string {
+  const trimmed = productName.trim();
+  if (!trimmed) return text;
+  const escaped = trimmed
+    .split(/\s+/u)
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("\\s*");
+  // A product name that starts or ends on a bare digit run (e.g. "10", "365
+  // 크림") must not splice into a larger unrelated number that happens to sit
+  // flush against it in the text (e.g. matching "10" inside "100명" and
+  // leaving a forged "0명"). Guarding both ends on \p{N} — the same digit
+  // class NUMERIC_CLAIM_TOKEN_PATTERN already boundary-checks against —
+  // keeps the mask from ever landing mid-digit-run.
+  const guarded = `(?<!\\p{N})${escaped}(?!\\p{N})`;
+  return text.replace(new RegExp(guarded, "giu"), " ");
+}
+
+export function numbersAreSupported(text: string, evidenceIds: string[], evidenceById: Map<string, PdpGeoAtomicEvidence>, productName: string): boolean {
+  const claimText = maskProductIdentityMentions(text, productName);
   // Preserve atomic-evidence boundaries. Joining atoms with plain whitespace
   // creates one artificial numeric clause and makes valid FAQ answers fail
   // when a cited atom also contains sample dates or other scoped numbers.
   const evidenceText = evidenceIds.map((id) => evidenceById.get(id)?.text ?? "").filter(Boolean).join(". ");
+  // Checked ahead of the token short-circuit below: a claim whose only
+  // number is a calendar date ("2022년 12월 19일 기준으로…") tokenizes to
+  // zero non-date numeric tokens once scanCalendarDates lifts the date out,
+  // and returning true before ever checking the date itself would let a
+  // fabricated or evidence-mismatched date pass with no verification at all.
+  if (!calendarDatesAreSupported(claimText, evidenceText)) return false;
+  const tokens = numericClaimTokens(claimText);
+  if (tokens.length === 0) return true;
   const evidenceTokens = new Set(numericClaimTokens(evidenceText));
   if (!tokens.every((token) => evidenceTokens.has(token))) return false;
-  if (!numericRelationshipsAreSupported(text, evidenceText, evidenceIds, evidenceById)) return false;
+  if (!numericRelationshipsAreSupported(claimText, evidenceText, evidenceIds, evidenceById)) return false;
+  if (!numericTokensHaveConfidentSupport(claimText, evidenceIds, evidenceById)) return false;
 
-  const lowerText = text.toLocaleLowerCase();
+  const lowerText = claimText.toLocaleLowerCase();
   const lowerEvidence = evidenceText.toLocaleLowerCase();
   const scopedContexts = [
     /(?:self[-\s]?assessment|consumer\s+(?:survey|test)|survey|자가\s*평가|소비자\s*(?:설문|평가)|アンケート|自己評価)/i,
@@ -1228,25 +1426,39 @@ function numbersAreSupported(text: string, evidenceIds: string[], evidenceById: 
   return scopedContexts.every((pattern) => !pattern.test(lowerEvidence) || pattern.test(lowerText));
 }
 
-function numericSupportFailureReason(
+/** Exported for tests only — not part of the package surface (index.ts). */
+export function numericSupportFailureReason(
   text: string,
   evidenceIds: string[],
-  evidenceById: Map<string, PdpGeoAtomicEvidence>
+  evidenceById: Map<string, PdpGeoAtomicEvidence>,
+  productName: string
 ): string {
-  const outputTokens = numericClaimTokens(text);
+  // Mirror numbersAreSupported's masking and check order exactly: without
+  // this, a number that is part of the product's own name (e.g. "365" in
+  // "모이베리어 365 크림") gets misreported as an unsupported numeric claim,
+  // and a failing calendar date gets buried behind an unrelated reason.
+  const claimText = maskProductIdentityMentions(text, productName);
   const evidenceText = evidenceIds.map((id) => evidenceById.get(id)?.text ?? "").filter(Boolean).join(". ");
+  if (!calendarDatesAreSupported(claimText, evidenceText)) {
+    return "a stated date was not present in the cited evidence";
+  }
+  const outputTokens = numericClaimTokens(claimText);
   const evidenceTokens = new Set(numericClaimTokens(evidenceText));
   const missing = uniqueText(outputTokens.filter((token) => !evidenceTokens.has(token)));
   if (missing.length > 0) {
     return `numeric value(s) ${missing.join(", ")} were not present in the cited evidence`;
   }
-  if (!numericRelationshipsAreSupported(text, evidenceText, evidenceIds, evidenceById)) {
+  if (!numericRelationshipsAreSupported(claimText, evidenceText, evidenceIds, evidenceById)) {
     return "one or more numeric relationships were not present in a single cited evidence clause";
+  }
+  if (!numericTokensHaveConfidentSupport(claimText, evidenceIds, evidenceById)) {
+    return "a numeric value was supported only by a low-confidence OCR transcription";
   }
   return "a numeric study-scope qualifier was not preserved from the cited evidence";
 }
 
-function numericRelationshipsAreSupported(
+/** Exported for tests only — not part of the package surface (index.ts). */
+export function numericRelationshipsAreSupported(
   text: string,
   evidenceText: string,
   evidenceIds: string[],
@@ -1256,11 +1468,46 @@ function numericRelationshipsAreSupported(
   if (outputGroups.length === 0) return true;
   const evidenceGroups = [
     ...numericClaimGroups(evidenceText),
-    ...groupedMetricNumericClaims(evidenceIds, evidenceById)
+    ...groupedMetricNumericClaims(evidenceIds, evidenceById),
+    ...groupedImageNumericClaims(evidenceIds, evidenceById)
   ];
   return outputGroups.every((group) => evidenceGroups.some((candidate) =>
     group.every((token) => candidate.includes(token))
   ));
+}
+
+/**
+ * Mirrors the OCR extractor's low-confidence transcription threshold: a
+ * confidence below this reflects a transcription the extractor itself
+ * flagged as unreliable, so a numeric claim resting solely on such an atom
+ * has not actually been read off the source image with any assurance.
+ */
+const LOW_OCR_CONFIDENCE_THRESHOLD = 0.6;
+
+/**
+ * A numeric token can be textually present in a cited atom yet only because
+ * OCR misread the source image with low confidence. This checks the other
+ * side of that risk: for every numeric token the output states, at least one
+ * cited atom that actually contains the token must be confident (non-OCR
+ * atoms carry no ocrConfidence and count as confident by definition). A token
+ * with no citing atom at all is left to `numbersAreSupported`'s containment
+ * check — this function only judges the confidence of support that exists.
+ *
+ * Exported for tests only — not part of the package surface (index.ts).
+ */
+export function numericTokensHaveConfidentSupport(
+  text: string,
+  evidenceIds: string[],
+  evidenceById: Map<string, PdpGeoAtomicEvidence>
+): boolean {
+  const tokens = numericClaimTokens(text);
+  if (tokens.length === 0) return true;
+  const citedAtoms = evidenceIds.map((id) => evidenceById.get(id)).filter((item): item is PdpGeoAtomicEvidence => Boolean(item));
+  return tokens.every((token) => {
+    const containingAtoms = citedAtoms.filter((atomItem) => numericClaimTokens(atomItem.text).includes(token));
+    if (containingAtoms.length === 0) return true;
+    return containingAtoms.some((atomItem) => (atomItem.ocrConfidence ?? 1) >= LOW_OCR_CONFIDENCE_THRESHOLD);
+  });
 }
 
 function groupedMetricNumericClaims(
@@ -1282,15 +1529,290 @@ function groupedMetricNumericClaims(
     .map((items) => uniqueText(items.flatMap(numericClaimTokens)));
 }
 
+/**
+ * Cited atoms that share a source image often carry numbers that were split
+ * across separate OCR-derived atoms even though the image presented them
+ * together (e.g. three metric callouts rendered in one infographic). Group
+ * cited atoms with numeric tokens by shared imageUrl so those numbers count
+ * as co-occurring evidence, the same way groupedMetricNumericClaims does for
+ * an explicit evidenceGroup= tag.
+ */
+function groupedImageNumericClaims(
+  evidenceIds: string[],
+  evidenceById: Map<string, PdpGeoAtomicEvidence>
+): string[][] {
+  const byImageUrl = new Map<string, string[]>();
+  for (const id of evidenceIds) {
+    const item = evidenceById.get(id);
+    if (!item || !item.imageUrls || numericClaimTokens(item.text).length === 0) continue;
+    for (const imageUrl of item.imageUrls) {
+      const values = byImageUrl.get(imageUrl) ?? [];
+      values.push(item.text);
+      byImageUrl.set(imageUrl, values);
+    }
+  }
+  return [...byImageUrl.values()]
+    .filter((items) => items.length >= 2)
+    .map((items) => uniqueText(items.flatMap(numericClaimTokens)));
+}
+
+// "-으며"/"-하며" are the same coordinating-verb ending as the bare "이며"
+// below (이(다)+며, 하(다)+며, or a consonant-final stem+으며) — a closed
+// grammatical suffix, not content. Anchored on a preceding Hangul syllable
+// and a following pause/boundary so it only fires as a real clause-final
+// connective ("구성되어 있으며", "포함하며"), not as an incidental substring.
+// Shared with scanCalendarDates below so a range-continuation date inherits
+// its year/month only from within the same clause, using the same notion of
+// "clause" the numeric-relationship grouping already relies on.
+const CLAUSE_BOUNDARY_PATTERN = /(?:[;。！？!?]|\.(?=\s|$)|,(?=\s*[^\d\s])|\b(?:and|also|while|whereas)\b|(?:그리고|또한|반면|이며)|(?<=[가-힣])(?:으며|하며)(?=[,\s]|$)|(?:および|また|一方))/giu;
+
 function numericClaimGroups(value: string): string[][] {
   return value
-    .split(/(?:[;。！？!?]|\.(?=\s|$)|,(?=\s*[^\d\s])|\b(?:and|also|while|whereas)\b|(?:그리고|또한|반면|이며)|(?:および|また|一方))/giu)
+    .split(CLAUSE_BOUNDARY_PATTERN)
     .map((clause) => numericClaimTokens(clause))
     .filter((tokens) => tokens.length > 0);
 }
 
-function numericClaimTokens(text: string): string[] {
-  return Array.from(text.matchAll(/(?<![\p{L}\p{N}])\d+(?:[.,]\d+)?\s*(?:%|％|ppm|ml|mg|kg|g|oz|hours?|hrs?|days?|weeks?|months?|minutes?|seconds?|participants?|subjects?|users?|people|times?|layers?|krw|usd|eur|gbp|jpy|시간|일|주|개월|분|초|명|회|배|개|층|원|달러|유로|엔|人|時間|日|週間|か月|分|秒)?(?![.,]\d|[\p{L}\p{N}])/giu))
+/**
+ * Calendar dates written in different formats.
+ *
+ * A study period reaches the planner serialized as `2023.02.02-2023.03.23` and
+ * leaves it as natural prose — `2023년 2월 2일부터 3월 23일까지`, `February 2,
+ * 2023`. Compared as loose numerals those look like different numbers, so a
+ * correctly cited study read as a fabricated measurement. A date is provenance,
+ * not a measured outcome, so it is lifted out of the numeric comparison and
+ * checked as a date instead.
+ */
+const ENGLISH_MONTHS = [
+  "january", "february", "march", "april", "may", "june",
+  "july", "august", "september", "october", "november", "december"
+];
+
+/** Bounded so a dot/dash/slash-chained number can only be mistaken for a
+ * calendar date if it also happens to fall within an actual calendar range —
+ * a version string ("2.70") or a two-part decimal ("4.05") already fails on
+ * field count (a date needs three fields here). A three-field chain that
+ * starts with a two-digit number and stays within valid month/day ranges
+ * ("12.5.3") is still read as a date, routing it to the stricter date-
+ * equivalence check instead of plain numeric-token containment — the
+ * conservative, over-blocking direction, not a defect. */
+// Longer alternatives are listed first: a trailing alternation branch is
+// only tried on backtrack, and when the day group is the last thing in a
+// pattern there is nothing after it to force that backtrack, so "19" would
+// otherwise short-match as just "1" via the single-digit branch. The day
+// group additionally forbids a trailing digit (`(?!\d)`): without it, an
+// invalid two-digit day like "70" or "32" still partial-matches its leading
+// digit as a valid single-digit day ("7", "3") once nothing after it forces
+// a full backtrack to reject the whole alternation — exactly the shape
+// "2.70.5"/"22.12.32" take.
+const MONTH_GROUP = "(1[0-2]|0?[1-9])";
+const DAY_GROUP = "([12]\\d|3[01]|0?[1-9])(?!\\d)";
+
+const CALENDAR_DATE_PATTERNS: Array<{ pattern: RegExp; hasYear: boolean }> = [
+  // Year-first numeric: 2023.02.02, 2023-02-02, 2023/02/02, or a 2-digit-year
+  // form as printed on packaging/lab reports ("22.12.19"). The year is kept
+  // exactly as captured (2 or 4 digits) — never expanded into a guessed
+  // century — and compared later on its trailing digits (yearsAreCompatible).
+  { pattern: new RegExp(`(\\d{2,4})\\s*[.\\-/]\\s*${MONTH_GROUP}\\s*[.\\-/]\\s*${DAY_GROUP}`, "gu"), hasYear: true },
+  // Year-bearing CJK: 2023년 2월 2일, 2023年2月2日 (day optional)
+  { pattern: /(\d{4})\s*[년年]\s*(\d{1,2})\s*[월月](?:\s*(\d{1,2})\s*[일日])?/gu, hasYear: true },
+  // Month-day CJK without a year, as a range's second endpoint usually is
+  { pattern: /(?<![\d년年])(\d{1,2})\s*[월月]\s*(\d{1,2})\s*[일日]/gu, hasYear: false }
+];
+
+const ENGLISH_DATE_PATTERNS: Array<{ pattern: RegExp; monthFirst: boolean }> = [
+  { pattern: new RegExp(`\\b(${ENGLISH_MONTHS.join("|")})\\.?\\s+(\\d{1,2})(?:\\s*,\\s*(\\d{4}))?`, "giu"), monthFirst: true },
+  { pattern: new RegExp(`\\b(\\d{1,2})\\s+(${ENGLISH_MONTHS.join("|")})\\.?(?:\\s*,?\\s*(\\d{4}))?`, "giu"), monthFirst: false }
+];
+
+/**
+ * A day-only mention that closes off a range ("19일부터 22일까지", "22日から
+ * 22日まで") inherits the year and month of a complete date already scanned
+ * earlier in the same clause — the same "range's second endpoint omits what
+ * the first already gave" principle as the year-less CJK pattern above,
+ * extended to an endpoint that omits the month too. The "까지"/"まで" (until)
+ * requirement is the guard: without a preceding complete date in the same
+ * clause this pattern is never even attempted (see scanCalendarDatesInClause
+ * below), so an unrelated duration mention ("30일까지 사용해보세요") in a
+ * clause that has no date at all is left completely untouched.
+ */
+const RANGE_END_DAY_PATTERN = new RegExp(`${DAY_GROUP}\\s*[일日]\\s*(?:까지|まで)`, "gu");
+
+interface CalendarDateScan {
+  /** The input with every date replaced, so numeric tokenizing skips them. */
+  text: string;
+  /** Normalized `year-month-day` keys; year is empty when unstated. */
+  dates: string[];
+}
+
+/**
+ * Scans a single clause. Kept clause-scoped (rather than run over the whole
+ * text at once) so a range-continuation day only ever inherits the year and
+ * month of a date stated in the *same* clause, never one from an unrelated
+ * clause elsewhere in the same sentence or answer.
+ */
+function scanCalendarDatesInClause(value: string): CalendarDateScan {
+  const dates: string[] = [];
+  let text = value;
+  let lastDated: { year: string; month: string } | null = null;
+  const record = (year: string, month: string, day: string) => {
+    dates.push(`${year}-${Number(month)}-${day ? Number(day) : ""}`);
+    if (month) lastDated = { year, month };
+  };
+  for (const { pattern, hasYear } of CALENDAR_DATE_PATTERNS) {
+    text = text.replace(pattern, (_match, first: string, second: string, third?: string) => {
+      if (hasYear) record(first, second, third ?? "");
+      else record("", first, second);
+      return " ";
+    });
+  }
+  for (const { pattern, monthFirst } of ENGLISH_DATE_PATTERNS) {
+    text = text.replace(pattern, (_match, first: string, second: string, year?: string) => {
+      const monthName = (monthFirst ? first : second).toLocaleLowerCase();
+      const day = monthFirst ? second : first;
+      record(year ?? "", String(ENGLISH_MONTHS.indexOf(monthName) + 1), day);
+      return " ";
+    });
+  }
+  if (lastDated) {
+    const { year, month } = lastDated;
+    text = text.replace(RANGE_END_DAY_PATTERN, (_match, day: string) => {
+      record(year, month, day);
+      return " ";
+    });
+  }
+  return { text, dates };
+}
+
+function scanCalendarDates(value: string): CalendarDateScan {
+  // Split on the same clause boundaries numericClaimGroups uses, so a
+  // range-continuation date (see scanCalendarDatesInClause) can only ever
+  // inherit from a date in its own clause. A fresh copy of the shared
+  // boundary pattern avoids mutating its lastIndex across calls.
+  const boundaryPattern = new RegExp(CLAUSE_BOUNDARY_PATTERN.source, CLAUSE_BOUNDARY_PATTERN.flags);
+  const separators = value.match(boundaryPattern) ?? [];
+  const clauses = value.split(CLAUSE_BOUNDARY_PATTERN);
+  let text = "";
+  const dates: string[] = [];
+  clauses.forEach((clause, index) => {
+    const scanned = scanCalendarDatesInClause(clause);
+    text += scanned.text;
+    dates.push(...scanned.dates);
+    if (index < separators.length) text += separators[index];
+  });
+  return { text, dates: uniqueText(dates) };
+}
+
+/**
+ * A 2-digit year is compared against a 4-digit year on its trailing two
+ * digits, never by guessing a century and expanding it ("22" is not turned
+ * into "2022") — so "22" and "2022" are compatible, but "22" and "2021" are
+ * not, and two 2-digit years must match exactly.
+ */
+function yearsAreCompatible(year: string | undefined, candidateYear: string | undefined): boolean {
+  if (!year || !candidateYear) return true;
+  if (year.length === candidateYear.length) return year === candidateYear;
+  const [longer, shorter] = year.length > candidateYear.length ? [year, candidateYear] : [candidateYear, year];
+  return longer.endsWith(shorter);
+}
+
+/**
+ * Every date stated in the output must be stated by the cited evidence. A date
+ * written without a year matches on month and day, because a range's second
+ * endpoint normally omits the year the first one already gave.
+ */
+function calendarDatesAreSupported(text: string, evidenceText: string): boolean {
+  const output = scanCalendarDates(text).dates;
+  if (output.length === 0) return true;
+  const evidence = scanCalendarDates(evidenceText).dates;
+  return output.every((date) => {
+    const [year, month, day] = date.split("-");
+    return evidence.some((candidate) => {
+      const [candidateYear, candidateMonth, candidateDay] = candidate.split("-");
+      if (month !== candidateMonth) return false;
+      if (day && candidateDay && day !== candidateDay) return false;
+      return yearsAreCompatible(year, candidateYear);
+    });
+  });
+}
+
+/** Recognized measurement units, shared by the tokenizer and the enumeration-marker mask below. */
+const NUMERIC_UNIT_PATTERN = "(?:%|％|ppm|ml|mg|kg|g|oz|hours?|hrs?|days?|weeks?|months?|minutes?|seconds?|participants?|subjects?|users?|people|times?|layers?|krw|usd|eur|gbp|jpy|시간|일|주|개월|분|초|명|회|배|개|층|원|달러|유로|엔|人|時間|日|週間|か月|分|秒)";
+
+/**
+ * Korean case/topic particles glue directly onto a preceding unit with no
+ * space ("94%와", "48시간이"). This is a closed grammar class rather than
+ * domain content, so enumerating it does not run afoul of the
+ * no-keyword-hardcoding policy for semantic rules.
+ */
+const KOREAN_PARTICLE_PATTERN = "(?:은|는|이|가|을|를|와|과|도|만|의|에|에서|에게|한테|보다|처럼|같이|마다|조차|밖에|이나|나|부터|까지|이라|라|로|으로|랑|이랑|고|이고)";
+
+const NUMERIC_CLAIM_TOKEN_PATTERN = new RegExp(
+  "(?<![\\p{L}\\p{N}])\\d+(?:[.,]\\d+)?(?:" +
+    // A unit-bearing number: a following Hangul particle (word-continuation
+    // by character class alone) doesn't disqualify it, only another digit or
+    // a non-particle letter does — otherwise "94%와" would drop the unit.
+    "\\s*" + NUMERIC_UNIT_PATTERN + "(?![.,]\\d|\\p{N}|(?:(?!" + KOREAN_PARTICLE_PATTERN + ")\\p{L}))" +
+    "|" +
+    // A bare number with no unit: any following letter or digit means it's
+    // part of a larger token (avoids partial matches like "94" in "945").
+    "(?![.,]\\d|[\\p{L}\\p{N}])" +
+  ")",
+  "giu"
+);
+
+const CLAUSE_START = "(?:^|[\\n\\r]|[;:。！？!?]|\\.(?=\\s|$))";
+const CLAUSE_END = "(?:$|[\\n\\r]|[;:。！？!?])";
+
+/**
+ * Enumeration list markers ("1) 세안 직후…", "사용법 2") are not
+ * measurements: a bare 1–2 digit integer with no unit, standing alone at a
+ * clause boundary, is a list index or step label rather than a measured
+ * value — every real measurement in this corpus carries a unit. Anchoring
+ * the exclusion on "no unit at a clause edge" keeps genuine numbers,
+ * including a unit-bearing one that happens to open a clause ("48시간 보습
+ * 지속…"), untouched. Clause boundaries mirror numericClaimGroups' own
+ * splitter, since this masking runs before that splitting happens.
+ */
+function maskEnumerationMarkers(text: string): string {
+  return text
+    .replace(
+      // A "." only reads as a marker delimiter ("1. 세안…") when it is
+      // followed by whitespace or the end, same as numericClaimGroups' own
+      // clause splitter — otherwise "2.70"'s decimal point would be
+      // mistaken for one and strip the leading digit off a real number.
+      new RegExp(`(${CLAUSE_START})(\\s*)(\\d{1,2})(?=\\)|\\.(?=\\s|$)|\\s+(?!${NUMERIC_UNIT_PATTERN}))`, "giu"),
+      (_match, boundary: string, spacing: string) => `${boundary}${spacing}`
+    )
+    .replace(
+      // A short Latin-letter token right before the number (SPF/PA/pH-shaped
+      // scale designators) means it is a graded value, not a list marker —
+      // Korean step/list labels in this corpus are Hangul words, so this is
+      // a structural distinction rather than an enumerated word list. But
+      // that alone isn't enough: "STEP 2" and "DAY 3" are also Latin-labeled
+      // and single-digit, yet they're ordinal step labels, not grades. The
+      // exemption is narrowed to what actually reads as a graded scale
+      // value — two digits ("SPF 50"), a decimal (already safe below, since
+      // a "." right after the digit isn't a CLAUSE_END), or a trailing "+"
+      // (also already safe, since "+" isn't whitespace/CLAUSE_END either) —
+      // so a single bare digit after a Latin token still falls back to the
+      // mask. A Hangul word immediately before ("용량 30", "총 12") is not
+      // distinguishable this way at all, so a genuine graded value in that
+      // shape is masked out of the output tokens and thereby exempted from
+      // evidence verification — the permissive direction, since the gate only
+      // ever checks tokens that survive the mask. The gap stays acknowledged
+      // and unpoliced because closing it would mean hardcoding specific Korean
+      // content words, which the no-keyword-hardcoding policy for semantic
+      // rules forbids; it is bounded to bare 1–2 digit integers carrying no
+      // unit at a clause edge, so every measured value stays verified.
+      new RegExp(`(?:(?<!\\p{Script=Latin}{1,8}\\s)(?<=^|\\s)\\d{2}|(?<=^|\\s)\\d(?!\\d))(?=\\s*${CLAUSE_END})`, "gu"),
+      () => " "
+    );
+}
+
+/** Exported for tests only — not part of the package surface (index.ts). */
+export function numericClaimTokens(text: string): string[] {
+  return Array.from(scanCalendarDates(maskEnumerationMarkers(text)).text.matchAll(NUMERIC_CLAIM_TOKEN_PATTERN))
     .map((match) => match[0]
       .replace(/,/g, "")
       .replace(/\s+/g, "")
@@ -1570,15 +2092,55 @@ function descriptionEvidenceSemanticallySupportsText(
   );
 }
 
-function descriptionIdentityUnitIsSupported(
+/**
+ * A sentence that only states what the product IS ("Product X is EXAMPLEDERMA's
+ * mild cleanser") makes no claim beyond naming it, so it is exempt from the
+ * clause-level evidence audit the way a numeric identity token (product name
+ * containing "365") is exempt from the numeric gate — see
+ * numbersAreSupported/maskProductIdentityMentions. Getting this exemption
+ * right requires judging what KIND of statement the unit makes, not just
+ * which words it uses:
+ *
+ * 1. it must actually cite identity evidence and name the product as its
+ *    subject (descriptionUnitNamesProductAsSubject) — a sentence about
+ *    something else that merely reuses identity words does not qualify;
+ * 2. its predicate must be a copula ("is/are a|an", ~입니다/이다, です/である),
+ *    not an action or effect predicate (~돕습니다/~줍니다, cleanses, helps) —
+ *    descriptionUnitPredicateIsIdentityCopula tests this positively, so an
+ *    open-ended verb vocabulary never needs to be enumerated: whatever the
+ *    predicate is, if it is not a recognized copula, the sentence is not an
+ *    identity statement and falls through to the ordinary semantic audit;
+ * 3. every substantive token it uses must come from the identity fields OR
+ *    the evidence actually cited for this sentence — not from identity
+ *    fields alone. A real production run dropped
+ *    "…EXAMPLEDERMA의 약산성 클렌저입니다" (a plain is-a sentence) because "약산성"
+ *    is not part of the product's name/brand/category, even though the
+ *    ledger states it verbatim elsewhere and that atom was cited. Requiring
+ *    every token to be an identity FIELD conflated "is this an identity
+ *    sentence" with "does this sentence add zero new information," which are
+ *    different questions; pooling in the cited evidence text answers the
+ *    first question without silently answering the second one for it.
+ *
+ * The plan for this fix line originally called for stripping only the
+ * unsupported modifier and keeping the rest of the sentence. That is not
+ * implemented here: rewriting model-authored prose risks producing
+ * disfluent copy, and the actual defect was a *supported* modifier being
+ * judged against the wrong pool, which condition 3 above fixes directly. A
+ * sentence carrying a modifier the evidence never states anywhere is still
+ * dropped as a whole unit, same as before this change.
+ */
+export function descriptionIdentityUnitIsSupported(
   unit: string,
   cited: PdpGeoAtomicEvidence[],
   product: PdpProductSignal
 ): boolean {
   const identityEvidence = cited.filter((item) => item.role === "identity");
   if (identityEvidence.length === 0) return false;
+  if (!descriptionUnitNamesProductAsSubject(unit, product)) return false;
+  if (!descriptionUnitPredicateIsIdentityCopula(unit)) return false;
+
   const identityText = [
-    ...identityEvidence.map((item) => item.text),
+    ...cited.map((item) => item.text),
     product.name,
     product.originalName ?? "",
     product.brand ?? "",
@@ -1588,6 +2150,61 @@ function descriptionIdentityUnitIsSupported(
   const unitTokens = meaningfulEvidenceTokens(unit);
   return unitTokens.length > 0
     && unitTokens.every((token) => identityTokens.some((candidate) => evidenceTokensMatch(token, candidate)));
+}
+
+/**
+ * Presence of the product's own name/original name anywhere in the unit is
+ * the same "subject" test this file already applies elsewhere (see
+ * isParallelProductCompositionBenefitClause's hasProductSubject): these are
+ * short, single-clause description sentences, so a mention of the product's
+ * own name is a reliable proxy for it being the grammatical subject, without
+ * needing a real parser to locate the subject position.
+ */
+function descriptionUnitNamesProductAsSubject(unit: string, product: PdpProductSignal): boolean {
+  const normalizedUnit = normalizeEntityMention(unit);
+  return [product.name, product.originalName]
+    .filter((value): value is string => Boolean(cleanText(value ?? "")))
+    .some((name) => {
+      const entity = normalizeEntityMention(name);
+      return Boolean(entity) && normalizedUnit.includes(entity);
+    });
+}
+
+/**
+ * Copula ("is-a") predicates form a closed grammatical class in each locale,
+ * so they can be matched positively and completely. Action/effect predicates
+ * cannot be enumerated the same way (돕습니다/줍니다/cleanses/moisturizes/助け…
+ * is an open-ended and ever-growing list), so this function never lists
+ * them: any unit whose predicate does not match a recognized copula form
+ * simply returns false, whatever verb it actually used.
+ */
+// 습니다체(입니다/이다) plus the 해요체 present-tense forms shared with
+// final-proofreader's copula-allomorph table (see KOREAN_COPULA_POLITE_PRESENT_ENDINGS
+// in normalize.ts) — a prior version of this gate checked only the former and
+// dropped a valid 해요체 identity sentence the proofreader already treated as
+// a copula. Past-tense 해요체 (였어요/이었어요) is intentionally left out of
+// the shared constant's scope for now, matching what the proofreader table
+// covers; extend the shared array, not this regex, if that changes.
+const KOREAN_COPULA_ENDING_PATTERN = new RegExp(
+  `(?:${KOREAN_COPULA_ENDING_FORMS.join("|")})[.!?]*$`,
+  "u"
+);
+
+function descriptionUnitPredicateIsIdentityCopula(unit: string): boolean {
+  const trimmed = cleanText(unit).replace(/[)\]"'”’]+$/u, "");
+  if (!trimmed) return false;
+  const jaCopulaEnding = /(?:でした|である|だった|です)[.!?。！？]*$/u;
+  if (KOREAN_COPULA_ENDING_PATTERN.test(trimmed) || jaCopulaEnding.test(trimmed)) return true;
+
+  const enCopula = /^[^,]*?\b(?:is|are|was|were)\s+(?:a|an)\b/iu.exec(trimmed);
+  if (!enCopula) return false;
+  // A second finite predicate coordinated after the copula clause ("...is a
+  // cleanser, and it removes...") rides an action claim in on the identity
+  // clause's coattails, so it disqualifies the exception even though the
+  // sentence also contains "is a".
+  const remainder = trimmed.slice(enCopula.index + enCopula[0].length);
+  const coordinatedSecondPredicate = /,\s*(?:and|but)\s+(?:it\s+|which\s+|that\s+)?\w+s\b/iu.test(remainder);
+  return !coordinatedSecondPredicate;
 }
 
 function descriptionPageIntroductionUnitIsSupported(
@@ -1725,6 +2342,7 @@ const semanticConceptPatterns: ReadonlyArray<readonly [string, RegExp]> = [
   ["brightening", /\b(?:brighten|brightening|dullness|radiance)\b|(?:브라이트닝|미백|칙칙|광채)|(?:明る|くすみ|透明感)/iu],
   ["firmness", /\b(?:firmness|firming|elasticity)\b|(?:탄력|리프팅)|(?:ハリ|弾力)/iu],
   ["wrinkle", /\b(?:wrinkles?|fine\s+lines?)\b|(?:주름|잔주름)|(?:しわ|シワ)/iu],
+  ["cooling", /\b(?:cooling|refreshing|chilled?)\b|(?:쿨링|시원|냉감|청량)|(?:クール|ひんやり|冷感)/iu],
   ["soothing", /\b(?:soothe|soothing|calm|calming|redness)\b|(?:진정|붉은기)|(?:鎮静|赤み)/iu],
   ["acne", /\b(?:acne|blemishes?|breakouts?)\b|(?:여드름|트러블)|(?:ニキビ|吹き出物)/iu],
   ["lightweight", /\b(?:lightweight|light|non[-\s]?sticky)\b|(?:산뜻|가벼운|끈적임\s*없)|(?:軽い|さっぱり|べたつかない)/iu],
@@ -1774,13 +2392,16 @@ function faqQuestionIsSupported(
   if (!contextAssociationsAreSupported(question, evidenceText)
     || !claimRiskIsSupported(question, evidenceText)
     || !evidenceRolesSupportClaimTopics(question, cited)) return false;
-  if (coolingExperienceFaqBridgeIsSupported(question, evidenceText)) {
+  if (faqEvidenceSelectorQuestionIsSupported(question, cited, evidenceText, product)) {
     return true;
   }
-  if (faqEvidenceSelectorQuestionIsSupported(question, cited, evidenceText)) {
-    return true;
-  }
-  const questionConcepts = semanticConcepts(question);
+  // Two different jobs, so two different sets. The subset test asks whether
+  // the question demands anything the evidence does not state, and identity
+  // must be excluded from it. The anchor test below asks whether the question
+  // is semantically tied to this product at all, and naming the product is
+  // exactly such a tie — so it uses the full set.
+  const questionConcepts = claimSemanticConcepts(question, product);
+  const anchorConcepts = semanticConcepts(question);
   const evidenceConcepts = semanticConcepts(evidenceText);
   const hasUsageEvidence = cited.some((item) => item.role === "usage");
   if (hasUsageEvidence
@@ -1804,21 +2425,35 @@ function faqQuestionIsSupported(
     // Questions are evidence selectors, not answer claims. After the audited
     // corrective pass, one supported factual anchor or a fully supported
     // semantic concept is sufficient; answer clauses remain strictly gated.
-    && (matched >= Math.min(1, questionTokens.length) || questionConcepts.size > 0);
+    && (matched >= Math.min(1, questionTokens.length) || anchorConcepts.size > 0);
 }
 
-function coolingExperienceFaqBridgeIsSupported(question: string, evidenceText: string): boolean {
-  const asksCoolingUseContext = /(?:땀을?\s*(?:많이\s*)?흘|더위|더운\s*환경|열감|after\s+sweating|sweat(?:ing|y)?|feel(?:s|ing)?\s+hot|hot\s+conditions?)/iu.test(question)
-    && /(?:추천|적합|고려|recommend|suitable|good\s+option)/iu.test(question);
-  const hasCoolingEffect = /(?:쿨링|시원|냉감|cooling|refreshing|temperature\s*(?:drop|decrease|reduction))/iu.test(evidenceText);
-  const hasRefreshingFormula = /(?:워터\s*크림|수분감을?\s*높인|특화\s*제형|water[-\s]?cream|water\s+cream|refreshing\s+formula)/iu.test(evidenceText);
-  return asksCoolingUseContext && hasCoolingEffect && hasRefreshingFormula;
+/**
+ * The concepts a sentence asserts, excluding those it carries only by naming
+ * the product.
+ *
+ * A FAQ question is required to name the exact product, and a product name or
+ * category can itself map to a concept — "크림" yields `cream`. Comparing the
+ * raw concept set against the evidence then demanded that a safety-test atom
+ * also mention the word cream, and rejected a well-supported question for
+ * obeying the contract that put the product name in it. Identity is not a
+ * claim, so it is removed before the comparison.
+ */
+function claimSemanticConcepts(text: string, product: PdpProductSignal): Set<string> {
+  const identityConcepts = semanticConcepts([
+    product.name,
+    product.originalName ?? "",
+    product.brand ?? "",
+    product.category ?? ""
+  ].join(" "));
+  return new Set([...semanticConcepts(text)].filter((concept) => !identityConcepts.has(concept)));
 }
 
 function faqEvidenceSelectorQuestionIsSupported(
   question: string,
   cited: PdpGeoAtomicEvidence[],
-  evidenceText: string
+  evidenceText: string,
+  product: PdpProductSignal
 ): boolean {
   const asksForEvidence = /\b(?:evidence|proof|results?|measurements?|tests?|tested)\b|(?:근거|결과|측정|시험|테스트|완료\s*표기)|(?:根拠|結果|測定|試験|テスト)/iu.test(question);
   if (!asksForEvidence) return false;
@@ -1826,7 +2461,7 @@ function faqEvidenceSelectorQuestionIsSupported(
   if (!["metric", "source", "faq", "description", "benefit", "effect"].some((role) => roleSet.has(role as PdpGeoEvidenceRole))) {
     return false;
   }
-  const questionConcepts = semanticConcepts(question);
+  const questionConcepts = claimSemanticConcepts(question, product);
   const evidenceConcepts = semanticConcepts(evidenceText);
   if (![...questionConcepts].every((concept) => evidenceConcepts.has(concept))) {
     return false;
@@ -2293,17 +2928,6 @@ function compactUsage(input: unknown, output: unknown, total: unknown): PdpGeoTo
     totalTokens: typeof total === "number" ? total : undefined
   };
   return usage.inputTokens !== undefined || usage.outputTokens !== undefined || usage.totalTokens !== undefined ? usage : undefined;
-}
-
-function mergeTokenUsage(left: PdpGeoTokenUsage | undefined, right: PdpGeoTokenUsage | undefined): PdpGeoTokenUsage | undefined {
-  if (!left) return right;
-  if (!right) return left;
-  const add = (a: number | undefined, b: number | undefined) => a === undefined && b === undefined ? undefined : (a ?? 0) + (b ?? 0);
-  return {
-    inputTokens: add(left.inputTokens, right.inputTokens),
-    outputTokens: add(left.outputTokens, right.outputTokens),
-    totalTokens: add(left.totalTokens, right.totalTokens)
-  };
 }
 
 function planningWarningField(reason: string): string {

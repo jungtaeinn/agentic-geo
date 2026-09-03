@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { PdpGeoContentSections } from "@agentic-geo/pdp-geo-generator-agent/types";
 import { GenerationService } from "../../../src/geo/generation.service";
+import { OcrEnrichmentService } from "../../../src/geo/ocr-enrichment.service";
 import { buildGeneratorOptions } from "../../../src/config/generator-options.factory";
 import type { RegressionCase, RunMeta } from "./types";
 
@@ -73,7 +74,7 @@ export function createRunner(): Runner {
 /** 서버를 띄우지 않고 생성 서비스를 그대로 호출한다. */
 class LocalRunner implements Runner {
   readonly mode = "local" as const;
-  private readonly generation = new GenerationService();
+  private readonly generation = new GenerationService(new OcrEnrichmentService());
 
   async run(testCase: RegressionCase): Promise<GenerationOutcome> {
     const geoGenerationId = randomUUID();

@@ -25,7 +25,7 @@ describe("GeoAcceptService (idempotent enqueue)", () => {
 
   async function seed(status: string): Promise<void> {
     await db.dataSource.query(
-      `insert into neo.geo_generation
+      `insert into agentic_geo.geo_generation
        (geo_generation_id, channel_id, dedup_key, locale, product, product_sn, status, version, created_at, updated_at)
        values ($1,$2,$3,'ko-KR','{}','SN-TEST',$4,0,now(),now())
        on conflict (geo_generation_id) do update set status=excluded.status`,
@@ -44,7 +44,7 @@ describe("GeoAcceptService (idempotent enqueue)", () => {
   it("no-ops when status is not PROCESSING", async () => {
     const otherId = "55555555-5555-5555-5555-555555555555";
     await db.dataSource.query(
-      `insert into neo.geo_generation
+      `insert into agentic_geo.geo_generation
        (geo_generation_id, channel_id, dedup_key, locale, product, product_sn, status, version, created_at, updated_at)
        values ($1,$2,$3,'ko-KR','{}','SN-TEST','SUCCEEDED',0,now(),now())`,
       [otherId, db.testChannelId, otherId],

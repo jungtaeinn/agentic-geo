@@ -15,7 +15,17 @@ import { graphOf, nodeOf } from "./support/graph";
 // - agent-api SubmitGenerationDto 계약(geoGenerationId/locale/product)을 지키는지
 // - 생성 결과의 정량값(가격/평점/리뷰 수/옵션/메트릭 클레임)이 원본 PDP와 일치하는지
 // - JSON-LD 구조(WebPage/Product/FAQPage, canonicalUrl 앵커)가 정상 구성되는지
-describe("pdp-extractor live product fixtures (mock contract)", () => {
+/**
+ * Each case runs the whole generation pipeline over a live product fixture, so
+ * these are seconds-scale by nature — around seven seconds for the file on its
+ * own. Vitest's 5s default made them fail only when the rest of the suite ran
+ * in parallel, which reads as a flake and hides real failures behind it. The
+ * timeout is stated here rather than raised globally so ordinary unit tests
+ * keep the tight default.
+ */
+const LIVE_FIXTURE_TIMEOUT_MS = 30_000;
+
+describe("pdp-extractor live product fixtures (mock contract)", { timeout: LIVE_FIXTURE_TIMEOUT_MS }, () => {
   it.each(extractorLiveProductKeys)("%s mirrors the extractor output invariants", (key) => {
     const { geoProduct } = extractorRunResults[key];
 
@@ -52,13 +62,13 @@ describe("pdp-extractor live product fixtures (mock contract)", () => {
   });
 });
 
-describe("generatePdpGeo with ExampleLuxe Botanical Renewal Serum (en-US)", () => {
+describe("generatePdpGeo with ExampleLuxe Botanical Ginseng Rejuvenating Serum (en-US)", { timeout: LIVE_FIXTURE_TIMEOUT_MS }, () => {
   it("normalizes extractor output and emits en-US Product/WebPage schema", async () => {
-    const run = await generatePdpGeo(pdpGeoGenerationInputs["exampleluxe-renewal-serum"]);
+    const run = await generatePdpGeo(pdpGeoGenerationInputs["exampleluxe-cgr-serum"]);
     const normalized = run.result.diagnostics.normalizedProduct;
 
     // 정량값: 원본 PDP와 일치해야 한다.
-    expect(normalized.name).toBe("Botanical Renewal Serum");
+    expect(normalized.name).toBe("Botanical Ginseng Rejuvenating Serum");
     expect(normalized.brand).toBe("ExampleLuxe");
     expect(normalized.price?.raw).toBe("$215.00");
     expect(normalized.price?.amount).toBe(215);
@@ -79,7 +89,7 @@ describe("generatePdpGeo with ExampleLuxe Botanical Renewal Serum (en-US)", () =
     const webPage = nodeOf(run, "WebPage");
     expect(product).toBeDefined();
     expect(webPage).toBeDefined();
-    expect(String(product?.name)).toContain("Botanical Renewal Serum");
+    expect(String(product?.name)).toContain("Botanical Ginseng Rejuvenating Serum");
 
     // 가격/통화는 Offer 노드로 반영되어야 한다.
     const offer = product?.offers as Record<string, any>;
@@ -93,9 +103,9 @@ describe("generatePdpGeo with ExampleLuxe Botanical Renewal Serum (en-US)", () =
   });
 });
 
-describe("generatePdpGeo with ExampleLuxe Essential Activating Serum (en-US)", () => {
+describe("generatePdpGeo with ExampleLuxe Essential Activating Serum (en-US)", { timeout: LIVE_FIXTURE_TIMEOUT_MS }, () => {
   it("keeps variant options, price and survey metric claims", async () => {
-    const run = await generatePdpGeo(pdpGeoGenerationInputs["exampleluxe-activating-serum"]);
+    const run = await generatePdpGeo(pdpGeoGenerationInputs["exampleluxe-fcas-vi"]);
     const normalized = run.result.diagnostics.normalizedProduct;
 
     expect(normalized.name).toBe("Essential Activating Serum");
@@ -114,7 +124,7 @@ describe("generatePdpGeo with ExampleLuxe Essential Activating Serum (en-US)", (
     // trust-sensitive 판매 순위 클레임(수치 근거 없음)은 extractor 목업에는 있지만
     // sanitizer가 정규화 단계에서 걸러내야 한다.
     const fixtureClaims =
-      extractorRunResults["exampleluxe-activating-serum"].geoProduct.semanticFacts?.metricClaims ?? [];
+      extractorRunResults["exampleluxe-fcas-vi"].geoProduct.semanticFacts?.metricClaims ?? [];
     expect(fixtureClaims.some((claim) => claim.caveat !== undefined && /trust-sensitive/i.test(claim.caveat))).toBe(true);
     expect(claims.some((claim) => /number one/i.test(claim.label ?? ""))).toBe(false);
 
@@ -131,12 +141,12 @@ describe("generatePdpGeo with ExampleLuxe Essential Activating Serum (en-US)", (
   });
 });
 
-describe("generatePdpGeo with EXAMPLEDERMA 배리어케어365 캡슐 토너 (ko-KR)", () => {
+describe("generatePdpGeo with EXAMPLEDERMA 모이베리어365 캡슐 토너 (ko-KR)", { timeout: LIVE_FIXTURE_TIMEOUT_MS }, () => {
   it("emits Korean copy, FAQPage schema, and keeps barrier metric claims", async () => {
     const run = await generatePdpGeo(pdpGeoGenerationInputs["examplederma-capsule-toner"]);
     const normalized = run.result.diagnostics.normalizedProduct;
 
-    expect(normalized.name).toBe("예시더마 배리어케어365 캡슐 토너");
+    expect(normalized.name).toBe("예시더마 모이베리어365 캡슐 토너");
     expect(normalized.brand).toBe("EXAMPLEDERMA");
     expect(normalized.options).toContain("300ml");
     expect(normalized.ingredients).toContain("세라마이드엔피");
@@ -164,13 +174,13 @@ describe("generatePdpGeo with EXAMPLEDERMA 배리어케어365 캡슐 토너 (ko-
   });
 });
 
-describe("generatePdpGeo with EXAMPLEDERMA 배리어케어 365 크림 미스트 (ko-KR)", () => {
+describe("generatePdpGeo with EXAMPLEDERMA 모이베리어 365 크림 미스트 (ko-KR)", { timeout: LIVE_FIXTURE_TIMEOUT_MS }, () => {
   it("keeps review aggregates and ceramide content metric", async () => {
     const run = await generatePdpGeo(pdpGeoGenerationInputs["examplederma-cream-mist"]);
     const normalized = run.result.diagnostics.normalizedProduct;
 
     // 정량값: 평점/리뷰 수/리뷰 아이템이 원본 그대로 유지되어야 한다.
-    expect(normalized.name).toBe("배리어케어365 크림 미스트");
+    expect(normalized.name).toBe("모이베리어 365 크림 미스트");
     expect(normalized.reviews.rating).toBe(4.9);
     expect(normalized.reviews.reviewCount).toBe(1482);
     expect(normalized.reviews.items.length).toBeGreaterThanOrEqual(3);
@@ -221,7 +231,7 @@ describe("generatePdpGeo with EXAMPLEDERMA 배리어케어 365 크림 미스트 
   });
 });
 
-describe("generatePdpGeo via agent-api SubmitGenerationDto contract", () => {
+describe("generatePdpGeo via agent-api SubmitGenerationDto contract", { timeout: LIVE_FIXTURE_TIMEOUT_MS }, () => {
   it("anchors JSON-LD ids to canonicalUrl the way agent-api GenerationService does", async () => {
     const payload = agentApiSubmitPayloads["examplederma-capsule-toner"];
 
@@ -238,7 +248,7 @@ describe("generatePdpGeo via agent-api SubmitGenerationDto contract", () => {
 
     // canonicalUrl이 있으면 @id가 urn 대신 실제 URL 앵커가 되어야 한다(GEO-128).
     const serialized = JSON.stringify(run.result.schemaMarkup.jsonLd);
-    expect(serialized).toContain("example.com");
+    expect(serialized).toContain("shop.example.com");
   });
 
   it("accepts every payload without validation errors", async () => {

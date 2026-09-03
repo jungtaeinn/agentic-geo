@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { attributeCitationsToSections, type AttributableSection } from "../src/citation/metrics";
 
 const sections: AttributableSection[] = [
-  { id: "description", text: "Botanical Renewal Serum is an anti-aging serum with capsule technology for firmness and fine lines." },
+  { id: "description", text: "Botanical Ginseng Rejuvenating Serum is an anti-aging serum with capsule technology for firmness and fine lines." },
   { id: "howToUse", text: "Apply morning and night after toner, gently pressing into skin until absorbed." },
   { id: "faq", text: "Q: Who is this serum best suited for? A: It suits dry and combination skin concerned with loss of firmness and early wrinkles." },
   { id: "ingredients", text: "" }
@@ -24,6 +24,23 @@ describe("attributeCitationsToSections", () => {
     expect(ids).not.toContain("ingredients");
     const total = attribution.reduce((sum, item) => sum + item.share, 0);
     expect(total).toBeGreaterThan(0.99);
+    expect(attribution.reduce((sum, item) => sum + item.citedSentences, 0)).toBe(2);
+  });
+
+  // Real engines follow the prompt's "immediately followed" instruction by
+  // writing the marker after the terminal punctuation. Every other fixture here
+  // puts it before, which is why a live probe collapsed to "other 100%" with
+  // empty cited sentences while this suite stayed green.
+  it("attributes engine-shaped answers whose markers follow the period", () => {
+    const answer = [
+      "This serum best suits dry and combination skin concerned with firmness. [2]",
+      "Apply it morning and night after toner, pressing gently until absorbed. [2]"
+    ].join("  ");
+
+    const attribution = attributeCitationsToSections(answer, 2, sections);
+
+    expect(attribution.map((item) => item.sectionId).sort()).toEqual(["faq", "howToUse"]);
+    expect(attribution.every((item) => item.sentences.every((sentence) => sentence.trim().length > 0))).toBe(true);
     expect(attribution.reduce((sum, item) => sum + item.citedSentences, 0)).toBe(2);
   });
 

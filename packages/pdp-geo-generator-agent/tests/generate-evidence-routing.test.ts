@@ -111,8 +111,8 @@ describe("generatePdpGeo", () => {
     const { result } = await generatePdpGeo({
       product: {
         geoProduct: {
-          name: "[예시럭셔리][소용량] 보태니컬 리뉴얼 크림 30ml",
-          description: "예시럭셔리[소용량] 보태니컬 리뉴얼 크림 30ml공유10%168,000원151,200원5. 식물 복합체, 진생펩타이드, 비타민C 유도체를 담은 산뜻한 고밀도 텍스처의 안티에이징 크림입니다. 민감 피부 사용 적합 테스트 완료.",
+          name: "[예시럭셔리][소용량] 보태니컬크림 30ml",
+          description: "예시럭셔리[소용량] 보태니컬크림 30ml공유10%168,000원151,200원5. 보태니컴플렉스, 진생펩타이드, 비타민C 유도체를 담은 산뜻한 고밀도 텍스처의 안티에이징 크림입니다. 민감 피부 사용 적합 테스트 완료.",
           brand: "예시럭셔리",
           category: "크림",
           price: {
@@ -121,15 +121,15 @@ describe("generatePdpGeo", () => {
           },
           benefits: ["주름 케어", "탄력", "피부결", "수분감"],
           effects: ["피부 탄력과 주름 케어", "피부결 케어"],
-          ingredients: ["식물 복합체", "진생펩타이드", "비타민C 유도체", "인삼 추출물", "｢화장품법｣에 따라 기재ㆍ표시하여야 하는 모든 성분"],
+          ingredients: ["보태니컴플렉스", "진생펩타이드", "비타민C 유도체", "인삼 추출물", "｢화장품법｣에 따라 기재ㆍ표시하여야 하는 모든 성분"],
           usage: ["아침과 저녁 스킨케어 마지막 단계에서 얼굴에 부드럽게 펴 발라 흡수시켜 주세요."],
           faq: [
-            { question: "보태니컬 리뉴얼 크림은 어떤 피부 고민에 적합한가요?", answer: "예시럭셔리 보태니컬 리뉴얼 크림은 주름, 탄력, 피부결, 수분감을 함께 고민하는 고객에게 적합한 안티에이징 크림입니다." },
-            { question: "핵심 성분은 무엇인가요?", answer: "예시럭셔리 보태니컬 리뉴얼 크림에는 식물 복합체, 진생펩타이드, 비타민C 유도체가 포함되어 있으며 탄력과 피부결 케어 맥락을 제공합니다." },
+            { question: "보태니컬크림은 어떤 피부 고민에 적합한가요?", answer: "예시럭셔리 보태니컬크림은 주름, 탄력, 피부결, 수분감을 함께 고민하는 고객에게 적합한 안티에이징 크림입니다." },
+            { question: "핵심 성분은 무엇인가요?", answer: "예시럭셔리 보태니컬크림에는 보태니컴플렉스, 진생펩타이드, 비타민C 유도체가 포함되어 있으며 탄력과 피부결 케어 맥락을 제공합니다." },
             { question: "어떻게 사용하나요?", answer: "아침과 저녁 스킨케어 마지막 단계에서 얼굴에 부드럽게 펴 바른 뒤 흡수시켜 사용하면 됩니다." },
             { question: "민감 피부도 사용할 수 있나요?", answer: "상품 정보에는 민감 피부 사용 적합 테스트 완료 정보가 포함되어 있어 민감 피부 고객도 선택 기준으로 참고할 수 있습니다." },
-            { question: "제형은 어떤가요?", answer: "예시럭셔리 보태니컬 리뉴얼 크림은 산뜻한 고밀도 텍스처를 강조하며, 리뷰에서는 쫀쫀함과 촉촉함, 흡수감이 함께 언급됩니다." },
-            { question: "세럼과 함께 사용할 수 있나요?", answer: "보태니컬 리뉴얼 세럼이나 에센스 사용 후 크림 단계에서 함께 사용할 수 있으며, 스킨케어 마지막 단계에서 마무리하는 루틴에 적합합니다." },
+            { question: "제형은 어떤가요?", answer: "예시럭셔리 보태니컬크림은 산뜻한 고밀도 텍스처를 강조하며, 리뷰에서는 쫀쫀함과 촉촉함, 흡수감이 함께 언급됩니다." },
+            { question: "세럼과 함께 사용할 수 있나요?", answer: "보태니컬세럼이나 에센스 사용 후 크림 단계에서 함께 사용할 수 있으며, 스킨케어 마지막 단계에서 마무리하는 루틴에 적합합니다." },
             { question: "소용량과 본품은 어떻게 비교하나요?", answer: "소용량 30ml와 본품 50ml는 용량과 가격을 기준으로 비교할 수 있으며, 현재 페이지는 30ml 옵션 정보를 함께 제공합니다." },
             { question: "선물용으로도 적합한가요?", answer: "프리미엄 안티에이징 크림을 찾는 고객에게 선물 구매 맥락으로도 고려할 수 있습니다." },
             { question: "전성분은 어디서 확인하나요?", answer: "｢화장품법｣에 따라 기재ㆍ표시하여야 하는 모든 성분 정보입니다." }
@@ -142,19 +142,19 @@ describe("generatePdpGeo", () => {
             ],
             keywords: ["쫀쫀", "촉촉", "흡수감", "피부결"]
           },
-          options: ["[소용량] 보태니컬 리뉴얼 크림 30ml 168,000원", "보태니컬 리뉴얼 크림 50ml 270,000원"],
+          options: ["[소용량] 보태니컬크림 30ml 168,000원", "보태니컬크림 50ml 270,000원"],
           sourceTexts: [
-            "예시럭셔리[소용량] 보태니컬 리뉴얼 크림 30ml공유10%168,000원151,200원5",
-            "식물 복합체와 진생펩타이드, 비타민C 유도체",
+            "예시럭셔리[소용량] 보태니컬크림 30ml공유10%168,000원151,200원5",
+            "보태니컴플렉스와 진생펩타이드, 비타민C 유도체",
             "산뜻한 고밀도 텍스처",
             "민감 피부 사용 적합 테스트 완료",
-            "보태니컬 리뉴얼 세럼 사용 후 크림 단계에서 사용"
+            "보태니컬세럼 사용 후 크림 단계에서 사용"
           ]
         }
       },
       source: {
         type: "pdp-extractor",
-        url: "https://example.com/products/botanical-renewal-cream?sku=example-sku"
+        url: "https://shop.example.com/kr/ko/product/detail?onlineProdSn=62166&onlineProdCode=111170002138"
       },
       hints: {
         locale: "ko-KR",
@@ -173,12 +173,12 @@ describe("generatePdpGeo", () => {
     const faqText = JSON.stringify(faq.mainEntity);
     const fullSchemaText = JSON.stringify(result.schemaMarkup.jsonLd);
 
-    expect(result.content.sections.productName).toBe("예시럭셔리 보태니컬 리뉴얼 크림");
-    expect(product.name).toBe("예시럭셔리 보태니컬 리뉴얼 크림");
-    expect(product.alternateName).toBe("[예시럭셔리][소용량] 보태니컬 리뉴얼 크림 30ml");
-    expect(product.url).toBe("https://example.com/products/botanical-renewal-cream?sku=example-sku");
+    expect(result.content.sections.productName).toBe("예시럭셔리 보태니컬크림");
+    expect(product.name).toBe("예시럭셔리 보태니컬크림");
+    expect(product.alternateName).toBe("[예시럭셔리][소용량] 보태니컬크림 30ml");
+    expect(product.url).toBe("https://shop.example.com/kr/ko/product/detail?onlineProdSn=62166&onlineProdCode=111170002138");
     expect(product.mainEntityOfPage).toEqual({ "@id": webPage["@id"] });
-    expect(product.sku).toBe("example-sku");
+    expect(product.sku).toBe("111170002138");
     expect(product.size).toBe("30ml");
     expect(product.offers.price).toBe(168000);
     expect(product.offers.priceCurrency).toBe("KRW");
@@ -189,13 +189,13 @@ describe("generatePdpGeo", () => {
     expect(JSON.stringify(webPage.hasPart ?? [])).toContain("#how-to-use");
     expect(result.content.sections.howToUse).toContain("아침과 저녁 스킨케어 마지막 단계");
     expect(String(product.description)).not.toContain("[소용량]");
-    expect(String(product.description)).toContain("식물 복합체");
+    expect(String(product.description)).toContain("보태니컴플렉스");
     expect(String(webPage.description)).not.toBe(String(product.description));
-    expect(String(webPage.description)).toContain("예시럭셔리 보태니컬 리뉴얼 크림 상품 페이지");
+    expect(String(webPage.description)).toContain("예시럭셔리 보태니컬크림 상품 페이지");
     expect(String(webPage.description)).not.toMatch(/크림\s*상품을\s*소개합니다/u);
-    expect(String(webPage.description)).toMatch(/예시럭셔리 보태니컬 리뉴얼 크림은[^.]*고객을 위한 제품/u);
-    expect(String(webPage.description)).toMatch(/식물 복합체[^.]*주요 성분·기술로 포함하고/u);
-    expect(String(webPage.description)).toMatch(/예시럭셔리 보태니컬 리뉴얼 크림은 소용량 보태니컬 리뉴얼 크림 30ml, 보태니컬 리뉴얼 크림 50ml 옵션으로 구성되어 있으며, 270,000원에 판매되고 있습니다.*고객 리뷰에서 고객들은/u);
+    expect(String(webPage.description)).toMatch(/예시럭셔리 보태니컬크림은[^.]*고객을 위한 제품/u);
+    expect(String(webPage.description)).toMatch(/보태니컴플렉스[^.]*주요 성분·기술로 포함하고/u);
+    expect(String(webPage.description)).toMatch(/예시럭셔리 보태니컬크림은 소용량 보태니컬크림 30ml, 보태니컬크림 50ml 옵션으로 구성되어 있으며, 270,000원에 판매되고 있습니다.*고객 리뷰에서 고객들은/u);
     expect(String(webPage.description)).not.toMatch(/페이지 본문에서는|페이지에서 확인할 수 있는|페이지에 공개된/u);
     expect(String(webPage.description)).not.toMatch(/핵심 성분\/(?:기술|포뮬러)|성분\/기술(?:을|를|로|으로)?[^.。！？]*(?:중심|설명|소개|제시)/);
     expect(String(webPage.description)).not.toMatch(/상품 정보로\s*(?:주요\s*)?효능,\s*성분\/기술,\s*사용 루틴/);
@@ -208,13 +208,13 @@ describe("generatePdpGeo", () => {
     expect(faq.mainEntity.length).toBeLessThanOrEqual(8);
     expect(faq.mainEntity.some((item: any) => /고민인\s*고객에게|고객에게[^?？]*적합/u.test(String(item.name))
       && /(?:돕습니다|도움을\s*줍니다)/u.test(String(item.acceptedAnswer.text)))).toBe(true);
-    expect(String(webPage.description)).toContain("소용량 보태니컬 리뉴얼 크림 30ml");
+    expect(String(webPage.description)).toContain("소용량 보태니컬크림 30ml");
     expect(faqText).not.toMatch(/화장품법|기재ㆍ표시/);
     expect(propertyNames).toContain("Recommended skin type");
     expect(propertyNames).toContain("Key ingredients and technologies");
     expect(propertyNames).toContain("Functional certification");
     expect(propertyNames).toContain("Texture and finish");
-    expect(propertyText).toContain("식물 복합체");
+    expect(propertyText).toContain("보태니컴플렉스");
     expect(propertyText).toContain("진생펩타이드");
     expect(propertyText).toContain("비타민C 유도체");
     expect(propertyText).not.toMatch(/CONCENTR|피부결과 피부결|제품로|화장품법|기재ㆍ표시/);
@@ -225,12 +225,12 @@ describe("generatePdpGeo", () => {
       product: {
         geoProduct: {
           name: "Essential Activating Serum",
-          description: "Hydrating serum with Botanical Actives for daily skincare.",
+          description: "Hydrating serum with Korean Ginseng Actives for daily skincare.",
           brand: "ExampleLuxe",
           category: "usage",
           benefits: ["hydration", "firming"],
           ingredients: [
-            "BOTANICAL ACTIVES (AKA BOTANICAL COMPLEX ™)- Patented ingredient that amplifies the rare and potent anti-aging compounds found in Ginseng.",
+            "KOREAN GINSENG ACTIVES (AKA BOTANICALCOMPLEX ™)- Patented ingredient that amplifies the rare and potent anti-aging compounds found in Ginseng.",
             "NIACINAMIDE"
           ],
           usage: [
@@ -282,7 +282,7 @@ describe("generatePdpGeo", () => {
       product: {
         geoProduct: {
           name: "Essential Activating Serum",
-          description: "Hydrating serum with Botanical Actives for daily skin-care routines.",
+          description: "Hydrating serum with Korean Ginseng Actives for daily skin-care routines.",
           brand: "ExampleLuxe",
           category: "Serum",
           price: {
@@ -296,7 +296,7 @@ describe("generatePdpGeo", () => {
             "https://cdn.example.com/products/SWS_Thumbnail_GCF_cleanser.jpg"
           ],
           benefits: ["hydration", "firmness", "ELASTICITY", "elasticity"],
-          ingredients: ["Botanical Actives", "Ginseng Peptide"],
+          ingredients: ["Korean Ginseng Actives", "Ginseng Peptide"],
           usage: [
             "Use morning and night, after applying toner.",
             "AFTER 6 WEEKS OF USE 100% AGREED SKIN FEELS FIRMER AND MORE ELASTIC."
@@ -362,12 +362,12 @@ describe("generatePdpGeo", () => {
   it("formats Korean OCR metric evidence without agreement artifacts and keeps timelines out of HowTo", async () => {
     const barrierRecoveryEvidence = "세안 후 첫 단계 민감 건조 피부 급속 수분 충전 외부자극에 의한 장벽 손상 즉시 회복 사용 직후 60.5% 회복 사용 7일 후 87.3% 회복 손상 직후 사용 직후 사용 7일 후";
     const ceramideEvidence = "18시간 1회 도포 후 18시간 장벽에서 잔존하는 세라마이드 ex vivo 테스트 결과 190%";
-    const mixedUsage = `사용 전 사용 직후 사용 전 사용 직후 사용 전 사용 직후 배리어케어™ 캡슐토너 사용법 1 손에 적당량을 덜어 얼굴 전체에 펴 발라 흡수시켜 줍니다`;
+    const mixedUsage = `사용 전 사용 직후 사용 전 사용 직후 사용 전 사용 직후 모이베리어™ 캡슐토너 사용법 1 손에 적당량을 덜어 얼굴 전체에 펴 발라 흡수시켜 줍니다`;
 
     const { result } = await generatePdpGeo({
       product: {
         geoProduct: {
-          name: "예시더마 배리어케어365 캡슐 토너",
+          name: "예시더마 모이베리어365 캡슐 토너",
           description: "민감 건조 피부의 수분과 피부 장벽 케어를 위한 캡슐 토너입니다.",
           category: "토너",
           benefits: ["피부 장벽", "수분감"],
@@ -440,17 +440,17 @@ describe("generatePdpGeo", () => {
   it("recovers Korean cleanser HowTo steps from mixed OCR source text instead of using product description copy", async () => {
     const productDescriptionAsUsage = "이 클렌저는 극민감 피부도 부담없이 사용할 수 있는 베리어 프로텍티브 포뮬라 세라마이드 거품 클렌저로 제시된다.";
     const mixedOcrSources = [
-      "Barrier Protective Formula 세안 중에도 피부를 보호해주는 3종 장벽 보호 성분 함유 판테놀 비타민 B5 유도체로, 피부 장벽을 개선합니다. 베타인 아미노산 유도체로, 피부 장벽을 더욱 견고하게 합니다. 배리어 캡슐 캡슐 속 세라마이드, 지방산, 콜레스테롤로 구성된 피부 장벽 핵심 성분이 건조하고 민감한 피부에 효과적인 보습을 전달합니다.",
+      "Barrier Protective Formula 세안 중에도 피부를 보호해주는 3종 장벽 보호 성분 함유 판테놀 비타민 B5 유도체로, 피부 장벽을 개선합니다. 베타인 아미노산 유도체로, 피부 장벽을 더욱 견고하게 합니다. 보타온 캡슐 속 세라마이드, 지방산, 콜레스테롤로 구성된 피부 장벽 핵심 성분이 건조하고 민감한 피부에 효과적인 보습을 전달합니다.",
       "세안 중 발생하는 장벽 손상을 줄이는 Barrier Protective Formula 조밀한 마이크로 버블 마찰자극 걱정없이, 세정력 극대화 일반 모공 평균 사이즈 250um 미세 모공 평균 사이즈 50um 포밍 클렌저 버블 평균 사이즈 41um 3종 장벽보호 성분 함유 클렌징 와중에도 장벽보호!",
-      "효능 1 마찰 자극을 줄여 피부에 닿는 순간까지 고려한 저자극 포뮬라 2 눈에 보이지 않는 모공 속 노폐물까지 깔끔하게 세안 핵심 성분 Barrier Protective Formula (판테놀, 베타인, 배리어 캡슐) 추천 피부 타입 건조 피부 또는 민감 피부",
-      "풍성한 터치리스 폼으로 세안 시작부터 끝까지 마찰자극 걱정없는 거품 세안 초미세먼지 98.1% 세정 사용 전 사용 후 모공 속 노폐물 97.9% 세정 세안 전 세안 후 만 20~39세의 성인 여성 30명 대상 / 시험기간 2025.07.21~2025.08.22 / 개인차 있음 피부 각질층 내 세라마이드 함량 분석 사용 전 사용 직후 사용 2주 후 사용 4주 후 63.6% 84.3% 97.1% 자사 알칼리 폼(HB) 배리어케어365 젠틀 포밍 클렌저 *In vitro 시험 결과",
-      "배리어케어® 젠틀 포밍 클렌저 사용법 1 적당량을 물과 함께 거품내어 얼굴에 마사지하듯 문지른 후 2 미온수로 깨끗하게 헹구어 마무리해 주세요."
+      "효능 1 마찰 자극을 줄여 피부에 닿는 순간까지 고려한 저자극 포뮬라 2 눈에 보이지 않는 모공 속 노폐물까지 깔끔하게 세안 핵심 성분 Barrier Protective Formula (판테놀, 베타인, 보타온) 추천 피부 타입 건조 피부 또는 민감 피부",
+      "풍성한 터치리스 폼으로 세안 시작부터 끝까지 마찰자극 걱정없는 거품 세안 초미세먼지 98.1% 세정 사용 전 사용 후 모공 속 노폐물 97.9% 세정 세안 전 세안 후 만 20~39세의 성인 여성 30명 대상 / 시험기간 2025.07.21~2025.08.22 / 개인차 있음 피부 각질층 내 세라마이드 함량 분석 사용 전 사용 직후 사용 2주 후 사용 4주 후 63.6% 84.3% 97.1% 자사 알칼리 폼(HB) 모이베리어365 젠틀 포밍 클렌저 *In vitro 시험 결과",
+      "모이베리어® 젠틀 포밍 클렌저 사용법 1 적당량을 물과 함께 거품내어 얼굴에 마사지하듯 문지른 후 2 미온수로 깨끗하게 헹구어 마무리해 주세요."
     ];
 
     const { result } = await generatePdpGeo({
       product: {
         geoProduct: {
-          name: "예시더마 배리어케어365 젠틀 포밍클렌저",
+          name: "예시더마 모이베리어365 젠틀 포밍클렌저",
           description: productDescriptionAsUsage,
           category: "클렌저",
           benefits: ["피부 장벽", "보습"],
@@ -458,7 +458,7 @@ describe("generatePdpGeo", () => {
           usage: [productDescriptionAsUsage],
           sourceTexts: mixedOcrSources,
           semanticFacts: {
-            ingredients: ["Barrier Protective Formula", "BarrierCapsule", "세라마이드", "판테놀", "베타인"],
+            ingredients: ["Barrier Protective Formula", "BotanON", "세라마이드", "판테놀", "베타인"],
             benefits: ["피부 장벽", "수분감", "마이크로 버블", "세정력", "저자극 세안", "모공 속 노폐물 세정"],
             effects: ["초미세먼지 세정", "모공 속 노폐물 세정", "피부 각질층 세라마이드 함량"],
             skinTypes: ["건조 피부 또는 민감 피부"],
@@ -526,7 +526,7 @@ describe("generatePdpGeo", () => {
     const normalizedUsage = result.diagnostics.normalizedProduct.usage.join("\n");
 
     expect(String(targetCustomer)).toContain("건조 피부 또는 민감 피부");
-    expect(String(keyIngredients)).toMatch(/Barrier Protective Formula|판테놀|베타인|BarrierCapsule/);
+    expect(String(keyIngredients)).toMatch(/Barrier Protective Formula|판테놀|베타인|BotanON/);
     expect(String(reportedDetails)).toMatch(/초미세먼지 98\.1%|모공 속 노폐물 97\.9%|30명 대상|2025\.07\.21~2025\.08\.22|사용 4주 후 97\.1%/);
     expect(result.content.sections.quickFacts).toMatch(/추천 피부 타입은 건조 피부 또는 민감 피부|Barrier Protective Formula|판테놀|베타인|초미세먼지 98\.1%|모공 속 노폐물 97\.9%/);
     expect(result.content.sections.benefits).toMatch(/저자극 세안|초미세먼지 세정|모공 속 노폐물 세정|마이크로 버블|세정력/);
@@ -567,7 +567,7 @@ describe("generatePdpGeo", () => {
     const { result } = await generatePdpGeo({
       product: {
         geoProduct: {
-          name: "예시더마 배리어케어365 바디로션",
+          name: "예시더마 모이베리어365 바디로션",
           description: "건조로 민감해진 피부장벽을 위한 고보습 바디로션입니다.",
           category: "바디로션",
           benefits: ["피부 장벽", "보습"],
@@ -655,7 +655,9 @@ describe("generatePdpGeo", () => {
     expect(product.description).toMatch(/28\s+participants?/i);
     const webPage = graph.find((node) => (Array.isArray(node["@type"]) ? node["@type"].includes("WebPage") : node["@type"] === "WebPage")) as Record<string, any>;
     expect(webPage.description).toContain("Example Calm Wash product page introduces the cleanser");
-    expect(webPage.description).toMatch(/identifies customers with dry or sensitive skin.*lists AquaShield Ferment.*highlighted formula components.*documents cleansing power.*product benefits/i);
+    // `documents cleansing power` 였다 — 정본 라벨 표가 원본의 `comfort cleansing`을
+    // 더 일반적인 이름으로 덮어쓰고 있었다. 이 테스트의 제목이 곧 그 반대를 요구한다.
+    expect(webPage.description).toMatch(/identifies customers with dry or sensitive skin.*lists AquaShield Ferment.*highlighted formula components.*documents comfort cleansing.*product benefits/i);
     expect(webPage.description).toMatch(/Directions place the product in daily care/i);
     expect(webPage.description).not.toMatch(/purchase decisions|official test and measurement results/i);
     expect(webPage.description).not.toMatch(/92\.4%|28\s+participants?/i);
@@ -678,7 +680,7 @@ describe("generatePdpGeo", () => {
             "96% agreed skin felt moisturized for longer after daily use."
           ],
           ingredients: [
-            "Botanical Complex: A formula technology described as supporting comfort and moisture.",
+            "BotanicalComplex: A formula technology described as supporting comfort and moisture.",
             "Ingredients: WATER / AQUA / EAU, GLYCERIN, BUTYLENE GLYCOL, PANTHENOL, CAMELLIA SINENSIS LEAF EXTRACT"
           ],
           usage: [
@@ -708,7 +710,7 @@ describe("generatePdpGeo", () => {
     expect(normalizedUsage).not.toMatch(/delivers 24-hour hydration|Instrumental test|agreed skin felt/i);
     expect(result.content.sections.howToUse).toContain("apply 2 pumps");
     expect(result.content.sections.howToUse).not.toMatch(/delivers 24-hour hydration|Instrumental test|agreed skin felt/i);
-    expect(result.content.sections.ingredients).toMatch(/Botanical Complex|Full ingredients/i);
+    expect(result.content.sections.ingredients).toMatch(/BotanicalComplex|Full ingredients/i);
     expect(result.content.sections.ingredients).not.toMatch(/customer-described|review language|routine fit|usage guidance|delivers 24-hour hydration|Instrumental test/i);
     expect(result.content.sections.benefits).not.toMatch(/Instrumental test|routine fit|review language around/i);
     expect(serialized).not.toMatch(/review language around|Product details add/i);
@@ -717,8 +719,8 @@ describe("generatePdpGeo", () => {
     const { result } = await generatePdpGeo({
       product: {
         geoProduct: {
-          name: "Botanical Renewal Serum",
-          description: "A serum with Botanical Actives.",
+          name: "Botanical Ginseng Rejuvenating Serum",
+          description: "A serum with Korean Ginseng Actives.",
           category: "Serum",
           benefits: [],
           effects: [],
@@ -740,8 +742,8 @@ describe("generatePdpGeo", () => {
                 {
                   imageUrl: "https://example.com/ginseng-peptide.jpg",
                   category: "effect",
-                  text: "This advanced formula, working synergistically with Botanical Actives, enhances skin firmness, elasticity, and resilience, helping to diminish visible signs of aging.",
-                  keywords: ["Botanical Actives", "firmness", "elasticity", "resilience"]
+                  text: "This advanced formula, working synergistically with Korean Ginseng Actives, enhances skin firmness, elasticity, and resilience, helping to diminish visible signs of aging.",
+                  keywords: ["Korean Ginseng Actives", "firmness", "elasticity", "resilience"]
                 },
                 {
                   imageUrl: "https://example.com/ginseng-peptide.jpg",
@@ -785,7 +787,7 @@ describe("generatePdpGeo", () => {
     const { result } = await generatePdpGeo({
       product: {
         geoProduct: {
-          name: "예시더마 배리어케어365 하이드로 수딩크림",
+          name: "예시더마 모이베리어365 하이드로 수딩크림",
           description: "민감하고 수분이 부족한 지성 피부를 위한 수딩 크림입니다.",
           brand: "EXAMPLEDERMA",
           category: "Cream",
@@ -800,7 +802,7 @@ describe("generatePdpGeo", () => {
                 {
                   imageUrl: "https://example.com/examplederma-hero.jpg",
                   lines: [
-                    "배리어케어365",
+                    "모이베리어365",
                     "하이드로 수딩크림",
                     "민감하고 수분이 부족한 지성 피부의",
                     "유수분 밸런스를 맞추고",
@@ -921,7 +923,7 @@ describe("generatePdpGeo", () => {
   it("normalizes uppercase self-assessment result fragments before using them in descriptions", async () => {
     const { result } = await generatePdpGeo({
       product: {
-        name: "Botanical Renewal Serum",
+        name: "Botanical Ginseng Rejuvenating Serum",
         description: "A ginseng serum for firmness, elasticity, and fine lines.",
         category: "Serum",
         benefits: ["fine lines and wrinkles", "firmness", "elasticity"],
@@ -929,8 +931,8 @@ describe("generatePdpGeo", () => {
           "100% AGREED SKIN FEELS FIRMER AND MORE ELASTIC2 100% AGREED SKIN TEXTURE FEELS IMPROVED AND MORE EVEN2 93% AGREED FINE LINES AND WRINKLES FEEL DIMINISHED2 2Self-assessment test conducted 6 weeks after use on 32 women"
         ],
         ingredients: [
-          "BOTANICAL ACTIVES (AKA BOTANICAL COMPLEX ™)- Patented ingredient that amplifies the rare and potent anti-aging compounds found in Ginseng",
-          "Ginseng Peptide - Helps support the look of skin firmness and elasticity, synergistically enhancing the benefits of Botanical Actives"
+          "KOREAN GINSENG ACTIVES (AKA BOTANICALCOMPLEX ™)- Patented ingredient that amplifies the rare and potent anti-aging compounds found in Ginseng",
+          "Ginseng Peptide - Helps support the look of skin firmness and elasticity, synergistically enhancing the benefits of Korean Ginseng Actives"
         ],
         usage: ["Use morning and night, after applying toner."],
         reviews: {
@@ -939,7 +941,7 @@ describe("generatePdpGeo", () => {
       },
       source: {
         type: "manual-json",
-        url: "https://example.com/products/botanical-renewal-serum"
+        url: "https://example.com/products/botanical-ginseng-rejuvenating-serum"
       },
       hints: {
         locale: "en-US",
@@ -955,11 +957,11 @@ describe("generatePdpGeo", () => {
     const serialized = JSON.stringify({ webPage, product, faq });
     const productSerialized = JSON.stringify(product);
     const additionalProperties = new Map(product.additionalProperty.map((item: any) => [item.name, item.value]));
-    expect(webPage.description).toContain("Botanical Renewal Serum product page introduces the serum");
-    expect(webPage.description).toMatch(/lists Botanical Actives.*Ginseng Peptide.*highlighted formula components.*documents .*product benefits/i);
+    expect(webPage.description).toContain("Botanical Ginseng Rejuvenating Serum product page introduces the serum");
+    expect(webPage.description).toMatch(/lists Korean Ginseng Actives.*Ginseng Peptide.*highlighted formula components.*documents .*product benefits/i);
     expect(webPage.description).not.toMatch(/official test and measurement results/i);
     expect(webPage.description).not.toMatch(/100% of participants|32 women after 6 weeks/i);
-    expect(product.description).toContain("Botanical Actives (Botanical Complex)");
+    expect(product.description).toContain("Korean Ginseng Actives (BotanicalComplex)");
     expect(product.description).toContain("Ginseng Peptide");
     expect(product.description).not.toContain("a patented ingredient described as amplifying rare ginseng compounds");
     expect(result.content.sections.howToUse).toContain("Use morning and night, after applying toner");
@@ -977,7 +979,7 @@ describe("generatePdpGeo", () => {
     expect(additionalProperties.get("Key benefit")).toBe("fine lines and wrinkles");
     expect(additionalProperties.get("Reported details")).toContain("In a self-assessment of 32 women after 6 weeks of use");
     expect(additionalProperties.get("Reported details")).not.toMatch(/elastic2|even2|diminished2|\(32 women\)/i);
-    expect(additionalProperties.get("Key ingredients")).toContain("Botanical Actives (Botanical Complex), Ginseng Peptide");
+    expect(additionalProperties.get("Key ingredients")).toContain("Korean Ginseng Actives (BotanicalComplex), Ginseng Peptide");
     expect(product.positiveNotes).toBeUndefined();
     const benefitSurface = `${productSerialized} ${result.content.sections.benefits}`;
     expect(benefitSurface).toContain("fine lines and wrinkles");
@@ -993,7 +995,7 @@ describe("generatePdpGeo", () => {
     const { result } = await generatePdpGeo({
       product: {
         geoProduct: {
-          name: "예시더마 배리어케어365 하이드로 수딩크림",
+          name: "예시더마 모이베리어365 하이드로 수딩크림",
           description: "민감 피부를 위한 산뜻한 수분 크림입니다.",
           brand: "EXAMPLEDERMA",
           category: "Cream",
@@ -1011,7 +1013,7 @@ describe("generatePdpGeo", () => {
           ingredients: [
             "쿨링을 주는 화학적 성분은 ... 설계되었습니다.",
             "두 크림에 함유된 캡슐은 자사의 특허 성분인 ‘고밀도 세라마이드 캡슐’로 동일합니다.",
-            "배리어케어365 크림에 함유된 캡슐과 동일한 캡슐인가요?",
+            "모이베리어365 크림에 함유된 캡슐과 동일한 캡슐인가요?",
             "캡슐이 있어서 좋은 이유는 무엇인가요?",
             "각 크림에는 피부타입과 피부고민을 고려한 최적의 함량의 캡슐이 함유되어 있습니다.캡슐은 우리 피부 지질과 유사성분/구조로 이루어져 있으며 캡슐 형태이기 때문에 손상된 피부장벽 빈틈을 오래 잡아주며 장벽을 튼튼하게 …",
             "히알루론산"
@@ -1024,8 +1026,8 @@ describe("generatePdpGeo", () => {
             "소아과 피부 테스트를 진행한 품목으로 영유아, 어린이가 사용해도 무방하며, 임산부가 우려할 만한 성분도 함유되어 있지 않습니다.다만 우려가 되는 경우 연약한 피부 부위(귀 뒤, 팔 안쪽 등)에 먼저 테스트 후 사용하시고 필요 시, 전문가와 상담 후 사용하시기 바랍니다."
           ],
           metrics: [
-            "배리어케어365 크림에 함유된 캡슐과 동일한 캡슐인가요?",
-            "https://images.example.com/fileupload/reviews/2026/06/18/JPEG_20260618_223402_review-example.jpg?format=webp"
+            "모이베리어365 크림에 함유된 캡슐과 동일한 캡슐인가요?",
+            "https://cdn.example.com/fileupload/reviews/2026/06/18/JPEG_20260618_223402_7170014327977572094_1781789656867.jpg?format=webp"
           ],
           reviews: {
             keywords: ["피부결", "만족합니다", "촉촉하고", "보습력도", "smooth texture"],
@@ -1042,7 +1044,7 @@ describe("generatePdpGeo", () => {
       },
       source: {
         type: "pdp-extractor",
-        url: "https://example.com/web/product/view.do?prdSeq=1148"
+        url: "https://shop.example.com/web/product/view.do?prdSeq=1148"
       },
       hints: {
         locale: "ko-KR",
@@ -1062,11 +1064,11 @@ describe("generatePdpGeo", () => {
     const serialized = JSON.stringify(result.schemaMarkup.jsonLd);
     const normalized = result.diagnostics.normalizedProduct;
 
-    expect(result.content.sections.productName).toBe("예시더마 배리어케어365 하이드로 수딩크림");
-    expect(product.name).toBe("예시더마 배리어케어365 하이드로 수딩크림");
+    expect(result.content.sections.productName).toBe("예시더마 모이베리어365 하이드로 수딩크림");
+    expect(product.name).toBe("예시더마 모이베리어365 하이드로 수딩크림");
     expect(product.category).toBe("크림");
-    expect(webPage.description).toContain("예시더마 배리어케어365 하이드로 수딩크림 상품 페이지는 EXAMPLEDERMA가 선보이는");
-    expect(webPage.description).toMatch(/예시더마 배리어케어365 하이드로 수딩크림은[^.]*민감 피부 고객을 위한 제품/u);
+    expect(webPage.description).toContain("예시더마 모이베리어365 하이드로 수딩크림 상품 페이지는 EXAMPLEDERMA가 선보이는");
+    expect(webPage.description).toMatch(/예시더마 모이베리어365 하이드로 수딩크림은[^.]*민감 피부 고객을 위한 제품/u);
     expect(webPage.description).toMatch(/세라마이드[^.]*히알루론산[^.]*주요 성분·기술로 포함하고[^.]*돕습니다/u);
     expect(webPage.description).toMatch(/수분 케어/u);
     expect(webPage.description).toMatch(/피부 장벽 케어/u);
@@ -1107,20 +1109,20 @@ describe("generatePdpGeo", () => {
     expect(product.positiveNotes).toBeUndefined();
     expect(normalized.benefits.join(" ")).not.toMatch(/쿨링 효과는 어떤 성분|각 크림에는|리뉴얼 전 제품에서 고객님들이 만족/);
     expect(normalized.effects.join(" ")).not.toMatch(/쿨링 효과는 어떤 성분/);
-    expect(normalized.ingredients.join(" ")).not.toMatch(/쿨링 효과는 어떤 성분|배리어케어365 크림에 함유된 캡슐과 동일한 캡슐인가요|캡슐이 있어서 좋은 이유는 무엇인가요|^성분$/);
+    expect(normalized.ingredients.join(" ")).not.toMatch(/쿨링 효과는 어떤 성분|모이베리어365 크림에 함유된 캡슐과 동일한 캡슐인가요|캡슐이 있어서 좋은 이유는 무엇인가요|^성분$/);
     expect(normalized.usage.join(" ")).not.toMatch(/여드름성 피부가 사용해도 괜찮은가요|영유아나 임산부가 사용해도 되나요|논코메도제닉 테스트를 완료/);
     expect(normalized.usage).toEqual(["아침과 저녁 스킨케어 마지막 단계에서 얼굴 전체에 부드럽게 펴 바릅니다."]);
     expect(normalized.faq.some((item) => item.question === "쿨링 효과는 어떤 성분이 해주는 것인가요?" && item.answer.includes("시원하고 산뜻한 쿨링감"))).toBe(true);
     expect(normalized.faq.some((item) => item.question === "여드름성 피부가 사용해도 괜찮은가요?" && item.answer.includes("논코메도제닉 테스트"))).toBe(true);
     expect(result.diagnostics.ocrSentences.every((item) => !/문장입니다|재구성합니다|활용합니다/.test(item.geoUse))).toBe(true);
-    expect(serialized).not.toMatch(/images\.example|fileupload\/reviews|인용 포인트|Citation highlight|성분 구성, 기대 효능, 사용감 차이|함께 보여줍니다|효능어|성분어|사용감어|제품 탐색 문맥|탐색 문맥에서|효능과 사용감 차이를 설명하는 기준|연결해 확인할 수 있습니다|확인된 결과\/정보에 따르면|확인된 상품 정보에 따르면|핵심 케어 근거|성분\/기술은\s*[^.]*맞물려 제품 특징을 구체화합니다|…|\.{3,}|hydration Cream|smooth texture|property value|합니다입니다|설명합니다를|근거 설명합니다|찾은 고객|\. 에 초점/i);
+    expect(serialized).not.toMatch(/images-kr\.exampleshop|fileupload\/reviews|인용 포인트|Citation highlight|성분 구성, 기대 효능, 사용감 차이|함께 보여줍니다|효능어|성분어|사용감어|제품 탐색 문맥|탐색 문맥에서|효능과 사용감 차이를 설명하는 기준|연결해 확인할 수 있습니다|확인된 결과\/정보에 따르면|확인된 상품 정보에 따르면|핵심 케어 근거|성분\/기술은\s*[^.]*맞물려 제품 특징을 구체화합니다|…|\.{3,}|hydration Cream|smooth texture|property value|합니다입니다|설명합니다를|근거 설명합니다|찾은 고객|\. 에 초점/i);
     expect(additionalProperties.every((item) => !String(item.value).endsWith("?"))).toBe(true);
   });
   it("keeps measured Korean results without inventing undisclosed sample metadata", async () => {
     const { result } = await generatePdpGeo({
       product: {
         geoProduct: {
-          name: "예시더마 배리어케어365 캡슐 토너",
+          name: "예시더마 모이베리어365 캡슐 토너",
           brand: "EXAMPLEDERMA",
           category: "토너",
           description: "민감 피부를 위한 고보습 진정 토너입니다.",
@@ -1134,7 +1136,7 @@ describe("generatePdpGeo", () => {
       },
       source: {
         type: "rest-api",
-        url: "https://example.com/web/product/view.do?prdSeq=1149"
+        url: "https://shop.example.com/web/product/view.do?prdSeq=1149"
       },
       hints: {
         locale: "ko-KR",

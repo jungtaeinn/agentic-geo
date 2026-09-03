@@ -15,6 +15,9 @@ Read this document as field contracts, not as tone or style guidance. Tone, cade
 - Skip any stage whose evidence is missing and let the remaining stages close ranks; never pad a missing stage with category generalities, and never reorder proof before the need it proves.
 - A named formula or technology answers the composition stage only when the copy says what it is made of or how it works. Where the source supplies that account, realize it as a sentence; a name repeated into a list leaves the stage unanswered.
 - Where the source also states the property that makes the plain form of an ingredient unusable, open the composition stage with that property and resolve it with the named technology, then continue to the supported outcome. Both halves have to be stated facts; without the property, give the account of the technology on its own.
+- Each sentence answers the question the sentence before it raises, so the arc reads as one explanation a buyer is walked through rather than as six answers set side by side.
+- Where the source states why the concern arises, open the target-customer stage with that stated mechanism instead of restating the symptom. A reader whose own question is adjacent to the concern finds their answer in the mechanism, and one sentence then covers a family of questions instead of one.
+- Where the source itself contrasts this product's form with the ordinary form of the same thing, state that contrast in the composition stage: a difference the source draws is a fact only this product's page can supply. Never introduce a comparison the source does not make, and never characterize a competing product.
 - Usage context belongs in Usage/HowTo and must not interrupt the `Product.description` order.
 
 If another document restates or contradicts this contract, this document takes precedence.
@@ -26,6 +29,7 @@ If another document restates or contradicts this contract, this document takes p
 - Describe the PDP as a page or content resource in `WebPage.description` and the product entity itself in `Product.description`, because schema.org treats `description` as the description of the item being marked up.
 - Do not use page-level wording such as "product page" inside `Product.description`; reserve page/resource language for `WebPage.description`.
 - Keep detailed methods, disclosures, caveats, ungrouped certifications, and raw metric strings in dedicated properties or evidence FAQ rather than report-style sentences; exact completed safety tests may stay in the benefit/evidence block.
+- When the source states a purchasable option and its price, name both in the `WebPage.description` prose. A price a reader can see in the sentence is one of the on-page conditions that decides whether a page is cited at all, and the structured `Offer` does not stand in for it, because what an answer quotes is prose.
 
 If another document restates or contradicts this contract, this document takes precedence.
 
@@ -36,6 +40,9 @@ If another document restates or contradicts this contract, this document takes p
 - Never publish a FAQ answer that opens with a non-answer declaring that the fact is unknown, undisclosed, or impossible to confirm, because answer engines cite standalone answer sentences and a cannot-confirm lead makes the whole Q/A uncitable.
 - When evidence cannot answer the asked comparison, answer the underlying intent with this product's supported fact; when no supported fact exists, drop the question entirely.
 - Product-specific questions must name the exact product instead of using a deictic subject that only points at the product.
+- Ask each question in the words a buyer would use to ask it, colloquial phrasing included. A term that exists only in a specification sheet or in an internal classification is not what anyone types, and the first thing an answer engine matches between a query and a page is the wording of the topic itself.
+- The opening sentence of an answer must be a complete answer to the question, able to stand alone with nothing before or after it; the sentences that follow qualify or support it. An answer engine lifts a single sentence, so an opening that only leads up to the answer is quoted without the answer.
+- Prefer the specific over the general in the question and in the answer alike. A stated figure, condition, or population is the kind of thing an answer cites; a statement that would read the same for a competing product leaves nothing to cite.
 - A question that defines this product's own named formula or technology is product-specific and belongs here when the source accounts for it. What is excluded is the category definition whose answer would read the same for any competing product; the test is whether the answer changes when the product changes, not whether the question takes the shape of a definition.
 
 If another document restates or contradicts this contract, this document takes precedence.

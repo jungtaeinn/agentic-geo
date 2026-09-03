@@ -17,7 +17,7 @@ describe("geo entities (Testcontainers)", () => {
 
   it("persists a generation and a result row", async () => {
     await db.dataSource.getRepository(GeoGeneration).query(
-      `insert into neo.geo_generation
+      `insert into agentic_geo.geo_generation
        (geo_generation_id, channel_id, dedup_key, locale, product, product_sn, status, version, created_at, updated_at)
        values ($1,$2,'h','ko-KR','{}','SN-TEST','PROCESSING',0,now(),now())`,
       [id, db.testChannelId],

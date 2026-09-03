@@ -29,7 +29,7 @@ describe("GeoAcceptService capacity", () => {
 
     const id = "77777777-7777-7777-7777-777777777777";
     await db.dataSource.query(
-      `insert into neo.geo_generation (geo_generation_id, channel_id, dedup_key, locale, product, product_sn, status, version, created_at, updated_at)
+      `insert into agentic_geo.geo_generation (geo_generation_id, channel_id, dedup_key, locale, product, product_sn, status, version, created_at, updated_at)
        values ($1,$2,$3,'ko-KR','{}','SN-TEST','PROCESSING',0,now(),now())`,
       [id, db.testChannelId, id],
     );

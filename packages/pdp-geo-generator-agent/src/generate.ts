@@ -1,5 +1,91 @@
-import { containsSerializedMetadata, isQuantifiedClinicalResultSentence, selectAtomicFunctionalCertificationValues } from "./contracts/certification-contract";
-import { isRawPageTextBlock, isStitchedMarketingPageDump } from "./contracts/usage-contract";
+import {
+  brandIngredientSurfaceRules,
+  canonicalIngredientSurface,
+  genericIngredientSurfaceRules,
+  ingredientSubstanceKey,
+  ingredientSurfacesPresentIn
+} from "./contracts/ingredient-vocabulary";
+import { containsSerializedMetadata, isQuantifiedClinicalResultSentence, restatesTypedFieldAsRawTranscription, selectAtomicFunctionalCertificationValues } from "./contracts/certification-contract";
+import { hasContextFreeFigureRun, isRawPageTextBlock, isSafetyOrTestClaimUsage, isStitchedMarketingPageDump } from "./contracts/usage-contract";
+import { isKoreanCompleteSentence, isKoreanPoliteSentenceEnding, koreanObjectSlotPhrase } from "./contracts/sentence-form-contract";
+import {
+  INTERNAL_ANALYSIS_LABEL_ALTERNATION,
+  LABEL_AS_NOUN_PHRASE_SUFFIX,
+  analysisLabelPrefixesAnywhere,
+  CONSUMER_ASSESSMENT_LABEL,
+  PRIMARY_ANALYSIS_LABEL,
+  PUBLISHABLE_KOREAN_RESULT_PHRASE,
+  RENAMEABLE_KOREAN_LABEL_PATTERN,
+  isAnalysisLabelPrefixed,
+  leadingBareReportingLabelPattern,
+  leadingInternalLabelPattern,
+  leadingLabelFieldPattern,
+  matchAssessmentContextLabel
+} from "./contracts/analysis-label-contract";
+import {
+  KOREAN_IMPROVEMENT_DIRECTION_PATTERN,
+  KOREAN_METRIC_OUTCOME_PATTERN,
+  METRIC_DIRECTION_PATTERN,
+  statesEvidenceContext,
+  statesStudyMethod,
+  statesStudyPopulation,
+  measurementFigures,
+  statesOnlyFiguresOf
+} from "./contracts/metric-statement-contract";
+
+/**
+ * Review-attributed wording alongside the internal analysis labels.
+ *
+ * Two different reasons a value may not be published as a product fact — it is
+ * a customer's own language, or it is the pipeline's name for an evidence
+ * reading — and one filter drops both. The label half comes from the canonical
+ * vocabulary rather than being spelled out again here.
+ */
+const reviewLanguageOrAnalysisLabelPattern = new RegExp(
+  `(?:리뷰\\s*표현|review\\s+language|(?:${INTERNAL_ANALYSIS_LABEL_ALTERNATION})${LABEL_AS_NOUN_PHRASE_SUFFIX})`,
+  "iu"
+);
+
+/**
+ * A source section heading for a test panel, alongside the internal analysis
+ * labels. Same shape as above: a heading the transcription carried over is not
+ * a fact either.
+ */
+const sourceTestSectionOrAnalysisLabelPattern = new RegExp(
+  `(?:상품\\s*상세\\s*테스트|product\\s*detail\\s*test|(?:${INTERNAL_ANALYSIS_LABEL_ALTERNATION})${LABEL_AS_NOUN_PHRASE_SUFFIX})`,
+  "iu"
+);
+
+/**
+ * A FAQ answer that pasted transcription chrome instead of answering — a source
+ * section heading, a carousel marker, or a label followed by narration about
+ * organising evidence. The label half reads from the canonical vocabulary.
+ */
+const faqCitationNoisePattern = new RegExp(
+  [
+    "NEW\\s*\\|",
+    "\\|\\s*(?:cream|serum)",
+    "상품\\s*상세\\s*테스트",
+    "확인\\s*키워드",
+    "결과\\s*성분\\s*설명입니다",
+    "성분\\s*설명입니다",
+    `(?:${INTERNAL_ANALYSIS_LABEL_ALTERNATION})\\s*(?:를\\s*정리|에는)`,
+    "정보를\\s*정리합니다"
+  ].join("|"),
+  "iu"
+);
+
+/**
+ * A composition FAQ answer that pasted a source test panel or an
+ * `<label> … 성분 설명` field dump instead of explaining the formula.
+ */
+const sourceTestSectionOrIngredientLabelDumpPattern = new RegExp(
+  `(?:상품\\s*상세\\s*테스트|(?:${INTERNAL_ANALYSIS_LABEL_ALTERNATION})[^.!?。！？]{0,80}성분\\s*설명|성분\\s*설명입니다)`,
+  "iu"
+);
+import { PROSE_COORDINATE_ITEM_LIMIT } from "./contracts/enumeration-contract";
+import { isAttributedMeasurementStatement, isCompressedMultiClaimMetricBlock } from "./normalize";
+import { refinementDropsPublishedMeasurement } from "./copy-refiner";
 import {
   hasActionableApplicationVerb,
   hasActionableApplicationVerbWithoutGenericApply,
@@ -17,6 +103,7 @@ import { localizeProductTypeForLocale, productTypeFromName } from "./contracts/p
 import { pdpGeoGeneratorRagManifest } from "./rag/manifest";
 import { createPdpGeoReasoning, isPdpGeoReasoningEnabled } from "./rag/reasoning";
 import { isConflictingProductUsageInstruction } from "./product-scope";
+import { deriveCepCandidates, namesUseSituation } from "./review-cep";
 import { isNegativeReviewSignalText } from "./review-sentiment";
 import { gtinPropertyName, normalizeMonetaryAmountForCurrency, schemaEnumUrl } from "./schema-values";
 import type {
@@ -26,6 +113,7 @@ import type {
   PdpGeoContentPlan,
   PdpGeoContentSections,
   PdpGeoEvidence,
+  PdpGeoEvidenceRole,
   PdpGeoFaqItem,
   PdpGeoGenerationHints,
   PdpGeoInferredSearchQueryDiagnostic,
@@ -147,7 +235,8 @@ export function ensurePdpGeoFaqPlanCoverage(input: {
     ?? fallbackPlanned.find((item) => isRequiredCompositionBenefitFaq(item, input.locale));
   const hasTarget = Boolean(target);
   const hasComposition = Boolean(composition);
-  const merged = [
+  const fallbackPlannedSet = new Set<PdpGeoPlannedFaqItem>(fallbackPlanned);
+  const coverageFiltered = [
     target,
     composition,
     ...planned,
@@ -172,12 +261,125 @@ export function ensurePdpGeoFaqPlanCoverage(input: {
           createFaqSemanticDedupeKeys(candidate, input.locale)
         ));
     })
+    // A coverage-fill candidate is built from the same small evidence pool
+    // the planner already drew from, so it easily restates an
+    // already-included answer (planner-approved or an earlier coverage
+    // fill) almost verbatim. Required target/composition anchors are exempt
+    // -- their content is mandated by contract, not optional coverage.
+    .filter((item, index, items) => {
+      if (item === target || item === composition || !fallbackPlannedSet.has(item)) return true;
+      return !items.slice(0, index).some((earlier) => faqAnswersNearlyDuplicate(item.answer, earlier.answer));
+    })
     .slice(0, 6);
+
+  const warnings = [...input.plan.warnings];
+  const merged = removeNearDuplicateFaqAnswerPairs(coverageFiltered, [target, composition], warnings);
 
   return {
     ...input.plan,
-    faq: merged
+    faq: merged,
+    warnings
   };
+}
+
+/**
+ * "과반" (a majority) here means each answer's shared-sentence count is at
+ * least half of its own sentence count (`sharedCount * 2 >= sentenceCount`,
+ * i.e. ceil(N/2) sentences shared is enough), checked on *both* sides. This
+ * was tightened from a strict "> half" reading after the real duplicate
+ * this rule exists for turned out to be two 2-sentence answers sharing
+ * exactly one sentence each -- exactly half, which a strict-majority test
+ * can never catch for an even sentence count. Requiring the check on both
+ * sides (not just the candidate's) still tells apart a real duplicate pair
+ * (both answers are mostly the same content) from a short answer that
+ * legitimately cites one sentence of a much longer, otherwise-distinct
+ * answer as supporting evidence: for a 1-sentence answer citing one
+ * sentence out of a 3-sentence answer, the 1-sentence side is 100% shared
+ * but the 3-sentence side is only 1/3, short of half, so the pair is not
+ * flagged.
+ *
+ * Known false-positive class this does not rule out: two genuinely
+ * different 2-sentence questions that each restate one distinct point plus
+ * the *same* one supporting evidence sentence will still be flagged (each
+ * side is exactly half-shared). This is mitigated, not eliminated, by the
+ * priority-based removal and the required-anchor exemption below, and by
+ * every such removal being recorded as a warning for review.
+ */
+function normalizeFaqAnswerSentenceForDedupe(sentence: string): string {
+  return sentence
+    .normalize("NFKC")
+    .replace(/[\s　]+/g, "")
+    .replace(/[.,!?。！？、，·]/g, "")
+    .toLowerCase();
+}
+
+function splitFaqAnswerIntoDedupeSentences(answer: string): string[] {
+  return answer
+    .split(/(?<=[.!?。！？])\s+|\n+/u)
+    .map(normalizeFaqAnswerSentenceForDedupe)
+    .filter(Boolean);
+}
+
+/** True when at least half of each answer's own sentences already appear in the other. */
+function faqAnswersNearlyDuplicate(candidateAnswer: string, existingAnswer: string): boolean {
+  const candidateSentences = splitFaqAnswerIntoDedupeSentences(candidateAnswer);
+  const existingSentences = splitFaqAnswerIntoDedupeSentences(existingAnswer);
+  if (candidateSentences.length === 0 || existingSentences.length === 0) {
+    return false;
+  }
+  const existingSentenceSet = new Set(existingSentences);
+  const overlapCount = candidateSentences.filter((sentence) => existingSentenceSet.has(sentence)).length;
+  return overlapCount * 2 >= candidateSentences.length
+    && overlapCount * 2 >= existingSentences.length;
+}
+
+/**
+ * Final safety net over the complete rendered FAQ set. Items exempt from the
+ * coverage-candidate check above -- the required target/composition
+ * anchors, or two planner-approved items -- can still end up
+ * answer-duplicate of one another. Between a duplicate pair, the item with
+ * the higher `faqCoveragePriority` survives; a tie removes the later item.
+ * The required target/composition anchors are never the removed side --
+ * their content is mandated by contract, not optional coverage -- so a
+ * duplicate pair where both sides are required anchors keeps both and only
+ * records the diagnostic.
+ */
+function removeNearDuplicateFaqAnswerPairs(
+  items: PdpGeoPlannedFaqItem[],
+  requiredAnchors: Array<PdpGeoPlannedFaqItem | undefined>,
+  warnings: string[]
+): PdpGeoPlannedFaqItem[] {
+  const isRequiredAnchor = (item: PdpGeoPlannedFaqItem): boolean => requiredAnchors.includes(item);
+  const kept: PdpGeoPlannedFaqItem[] = [];
+  for (const item of items) {
+    const duplicateIndex = kept.findIndex((existing) => faqAnswersNearlyDuplicate(item.answer, existing.answer));
+    if (duplicateIndex === -1) {
+      kept.push(item);
+      continue;
+    }
+    const existing = kept[duplicateIndex]!;
+    const itemIsAnchor = isRequiredAnchor(item);
+    const existingIsAnchor = isRequiredAnchor(existing);
+    if (itemIsAnchor && existingIsAnchor) {
+      // Both sides are contractually required; keep both and only warn.
+      warnings.push(
+        `FAQ items kept despite near-duplicate answers because both are required anchors: "${existing.question}" / "${item.question}"`
+      );
+      kept.push(item);
+      continue;
+    }
+    // A required anchor is never the removed side.
+    const replaceExisting = itemIsAnchor || (!existingIsAnchor && faqCoveragePriority(item) > faqCoveragePriority(existing));
+    const removed = replaceExisting ? existing : item;
+    const survivor = replaceExisting ? item : existing;
+    warnings.push(
+      `FAQ item removed because its answer nearly duplicated another item's answer (removed: "${removed.question}", kept: "${survivor.question}")`
+    );
+    if (replaceExisting) {
+      kept[duplicateIndex] = item;
+    }
+  }
+  return kept;
 }
 
 function normalizePlannedAssessmentFaqAnswer(
@@ -498,10 +700,19 @@ function plannedDescriptionOrSource(
   createEvidenceBackedFallback: () => string
 ): string {
   const plannedText = cleanSignal(field?.text ?? "");
-  if (field?.include && plannedText && isDescriptionLocaleCompatible(plannedText, product, locale)) {
+  const evidenceBackedFallback = cleanSignal(createEvidenceBackedFallback());
+  // A planned description is adopted for its natural narrative, not for the
+  // right to leave a measurement out. The composed fallback states every figure
+  // the evidence supports, so if the plan drops one it is not a rewrite of the
+  // same facts — it is fewer facts. Judged by the same rule that stops the copy
+  // refiner from dropping one, so both producers of this field answer to one
+  // definition of what may not be lost.
+  if (field?.include
+    && plannedText
+    && isDescriptionLocaleCompatible(plannedText, product, locale)
+    && !(kind === "product" && refinementDropsPublishedMeasurement("Product.description", plannedText, evidenceBackedFallback))) {
     return plannedText;
   }
-  const evidenceBackedFallback = cleanSignal(createEvidenceBackedFallback());
   if (kind === "product" && isSafeEvidenceBackedProductDescription(evidenceBackedFallback, product, locale)) {
     return evidenceBackedFallback;
   }
@@ -551,6 +762,205 @@ function isSafeEvidenceBackedProductDescription(value: string, product: PdpProdu
     && !isLowQualityPublicEvidenceText(value)
     && !hasTruncationMarker(value)
     && !isQuestionLikeText(value);
+}
+
+/**
+ * Whether a source sentence can stand on its own once it is quoted.
+ *
+ * The deterministic composers stitch ledger and signal sentences into prose.
+ * A stitched sentence loses everything the original page put around it, so it
+ * only remains citable when it already carried its own subject and its own
+ * predicate. Two shapes never do, and both were published verbatim in the
+ * 2026-08-31 production run:
+ *
+ * 1. An opening demonstrative whose antecedent stayed behind in the paragraph
+ *    the sentence was cut from. Demonstrative determiners and pronouns are a
+ *    closed grammar class, so listing them *is* the rule — this is grammar,
+ *    not product vocabulary.
+ * 2. A label-serialized transcription: repeated `label: value` pairs or
+ *    repeated footnote-marker clauses. That is structured data written out as
+ *    plain text — provenance, which the Evidence Routing Contract keeps out of
+ *    published prose.
+ * 3. A transcription that was never segmented into sentences at all — one
+ *    unbroken run of image text. Added after the 2026-09-01 EXAMPLEDERMA 1145 run
+ *    published such a run verbatim inside an evidence property.
+ *
+ * All three tests are structural. Dropping a well-formed sentence costs more
+ * than letting an awkward one through, so anything the three shapes do not
+ * describe passes.
+ */
+export function isCitationReadyProse(value: string): boolean {
+  const text = cleanSignal(value);
+  return Boolean(text)
+    // The demonstrative test anchors on the first word, so the transcription's
+    // own bullet or list number comes off first. The label test keeps the
+    // marked-up text, whose markers it reads as pair delimiters.
+    && !antecedentLessDemonstrativeOpeningPattern.test(withoutLeadingListMarkers(text))
+    && !isLabelSerializedTranscription(text)
+    && !isChartAxisCaptionTranscription(text)
+    && !isUnsegmentedTranscription(text);
+}
+
+/**
+ * A chart panel read off as one line, identified by its axis captions.
+ *
+ * `… 97.1% 세정 사용 전 사용 후 … 97.6% 세정 사용 전 사용 후 사용 2주 후 사용 4주
+ * 후` is what a before/after graphic transcribes to. It carries figures, so the
+ * evidence filters keep it; it closes on an axis label rather than a predicate,
+ * so nothing in it says who was measured. Published as a reported detail it put
+ * percentages on the page with no population attached.
+ *
+ * The signal is adjacency, not the figure count: two measurement captions
+ * printed side by side with nothing between them are the two ends of an axis,
+ * because prose that meant to compare them would need a predicate in between.
+ * A dense evidence sentence with several figures is a different thing and stays
+ * — the captions there are each inside a clause of their own.
+ *
+ * The caption frame (전/후/N주 후/N시간 후) is a closed set of Korean temporal
+ * captions, so listing it is the rule; no product or ingredient word appears.
+ */
+function isChartAxisCaptionTranscription(value: string): boolean {
+  const text = cleanSignal(value);
+  if (!/[가-힣]/u.test(text) || isKoreanCompleteSentence(text)) {
+    return false;
+  }
+  const caption = "(?:사용|세정|도포|적용)\\s*(?:전|후|\\d+\\s*(?:주|일|시간|개월)\\s*후)";
+  return new RegExp(`${caption}\\s+${caption}`, "u").test(text);
+}
+
+/**
+ * A demonstrative in the opening position.
+ *
+ * The Korean determiners take whitespace plus a following word, because the
+ * same syllables open ordinary nouns ("이온", "그린티") where they carry no
+ * deictic force at all. The bound pronoun and adverb forms are spelled out
+ * instead, since they are a finite morpheme set and admit a following particle.
+ *
+ * `そのまま` and `それぞれ` are excluded: both have lexicalized into an adverb
+ * and a quantifier that point at nothing, so a sentence opening with either is
+ * as self-contained as any other.
+ */
+const antecedentLessDemonstrativeOpeningPattern = new RegExp(
+  "^(?:"
+  + "[이그저](?=\\s+\\S)"
+  + "|[이그저](?:것|거|때|곳|쪽|는|를|와|에|런|러한|처럼|렇게|렇듯|로써)"
+  + "|(?:この|その(?!まま)|あの|これ|それ(?!ぞれ)|あれ|こうした|そうした)"
+  + "|(?:this|that|these|those|it|they|such)(?![\\p{L}\\p{N}])"
+  + ")",
+  "iu"
+);
+
+/**
+ * The bullet, list number, or stray punctuation a transcription carries in
+ * front of its first word.
+ *
+ * A number is only a marker when a separator follows it, so a measurement that
+ * opens the sentence ("3일 사용 후…") keeps its figure. Over-stripping is
+ * harmless anyway: the result feeds the demonstrative test alone and is never
+ * published.
+ */
+function withoutLeadingListMarkers(text: string): string {
+  return text.replace(/^(?:[^\p{L}\p{N}]+|[\p{Nd}\p{No}]+(?=[^\p{L}\p{N}]|$))+/u, "");
+}
+
+/**
+ * Structured data transcribed as running text. One `label: value` pair reads as
+ * ordinary prose ("주요 성분: …"), so serialization is only claimed once the
+ * pattern repeats — two or more labelled pairs, or two or more clauses opened
+ * by a footnote marker.
+ */
+function isLabelSerializedTranscription(text: string): boolean {
+  return countLabelValuePairs(text) >= 2 || countFootnoteMarkerClauses(text) >= 2;
+}
+
+function countLabelValuePairs(text: string): number {
+  // The label is a short run that stops at the colon; a digits-only run is a
+  // clock time or a ratio, and a colon followed by a slash is a URL scheme.
+  const pairs = text.matchAll(/(?:^|[\s(\[{·*＊※•])([^\s:：()\[\]{}]{1,16})\s*[:：]\s*(?![/\\])(?=\S)/gu);
+  return [...pairs].filter((pair) => /\p{L}/u.test(pair[1] ?? "")).length;
+}
+
+function countFootnoteMarkerClauses(text: string): number {
+  return (text.match(/(?:^|\s)[*＊※](?=\s*\S)/gu) ?? []).length;
+}
+
+/**
+ * The length past which a run with no sentence boundary in it has stopped
+ * being one sentence.
+ *
+ * The same ceiling already bounds a single Korean source sentence elsewhere in
+ * this module (`selectKoreanProductIngredientTechnologyRelationSentences`'s
+ * upper bound, `isKoreanFootnoteLinkedStudyOutcome`'s cutoff), so it is the
+ * codebase's existing notion of "one sentence long", reused rather than
+ * re-guessed.
+ */
+const singleSentenceLengthCeiling = 220;
+
+/**
+ * A transcription the extractor never segmented into sentences.
+ *
+ * When sentence segmentation fails on an image text block, what arrives is one
+ * unbroken run: the whole panel — headline fragments, before/after captions,
+ * every badge figure, the sample and period footnote — concatenated with
+ * nothing but spaces. It reads as text, so no label or demonstrative test
+ * catches it, yet nothing in it is a quotable assertion.
+ *
+ * Three conditions establish that a run is too long and too dense to be one
+ * sentence, and all three must hold:
+ *
+ * - it runs longer than one sentence occupies ({@link singleSentenceLengthCeiling});
+ * - no sentence boundary anywhere inside it, so the run was never segmented;
+ * - it packs several independent figures, which is what makes a page panel a
+ *   panel — a real sentence coordinates one or two.
+ *
+ * A dense but genuine evidence sentence satisfies all three, so a fourth thing
+ * has to separate it from a panel: whether a predicate ever governs those
+ * figures. Two independent readings answer that, and either is enough.
+ *
+ * - The run does not close in a predicate. A terminator proves nothing on its
+ *   own — the composers append one when they wrap a fragment ("확인 지표: …
+ *   시험 결과."), so a period after a Korean noun phrase is punctuation this
+ *   pipeline added. This reading is Korean morphology, so it claims nothing
+ *   about a run that does not close in Hangul; an English page dump is left to
+ *   the marketing-chrome and raw-page-block predicates that read brand runs.
+ * - The run contains figures in a row that no predicate separates
+ *   ({@link hasContextFreeFigureRun}). Prose cannot produce that; a transcribed
+ *   badge strip is made of it. This reading is script-independent, and it is
+ *   what catches a panel whose last word happens to look like a predicate —
+ *   the case the closure test is documented as unable to decide.
+ *
+ * Nothing here enumerates a product, ingredient, or metric name: the counts are
+ * of digits, and the morphology is a closed grammatical class.
+ */
+function isUnsegmentedTranscription(text: string): boolean {
+  if (text.length <= singleSentenceLengthCeiling || hasInternalSentenceBoundary(text)) {
+    return false;
+  }
+  if (countNumericRuns(text) < 3) {
+    return false;
+  }
+  const body = trimTrailingSentencePunctuation(text);
+  // The morphological reading only fires where it applies — a run that does not
+  // close in Hangul is left to the second reading and to the page-dump
+  // predicates, never judged by an ending this cannot parse.
+  const closesInHangul = /\p{sc=Hangul}/u.test(body.slice(-1));
+  return closesInHangul && !isKoreanCompleteSentence(body) || hasContextFreeFigureRun(text);
+}
+
+/**
+ * A sentence terminator that some further text follows.
+ *
+ * The whitespace lookahead is what makes this a boundary test rather than a
+ * punctuation test: the periods inside `2025.07.21` and `97.1%` carry no
+ * whitespace after them and are not boundaries.
+ */
+function hasInternalSentenceBoundary(text: string): boolean {
+  return /[.!?。！？][)\]"'”’]?\s+\S/u.test(text);
+}
+
+/** Independent figures in the run. A decimal, thousands-separated, or dotted-date group counts once. */
+function countNumericRuns(text: string): number {
+  return (text.match(/\d+(?:[.,]\d+)*/gu) ?? []).length;
 }
 
 function resolveSchemaTargets(requested: PdpGeoSchemaTarget[] | undefined, howToEligible: boolean): PdpGeoSchemaTarget[] {
@@ -678,7 +1088,8 @@ function sameEntityToken(left: string, right: string): boolean {
     === cleanSignal(right).toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
-function createGeoDescription(
+/** `index.ts`에 노출하지 않는다 — 결정적 폴백 산문의 회귀 고정을 위한 내부 export. */
+export function createGeoDescription(
   product: PdpProductSignal,
   productName: string,
   locale: PdpGeoLocale,
@@ -706,15 +1117,27 @@ function createGeoDescription(
   switch (locale) {
     case "ko-KR":
       const productEvidenceDescriptions = createKoreanDetailedProductEvidenceDescriptions(product, context, productName);
-      return connectKoreanBenefitAndEfficacyNarrative(compactSentence([
+      const koreanMetricNarrative = koreanStructuredMetricTimeline ?? createCitationReadyProductEvidenceDescription(locale, evidence);
+      const koreanParts = [
         createKoreanProductLeadDescription(product, productName, context, benefit),
         ...productEvidenceDescriptions,
         createStandaloneProductBenefitDescription(locale, context, productEvidenceDescriptions),
-        koreanStructuredMetricTimeline ?? createCitationReadyProductEvidenceDescription(locale, evidence),
+        koreanMetricNarrative,
         createProductSafetyEvidenceDescription(product, locale),
         context.researchCitation,
         createKoreanDetailedProductReviewDescription(context)
-      ]));
+      ];
+      // Plan 7c: the caveat closes the paragraph and nothing follows it, so a
+      // reader never meets a claim that the caveat has already qualified out of
+      // scope. It is stated only when an evidence narrative was published for
+      // it to qualify — a caveat with nothing to attach to is noise — and never
+      // twice, since an evidence bundle may have carried it in already.
+      const koreanEvidenceCaveat = koreanMetricNarrative ? selectKoreanRefinedEvidenceCaveat(product) : undefined;
+      const koreanCaveatSentence = koreanEvidenceCaveat
+        && !koreanParts.some((part) => part?.includes(koreanEvidenceCaveat))
+        ? koreanEvidenceCaveat
+        : undefined;
+      return connectKoreanBenefitAndEfficacyNarrative(compactSentence([...koreanParts, koreanCaveatSentence]));
     case "ja-JP":
       const japaneseIngredientDescription = createProductIngredientDescription(locale, context);
       return compactSentence([
@@ -779,7 +1202,7 @@ function descriptionPartContainsBenefit(part: string, benefit: string): boolean 
 
 function createCitationReadyProductEvidenceDescription(locale: PdpGeoLocale, reportedDetail?: string): string | undefined {
   return isCitationReadyWebPageReportedDetail(reportedDetail) && isDescriptionReadyReportedDetail(reportedDetail)
-    ? createProductEvidenceDescription(locale, reportedDetail ?? "")
+    ? createProductEvidenceDescription(locale, reportedDetail ?? "") || undefined
     : undefined;
 }
 
@@ -853,7 +1276,7 @@ function hasKoreanGroupedEfficacyNarrative(value: string): boolean {
 
 function createCitationReadyWebPageEvidenceDescription(locale: PdpGeoLocale, reportedDetail?: string): string | undefined {
   return isCitationReadyWebPageReportedDetail(reportedDetail) && isDescriptionReadyReportedDetail(reportedDetail)
-    ? createWebPageEvidenceDescription(locale, reportedDetail ?? "")
+    ? createWebPageEvidenceDescription(locale, reportedDetail ?? "") || undefined
     : undefined;
 }
 
@@ -875,16 +1298,33 @@ function isCitationReadyWebPageReportedDetail(value: string | undefined): boolea
   const hasTimedOutcome = /(?:사용|도포|적용|세정)\s*(?:즉시|직후|\d+(?:\.\d+)?\s*(?:시간|일|주|개월)\s*후)/i.test(text)
     && /(?:회복|개선|감소|증가|상승|향상|완화|잔존|지속|improv|increase|decrease|recover|retain|last)/i.test(text);
   const hasLabeledOutcome = /(?:회복|개선|감소|증가|상승|향상|완화|잔존|지속|improv|increase|decrease|recover|retain|last)/i.test(text)
-    && !/(?:REVIEW PLATFORM|fl\.?\s*oz|4\s*fl|120\s*ml|ppm)/i.test(text);
+    && !/(?:GLOWPICK|fl\.?\s*oz|4\s*fl|120\s*ml|ppm)/i.test(text);
   return hasEvaluationContext || hasTimedOutcome || hasLabeledOutcome;
 }
 
+/**
+ * The opening sentence of `WebPage.description`.
+ *
+ * It has to keep the page's entity role — schema.org's `description` describes
+ * the thing being marked up, and this node is the page — but the role is
+ * carried by naming the page, not by listing what the page contains. A
+ * contents list ("covers the product's features and the information needed to
+ * choose it") states nothing a buyer searched for, and citation research finds
+ * topical match to the query, not presentation, is what earns the citation.
+ *
+ * So the lead names the page and then the concern the page answers, which is
+ * the one thing a buyer's query and this page have in common. The contents
+ * phrasing remains the fallback for a product whose source states no audience.
+ */
 function createKoreanWebPageCoverageLead(product: PdpProductSignal, productName: string, context: DescriptionContext): string {
-  void context;
   const brandSubject = product.brand && !productName.toLocaleLowerCase().includes(product.brand.toLocaleLowerCase())
     ? `${appendKoreanSubjectParticle(product.brand)} 선보이는 `
     : "";
   const productType = cleanSignal(product.category ?? "") || "제품";
+  const targetCustomer = cleanSignal(context.targetCustomer);
+  if (targetCustomer && isSpecificTargetCustomer(targetCustomer, "ko-KR")) {
+    return `${productName} 상품 페이지는 ${brandSubject}${appendKoreanObjectParticle(targetCustomer)} 위한 ${productType} 정보를 다룹니다`;
+  }
   return `${productName} 상품 페이지는 ${brandSubject}${productType}의 특징과 제품 선택에 필요한 정보를 한데 담고 있습니다`;
 }
 
@@ -1021,20 +1461,26 @@ function shouldRecommendKoreanWebPageProduct(
   return hasTargetCustomer && hasBenefit && hasRecommendationEvidence;
 }
 
+/**
+ * Joins Korean items for prose, which is the only place this is used.
+ *
+ * Narrowed to {@link PROSE_COORDINATE_ITEM_LIMIT} items here rather than at each
+ * call site: every caller composes a sentence, and a third item turns the pair
+ * into `A, B, C` — the bare list the anti-enumeration contract names, where no
+ * item is given a role. Callers that need the complete set have the property
+ * fields, where a list is the point.
+ */
 function formatKoreanNaturalList(values: string[]): string | undefined {
-  const items = unique(values.map(cleanSignal).filter(Boolean));
+  const items = unique(values.map(cleanSignal).filter(Boolean)).slice(0, PROSE_COORDINATE_ITEM_LIMIT);
   if (items.length === 0) {
     return undefined;
   }
   if (items.length === 1) {
     return items[0];
   }
-  if (items.length === 2) {
-    const head = items[0] ?? "";
-    const tail = items[1] ?? "";
-    return `${head}${hasKoreanBatchim(head) ? "과" : "와"} ${tail}`;
-  }
-  return items.join(", ");
+  const head = items[0] ?? "";
+  const tail = items[1] ?? "";
+  return `${head}${hasKoreanBatchim(head) ? "과" : "와"} ${tail}`;
 }
 
 function createKoreanWebPageCoverageScopeDescription(product: PdpProductSignal, productName: string, context: DescriptionContext): string | undefined {
@@ -1056,13 +1502,20 @@ function createKoreanWebPageEvidenceCoverageDescription(
   const targetCustomer = isSpecificTargetCustomer(context.targetCustomer, "ko-KR")
     ? formatKoreanCepTargetCustomer(context.targetCustomer)
     : "";
-  const ingredientPhrase = formatDescriptionList(selectWebPageIngredientTerms(context.ingredients, "ko-KR"), "ko-KR", 3);
+  // Narrowed to a pair: this composer has no per-item role to give, so three
+  // items would publish as the bare list the anti-enumeration contract names.
+  // The full set stays in the property fields, where a list is the point.
+  const ingredientPhrase = formatDescriptionList(
+    selectWebPageIngredientTerms(context.ingredients, "ko-KR"),
+    "ko-KR",
+    PROSE_COORDINATE_ITEM_LIMIT
+  );
   const benefitPhrase = formatKoreanNaturalList(dedupeKoreanBenefitConcepts(context.benefits
     .map((benefit) => cleanSignal(benefit)
       .replace(/^피부\s*장벽$/u, "피부 장벽 케어")
       .replace(/^수분감$/u, "수분 케어")
       .trim())
-    .filter(Boolean)).slice(0, 3));
+    .filter(Boolean)).slice(0, PROSE_COORDINATE_ITEM_LIMIT));
   const cepConcern = createKoreanCepConcernModifier(product);
   const cepTargetCustomer = cepConcern?.startsWith("유분이")
     ? targetCustomer.replace(/^수분\s*부족형\s*/u, "")
@@ -1155,8 +1608,19 @@ function joinMetricValueWithUnit(value: string | undefined, unit: string | undef
   return `${cleanedValue}${cleanedUnit}`;
 }
 
+/**
+ * WebPage.description summarises what the page covers; Product.description
+ * states the product's own measured results. So the refined-sentence fallback
+ * is not offered here — that sentence has one owner, and restating it verbatim
+ * in both fields is the duplication `validate.ts` reports. A structured
+ * narrative is still welcome: it is composed for this field rather than
+ * borrowed from another one.
+ */
 function createKoreanWebPageMetricSentences(product: PdpProductSignal, preferredEvidence?: string): string[] {
-  const groupedNarrative = selectKoreanStructuredMetricNarrative(product, preferredEvidence);
+  const structuredNarrative = selectKoreanStructuredMetricNarrative(product, preferredEvidence);
+  const groupedNarrative = structuredNarrative === selectKoreanScopedRefinedMetricStatement(product)
+    ? undefined
+    : structuredNarrative;
   if (groupedNarrative) {
     return [groupedNarrative];
   }
@@ -1389,7 +1853,7 @@ function inferKoreanIngredientTechnologyBridge(value: string): { withBenefit: st
 
 function selectKoreanPrimaryProductIngredient(product: PdpProductSignal): string | undefined {
   const evidenceText = roleCoherentIngredientEvidenceTexts(product).join(" ");
-  const isPrimaryIngredient = (value: string): boolean => /(?:세라마이드|펩타이드|레티놀|히알루론산|피토스핑고신|콜레스테롤|식물 복합체|비타민|ceramide|peptide|retinol|hyaluronic)/i.test(value)
+  const isPrimaryIngredient = (value: string): boolean => /(?:세라마이드|펩타이드|레티놀|히알루론산|피토스핑고신|콜레스테롤|보태니컴플렉스|비타민|ceramide|peptide|retinol|hyaluronic)/i.test(value)
     && !/(?:공법|포뮬러|technology|formula)/i.test(value);
   const structuredPrimary = product.ingredients
     .filter((value) => cleanSignal(value).length <= 64 && !/[.。！？?]/u.test(value))
@@ -1452,7 +1916,7 @@ function shareIngredientFamily(left: string, right?: string): boolean {
       ["retinol", /레티놀|retinol/iu],
       ["niacinamide", /나이아신아마이드|niacinamide/iu],
       ["peptide", /펩타이드|peptide/iu],
-      ["ginseng", /인삼|진생|ginseng|botanical complex/iu],
+      ["ginseng", /인삼|진생|ginseng|botanicalcomplex/iu],
       ["cholesterol", /콜레스테롤|cholesterol/iu]
     ];
     return families.find(([, pattern]) => pattern.test(text))?.[0] ?? signalEntityKey(text);
@@ -1676,7 +2140,7 @@ function createEnglishWebPageCoverageScopeDescription(product: PdpProductSignal,
 }
 
 function createEnglishWebPageEvidenceCoverageDescription(context: DescriptionContext): string | undefined {
-  const ingredientPhrase = formatDescriptionList(selectWebPageIngredientTerms(context.ingredients, "en-US"), "en-US", 3);
+  const ingredientPhrase = formatDescriptionList(selectWebPageIngredientTerms(context.ingredients, "en-US"), "en-US", PROSE_COORDINATE_ITEM_LIMIT);
   const targetSentence = isSpecificTargetCustomer(context.targetCustomer, "en-US")
     ? `The page identifies ${context.targetCustomer} as the intended audience`
     : undefined;
@@ -2005,8 +2469,10 @@ function createDescriptionContext(
   const benefitFaqSentence = selectFaqSentenceForDescription(sourceFaq, locale, ["benefit", "suitability"], 220);
   const ingredientFaqSentence = selectFaqSentenceForDescription(sourceFaq, locale, ["ingredient"], 240);
   const pageFactPhrase = first(sourceFactSentences) ?? first(sourceBackedSentences);
-  const ingredientPhrase = formatDescriptionList(ingredients, locale, 4);
-  const benefitPhrase = formatDescriptionList(benefits, locale, 4);
+  // Prose phrases, so they narrow to a pair. Three would publish as the bare
+  // serial list the anti-enumeration contract names, in either language.
+  const ingredientPhrase = formatDescriptionList(ingredients, locale, PROSE_COORDINATE_ITEM_LIMIT);
+  const benefitPhrase = formatDescriptionList(benefits, locale, PROSE_COORDINATE_ITEM_LIMIT);
 
   return {
     productType,
@@ -2022,7 +2488,7 @@ function createDescriptionContext(
       : first(selectUsageInstructions(product).filter((value) => isNarrativeLocaleCompatible(value, locale)))
         ?? first(optimizedUsageSteps.filter((value) => isNarrativeLocaleCompatible(value, locale))),
     reviewKeywords,
-    reviewPhrase: formatDescriptionList(reviewKeywords, locale, 4),
+    reviewPhrase: formatDescriptionList(reviewKeywords, locale, PROSE_COORDINATE_ITEM_LIMIT),
     reviewBodies,
     representativeReviews,
     representativeReviewPhrase: formatDescriptionList(representativeReviews, locale, 2),
@@ -2260,6 +2726,12 @@ function localizeDescriptionIngredientSurface(value: string, locale: PdpGeoLocal
   if (namedTechnology) {
     return `${namedTechnology} technology`;
   }
+  // 한글 표면 → 영문 표면. 어휘 사전이 `substance`로 같은 물질을 묶고 있으므로
+  // 문자 체계로 형제 표면을 고르는 것이 옳은 구조인데, 사전의 규칙 순서가
+  // "먼저 맞은 하나"를 표준으로 삼기 때문에 그렇게 바꾸면 모든 로케일이 발행하는
+  // 표면이 달라진다(시도했을 때 잠긴 동작 네 건이 깨졌다). 그래서 이 표는 남는다
+  // — 사전에만 추가된 성분이 en-US에서 사라지는 문제는 그 순서 의미를 먼저
+  // 정리해야 닫힌다.
   const englishMappings: Array<[RegExp, string]> = [
     [/^고밀도\s*세라마이드\s*캡슐$/u, "High-density Ceramide Capsule"],
     [/^세라마이드\s*캡슐$/u, "Ceramide Capsule"],
@@ -2272,7 +2744,7 @@ function localizeDescriptionIngredientSurface(value: string, locale: PdpGeoLocal
     [/^판테놀$/u, "Panthenol"],
     [/^베타인$/u, "Betaine"],
     [/^프로바이오틱스$/u, "Probiotics"],
-    [/^식물 복합체$/u, "Botanical Complex"],
+    [/^보태니컴플렉스$/u, "BotanicalComplex"],
     [/^진생\s*펩타이드$/u, "Ginseng Peptide"],
     [/^진생\s*레티놀$/u, "Ginseng Retinol"]
   ];
@@ -2597,7 +3069,9 @@ function createKoreanProductIngredientStructureDescription(
       .slice(0, 3);
     const componentPhrase = formatKoreanNaturalList(components);
     if (components.length >= 2 && componentPhrase) {
-      return `${appendKoreanTopicParticle(parent)} ${componentPhrase}로 구성됩니다`;
+      // 도구격 조사는 앞 낱말의 받침이 정한다. 같은 파일의 헬퍼가 그 규칙을
+      // 이미 담고 있는데 이 문장만 `로`를 붙여 써서 `지방산로`가 발행됐다.
+      return `${appendKoreanTopicParticle(parent)} ${appendKoreanInstrumentParticle(componentPhrase)} 구성됩니다`;
     }
   }
   return undefined;
@@ -2611,6 +3085,7 @@ function selectKoreanProductIngredientTechnologyRelationSentences(
 ): string[] {
   return productIngredientTechnologyEvidenceSentences(product)
     .map((value, index) => ({ value, index }))
+    .filter(({ value }) => isCitationReadyProse(value))
     .filter(({ value }) => value.length >= 18 && value.length <= 220)
     .filter(({ value }) => /[가-힣]/u.test(value))
     .filter(({ value }) => !hasQuantifiedReportedSignal(value))
@@ -2902,11 +3377,19 @@ function createProductEvidenceDescription(locale: PdpGeoLocale, evidence: string
 
   if (locale === "ko-KR") {
     const contextualClause = normalizeReportedPropertyClause(evidence, locale);
-    if (contextualClause && hasContextualReportedSignal(contextualClause)) {
-      return createKoreanDescriptionEvidenceSentence(contextualClause);
+    const contextualSentence = contextualClause && hasContextualReportedSignal(contextualClause)
+      ? createKoreanDescriptionEvidenceSentence(contextualClause)
+      : "";
+    if (contextualSentence) {
+      return contextualSentence;
     }
     const metricFact = createEvidenceMetricFact(evidence, locale);
     const evidenceSentence = metricFact ? createKoreanEvidenceFactSentence(metricFact) : createKoreanEvidenceContentSentence(cleanEvidence);
+    // Nothing publishable was composed: the caller drops the field rather than
+    // wrapping an empty result in a sentence that claims one exists.
+    if (!evidenceSentence) {
+      return "";
+    }
     return isKoreanCompleteSentence(evidenceSentence)
       ? evidenceSentence
       : `${evidenceSentence}를 참고할 수 있습니다`;
@@ -2928,12 +3411,15 @@ function createWebPageEvidenceDescription(locale: PdpGeoLocale, evidence: string
   const topics = formatDescriptionList(extractEvidenceTopics(cleanEvidence), locale, 3);
   if (locale === "ko-KR") {
     const contextualClause = normalizeReportedPropertyClause(evidence, locale);
-    if (contextualClause && hasContextualReportedSignal(contextualClause)) {
-      return createKoreanDescriptionEvidenceSentence(contextualClause);
+    const contextualSentence = contextualClause && hasContextualReportedSignal(contextualClause)
+      ? createKoreanDescriptionEvidenceSentence(contextualClause)
+      : "";
+    if (contextualSentence) {
+      return contextualSentence;
     }
     const metricFact = createEvidenceMetricFact(evidence, locale);
     const evidenceSentence = metricFact ? createKoreanEvidenceFactSentence(metricFact) : createKoreanEvidenceContentSentence(cleanEvidence);
-    return createKoreanWebPageEvidenceDescription(evidenceSentence);
+    return evidenceSentence ? createKoreanWebPageEvidenceDescription(evidenceSentence) : "";
   }
   if (locale === "ja-JP") {
     const metricFact = createEvidenceMetricFact(evidence, locale);
@@ -2952,7 +3438,7 @@ function createWebPageEvidenceDescription(locale: PdpGeoLocale, evidence: string
 
 function createEnglishDescriptionEfficacySentence(evidence: string, locale: "en-US" | "en-GB"): string {
   const text = trimTrailingSentencePunctuation(normalizeEvidenceText(evidence)
-    .replace(/^(?:Reported result|Consumer assessment)\s*:\s*/i, ""));
+    .replace(leadingLabelFieldPattern, ""));
   const assessment = text.match(/^(In an? [^,]+),\s*(.+)$/i);
   if (assessment?.[1] && assessment[2]) {
     const firstOutcome = assessment[2]
@@ -3015,24 +3501,21 @@ function createEvidenceMetricFact(evidence: string | undefined, locale: PdpGeoLo
   if (formattedEvidence) {
     return formattedEvidence;
   }
-  const metricClauses = extractEvidenceMetricClauses(cleanEvidence).slice(0, 3);
-  if (metricClauses.length === 0) {
-    const topics = formatDescriptionList(extractEvidenceTopics(cleanEvidence), locale, 3);
-    return topics ? fallback(locale, {
-      "ko-KR": `관련 케어 주제는 ${topics}입니다`,
-      "ja-JP": `確認根拠: ${topics}`,
-      "en-US": `Care topics: ${topics}`,
-      "en-GB": `Care topics: ${topics}`
-    }) : cleanEvidence;
-  }
-
-  const metrics = formatDescriptionList(metricClauses, locale, 3);
-  return fallback(locale, {
-    "ko-KR": `시험/평가 결과로 ${metrics}가 보고되었습니다`,
-    "ja-JP": `確認指標: ${metrics}`,
-    "en-US": `Consumer assessment: ${metrics}`,
-    "en-GB": `Consumer assessment: ${metrics}`
-  });
+  // Nothing structured backs this evidence text (formatReportedEvidenceDetail
+  // is a deliberate no-op — see its docstring). A metric clause regex-
+  // extracted from raw prose has no verified comparison basis, so it is
+  // excluded from public copy entirely instead of being dumped as a labeled
+  // sentence ("라벨: 값"/"컨텍스트 기준 라벨: 값") or echoed verbatim — only a
+  // numberless, generic care-topic summary is safe to surface here.
+  const topics = formatDescriptionList(extractEvidenceTopics(cleanEvidence), locale, 3);
+  return topics ? fallback(locale, {
+    "ko-KR": `관련 케어 주제는 ${topics}입니다`,
+    // 다른 로케일은 모두 "주제" 라벨을 쓴다. 여기만 내부 분석 라벨이 공개 값으로
+    // 나가고 있었다 — Public Wording Contract 위반이며 같은 내용의 다른 이름이다.
+    "ja-JP": `ケアトピック: ${topics}`,
+    "en-US": `Care topics: ${topics}`,
+    "en-GB": `Care topics: ${topics}`
+  }) : undefined;
 }
 
 function isFormattedEvidenceSummary(value: string): boolean {
@@ -3040,7 +3523,7 @@ function isFormattedEvidenceSummary(value: string): boolean {
 }
 
 function isStructuredMetricSummary(value: string): boolean {
-  return /^(?:Reported result|Consumer assessment|확인 지표|확인 근거|측정 결과|평가 지표|試験結果|確認指標|確認根拠):\s+/i.test(value);
+  return isAnalysisLabelPrefixed(value);
 }
 
 function extractEvidenceMetricClauses(evidence: string): string[] {
@@ -3309,96 +3792,39 @@ function normalizeEvidenceClaimPhrase(value: string): string {
     .replace(/\bskin\b/g, "skin");
 }
 
+/**
+ * Formerly also produced a colon-labeled "라벨: 값" summary ("평가 지표:
+ * …", "確認指標: …", "Consumer assessment: …") when no assessment context was
+ * found, and for ko-KR/ja-JP appended that same colon-label on top of the
+ * context too ("${context} 기준 평가 지표: …", "${context}に基づく確認指標:
+ * …"). Both are a field-dump surface form regardless of locale or how the
+ * context is joined (commas, spaces, or omitted) — the RAG policy forbids
+ * exposing 시점/대상/기간/방법/기관 this way, and a threshold on the join
+ * character count (e.g. requiring 2+ commas) only hides the reproduction
+ * shown in one locale/phrasing; `extractEvidenceAssessmentContext` also joins
+ * with plain spaces, which trivially defeats such a threshold.
+ *
+ * en-US/en-GB's context-qualified form ("In {context}, {metrics}") carries
+ * no label/colon — it is ordinary prose already, so it is kept; every other
+ * shape (no-context fallback in any locale, and ko-KR/ja-JP's context-
+ * qualified forms) had no way to state that context without a label, so raw
+ * evidence text without a structured `metricClaim` behind it is excluded
+ * from public copy in those cases — see `createStructuredClinicalEvidenceSummary`
+ * for the structured path that replaces this.
+ */
 function formatReportedEvidenceDetail(evidence: string, locale: PdpGeoLocale): string | undefined {
-  if (locale === "ko-KR") {
-    const multiMetricDetail = formatKoreanMultiMetricEvidenceDetail(evidence);
-    if (multiMetricDetail) {
-      return multiMetricDetail;
-    }
-    const koreanMetricClauses = extractKoreanEvidenceMetricClauses(evidence).slice(0, 4);
-    if (koreanMetricClauses.length > 0) {
-      const metrics = koreanMetricClauses.join("; ");
-      const context = extractKoreanEvidenceAssessmentContext(evidence);
-      return context ? `${context} 기준 평가 지표: ${metrics}` : `평가 지표: ${metrics}`;
-    }
+  if (locale !== "en-US" && locale !== "en-GB") {
+    return undefined;
   }
-
   const metricClauses = extractEvidenceMetricClauses(evidence).slice(0, 4);
   if (metricClauses.length === 0) {
     return undefined;
   }
   const context = extractEvidenceAssessmentContext(evidence);
-  const metrics = locale === "ko-KR"
-    ? metricClauses.join("; ")
-    : metricClauses.join("; ");
-
   if (!context) {
-    return fallback(locale, {
-      "ko-KR": `평가 지표: ${metrics}`,
-      "ja-JP": `確認指標: ${metrics}`,
-      "en-US": `Consumer assessment: ${metrics}`,
-      "en-GB": `Consumer assessment: ${metrics}`
-    });
-  }
-
-  return fallback(locale, {
-    "ko-KR": `${context} 기준 평가 지표: ${metrics}`,
-    "ja-JP": `${context}に基づく確認指標: ${metrics}`,
-    "en-US": `In ${context}, ${metrics}`,
-    "en-GB": `In ${context}, ${metrics}`
-  });
-}
-
-function formatKoreanMultiMetricEvidenceDetail(evidence: string): string | undefined {
-  const text = normalizeKoreanEvidenceText(evidence);
-  if (!/[가-힣]/.test(text) || !/%/.test(text)) {
     return undefined;
   }
-
-  const cleansingMetrics = unique([
-    ...Array.from(text.matchAll(/초미세먼지\s*(\d+(?:\.\d+)?%)\s*세정/g)).map((match) => `초미세먼지 ${match[1]} 세정`),
-    ...Array.from(text.matchAll(/모공\s*속\s*노폐물\s*(\d+(?:\.\d+)?%)\s*세정/g)).map((match) => `모공 속 노폐물 ${match[1]} 세정`)
-  ]);
-  const bubbleSize = text.match(/(?:포밍\s*클렌저\s*)?버블\s*평균\s*사이즈\s*(\d+(?:\.\d+)?\s*um)/i)?.[1]?.replace(/\s+/g, "");
-  const ceramideMetrics = /세라마이드\s*함량|Ceramides\s*total/i.test(text)
-    ? Array.from(text.matchAll(/\d+(?:\.\d+)?%/g)).map((match) => match[0]).slice(-3)
-    : [];
-  const sample = text.match(/만\s*\d{2}\s*~\s*\d{2}세(?:의)?\s*성인\s*(?:여성|남성)?\s*\d+\s*명\s*대상/)?.[0]
-    ?? text.match(/\d+\s*명\s*대상/)?.[0];
-  const period = text.match(/20\d{2}[./-]\d{1,2}[./-]\d{1,2}\s*(?:~|-|–|—|부터|에서)\s*20\d{2}[./-]\d{1,2}[./-]\d{1,2}/)?.[0];
-  const context = [sample, period ? `시험기간 ${period}` : undefined, /개인차\s*있음/.test(text) ? "개인차 있음" : undefined]
-    .filter(Boolean)
-    .join(", ");
-  const sentences: string[] = [];
-
-  if (cleansingMetrics.length > 0) {
-    sentences.push(`세정 시험 정보는 ${cleansingMetrics.join(", ")}${context ? ` (${context})` : ""}로 표시됩니다`);
-  }
-  if (bubbleSize) {
-    sentences.push(`포밍 클렌저 버블 평균 사이즈는 ${bubbleSize}로 확인됩니다`);
-  }
-  if (ceramideMetrics.length >= 3) {
-    sentences.push(`피부 각질층 세라마이드 함량 분석은 사용 직후 ${ceramideMetrics[0]}, 사용 2주 후 ${ceramideMetrics[1]}, 사용 4주 후 ${ceramideMetrics[2]}로 표시됩니다${/in\s*vitro/i.test(text) ? " (in vitro 시험 결과)" : ""}`);
-  }
-
-  return sentences.length > 0 ? sentences.join(". ") : undefined;
-}
-
-function extractKoreanEvidenceAssessmentContext(evidence: string): string | undefined {
-  const text = normalizeKoreanEvidenceText(evidence);
-  const assessment = first([
-    /Tape\s*Stripping|외부자극/i.test(text) ? "외부자극/Tape Stripping 테스트" : undefined,
-    /ex\s*vivo/i.test(text) ? "ex vivo 테스트" : undefined,
-    /in\s*vitro/i.test(text) ? "in vitro 테스트" : undefined,
-    /인체\s*적용|임상/.test(text) ? "인체적용시험" : undefined,
-    /자가\s*평가|설문|응답/.test(text) ? "자가평가" : undefined,
-    /테스트|시험|결과/.test(text) ? "상품 상세 테스트" : undefined
-  ]);
-  const sample = text.match(/\b\d{2,4}\s*(?:명|인|참여자|대상|사용자|여성|남성)\b/)?.[0];
-  const timing = extractKoreanTimingPhrase(text);
-  return [assessment, sample ? `${sample} 대상` : undefined, timing ? `${timing} 시점` : undefined]
-    .filter(Boolean)
-    .join(", ") || undefined;
+  return `In ${context}, ${metricClauses.join("; ")}`;
 }
 
 function extractEvidenceAssessmentContext(evidence: string): string | undefined {
@@ -3469,12 +3895,23 @@ function createKoreanWebPageEvidenceDescription(evidenceSentence: string): strin
     .replace(/입니다$/u, "")
     .replace(/\s+/g, " ")
     .trim();
-  return evidencePhrase
-    ? createKoreanEvidenceResultSentence(evidencePhrase)
-    : "완제품의 측정·평가 결과가 함께 제시됩니다";
+  return (evidencePhrase ? createKoreanEvidenceResultSentence(evidencePhrase) : "")
+    || "완제품의 측정·평가 결과가 함께 제시됩니다";
 }
 
-function createKoreanEvidenceResultSentence(value: string, label = "측정/평가 결과"): string {
+/**
+ * A measured result written as a Korean sentence, or nothing.
+ *
+ * Nothing is a real answer here, and it used to not be one. When no natural
+ * sentence could be composed the function wrapped whatever it had been handed
+ * in a `측정/평가 결과는 …입니다` shell, which published raw transcription — a
+ * page fragment ending mid-clause, and in one recorded case a hospital name the
+ * source never verified — under a label that reads as a measured finding. The
+ * shell was not evidence; it was the absence of evidence given a sentence
+ * shape. So an unformattable value now returns the empty string, and every
+ * caller reads that as "there is no result to publish".
+ */
+function createKoreanEvidenceResultSentence(value: string): string {
   const text = normalizeKoreanEvidenceResultValue(value);
   if (isKoreanNaturalMetricResultSentence(text)) {
     return text;
@@ -3482,11 +3919,7 @@ function createKoreanEvidenceResultSentence(value: string, label = "측정/평�
   if (isKoreanCompleteSentence(text) && !/(?:제시|표기|설명)(?:되어\s*)?있?습니다$/u.test(text)) {
     return text;
   }
-  const naturalSentence = formatKoreanEvidenceResultSentence(text);
-  if (naturalSentence) {
-    return naturalSentence;
-  }
-  return text ? `${appendKoreanTopicParticle(label)} ${text}입니다` : `${label}를 포함합니다`;
+  return formatKoreanEvidenceResultSentence(text) ?? "";
 }
 
 function createKoreanDescriptionEvidenceSentence(value: string): string {
@@ -3494,7 +3927,8 @@ function createKoreanDescriptionEvidenceSentence(value: string): string {
   if (isKoreanNaturalMetricResultSentence(normalized)) {
     return ensurePublicSentence(normalized, "ko-KR");
   }
-  return ensurePublicSentence(createKoreanEvidenceResultSentence(normalized), "ko-KR");
+  const sentence = createKoreanEvidenceResultSentence(normalized);
+  return sentence ? ensurePublicSentence(sentence, "ko-KR") : "";
 }
 
 function isKoreanNaturalMetricResultSentence(value: string): boolean {
@@ -3504,9 +3938,8 @@ function isKoreanNaturalMetricResultSentence(value: string): boolean {
 
 function normalizeKoreanEvidenceResultValue(value: string): string {
   return trimTrailingSentencePunctuation(cleanSignal(value)
-    .replace(/^(?:측정\/평가\s*결과|측정\s*결과|평가\s*지표|확인\s*지표)(?:는|은|:)?\s*/u, "")
+    .replace(leadingInternalLabelPattern, "")
     .replace(/^시험\/평가\s*결과로\s*/u, "")
-    .replace(/^(?:평가\s*지표|확인\s*지표)\s*:\s*/u, "")
     .replace(/\s*(?:가\s*)?보고되었습니다$/u, "")
     .replace(/\s*(?:가\s*)?확인됩니다$/u, "")
     .replace(new RegExp(`(${KOREAN_METRIC_OUTCOME_PATTERN})(?:된다고|된|한)?(?:으)?로?\\s*(?:제시|표시)(?:됩니다|되었습니다|된다|되며)$`, "u"), "$1")
@@ -3516,8 +3949,6 @@ function normalizeKoreanEvidenceResultValue(value: string): string {
     .replace(/\s+/g, " ")
     .trim());
 }
-
-const KOREAN_METRIC_OUTCOME_PATTERN = "회복|개선|감소|증가|상승|향상|완화|잔존|지속";
 
 function formatKoreanEvidenceResultSentence(value: string): string | undefined {
   const text = normalizeKoreanEvidenceContextPunctuation(value);
@@ -3553,7 +3984,7 @@ function repairKoreanOcrClauseBoundary(value: string): string {
 
 function splitKoreanEvidenceContext(value: string): { context?: string; claim: string } {
   const text = normalizeKoreanEvidenceContextPunctuation(value);
-  const contextMatch = text.match(/^(.{2,140}?)\s*기준\s*(?:평가\s*지표|측정\s*결과)?\s*:?\s*(.+)$/u);
+  const contextMatch = matchAssessmentContextLabel(text);
   if (contextMatch?.[1] && contextMatch[2] && !hasQuantifiedReportedSignal(contextMatch[1])) {
     return {
       context: `${normalizeKoreanEvidenceContextPunctuation(contextMatch[1]).replace(/\s*기준$/u, "")} 기준`,
@@ -4325,7 +4756,6 @@ function selectPublicBenefitSignals(product: PdpProductSignal, locale: PdpGeoLoc
     .filter((value) => !isIngredientLinkOnlyBenefitSignal(value, product))
     .filter((value) => !isProductEntityOnlySignal(value, product))
     .filter((value) => !isLowQualityBenefitSignal(value))
-    .filter((value) => isBenefitCompatibleWithProduct(value, product))
     .filter(isUsefulPublicListValue))
     .slice(0, 10);
 }
@@ -4344,7 +4774,6 @@ function selectClaimedBenefitSignals(product: PdpProductSignal, locale: PdpGeoLo
     .flatMap(extractBenefitSignalCandidates)
     .map((value) => localizePublicBenefitSignal(value, locale))
     .filter((value): value is string => Boolean(value))
-    .filter((value) => isBenefitCompatibleWithProduct(value, product))
     .filter(isUsefulPublicListValue));
   const primary = removeBenefitSubsetRedundancy(normalize(primarySources));
   return (primary.length > 0 ? primary : removeBenefitSubsetRedundancy(normalize(fallbackSources))).slice(0, 8);
@@ -4429,21 +4858,6 @@ function isLowQualityBenefitSignal(value: string): boolean {
   return /(?:성분은|성분이|설계되었습니다|자칫|함유되어|동일합니다|고객님|리뉴얼|어떤\s*성분|무엇인가요|효과\s*\*|REJUVENATING|CRÈME|AGREED)/i.test(text);
 }
 
-function isBenefitCompatibleWithProduct(value: string, product: PdpProductSignal): boolean {
-  const benefit = cleanSignal(value);
-  const productContext = cleanSignal([
-    product.name,
-    product.originalName,
-    product.category,
-    inferProductType(product)
-  ].filter(Boolean).join(" "));
-  const isCleanserProduct = /(?:클렌|세안|폼|워시|cleanser|cleansing|foam|wash)/i.test(productContext);
-  if (/(?:저자극\s*세안|세정력|초미세먼지\s*세정|모공\s*속\s*노폐물\s*세정|마이크로\s*버블|cleansing\s+power|low[-\s]?irritation\s+cleansing|fine[-\s]?dust\s+cleansing|pore\s+waste\s+cleansing|micro[-\s]?bubble\s+foam)/i.test(benefit) && !isCleanserProduct) {
-    return false;
-  }
-  return true;
-}
-
 function isProductEntityOnlySignal(value: string, product: PdpProductSignal): boolean {
   const normalized = signalEntityKey(value);
   return [
@@ -4500,34 +4914,13 @@ function selectKeyIngredients(product: PdpProductSignal, limit: number): string[
     .flatMap(extractIngredientSubjectCandidates)
     .map(normalizeIngredientSignal)
     .filter((value): value is string => Boolean(value));
+  // 어휘는 단일 출처(contracts/ingredient-vocabulary)에 있다. 여기에 목록을
+  // 한 벌 더 두면 정규화 쪽 표와 어긋나고, 실제로 어긋나 있었다 — 검출은
+  // `panthenol`을 알고 정규화는 몰라서 영문 문장이 성분명으로 발행됐다.
   const detected = [
-    /botanical actives/i.test(haystack) ? "Botanical Actives" : undefined,
     ...extractConcreteIngredientTechnologySignals(haystack),
-    /식물 복합체|botanical complex/i.test(haystack) ? "식물 복합체" : undefined,
-    /진생\s*펩타이드|진생펩타이드|ginseng peptide/i.test(haystack) ? "진생펩타이드" : undefined,
-    /진생\s*레티놀|진생레티놀|ginseng retinol/i.test(haystack) ? "진생레티놀" : undefined,
-    /500[-\s]?hour(?:\s+aged)?\s+ginseng/i.test(haystack) ? "500-hour aged ginseng" : undefined,
-    /korean herb extract/i.test(haystack) ? "Korean herb extract" : undefined,
-    // The "(Botanical Complex)" brand-science alias may decorate the ingredient
-    // only when the source itself states it — brand identity must not create
-    // product evidence the validator will then flag as unsourced.
-    /botanical complex|식물 복합체/i.test(haystack)
-      ? "Botanical Actives (Botanical Complex)"
-      : undefined,
-    /ginseng peptide/i.test(haystack) ? "Ginseng Peptide" : undefined,
-    /retinol/i.test(haystack) ? "Retinol" : undefined,
-    /niacinamide/i.test(haystack) ? "Niacinamide" : undefined,
-    /hyaluronic|sodium hyaluronate/i.test(haystack) ? "Hyaluronic Acid" : undefined,
-    /zinc/i.test(haystack) ? "Zinc" : undefined,
-    /ceramide/i.test(haystack) ? "Ceramide" : undefined,
-    /세라마이드/i.test(haystack) ? "세라마이드" : undefined,
-    /히알루론산|하이알루론산/i.test(haystack) ? "히알루론산" : undefined,
-    /징크/i.test(haystack) ? "징크" : undefined,
-    /나이아신아마이드/i.test(haystack) ? "나이아신아마이드" : undefined,
-    /panthenol|판테놀/i.test(haystack) ? "판테놀" : undefined,
-    /betaine|베타인/i.test(haystack) ? "베타인" : undefined,
-    /probiotics?|프로바이오틱스/i.test(haystack) ? "프로바이오틱스" : undefined
-  ].filter((value): value is string => Boolean(value));
+    ...ingredientSurfacesPresentIn(haystack)
+  ];
   const normalizedFromIngredients = product.ingredients
     .flatMap(splitIngredientSignal)
     .map(normalizeIngredientSignal)
@@ -4554,9 +4947,14 @@ function roleCoherentIngredientEvidenceTexts(product: PdpProductSignal): string[
     ...product.reviews.items.map((item) => item.body),
     ...product.reviews.keywords
   ].map(signalEntityKey).filter(Boolean));
+  // FAQ 유래 근거도 같은 게이트를 지난다. 지나지 않으면, 1027처럼 여러 주제가
+  // 한 덩어리로 붙은 FAQ 블롭이 성분 근거로 그대로 들어와 "이 지질은 세라마이드/
+  // 콜레스테롤/지방산이라는 성분으로 이루어져있고"라는 피부 구성 설명에서
+  // 콜레스테롤·지방산이 이 제품의 성분으로 발행된다.
   const ingredientFaqEvidence = product.faq
     .filter((item) => classifySourceFaqIntent(item).includes("ingredient"))
-    .flatMap((item) => [item.question, item.answer]);
+    .flatMap((item) => [item.question, item.answer])
+    .filter(isExplicitIngredientEvidenceText);
   const explicitLinks = (product.semanticFacts?.ingredientBenefitLinks ?? []).flatMap((link) => [
     link.ingredient,
     link.sentence,
@@ -4577,9 +4975,105 @@ function roleCoherentIngredientEvidenceTexts(product: PdpProductSignal): string[
   ].map(cleanSignal).filter(Boolean));
 }
 
+/**
+ * 이 문장이 함유를 밝히는 표지를 갖고 있는지.
+ *
+ * 두 판정(측정 대상인가·피부 구성 서술인가)이 같은 규칙으로 시작한다 —
+ * 함유 표지가 있으면 애초에 함유 진술이므로 먼저 통과시킨다. 개념이 하나인데
+ * 정본이 없어 문자 단위 사본 두 벌이 인접해 있었고, 이 저장소는 그렇게 갈라진
+ * 사본이 같은 문장에 다른 판정을 내리는 것을 이미 겪었다.
+ */
+function hasIngredientInclusionMarker(value: string): boolean {
+  return /함유|담은|담아|배합|포함|들어\s*있|\b(?:contains?|containing|with)\b/iu.test(value);
+}
+
+/**
+ * 문장이 그 물질을 *측정 대상*으로 말하는지.
+ *
+ * "피부 각질층 내 세라마이드 함량 분석"은 피부에서 그 물질의 양을 재었다는
+ * 말이고, 제품이 그것을 함유한다는 말이 아니다. 성분명이 문장에 들어 있다는
+ * 사실만 보면 두 진술이 구분되지 않아, 시험 항목명이 성분으로 발행됐다
+ * (예시더마 클렌징폼 기술서 차트 항목명 실측).
+ *
+ * 그래서 문장의 기능을 본다 — 재는 대상을 가리키는 양 명사(함량·농도·수치)와
+ * 재는 행위(분석·측정·평가·시험·변화)가 함께 있고, 함유를 밝히는 표지가 없을
+ * 때가 측정 진술이다.
+ *
+ * 함유 표지를 먼저 보는 이유는 함유 진술도 수치를 싣기 때문이다 — "세라마이드
+ * 10,000ppm 함유"는 재었다는 말이 아니라 들어 있다는 말이다. 양 명사를 앞
+ * 음절이 없는 낱말로만 읽는 것도 같은 이유다("고함량"은 성분의 속성이다).
+ */
+function statesSubstanceAsMeasurementTarget(value: string): boolean {
+  const text = cleanSignal(value);
+  if (!text || hasIngredientInclusionMarker(text)) {
+    return false;
+  }
+  const measuredQuantity = /(?<![가-힣])(?:함량|농도|수치|잔존량|변화량)|\b(?:content|level|concentration)\b/iu.test(text);
+  const measuringAct = /분석|측정|평가|시험|변화|비교|\b(?:analysis|analy[sz]ed|measure[ds]?|measurement|assess(?:ed|ment)?|test(?:ed)?)\b/iu.test(text);
+  return measuredQuantity && measuringAct;
+}
+
+/**
+ * 문장이 그 성분을 이 제품에 귀속시키지 **않는지**.
+ *
+ * 성분 어휘가 문장에 들어 있다는 사실은 제품이 그것을 함유한다는 근거가
+ * 아니다. 실측(2026-09-03)에서 이런 문장들이 성분으로 발행됐다.
+ *
+ * - `레티놀은 넣지 않았습니다` → 사실과 반대되는 발행
+ * - `세라마이드 대신 콜레스테롤을 쓰는 제품과 달리` → 견주는 쪽의 성분
+ * - `히알루론산이 들어 있냐는 질문을 많이 받습니다` → 질문은 사실 진술이 아니다
+ * - `같은 라인의 크림에는 나이아신아마이드가` → 다른 제품의 성분
+ *
+ * 판정하는 것은 성분명이 아니라 문장의 기능이다 — 부재를 밝히는가, 견주는
+ * 대상을 말하는가, 묻는가, 다른 제품에 귀속시키는가.
+ *
+ * 형태가 겹치는 표현은 일부러 넣지 않았다. `없이`는 성분의 부재보다 `자극 없이`
+ * 처럼 감각의 부재로 훨씬 흔히 쓰이고, `보다`는 비교급이 아니라 `보다 순한`의
+ * 부사로 쓰인다. 그런 표현을 넣으면 정상 성분 근거를 함께 잃는다.
+ */
+function deflectsIngredientAttribution(value: string): boolean {
+  const text = cleanSignal(value);
+  if (!text) {
+    return false;
+  }
+  const statesAbsence = /무첨가|(?:넣|쓰|사용|포함|담)(?:지|질)\s*않|\bfree\s+of\b|\bwithout\b|\bno\s+added\b/iu.test(text);
+  const namesComparisonTarget = /대신|(?:와|과|보다)?\s*달리|\binstead\s+of\b|\bunlike\b|\brather\s+than\b/iu.test(text);
+  const asksRatherThanStates = /[?？]|(?:냐는|나요|까요|는가요|습니까)/u.test(text);
+  const attributesToAnotherProduct = /같은\s*라인|다른\s*제품|타\s*제품|이전\s*제품|함께\s*쓰는\s*제품|\b(?:same|rest\s+of\s+the)\s+(?:line|range|collection)\b|\bother\s+products?\b|\bcompanion\s+products?\b|\bprevious\s+(?:formula|version)\b/iu.test(text);
+  return statesAbsence || namesComparisonTarget || asksRatherThanStates || attributesToAnotherProduct;
+}
+
+/**
+ * 문장이 **피부**가 무엇으로 이루어져 있는지 설명하는지.
+ *
+ * 함유 진술의 주체는 제품이다. 1027 실측에서 `Key ingredients`에 `콜레스테롤,
+ * 지방산`이 실렸고, 근거는 FAQ의 이 문장이었다 — "이 지질은 세라마이드/
+ * 콜레스테롤/지방산이라는 성분으로 이루어져있고…". 피부 지질의 구성을 설명하는
+ * 문장이지 이 제품이 그것을 함유한다는 말이 아니다. 결과가 우연히 맞을 수
+ * 있어도 근거가 틀렸다.
+ *
+ * 구성 서술만으로는 가를 수 없다 — "고밀도 세라마이드 캡슐로 구성된 포뮬러"도
+ * 구성 서술이지만 그 대상은 제품이다. 그래서 구성되는 대상이 피부 구조일 때만
+ * 함유 근거에서 뺀다. 함유 표지가 있으면 애초에 함유 진술이므로 먼저 통과시킨다.
+ */
+function statesSkinCompositionRatherThanProduct(value: string): boolean {
+  const text = cleanSignal(value);
+  if (!text || hasIngredientInclusionMarker(text)) {
+    return false;
+  }
+  const describesComposition = /이루어(?:져|진)|구성되|구성된|구성돼|\b(?:consists?\s+of|composed\s+of|made\s+(?:up\s+)?of)\b/iu.test(text);
+  const composedThingIsSkin = /피부|각질층|표피|지질|\bskin\b|\bstratum\s+corneum\b|\bepiderm/iu.test(text);
+  return describesComposition && composedThingIsSkin;
+}
+
 function isExplicitIngredientEvidenceText(value: string): boolean {
   const text = cleanSignal(value);
-  if (!text || isIngredientAttributeOrOutcomeSignal(text) || isLowQualityIngredientEvidenceText(text)) {
+  if (!text
+    || isIngredientAttributeOrOutcomeSignal(text)
+    || isLowQualityIngredientEvidenceText(text)
+    || statesSubstanceAsMeasurementTarget(text)
+    || deflectsIngredientAttribution(text)
+    || statesSkinCompositionRatherThanProduct(text)) {
     return false;
   }
   if (/^(?:ingredients?|key\s+ingredients?|actives?|전성분|주요\s*성분|핵심\s*성분|성분|원료)\s*[:：]/iu.test(text)) {
@@ -4598,9 +5092,11 @@ function selectLocalizedKeyIngredients(product: PdpProductSignal, locale: PdpGeo
   const selected: string[] = [];
   const familyIndexes = new Map<string, number>();
   for (const value of localized) {
-    const family = /botanical complex|korean\s+ginseng\s+actives/i.test(value)
-      ? "botanical complex"
-      : ingredientAliasFamilyKey(value) || signalEntityKey(value);
+    // 표면이 아니라 물질로 묶는다. `Ceramide`와 `세라마이드`는 한 물질의 두
+    // 표기인데 표면으로 묶으면 서로 다른 성분으로 세어져, 한국어 페이지에
+    // 둘이 나란히 실린다.
+    const family = ingredientSubstanceKey(value)
+      ?? (ingredientAliasFamilyKey(value) || signalEntityKey(value));
     const existingIndex = familyIndexes.get(family);
     if (existingIndex === undefined) {
       familyIndexes.set(family, selected.length);
@@ -4608,11 +5104,78 @@ function selectLocalizedKeyIngredients(product: PdpProductSignal, locale: PdpGeo
       continue;
     }
     const existing = selected[existingIndex] ?? "";
-    if (value.length > existing.length) {
+    if (preferredIngredientSurface(existing, value, locale) === value) {
       selected[existingIndex] = value;
     }
   }
-  return selected.slice(0, limit);
+  return dropIngredientSurfacesAnotherAlreadyNames(selected).slice(0, limit);
+}
+
+/**
+ * 같은 물질의 두 표면 중 이 페이지에 실릴 것을 고른다.
+ *
+ * 읽는 언어의 문자로 쓴 표면이 먼저다 — 한국어 페이지에 `Ceramide`가 실리면
+ * 그 성분을 못 알아본다. 문자 체계가 같다면 종전처럼 더 온전한(긴) 표면을
+ * 남긴다. 표면마다 로케일 짝을 적어 두는 표를 새로 만들지 않고, 문자 체계로
+ * 고른다.
+ */
+function preferredIngredientSurface(existing: string, candidate: string, locale: PdpGeoLocale): string {
+  const localeScript = locale === "ko-KR" ? /[가-힣]/u : locale === "ja-JP" ? /[ぁ-んァ-ン一-龯]/u : /[A-Za-z]/u;
+  const existingMatchesLocale = localeScript.test(existing);
+  const candidateMatchesLocale = localeScript.test(candidate);
+  if (existingMatchesLocale !== candidateMatchesLocale) {
+    return candidateMatchesLocale ? candidate : existing;
+  }
+  return candidate.length > existing.length ? candidate : existing;
+}
+
+/**
+ * Drops an ingredient surface that another selected surface already names.
+ *
+ * The family key above only groups aliases that carry a figure, so a
+ * canonicalized surface and the source-stated one it came from arrive as two
+ * separate entries: `Compressed Hyaluronic Acid` alongside a bare
+ * `Hyaluronic Acid`. They name one ingredient, and the longer surface is the one
+ * the source actually wrote — the form an answer engine can attribute, and the
+ * form that survives when prose narrows to a pair. Keeping the generic one
+ * first meant narrowing dropped the specific name.
+ *
+ * Containment is read on word boundaries so a shared word is not enough:
+ * `Hyaluronic Acid` is inside `Compressed Hyaluronic Acid`, while
+ * `Sodium Hyaluronate` is inside nothing and stays.
+ */
+function dropIngredientSurfacesAnotherAlreadyNames(values: string[]): string[] {
+  const normalized = values.map((value) => cleanSignal(value).toLocaleLowerCase());
+  // The longest surface naming the same ingredient stands in for the group, and
+  // it takes the position of the first member — the source's own order. Merging
+  // into the earliest slot rather than dropping the generic one keeps the
+  // leading ingredient leading: dropping put `Ceramide` ahead of the
+  // `Compressed Hyaluronic Acid` the source listed first.
+  const representatives = values.map((value, index) => {
+    const candidate = normalized[index] ?? "";
+    let best = index;
+    normalized.forEach((other, otherIndex) => {
+      const bestLength = (normalized[best] ?? "").length;
+      if (other.length > bestLength && containsAsWholeWords(other, candidate)) best = otherIndex;
+    });
+    return { value: values[best] ?? value, key: normalized[best] ?? candidate };
+  });
+  const seen = new Set<string>();
+  return representatives.flatMap(({ value, key }) => {
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [value];
+  });
+}
+
+function containsAsWholeWords(haystack: string, needle: string): boolean {
+  if (!needle) return false;
+  const index = haystack.indexOf(needle);
+  if (index < 0) return false;
+  const before = haystack[index - 1];
+  const after = haystack[index + needle.length];
+  return (before === undefined || !/[\p{L}\p{N}]/u.test(before))
+    && (after === undefined || !/[\p{L}\p{N}]/u.test(after));
 }
 
 /** Sentence shards and interrogatives that ingredient extraction sometimes yields. */
@@ -4667,7 +5230,7 @@ function isTruncatedSourceFragment(candidate: string, sourceCorpusLines: string[
  * Alias family for ingredient names that carry a numeric specifier: the
  * numeric tokens plus the head noun identify the entity, so surface variants
  * such as "500-Hour Fermented Ginseng", "500-hour aged ginseng", and
- * "500-Hour Aged Ginseng Extract (LYMPHANAX™)" collapse into one family.
+ * "500-Hour Aged Ginseng Extract (BOTANICAL EXTRACT™)" collapse into one family.
  * Names without a numeric specifier return "" and fall back to the generic
  * entity key.
  */
@@ -4710,7 +5273,16 @@ function splitIngredientSubjectCandidate(value: string): string[] {
 function cleanIngredientSubjectCandidate(value: string): string | undefined {
   const text = cleanSignal(value)
     .replace(/^(?:그리고|또한|특히|핵심|주요)\s+/i, "")
-    .replace(/(?:성분|기술|포뮬러|ingredients?|technolog(?:y|ies)|formula)\s*(?:으로|로|은|는|:)?$/i, "")
+    .replace(
+      /(?:성분|기술|포뮬러|ingredients?|technolog(?:y|ies)|formula)\s*(?:으로|로|은|는|:)?$/i,
+      // 끝의 범주어를 떼는 것은 `고밀도 세라마이드 성분`처럼 이름 뒤에 범주가
+      // 덧붙은 경우를 위한 것이다. 그러나 `Barrier Protective Formula`에서는
+      // 그 말이 이름의 일부여서, 떼면 `Barrier Protective`라는 형용사구가 남아
+      // 성분명으로 발행된다(1144 실측). 두 경우를 가르는 것은 떼고 남은 말이
+      // 여전히 성분을 가리키는가다.
+      (matched, offset: number, whole: string) =>
+        hasSpecificIngredientNameAnchor(whole.slice(0, offset)) ? "" : matched
+    )
     .replace(/^(?:include|includes|including|feature|features|highlight|highlights|구성|포함)\s*/i, "")
     .replace(/\s*(?:에는|은|는|이|가|을|를|에)$/u, "")
     .trim();
@@ -4793,6 +5365,52 @@ function isGenericMarketingIngredientToken(value: string): boolean {
   return /^[A-Z]{3,12}$/.test(text) && !hasSpecificIngredientNameAnchor(text);
 }
 
+/**
+ * 마침표까지 달고 온 전사 조각인지.
+ *
+ * 완결된 설명은 서술어로 끝난다. 낱말이 나열되다 마침표만 붙은 줄은 이미지에서
+ * 잘려 나온 전사 조각이다 — 한국어에서는 종결어미가, 영문에서는 절을 만드는
+ * 기능어가 있어야 설명이다.
+ */
+function isTranscriptionFragmentLine(value: string): boolean {
+  const text = cleanSignal(value);
+  if (!text || !/[.。]$/u.test(text)) {
+    return false;
+  }
+  const body = trimTrailingSentencePunctuation(text);
+  if (/[가-힣]/u.test(body)) {
+    return !isKoreanCompleteSentence(body);
+  }
+  return !readsAsClause(body);
+}
+
+/**
+ * 종결되지 않은 절의 조각인지 — 성분명은 명사구라는 사실로 판정한다.
+ *
+ * 용언 어간을 열거해 막을 수 없다. `세안 중 발생하`를 어간 목록으로 막으면
+ * 다음 실행에서 `피부에 닿`이 나온다(1144 실측). 목록이 아니라 형태로 규정한다.
+ *
+ *   1. 격조사로 표시된 논항을 품고 뒤에 말이 더 붙은 줄은 절이다. 성분명은
+ *      명사구이므로 `피부에 닿`처럼 논항을 안지 않는다.
+ *   2. `하`·`되`는 명사를 용언으로 만드는 파생 접미사다. 두 음절 이상 뒤에서
+ *      이 음절로 낱말이 끝났다면 어미가 잘려 나간 어간이다(`발생하`, `사용되`).
+ *
+ * 종결된 문장은 조각이 아니다 — 상세 근거 문장이 여기서 걸리면 안 된다.
+ *
+ * 한글은 조사를 띄어 쓰지 않으므로, 형태만으로는 낱말 안의 음절과 조사를 가를
+ * 수 없다 — `알로에`는 `알로`+`에`처럼 보인다. 그래서 이 판정은 성분 어휘
+ * 앵커가 없는 줄에만 쓴다(`isBrokenIngredientFragment` 참조). 앵커가 그 구분을
+ * 대신 해 준다: `알로에 베라 추출물`은 `추출`로 이름임이 드러나고, `피부에 닿`은
+ * 드러낼 것이 없다.
+ */
+function isKoreanClauseFragment(text: string): boolean {
+  if (!/[가-힣]/u.test(text) || text.split(/\s+/u).length < 2 || isKoreanCompleteSentence(text)) {
+    return false;
+  }
+  return /[가-힣]{2,}(?:에서|에게|에|으로|로|을|를)\s+\S/u.test(text)
+    || /[가-힣]{2,}(?:하|되)$/u.test(text);
+}
+
 function isBrokenIngredientFragment(value: string): boolean {
   const text = cleanSignal(value);
   if (!text) {
@@ -4801,8 +5419,21 @@ function isBrokenIngredientFragment(value: string): boolean {
   if (/^흔들\s*필요\s*없$/u.test(text)) {
     return true;
   }
+  // 이름은 문장부호로 끝나지 않는다. 이 검사만 성분 어휘 앵커보다 앞에 둔다 —
+  // 어휘를 먼저 보면 `Barrier-Protective Formula cleansing.`처럼 이름이 섞인
+  // 전사 조각이 `Formula`만으로 "이름이다"로 단정되어 통과한다(1144 실측:
+  // 그 조각이 `content.sections.ingredients`에 실렸다).
+  if (/[.,;·:]$/u.test(text)) {
+    return true;
+  }
+  // 앵커는 그 뒤에 본다. 앵커가 있으면 이름이고, 없는 줄에만 절 형태를 따진다 —
+  // 절 판정을 앵커 앞에 두었더니 `알로에 베라 추출물`이 `알로`+`에`로 읽혀
+  // 발행물에서 사라졌다.
   if (hasSpecificIngredientNameAnchor(text)) {
     return false;
+  }
+  if (isKoreanClauseFragment(text)) {
+    return true;
   }
   if (/[가-힣]/.test(text) && /(?:않|아니|또|및|와|과|또는|그리고|으로|로|된|되는|되어|제시|설명|제공|확인)$/.test(text)) {
     return true;
@@ -4855,7 +5486,7 @@ function dedupeIngredientSignals(values: string[]): string[] {
   const hasHydrogelFloatingFormula = uniqueValues.some((value) => /하이드로겔\s*플로팅\s*포뮬러/i.test(value));
   const hasCompressedHyaluronic = uniqueValues.some((value) => /압축\s*히알루론산/i.test(value));
   const hasSpecificGinseng = uniqueValues.some((value) =>
-    /500[-\s]?hour|korean herb extract|botanical actives|botanical complex|ginseng peptide|panax ginseng|식물 복합체|진생\s*펩타이드|진생\s*레티놀/i.test(value)
+    /500[-\s]?hour|korean herb extract|korean ginseng actives|botanicalcomplex|ginseng peptide|panax ginseng|보태니컴플렉스|진생\s*펩타이드|진생\s*레티놀/i.test(value)
   );
 
   return uniqueValues.filter((value) => {
@@ -4898,6 +5529,10 @@ function isPublicIngredientDetailEvidence(value: string): boolean {
     || hasFaqCitationNoise(text)
     || isQuestionLikeText(text)
     || isDanglingKoreanIngredientFragment(text)
+    // 상세 근거는 완결된 설명이다. `Barrier-Protective Formula cleansing.`처럼
+    // 이름과 낱말이 마침표까지 달고 붙은 전사 조각은 설명이 아니다(1144 실측:
+    // 그 줄이 공개 성분 목록에 실렸다).
+    || isTranscriptionFragmentLine(text)
     || /(?:알고\s*싶|궁금|문의|아래와?\s*같은\s*명칭|확인하실\s*수|현재\s+.{0,50}(?:총\s*)?\d+가지)/iu.test(text)) {
     return false;
   }
@@ -5118,6 +5753,30 @@ function selectReviewIntentFaqKeywords(product: PdpProductSignal, locale: PdpGeo
   return selectPublicReviewKeywords(product, locale)
     .filter((value) => !isNegativeReviewSignalText(value))
     .slice(0, 5);
+}
+
+/**
+ * A single, isolated Hangul compatibility jamo (U+3131-U+318E) or unmerged
+ * conjoining jamo (U+1100-U+11FF -- NFC normalization only ever leaves one
+ * of these behind when it never combined into a complete syllable) sitting
+ * directly between two complete Hangul syllables, with no other jamo
+ * touching it on either side, is not a customer writing an isolated vowel
+ * or consonant on purpose; it is the structural signature of an OCR/
+ * transcription pass that split a syllable apart. This is a character-class
+ * rule, not a list of known-broken words, so it catches any such artifact
+ * regardless of which word it lands in.
+ *
+ * A *run* of two or more adjacent jamo (e.g. "ㅎㅎ", "ㅋㅋ", "ㅠㅠ") is
+ * excluded on purpose: that shape is ordinary Korean emotive punctuation,
+ * not a split-apart syllable, and the single-character class match here
+ * requires a lone jamo directly flanked by syllables on both sides -- a run
+ * fails that match at every position, since whichever jamo is adjacent to a
+ * syllable still has another jamo (not a syllable) on its other side.
+ */
+const brokenHangulTranscriptionPattern = /[가-힣][ᄀ-ᇿㄱ-ㆎ][가-힣]/u;
+
+function hasBrokenHangulTranscriptionArtifact(value: string): boolean {
+  return brokenHangulTranscriptionPattern.test(value.normalize("NFC"));
 }
 
 function normalizeReviewKeyword(value: string): string | undefined {
@@ -5395,7 +6054,8 @@ function selectSourceBackedClaimSentences(product: PdpProductSignal, limit: numb
   ]
     .flatMap(splitClaimSentences)
     .map(normalizeSourceBackedClaimSentence)
-    .filter((value): value is string => Boolean(value)))
+    .filter((value): value is string => Boolean(value))
+    .filter(isCitationReadyProse))
     .slice(0, limit);
 }
 
@@ -5679,8 +6339,8 @@ function isPublicOcrBenefitInsight(insight: OcrEvidenceInsight, product: PdpProd
   }
   const compatibleBenefits = extractCanonicalBenefitTerms(text)
     .map((value) => localizePublicBenefitSignal(value, locale))
-    .filter((value): value is string => Boolean(value))
-    .filter((value) => isBenefitCompatibleWithProduct(value, product));
+    .filter((value): value is string => Boolean(value));
+
   return insight.intents.includes("ingredient") || compatibleBenefits.length > 0;
 }
 
@@ -5688,8 +6348,8 @@ function createOcrBlendedBenefitContext(product: PdpProductSignal, insight: OcrE
   const productType = localizeProductTypeForLocale(resolveProductType(product) ?? "product", locale);
   const outcomeValues = extractCanonicalBenefitTerms(insight.text)
     .map((value) => localizePublicBenefitSignal(value, locale))
-    .filter((value): value is string => Boolean(value))
-    .filter((value) => isBenefitCompatibleWithProduct(value, product));
+    .filter((value): value is string => Boolean(value));
+
   const outcomes = formatDescriptionList(outcomeValues, locale, 3);
   const detail = trimTrailingSentencePunctuation(insight.detail);
 
@@ -6065,8 +6725,8 @@ function extractClaimIngredientTerms(value: string): string[] {
   const patterns: Array<[RegExp, string]> = [
     [/ginseng peptide™?/i, "Ginseng Peptide™"],
     [/6-peptide blend/i, "6-peptide blend"],
-    [/botanical actives/i, "Botanical Actives"],
-    [/botanical complex/i, "Botanical Actives (Botanical Complex)"],
+    [/korean ginseng actives/i, "Korean Ginseng Actives"],
+    [/botanicalcomplex/i, "Korean Ginseng Actives (BotanicalComplex)"],
     [/retinol/i, "Retinol"],
     [/niacinamide/i, "Niacinamide"],
     [/hyaluronic acid|sodium hyaluronate/i, "Hyaluronic Acid"],
@@ -6115,7 +6775,7 @@ function normalizeSourceBackedClaimSentence(value: string): string | undefined {
   if (/^(ingredients?|전성분)\s*:/i.test(text) || /^water\s*\/\s*aqua/i.test(text)) {
     return undefined;
   }
-  if (/\baka\b|botanical complex\s*™?/i.test(text)) {
+  if (/\baka\b|botanicalcomplex\s*™?/i.test(text)) {
     return undefined;
   }
   if (/^[A-Z0-9\s,./&™®-]{100,}$/.test(text)) {
@@ -6136,6 +6796,61 @@ function isCommerceOrNavigationText(value: string): boolean {
   return /(cart|checkout|coupon|discount|shipping|delivery|return|refund|exchange|reward|loyalty|subscribe|newsletter|login|sign in|장바구니|구매|쿠폰|할인|배송|반품|환불|교환|적립|로그인)/i.test(value);
 }
 
+/**
+ * Drops transcribed sentences whose publishable content the extractor already
+ * committed as a typed fact. Applied where evidence enters public copy rather
+ * than at each field, so one unvetted transcription cannot reach a description
+ * through one route after being blocked on another.
+ */
+function withoutRawTranscriptionRestatements(values: string[], product: PdpProductSignal): string[] {
+  const typedFacts = product.semanticFacts?.safetyTests ?? [];
+  return values.filter((value) => !restatesTypedFieldAsRawTranscription(value, typedFacts));
+}
+
+/**
+ * A study-metadata field list: method, sample, period and the figure lined up
+ * behind commas with nothing predicating any of them —
+ * `in vitro 시험 결과, 만 20~39세 여성 30명 대상, 시험기간 2025.07.21~…, 사용 2주
+ * 후 세라마이드 84.3%`.
+ *
+ * Two structural signals and no vocabulary: three or more separator-joined
+ * segments, and no Korean predicate closing the run. Prose that reports a study
+ * predicates it; a transcribed field list does not, which is exactly why it
+ * cannot be quoted as a finding. Two segments are left alone — one sentence may
+ * legitimately coordinate two measured endpoints — and a comma between digits is
+ * a thousands separator, not a field boundary.
+ *
+ * This guard used to be unnecessary here only because an unformattable value
+ * was caught downstream and replaced by a contentless `측정/평가 결과를
+ * 포함합니다` label, which occupied the field. Removing that label is what
+ * exposed the raw list behind it.
+ */
+function isKoreanSerializedStudyFieldRun(value: string): boolean {
+  const text = cleanSignal(value);
+  if (!/\p{sc=Hangul}/u.test(text) || isKoreanCompleteSentence(text)) {
+    return false;
+  }
+  const segments = text
+    .replace(/(?<=\d)[,，](?=\d)/gu, "")
+    .split(/\s*[,，;；]\s*/u)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  return segments.length >= 3;
+}
+
+/**
+ * A raw candidate that must not be published as a reported detail.
+ *
+ * Both shapes are transcriptions of a layout rather than statements about the
+ * product: a serialized field list, and the before/after panel that
+ * {@link isCompressedMultiClaimMetricBlock} already defines for the normalizer.
+ * That predicate is imported rather than restated so the two stages cannot
+ * disagree about what an OCR panel is.
+ */
+function isUnpublishableReportedDetailTranscription(value: string): boolean {
+  return isKoreanSerializedStudyFieldRun(value) || isCompressedMultiClaimMetricBlock(value);
+}
+
 function selectReportedDetails(product: PdpProductSignal, limit: number): string[] {
   const candidates = [
     ...product.effects,
@@ -6144,15 +6859,19 @@ function selectReportedDetails(product: PdpProductSignal, limit: number): string
     ...product.sourceTexts.filter((value) => !isNonCitationEvidenceArtifact(value)).filter(isReportedEvidenceCandidate).slice(0, 12)
   ];
 
-  return unique([
+  return withoutRawTranscriptionRestatements(unique([
+    // Ahead of `normalizeReportedDetail`, which strips the footnote markers the
+    // serialization test counts.
     ...candidates
+    .filter(isCitationReadyProse)
     .map(normalizeReportedDetail)
     .filter((value): value is string => Boolean(value))
     .filter((value) => !isStitchedMarketingPageDump(value))
+    .filter((value) => !isUnpublishableReportedDetailTranscription(value))
     .filter((value) => value.length >= 24)
     .filter((value) => !hasTruncationMarker(value) && !isQuestionLikeText(value))
     .filter((value) => !isTerseDurationMetric(value))
-  ]).slice(0, limit);
+  ]), product).slice(0, limit);
 }
 
 interface KoreanAtomicEfficacyOutcome {
@@ -6310,7 +7029,9 @@ function extractKoreanBaselineEfficacyOutcomes(value: string): KoreanBaselineEff
 
 function normalizeKoreanAtomicOutcomeSubject(value: string): string {
   return cleanSignal(value)
-    .replace(/^(?:결과|시험\s*결과|측정\s*결과)\s*/u, "")
+    .replace(leadingBareReportingLabelPattern, "")
+    // A dangling `결과` is not a label but the tail of one the transcription cut.
+    .replace(/^결과\s*/u, "")
     .replace(/\s*(?:은|는|이|가)$/u, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -6330,7 +7051,8 @@ function formatKoreanAtomicEfficacyOutcome(value: KoreanAtomicEfficacyOutcome): 
   return `${value.timing} ${appendKoreanTopicParticle(value.subject)} ${comparison}${value.metric} ${koreanMetricOutcomePredicate(value.outcome)}`;
 }
 
-function selectDescriptionEfficacyDetails(product: PdpProductSignal, locale: PdpGeoLocale, limit: number): string[] {
+/** Exported for tests only — not part of the package surface (index.ts). */
+export function selectDescriptionEfficacyDetails(product: PdpProductSignal, locale: PdpGeoLocale, limit: number): string[] {
   const semanticCandidates = (product.semanticFacts?.metricClaims ?? []).flatMap((claim) => [
     formatSemanticMetricClaim(claim, locale),
     claim.sourceText,
@@ -6346,6 +7068,9 @@ function selectDescriptionEfficacyDetails(product: PdpProductSignal, locale: Pdp
   ]);
 
   const ranked = unique(candidates
+    // Ahead of `normalizeDescriptionEfficacyEvidence`, whose `normalizeReportedDetail`
+    // strips the footnote markers the serialization test counts.
+    .filter(isCitationReadyProse)
     .map((value) => normalizeDescriptionEfficacyEvidence(value, locale))
     .filter((value): value is string => Boolean(value))
     .filter((value) => !isStitchedMarketingPageDump(value))
@@ -6357,8 +7082,10 @@ function selectDescriptionEfficacyDetails(product: PdpProductSignal, locale: Pdp
   const evidenceBundle = locale === "ko-KR"
     ? createKoreanDescriptionEfficacyBundle(product, ranked)
     : undefined;
-  return unique([evidenceBundle, ...ranked].filter((value): value is string => Boolean(value)))
-    .slice(0, limit);
+  return withoutRawTranscriptionRestatements(
+    unique([evidenceBundle, ...ranked].filter((value): value is string => Boolean(value))),
+    product
+  ).slice(0, limit);
 }
 
 function createKoreanDescriptionEfficacyBundle(product: PdpProductSignal, rankedDetails: string[]): string | undefined {
@@ -6379,7 +7106,7 @@ function createKoreanDescriptionEfficacyBundle(product: PdpProductSignal, ranked
   // because the study group is rendered once below from its shared context.
   const durationSentence = sourceDurationSentence ?? (durationDetail
     ? extractKoreanOneUseDurationSentence(durationDetail)
-      ?? trimTrailingSentencePunctuation(createKoreanEvidenceResultSentence(durationDetail))
+      ?? (trimTrailingSentencePunctuation(createKoreanEvidenceResultSentence(durationDetail)) || undefined)
     : undefined);
   const studyEvidence = selectKoreanDescriptionStudyEvidence(rawEvidence);
   const studyContext = studyEvidence ? formatKoreanDescriptionStudyContext(studyEvidence) : undefined;
@@ -6396,7 +7123,8 @@ function createKoreanDescriptionEfficacyBundle(product: PdpProductSignal, ranked
       .filter((detail): detail is string => Boolean(detail))
     : [];
   const fallbackStudyOutcomes = unique([...directlyLinkedStudyOutcomes, ...footnoteLinkedStudyOutcomes])
-    .map((outcome) => formatKoreanDescriptionStudyOutcome(outcome, studyEvidence ?? ""));
+    .map((outcome) => formatKoreanDescriptionStudyOutcome(outcome, studyEvidence ?? ""))
+    .filter(Boolean);
   const studyOutcomes = unique(parsedStudyOutcomes.length > 0 ? parsedStudyOutcomes : fallbackStudyOutcomes).slice(0, 4);
   if (Number(Boolean(durationSentence)) + studyOutcomes.length < 2) {
     return undefined;
@@ -6446,7 +7174,7 @@ function isKoreanStudyOutcomeDetail(value: string, studyEvidence: string): boole
   if (metrics.size === 0 || ![...metrics].some((metric) => studyMetrics.has(metric))) {
     return false;
   }
-  if (!/(?:회복|개선|감소|증가|상승|향상|완화|잔존|지속)/u.test(text)) {
+  if (!new RegExp(KOREAN_METRIC_OUTCOME_PATTERN, "u").test(text)) {
     return false;
   }
   return koreanOutcomeConceptPatterns.some((pattern) => pattern.test(text) && pattern.test(studyEvidence));
@@ -6515,7 +7243,7 @@ function scoreKoreanStudyContext(value: string): number {
 
 function formatKoreanDescriptionStudyContext(value: string): string | undefined {
   const text = cleanSignal(value);
-  const institution = text.match(/((?:㈜|\(주\)|주식회사)\s*[가-힣A-Za-z0-9&.\s-]{1,40})(?=\s*[,，]|$)/)?.[1]
+  const institution = text.match(/((?:㈜|\(주\)|주식회사)\s*[가-힣A-Za-z0-9&.-]{1,40})/)?.[1]
     ?.replace(/^㈜\s*/u, "(주)")
     .replace(/\s+/g, " ")
     .trim();
@@ -6529,8 +7257,20 @@ function formatKoreanDescriptionStudyContext(value: string): string | undefined 
   return [
     institution ? appendKoreanSubjectParticle(institution) : undefined,
     period,
-    `${appendKoreanObjectParticle(population.trim())} 대상으로 진행한 ${method}`
+    `${formatKoreanStudyPopulationAdverbial(population)} 진행한 ${method}`
   ].filter((part): part is string => Boolean(part)).join(" ");
+}
+
+/**
+ * The tested group as the adverbial `…을 대상으로`.
+ *
+ * The source often already ends the phrase with the noun the adverbial needs
+ * (`만 20~39세 성인 여성 30명 대상`), and appending the particle to that gave
+ * `…30명 대상을 대상으로`. The particle belongs on the count the adverbial
+ * governs, so the trailing noun comes off first.
+ */
+function formatKoreanStudyPopulationAdverbial(sample: string): string {
+  return `${appendKoreanObjectParticle(cleanSignal(sample).replace(/\s*대상$/u, ""))} 대상으로`;
 }
 
 function formatKoreanStudyPeriod(value: string): string | undefined {
@@ -6538,7 +7278,10 @@ function formatKoreanStudyPeriod(value: string): string | undefined {
   if (range) {
     const startYear = Number(range[1]);
     const endYear = Number(range[4] ?? range[1]);
-    return `${startYear}년 ${Number(range[2])}월 ${Number(range[3])}일부터 ${endYear}년 ${Number(range[5])}월 ${Number(range[6])}일까지`;
+    // Korean names the year once when the range does not cross one; repeating it
+    // read as two separate studies.
+    const endYearPrefix = endYear === startYear ? "" : `${endYear}년 `;
+    return `${startYear}년 ${Number(range[2])}월 ${Number(range[3])}일부터 ${endYearPrefix}${Number(range[5])}월 ${Number(range[6])}일까지`;
   }
   const dates = Array.from(value.matchAll(/(20\d{2})[./-](\d{1,2})[./-](\d{1,2})/g)).slice(0, 2);
   return dates.length === 2
@@ -6579,7 +7322,7 @@ function isDescriptionEfficacyEvidence(value: string): boolean {
   if (isIngredientPerformanceOnly) {
     return false;
   }
-  if (/(?:REVIEW PLATFORM|AWARD|수상|어워드|리뷰\s*\d|평점\s*\d|\d+(?:\.\d+)?\s*(?:reviews?|ratings?))/iu.test(text)) {
+  if (/(?:GLOWPICK|AWARD|수상|어워드|리뷰\s*\d|평점\s*\d|\d+(?:\.\d+)?\s*(?:reviews?|ratings?))/iu.test(text)) {
     return false;
   }
   const hasMeasuredOutcome = /(?:보습|수분|장벽|탄력|주름|피부결|진정|회복|개선|감소|증가|상승|향상|완화|지속|잔존|세정|피지|유분|모공|광채|hydration|moisture|barrier|firmness|elasticity|wrinkles?|fine\s*lines?|texture|soothing|recovery|improv|increase|decrease|reduc|retention|cleansing|sebum|oil|pores?|radiance|brightness)/iu.test(text);
@@ -6623,6 +7366,28 @@ function scoreDescriptionEfficacyEvidence(value: string): number {
   return score;
 }
 
+/**
+ * An English study-method word (Clinical/Instrumental/Self-assessment/…)
+ * stitched directly into otherwise-Korean prose, with no Korean study
+ * context anywhere (institution, a date range, a sample size, or a Korean
+ * method phrase), means the source text was never actually attributed —
+ * the study/test claim rides on an untranslated fragment with nothing behind
+ * it (see 1145 review reproduction: "Clinical test 결과 세라마이드 84.3%
+ * 개선"). Decomposed Korean outcome atoms whose shared study context lives
+ * in a sibling evidence string (grouped elsewhere by
+ * `createKoreanDescriptionEfficacyBundle`) are pure Korean and do not match
+ * this, so they are unaffected.
+ */
+function isUnattributedForeignMethodClaim(value: string): boolean {
+  const text = cleanSignal(value);
+  const hasEnglishMethodWord = /\b(?:clinical|instrumental|self[-\s]?assess(?:ment)?|home\s+usage|consumer\s+study)\b/i.test(text);
+  if (!hasEnglishMethodWord) {
+    return false;
+  }
+  const hasKoreanStudyContext = /\d+\s*명|㈜|\(주\)|\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}|인체\s*적용|자가\s*평가|소비자\s*평가|시험\s*기관/u.test(text);
+  return !hasKoreanStudyContext;
+}
+
 function normalizeDescriptionEfficacyEvidence(value: string, locale: PdpGeoLocale): string | undefined {
   const annotationFree = stripPageReferenceAnnotation(value);
   const evidenceValue = locale === "ko-KR" ? repairKoreanOcrClauseBoundary(annotationFree) : annotationFree;
@@ -6642,7 +7407,7 @@ function normalizeDescriptionEfficacyEvidence(value: string, locale: PdpGeoLocal
     ? formattedCandidate
     : normalizedClause;
   const text = trimTrailingSentencePunctuation(cleanSignal(formattedClause)
-    .replace(/^(?:확인\s*지표|확인\s*근거|평가\s*지표|측정\s*결과|시험\s*결과|reported\s+result|consumer\s+assessment)\s*:\s*/iu, ""));
+    .replace(leadingLabelFieldPattern, ""));
   if (!text) {
     return undefined;
   }
@@ -6654,11 +7419,17 @@ function normalizeDescriptionEfficacyEvidence(value: string, locale: PdpGeoLocal
       .replace(/((?:사용|도포|적용|세정)\s*(?:직후|전|후|\d+(?:\.\d+)?\s*(?:분|시간|일|주|개월)\s*(?:후|동안)?|단\s*\d+(?:\.\d+)?\s*분\s*만에))\s*[.。]\s*/u, "$1 ")
       .replace(/((?:단\s*)?\d+(?:\.\d+)?\s*분\s*만에)\s*[.。]\s*/u, "$1 ")
       .replace(new RegExp(`(${KOREAN_METRIC_OUTCOME_PATTERN})(?:된다고|된|한)?(?:으)?로?\\s*(?:제시|표시)(?:됩니다|되었습니다|된다|되며)$`, "u"), "$1")
-      .replace(/\s*(?:결과|수치)(?:가|이)?\s*(?:제시|표시)(?:됩니다|되었습니다|되며.*)$/u, "로 측정되었습니다")
-      .replace(/\s*(?:가|이)?\s*(?:제시|표시)(?:됩니다|되었습니다)$/u, "로 측정되었습니다")
+      // The replacement supplies the adverbial `로`, so an existing one has to
+      // be part of what is replaced. Leaving it outside produced `97.6%로로
+      // 측정되었습니다` — the source's own particle plus this one.
+      .replace(/\s*(?:으?로\s*)?(?:결과|수치)(?:가|이)?\s*(?:제시|표시)(?:됩니다|되었습니다|되며.*)$/u, "로 측정되었습니다")
+      .replace(/\s*(?:으?로|가|이)?\s*(?:제시|표시)(?:됩니다|되었습니다)$/u, "로 측정되었습니다")
       .replace(/표기되어\s*있습니다$/u, "측정되었습니다")
       .replace(/\s+/g, " ")
       .trim();
+    if (isUnattributedForeignMethodClaim(publicResult)) {
+      return undefined;
+    }
     const naturalResult = createKoreanEvidenceResultSentence(publicResult);
     return ensurePublicSentence(naturalResult || publicResult, locale);
   }
@@ -6712,7 +7483,13 @@ function formatSemanticMetricClaim(claim: PdpSemanticMetricClaim, locale: PdpGeo
   ].map((value) => cleanSignal(value ?? "")));
   const value = joinMetricValueWithUnit(claim.value, claim.unit);
 
-  if (!label && !value && sourceSentence && /(?:\d+(?:\.\d+)?\s*(?:%|배)|\b\d+(?:\.\d+)?\s*(?:weeks?|days?|hours?|명|주|일|시간)\b)/i.test(sourceSentence)) {
+  // With no structured label or value, this branch can only echo the claim's
+  // own source sentence. An echo is a quotation, so it has to clear the same
+  // self-standing test every other quoted sentence clears — otherwise an
+  // unsegmented image-text block reaches public copy wearing a summary label.
+  if (!label && !value && sourceSentence
+    && isCitationReadyProse(sourceSentence)
+    && /(?:\d+(?:\.\d+)?\s*(?:%|배)|\b\d+(?:\.\d+)?\s*(?:weeks?|days?|hours?|명|주|일|시간)\b)/i.test(sourceSentence)) {
     return prefixStructuredMetricSummary(sourceSentence, locale);
   }
 
@@ -6759,7 +7536,7 @@ function formatKoreanStructuredMetricTimeline(claim: PdpSemanticMetricClaim): st
     ? [
       institution ? appendKoreanSubjectParticle(institution) : undefined,
       period,
-      `${appendKoreanObjectParticle(sample)} 대상으로 진행한 ${method}`
+      `${formatKoreanStudyPopulationAdverbial(sample)} 진행한 ${method}`
     ].filter((part): part is string => Boolean(part)).join(" ")
     : undefined;
   const result = `${appendKoreanTopicParticle(metricLabel)} ${timeline}로 각각 측정되었습니다`;
@@ -6826,7 +7603,7 @@ function formatKoreanStructuredStudyContext(claim: PdpSemanticMetricClaim): stri
   return [
     institution ? appendKoreanSubjectParticle(institution) : undefined,
     period,
-    `${appendKoreanObjectParticle(sample)} 대상으로 진행한 ${method}`
+    `${formatKoreanStudyPopulationAdverbial(sample)} 진행한 ${method}`
   ].filter((part): part is string => Boolean(part)).join(" ");
 }
 
@@ -6860,7 +7637,11 @@ function selectKoreanStructuredMetricNarrative(product: PdpProductSignal, prefer
       candidates.push({ narrative, claims: items.map((item) => item.claim), index: items[0]?.index ?? claims.length });
     }
   }
-  if (candidates.length === 0) return undefined;
+  // Every formatter above reads the claim's structured fields. When the
+  // extractor filled none of them, they all idle and the product loses its
+  // figures entirely — so fall back to the refined sentences, which carry the
+  // same measurements already written as prose.
+  if (candidates.length === 0) return selectKoreanScopedRefinedMetricStatement(product);
 
   const preferred = cleanSignal(preferredEvidence ?? "").replace(/\s+/gu, "");
   return candidates
@@ -6882,6 +7663,159 @@ function selectKoreanStructuredMetricNarrative(product: PdpProductSignal, prefer
       return { ...candidate, score: numericMatches * 8 + phraseMatches * 2 + Math.max(0, candidate.claims.length - 1) * 3 };
     })
     .sort((left, right) => right.score - left.score || left.index - right.index)[0]?.narrative;
+}
+
+/**
+ * The refined sentences an extraction carries alongside its metric claims.
+ *
+ * `evidenceSentences` and a claim's own `sentence` are the extractor's
+ * LLM-normalized prose, not the OCR block: the same measurement written as a
+ * sentence. Consuming them keeps the Evidence Routing Contract's rule intact —
+ * read the parsed structure, never re-scrape the raw source — while the raw
+ * fields (`benefits`, `effects`, `sourceTexts`) stay out on purpose, because
+ * re-deriving figures from those is the defect Task 2 removed.
+ */
+function refinedEvidenceSentences(product: PdpProductSignal): string[] {
+  return unique([
+    ...(product.semanticFacts?.evidenceSentences ?? []),
+    ...(product.semanticFacts?.metricClaims ?? [])
+      .map((claim) => claim.sentence)
+      .filter((value): value is string => Boolean(value))
+  ].map(cleanSignal).filter(Boolean));
+}
+
+/**
+ * A measurement stated as a sentence that survives being quoted alone.
+ *
+ * Structured claim fields are the preferred source for a public figure, but
+ * when the extractor fills none of them the alternative is not "publish
+ * nothing" — a refined sentence already states the measurement and its subject
+ * together. What it has to prove is that it stands by itself: a completed
+ * Korean assertion, a figure in it, and a stated subject governing that figure.
+ * The subject test is the case-marked noun phrase in front of the numeral —
+ * closed-class Korean particles, so a bare figure with no scope at all still
+ * never qualifies (Task 2's rule).
+ *
+ * Every other exclusion here is an existing predicate, reused rather than
+ * restated, so this path cannot let through anything the structured path
+ * rejects: a quantified outcome claim with no method and sample behind it stays
+ * unpublishable, as do ingredient-only lab performance, foreign method words
+ * with no attribution, commerce figures, and questions.
+ */
+/** `index.ts`에 노출하지 않는다 — 정제 근거 문장의 선별 규칙 회귀 고정을 위한 내부 export. */
+export function isKoreanRefinedMetricStatement(value: string): boolean {
+  const text = cleanSignal(value);
+  const body = trimTrailingSentencePunctuation(text);
+  return Boolean(body)
+    && isCitationReadyProse(body)
+    // The published sentence has to match the register of the copy it lands in:
+    // every Korean composer here writes 합니다체, so a 해라체 refinement would
+    // read as a seam in the middle of the paragraph. Not observed in live data —
+    // the extractor's refinement pass normalizes register — but reachable, and
+    // declining to publish costs only a number the structured path may still
+    // supply.
+    && isKoreanPoliteSentenceEnding(body)
+    && hasQuantifiedReportedSignal(body)
+    && koreanCaseMarkedMeasurementPattern.test(body)
+    && !isCommerceMetricArtifact(body)
+    && !isQuestionLikeText(body)
+    && !isNonCitationEvidenceArtifact(body)
+    && !isLowQualityPublicEvidenceText(body)
+    && !isUnstructuredQuantifiedOutcomeClaim(body)
+    && !isIngredientPerformanceOnlyMetricText(body)
+    && !isUnattributedForeignMethodClaim(body);
+}
+
+/**
+ * A numeral whose subject is stated in front of it: a Hangul noun carrying a
+ * topic or nominative particle, then at most two words, then the figure. The
+ * particles are a closed grammatical class, and the point of the bound is that
+ * a figure standing on its own — with no phrase to attach it to — never
+ * matches.
+ */
+const koreanCaseMarkedMeasurementPattern = /[가-힣][은는이가]\s*(?:\S+\s+){0,2}?[+\-−]?\d/u;
+
+/** The refined metric sentence with the most figures in it; ties keep source order. */
+function selectKoreanRefinedMetricStatement(product: PdpProductSignal): string | undefined {
+  return refinedEvidenceSentences(product)
+    .filter(isKoreanRefinedMetricStatement)
+    .map((statement, index) => ({ statement, index, figures: countNumericRuns(statement) }))
+    .sort((left, right) => right.figures - left.figures || left.index - right.index)
+    .map((item) => ensurePublicSentence(trimTrailingSentencePunctuation(item.statement), "ko-KR"))[0];
+}
+
+/**
+ * The refined sentence carrying the study scope its own panel stated.
+ *
+ * Every structured formatter above reads `value`/`subject`/`direction`, so a
+ * claim the extractor left as prose falls through to the refined sentence — and
+ * that sentence states the figures and nothing about who was tested. A
+ * measurement published without its sample is what the Evidence Routing
+ * Contract forbids, and it was the one deduction E-E-A-T kept making.
+ *
+ * The scope leads rather than trailing as a parenthetical: a bracketed field
+ * list is the dump Task 2 removed, and plan 7c asks the first mention of a
+ * figure to carry its own scope so the sentence stands alone when an answer
+ * engine quotes it by itself. The caveat is deliberately not folded in — it is
+ * the paragraph's own last sentence, which callers already place there.
+ *
+ * The claim is matched to the sentence by its figures, the same identity the
+ * owner rule reads, so a panel holding two studies hands each sentence its own
+ * scope.
+ */
+function selectKoreanScopedRefinedMetricStatement(product: PdpProductSignal): string | undefined {
+  const refined = selectKoreanRefinedMetricStatement(product);
+  if (!refined) {
+    return undefined;
+  }
+  const claim = (product.semanticFacts?.metricClaims ?? []).find((candidate) =>
+    statesOnlyFiguresOf(cleanSignal(candidate.sentence ?? candidate.sourceText ?? ""), refined));
+  const sample = cleanSignal(claim?.sample ?? "");
+  const period = formatKoreanStudyPeriod(cleanSignal(claim?.period ?? ""));
+  if (!sample && !period) {
+    return refined;
+  }
+  const samplePhrase = sample ? formatKoreanStudyPopulationAdverbial(sample) : undefined;
+  const scope = [samplePhrase, period].filter(Boolean).join(" ");
+  // The study clause names the product it tested. An answer engine lifts one
+  // sentence, and a sentence carrying only figures and a population cannot be
+  // attributed to this product — the refined sentence's own subject is the
+  // measurement (`세정력은`), not the product. Naming the product on the study
+  // rather than rewriting the refined clause keeps the model's wording intact.
+  const testedProduct = createPublicProductEntityName(product);
+  const study = testedProduct ? `진행한 ${testedProduct} 시험에서` : "진행한 시험에서";
+  const caveat = cleanSignal(claim?.caveat ?? "");
+  return compactSentence([
+    ensurePublicSentence(`${scope} ${study} ${trimTrailingSentencePunctuation(refined)}`, "ko-KR"),
+    // Plan 7c keeps the caveat as the paragraph's own last sentence, with no
+    // claim after it, so it closes this statement rather than joining the clause.
+    caveat ? ensurePublicSentence(normalizeKoreanResultCaveat(caveat), "ko-KR") : undefined
+  ]);
+}
+
+/**
+ * A source caveat as a sentence spoken to the customer.
+ *
+ * The source writes it as a note (`개인차 있음`); published copy states it
+ * directly, which is the form the FAQ contract requires everywhere else.
+ */
+function normalizeKoreanResultCaveat(value: string): string {
+  const text = cleanSignal(value);
+  return /개인\s*차/u.test(text) ? "개인차가 있을 수 있습니다" : text;
+}
+
+/**
+ * The result caveat, taken from a refined sentence rather than reconstructed.
+ *
+ * `extractKoreanStudyCaveat` already decides what a study caveat is and how it
+ * reads once published; this only points it at the refined sentences. Plan 7c
+ * keeps the caveat as the paragraph's own last sentence, so callers place the
+ * return value last and put no claim after it.
+ */
+function selectKoreanRefinedEvidenceCaveat(product: PdpProductSignal): string | undefined {
+  return first(refinedEvidenceSentences(product)
+    .map(extractKoreanStudyCaveat)
+    .filter((value): value is string => Boolean(value)));
 }
 
 function formatKoreanGroupedMetricTimeline(claims: PdpSemanticMetricClaim[]): string | undefined {
@@ -6922,7 +7856,7 @@ function formatKoreanGroupedMetricTimeline(claims: PdpSemanticMetricClaim[]): st
     ? [
       institution ? appendKoreanSubjectParticle(institution) : undefined,
       period,
-      `${appendKoreanObjectParticle(sample)} 대상으로 진행한 ${method}`
+      `${formatKoreanStudyPopulationAdverbial(sample)} 진행한 ${method}`
     ].filter((part): part is string => Boolean(part)).join(" ")
     : undefined;
   const result = `${appendKoreanTopicParticle(metric)} ${baselinePhrase}${timeline} ${koreanMetricOutcomePredicate(direction)}`;
@@ -7164,13 +8098,11 @@ function prefixStructuredMetricSummary(detail: string, locale: PdpGeoLocale): st
   if (isStructuredMetricSummary(text)) {
     return ensurePublicSentence(text, locale);
   }
-  if (locale === "ko-KR") {
-    return `확인 지표: ${text}.`;
-  }
-  if (locale === "ja-JP") {
-    return `確認指標: ${text}。`;
-  }
-  return `Reported result: ${text}.`;
+  // Japanese closes with its own full stop; every other locale uses a period.
+  // The Korean branch became identical to the default once the label itself came
+  // from the contract table, so it is gone.
+  const label = PRIMARY_ANALYSIS_LABEL[locale];
+  return `${label}: ${text}${locale === "ja-JP" ? "。" : "."}`;
 }
 
 /**
@@ -7206,11 +8138,6 @@ function normalizeReportedDetail(value: string): string | undefined {
   const agreedAssessment = normalizeAgreedAssessmentDetail(text);
   if (agreedAssessment) {
     return agreedAssessment;
-  }
-
-  const koreanMultiMetricDetail = formatKoreanMultiMetricEvidenceDetail(text);
-  if (koreanMultiMetricDetail) {
-    return koreanMultiMetricDetail;
   }
 
   const visibleImprovementWithContext = text.match(/(\d+(?:\.\d+)?%)\s+(?:of\s+)?users?\s+had\s+visible\s+improvement\s+in:?\s*(.+?)\s+\*?\s*Instrumental result,\s*(\d+\s+(?:women|men|users|subjects|participants)),\s*after\s+(\d+\s+weeks?)\s+of\s+(daily\s+)?use/i);
@@ -7262,7 +8189,7 @@ function hasQuantifiedReportedSignal(value: string): boolean {
 
 function hasContextualReportedSignal(value: string): boolean {
   const text = trimTrailingSentencePunctuation(cleanSignal(value))
-    .replace(/^(?:확인\s*지표|확인\s*근거|평가\s*지표|측정\s*결과|시험\s*결과|reported\s*result|consumer\s*assessment)\s*:\s*/i, "")
+    .replace(leadingLabelFieldPattern, "")
     .trim();
   if (!text || !hasQuantifiedReportedSignal(text)) return false;
   if (/^[+\-−]?\d+(?:[.,]\d+)?\s*(?:%|％|배|시간|일|주|weeks?|days?|hours?)$/iu.test(text)) return false;
@@ -7274,7 +8201,7 @@ function hasMinimumReportedEvidenceContext(value: string): boolean {
   if (!hasContextualReportedSignal(text)) {
     return false;
   }
-  return /(?:인체\s*적용|자가\s*평가|소비자\s*평가|시험|테스트|측정|평가|임상|in\s*vitro|ex\s*vivo|clinical|study|test|assessment|instrumental|survey|home\s+usage|\d+\s*명|\d+\s*(?:women|men|users?|subjects?|participants?)|대상|참여자|사용자|표본|sample|participants?|subjects?|사용\s*(?:직후|전|후)|도포\s*(?:직후|전|후)|\d+(?:\.\d+)?\s*(?:분|시간|일|주|개월|minutes?|weeks?|days?|hours?|months?)\s*(?:후|동안|만에)?|비교|대비|versus|\bvs\.?\b|(?:before|after)\s+(?:use|application)|after\s+\d)/iu.test(text);
+  return statesEvidenceContext(text);
 }
 
 function isCommerceMetricArtifact(value: string): boolean {
@@ -7414,11 +8341,6 @@ function localizePublicBenefitSignal(value: string, locale: PdpGeoLocale): strin
       [/보습\s*케어|고보습|보습/i, "보습 케어"],
       [/hydration|hydrate|moisture|moisturizing|moisturising|수분감|수분/i, "수분감"],
       [/soothing|soothe|calming|calm|진정/i, "진정 케어"],
-      [/low[-\s]?irritation|gentle|mild|마찰\s*자극|저자극|자극/i, "저자극 세안"],
-      [/fine\s*dust|ultra[-\s]?fine\s*dust|pollution|초미세먼지/i, "초미세먼지 세정"],
-      [/pore\s*(?:waste|impurit|cleansing)|모공\s*속\s*노폐물|노폐물/i, "모공 속 노폐물 세정"],
-      [/micro\s*bubble|bubble|마이크로\s*버블|버블|거품/i, "마이크로 버블"],
-      [/cleans(?:e|ing)|wash|세정|세안/i, "세정력"],
       [/sebum|oil control|oil|피지|유분/i, "유분 컨트롤"],
       [/smooth(?:ness)?|texture|피부결|매끄/i, "피부결"],
       [/brightening|even-looking tone|광채|화사/i, "광채"],
@@ -7464,11 +8386,6 @@ function extractCanonicalBenefitTerms(value: string): string[] {
     [/skin barrier|barrier support|피부\s*장벽|장벽/i, "skin barrier support"],
     [/hydration|hydrate|moisture|moisturizing|moisturising|보습|수분감|保湿|うるおい/i, "hydration"],
     [/soothing|soothe|calming|calm|진정|鎮静/i, "soothing care"],
-    [/low[-\s]?irritation|gentle|mild|마찰\s*자극|저자극|자극/i, "low-irritation cleansing"],
-    [/fine\s*dust|ultra[-\s]?fine\s*dust|pollution|초미세먼지/i, "fine-dust cleansing"],
-    [/pore\s*(?:waste|impurit|cleansing)|모공\s*속\s*노폐물|노폐물/i, "pore waste cleansing"],
-    [/micro\s*bubble|bubble|마이크로\s*버블|버블|거품/i, "micro-bubble foam"],
-    [/cleans(?:e|ing)|wash|세정|세안/i, "cleansing power"],
     [/sebum|oil control|oil|피지|유분/i, "oil control"],
     [/smooth(?:ness)?|texture|피부결|매끄|キメ/i, "smooth texture"],
     [/brightening|even-looking tone|광채|화사|透明感/i, "brightening"],
@@ -7509,7 +8426,12 @@ function isStandaloneBenefitCandidate(value: string): boolean {
   if (/[.:]/.test(normalized)) {
     return false;
   }
-  return /benefit|care|hydration|moisture|firm|elastic|wrinkle|fine line|plump|resilien|barrier|smooth|texture|bright|cleanse|cleansing|bubble|보습|수분|탄력|피부결|광채|저자극|세정|세안|거품|버블|노폐물|초미세먼지|保湿|うるおい|ハリ|キメ/i.test(normalized);
+  // `노폐물`·`초미세먼지`도 여기 있었다. 둘은 이 클렌저가 광고하는 고민의
+  // 이름이고, 그 고민을 말하는 효능 구절은 `세정`을 함께 담는다(`모공 속 노폐물
+  // 세정`) — 정본 라벨 표가 두 단어를 스스로 만들어내기를 멈춘 뒤로는 중복이다.
+  // 남은 것은 범주 수준의 효능 어휘다: `거품`은 폼 제형의 사용감이지 상품 이름이
+  // 아니다.
+  return /benefit|care|hydration|moisture|firm|elastic|wrinkle|fine line|plump|resilien|barrier|smooth|texture|bright|cleanse|cleansing|bubble|보습|수분|탄력|피부결|광채|저자극|세정|세안|거품|버블|保湿|うるおい|ハリ|キメ/i.test(normalized);
 }
 
 function normalizeUsageInstruction(value: string): string {
@@ -7609,7 +8531,7 @@ function isEvidenceOnlyUsageCandidate(value: string): boolean {
   if (!normalized) {
     return true;
   }
-  if (isSafetyOrTestClaimUsageCandidate(normalized)) {
+  if (isSafetyOrTestClaimUsage(normalized)) {
     return true;
   }
   if (/^(?:after|before|during)\s+\d+(?:\.\d+)?\s*(?:weeks?|days?|hours?)\b/i.test(normalized)) {
@@ -7626,7 +8548,7 @@ function isEvidenceOnlyUsageCandidate(value: string): boolean {
 }
 
 function isNonInstructionUsageText(value: string): boolean {
-  return isReviewLikeUsageCandidate(value) || isSafetyOrTestClaimUsageCandidate(value);
+  return isReviewLikeUsageCandidate(value) || isSafetyOrTestClaimUsage(value);
 }
 
 function isReviewLikeUsageCandidate(value: string): boolean {
@@ -7648,12 +8570,6 @@ function isKoreanCustomerReviewNarrativeUsageLeak(value: string): boolean {
     || /(?:구매했|구매\s*했|구매했어요|필요해서\s*구매|배송|포장|도착했|득템|저렴한\s*가격|쓰기\s*전부터|쓰기도\s*전부터|기분이\s*정말\s*좋)/u.test(text)
     || /(?:초등학생|딸|아들|남편|어머니|엄마|가족)[^.!?。！？]{0,80}(?:구매|필요|사용|쓰|선크림)/u.test(text)
     || /(?:느낌이네요|느낌입니다|좋습니다|좋네요|좋아요|같아요|같습니다)\s*$/u.test(text) && !hasActionableApplicationVerbWithoutGenericApply(text);
-}
-
-function isSafetyOrTestClaimUsageCandidate(value: string): boolean {
-  const text = cleanSignal(value);
-  return /(?:테스트|시험)\s*완료|사용성\s*테스트|피부\s*자극\s*테스트|피부\s*테스트|안자극|하이포알러지|논코메도제닉|민감\s*피부\s*대상|소아와?\s*피부\s*테스트|소아\s*피부\s*테스트/i.test(text)
-    || /(?:patch\s*test|patch\s*testing|dermatologist[-\s]?tested|hypoallergenic|non[-\s]?comedogenic|safety\s+test|sensitive\s+skin\s+(?:users?\s+)?should|test\s+on\s+a\s+small\s+area)/i.test(text);
 }
 
 function extractUsageInstructionFromMixedEvidence(value: string): string {
@@ -7786,26 +8702,9 @@ function normalizeIngredientSignal(value: string): string | undefined {
   if (/with the power of ginseng/i.test(text)) {
     return undefined;
   }
-  if (/500[-\s]?hour(?:\s+aged)?\s+ginseng/i.test(text)) {
-    return "500-hour aged ginseng";
-  }
-  if (/korean herb extract/i.test(text)) {
-    return "Korean herb extract";
-  }
-  if (/botanical complex|식물 복합체/i.test(text)) {
-    return "Botanical Actives (Botanical Complex)";
-  }
-  if (/botanical actives/i.test(text)) {
-    return "Botanical Actives";
-  }
-  if (/식물 복합체|botanical complex/i.test(text)) {
-    return "식물 복합체";
-  }
-  if (/진생\s*펩타이드|진생펩타이드|ginseng peptide/i.test(text)) {
-    return "진생펩타이드";
-  }
-  if (/진생\s*레티놀|진생레티놀|ginseng retinol/i.test(text)) {
-    return "진생레티놀";
+  const brandSurface = canonicalIngredientSurface(text, brandIngredientSurfaceRules);
+  if (brandSurface) {
+    return brandSurface;
   }
   const concreteIngredientTechnology = normalizeConcreteIngredientTechnologySignal(text);
   if (concreteIngredientTechnology) {
@@ -7818,44 +8717,9 @@ function normalizeIngredientSignal(value: string): string | undefined {
   if (explicitTechnologyPhrase) {
     return explicitTechnologyPhrase;
   }
-  if (/ginseng peptide/i.test(text)) {
-    return "Ginseng Peptide";
-  }
-  if (/retinol/i.test(text)) {
-    return "Retinol";
-  }
-  if (/niacinamide/i.test(text)) {
-    return "Niacinamide";
-  }
-  if (/hyaluronic acid|sodium hyaluronate/i.test(text)) {
-    return "Hyaluronic Acid";
-  }
-  if (/zinc/i.test(text)) {
-    return "Zinc";
-  }
-  if (/ceramide/i.test(text)) {
-    return "Ceramide";
-  }
-  if (/징크/i.test(text)) {
-    return "징크";
-  }
-  if (/히알루론산|하이알루론산/i.test(text)) {
-    return "히알루론산";
-  }
-  if (/나이아신아마이드/i.test(text)) {
-    return "나이아신아마이드";
-  }
-  if (/판테놀/i.test(text)) {
-    return "판테놀";
-  }
-  if (/베타인|betaine/i.test(text)) {
-    return "베타인";
-  }
-  if (/프로바이오틱스|probiotics?/i.test(text)) {
-    return "프로바이오틱스";
-  }
-  if (/세라마이드/i.test(text)) {
-    return "세라마이드";
+  const genericSurface = canonicalIngredientSurface(text, genericIngredientSurfaceRules);
+  if (genericSurface) {
+    return genericSurface;
   }
   if (/^water\s*\/\s*aqua/i.test(text) || text.split(",").length > 8) {
     return undefined;
@@ -7879,42 +8743,115 @@ function extractConcreteIngredientTechnologySignals(value: string): string[] {
     return [];
   }
   const signals: string[] = [];
-  const capturePatterns = [
-    /([가-힣A-Za-z0-9®™+\-]{2,24}\s*세라마이드\s*캡슐)/giu,
-    /(세라마이드\s*캡슐)/giu,
-    /(\b[A-Z]{2,8}\s*워터\b)/gu,
-    /([가-힣A-Za-z0-9®™+\-]{2,24}\s*(?:플로팅\s*)?포뮬러)/giu,
-    /(Ceramide Matrix?|세라마이드 매트릭스)(?:\s*기술)?/giu,
-    /(콜레스테롤)/gu,
-    /(지방산)/gu
+  // Two kinds of pattern, and the difference is how many surfaces one of them
+  // may yield.
+  //
+  // A `compound` pattern reads a shape — a modifier in front of a head noun —
+  // and a source may legitimately name several different things in that shape
+  // (`고밀도 세라마이드 캡슐` alongside `저분자 세라마이드 캡슐`), so every match
+  // stands.
+  //
+  // An `alias` group lists the surfaces one thing is written with. `기술` sits
+  // inside the group so the captured surface is whatever the source wrote —
+  // outside it, the word was matched and then thrown away, which is why the
+  // normalizer used to add it back unconditionally and thereby invent
+  // `BotanON® 기술` for a source that had only written `보타온`. Removing that
+  // invention then let both spellings through at once, because the group had
+  // matched both. So a group yields one surface: the one the source introduces
+  // first. Neither spelling is fabricated and neither ingredient is counted
+  // twice.
+  const capturePatterns: Array<{ kind: "compound" | "alias"; pattern: RegExp }> = [
+    { kind: "compound", pattern: /([가-힣A-Za-z0-9®™+\-]{2,24}\s*세라마이드\s*캡슐)/giu },
+    { kind: "compound", pattern: /(세라마이드\s*캡슐)/giu },
+    { kind: "compound", pattern: /(\b[A-Z]{2,8}\s*워터\b)/gu },
+    { kind: "compound", pattern: /([가-힣A-Za-z0-9®™+\-]{2,24}\s*(?:플로팅\s*)?포뮬러)/giu },
+    { kind: "alias", pattern: /(BotanON®?(?:\s*기술)?|보타온(?:\s*기술)?)/giu },
+    { kind: "compound", pattern: /(콜레스테롤)/gu },
+    { kind: "compound", pattern: /(지방산)/gu }
   ];
-  for (const pattern of capturePatterns) {
+  for (const { kind, pattern } of capturePatterns) {
+    const matched: string[] = [];
     for (const match of text.matchAll(pattern)) {
       const raw = cleanSignal(match[1] ?? "");
-      if (!raw) {
-        continue;
+      if (raw) {
+        matched.push(normalizeConcreteIngredientTechnologyMatch(raw));
       }
-      signals.push(normalizeConcreteIngredientTechnologyMatch(raw));
     }
+    signals.push(...(kind === "alias" ? matched.slice(0, 1) : matched));
   }
   return unique(signals);
 }
 
+/**
+ * Normalizes the spacing of a captured ingredient/technology surface.
+ *
+ * Spacing is all it may change. This ran a canonical-surface substitution as
+ * well, which rewrote a source-stated `보타온` into `BotanON® 기술` — a
+ * different script plus a trademark mark plus the word `기술`, none of which the
+ * source had written. The validator then flagged the published term as absent
+ * from the product's own evidence, correctly: the generator had invented it.
+ *
+ * Preferring the source's own surface is the rule already established for
+ * ingredient selection (`dropIngredientSurfacesAnotherAlreadyNames`) — an
+ * answer engine can attribute a sentence to this product only through the
+ * wording the product's own page uses.
+ */
 function normalizeConcreteIngredientTechnologyMatch(value: string): string {
-  const text = cleanSignal(value);
-  if (/^Ceramide Matrix$/i.test(text) || /^세라마이드 매트릭스$/i.test(text)) {
-    return "Ceramide Matrix 기술";
-  }
-  return text
+  return cleanSignal(value)
     .replace(/PHA\s*워터/i, "PHA 워터")
     .replace(/세라마이드\s*캡슐/i, "세라마이드 캡슐")
     .replace(/하이드로겔\s*플로팅\s*포뮬러/i, "하이드로겔 플로팅 포뮬러")
     .replace(/하이드로겔\s*포뮬러/i, "하이드로겔 포뮬러");
 }
 
+/**
+ * 이 텍스트가 절(문장)로 읽히는지.
+ *
+ * 성분 표면은 명사구다 — `고밀도 세라마이드 캡슐`은 수식어와 머리명사로만
+ * 이루어진다. 반면 `Contains Panthenol to soothe`는 동사와 목적, 즉 절이다.
+ * 낱말 수로는 두 형태를 가를 수 없어, 서술문이 복합 성분명으로 인정되고
+ * 자기 안의 성분명보다 길다는 이유로 대표 표면 자리를 차지했다.
+ *
+ * 그래서 어휘가 아니라 문법을 본다. 기능어(`to`·`that`·`for`…)는 어느 상품이 와도
+ * 같은 닫힌 부류이므로 열거해도 새지 않는다. 서술 동사는 닫힌 부류가 **아니다** —
+ * `helps`·`contains`를 열거해 두었더니 `Ceramide Complex soothes dryness`가
+ * 명사구로 통과해 마케팅 절이 성분명이 됐다. 동사는 어휘가 아니라 굴절로 잡는다:
+ * 영어 3인칭 단수 현재형은 `-s`로 끝나고, 소문자이며(이름은 대문자로 쓴다),
+ * 뒤에 목적어가 온다.
+ */
+function readsAsClause(value: string): boolean {
+  const text = cleanSignal(value);
+  if (!text) {
+    return false;
+  }
+  // 절을 만드는 기능어와 경동사, 그리고 구를 잇는 전치사. 전치사가 빠져 있어
+  // `Ceramide 1000 ppm Moisturizing & strengthening for dry & sensitive skin`
+  // 같은 패키지 라벨 블록이 명사구로 통과했다(1027 최종 실행). `of`는 화학명에
+  // 흔히 쓰이므로(`Sodium Salt of Hyaluronic Acid`) 넣지 않는다.
+  const englishClauseGrammar = /\b(?:to|that|which|is|are|was|were|be|been|being|has|have|had|does|do|did|can|will|when|while|because|for|with|from|in|on|by|into|without|per|helps?|contains?|delivers?|supports?|provides?|reinforces?|guards?|works?|reduces?|improves?)\b/iu;
+  // 굴절로 잡는 서술어. 이름은 대문자로 시작하므로(`Amino Acids Complex`) 소문자
+  // `-s` 낱말은 달리는 문장의 동사이고, 뒤에 낱말이 더 있으면 목적어를 가진
+  // 서술어다. 위 목록이 못 잡는 열린 부류(`soothes`·`hydrates`·`calms`…)를 이
+  // 규칙이 덮는다. 줄 첫머리의 대문자 동사(`Contains Ceramide`)만은 굴절로
+  // 가릴 수 없어(`Probiotics Ferment Filtrate`와 형태가 같다) 위 목록에 남는다.
+  const englishFinitePredicate = /(?:^|\s)[a-z][a-z-]*(?:s|es)\s+\S/u;
+  // 종결어미와 연결어미. 문장이 끝났거나 다음 절로 이어진다.
+  const koreanClauseGrammar = /(?:습니다|입니다|합니다|됩니다|줍니다|해요|이에요|예요|한다|된다|이다|없다|있다)(?:\s|$)|(?:하여|하며|해서|이라|으로써)(?:\s|$)/u;
+  // 관형형 서술. "가득 채운 미세촘촘 안개미스트"처럼 뒤 명사를 수식하는 절이
+  // 붙어 있으면 그것은 이름이 아니라 서술이다. 종결어미만 보면 이 형태를
+  // 놓쳐, 1027 실측에서 마케팅 문구가 성분명으로 발행됐다. 용언 어간과 관형형
+  // 어미가 이어진 자리를 보되, 명사가 우연히 같은 음절로 끝나는 경우를 피해
+  // 그 앞에 다른 어절이 있을 때만 서술로 읽는다.
+  const koreanAdnominalPredicate = /(?:^|\s)\S+\s+\S*(?:[가-힣](?:운|은|는|던|한|린|긴|친|힌|킨|진|된|낀|뀐)|채운|채워진|담은|담긴|만든|넣은|섞은|녹인|굳힌)\s+\S/u;
+  return englishClauseGrammar.test(text)
+    || englishFinitePredicate.test(text)
+    || koreanClauseGrammar.test(text)
+    || koreanAdnominalPredicate.test(text);
+}
+
 function normalizeExplicitIngredientTechnologyPhrase(value: string): string | undefined {
   const text = cleanSignal(value);
-  if (!text || text.length > 80 || /[.。！？?]/.test(text) || isIngredientSectionLabel(text)) {
+  if (!text || text.length > 80 || /[.。！？?]/.test(text) || isIngredientSectionLabel(text) || readsAsClause(text)) {
     return undefined;
   }
   const hasIngredientAnchor = /ingredient|formula|technology|complex|blend|extract|ferment|peptide|capsule|ceramide|hyaluronic|retinol|niacinamide|zinc|panthenol|betaine|probiotics?|성분|원료|기술|포뮬러|복합체|추출물|발효|펩타이드|캡슐|세라마이드|히알루론산|레티놀|나이아신아마이드|징크|판테놀|베타인|프로바이오틱스/i.test(text);
@@ -8184,7 +9121,7 @@ function isBrokenMarketingFragment(value: string): boolean {
 
 function isUsefulPublicListValue(value: string): boolean {
   const text = cleanSignal(value);
-  if (!text || text.length > 280 || hasTruncationMarker(text) || isQuestionLikeText(text) || isBrokenMarketingFragment(text) || isNonCitationEvidenceArtifact(text) || isLowQualityPublicEvidenceText(text)) {
+  if (!text || text.length > 280 || hasTruncationMarker(text) || isQuestionLikeText(text) || isBrokenMarketingFragment(text) || isNonCitationEvidenceArtifact(text) || isLowQualityPublicEvidenceText(text) || hasBrokenHangulTranscriptionArtifact(text)) {
     return false;
   }
   if (/^(review|reviews|rating|ratings|star|stars|ingredient|ingredients|effect|benefit|search intent context|review comfort context)$/i.test(text)) {
@@ -8398,7 +9335,7 @@ function selectQuickFactExpressionPhrases(product: PdpProductSignal, locale: Pdp
     .filter((value) => value.length <= 90)
     .filter((value) => !/[A-Z]{4,}.*[A-Z]{4,}/.test(value))
     .filter((value) => !/(?:REJUVENATING|CRÈME|AGREED|자가\s*평가|소비자\s*평가|인체\s*적용|시험|테스트|%|\d+(?:\.\d+)?\s*(?:명|주|일|시간))/i.test(value))
-    .filter((value) => !/(?:리뷰\s*표현|review\s+language|확인\s*지표|확인\s*근거)/i.test(value))
+    .filter((value) => !reviewLanguageOrAnalysisLabelPattern.test(value))
     .filter(isUsefulPublicListValue)
     .slice(0, limit);
 }
@@ -8822,6 +9759,128 @@ function createFaqSection(faq: PdpGeoFaqItem[], _locale: PdpGeoLocale): string {
   return faq.map((item) => `Q. ${item.question}\nA. ${item.answer}`).join("\n\n");
 }
 
+/**
+ * Stages 4 and 5 of the review-driven FAQ pipeline: reverse-engineer the
+ * recommendation query a buyer would ask to reach each source-backed situation,
+ * then realize the answer from official product evidence.
+ *
+ * The question carries the customer's situation because that is what a buyer
+ * types; the answer carries only official facts because a review is experience
+ * evidence and cannot establish what a product does. Review wording re-enters
+ * the answer only as attributed customer experience.
+ */
+function createReviewCepFaqItems(input: {
+  product: PdpProductSignal;
+  locale: PdpGeoLocale;
+  productName: string;
+  benefit: string | undefined;
+}): PdpGeoFaqItem[] {
+  const { product, locale, productName } = input;
+  const needs = selectClaimedBenefitSignals(product, locale).slice(0, 2);
+  const candidates = deriveCepCandidates({
+    product,
+    locale,
+    needs: needs.length > 0 ? needs : selectPublicBenefitSignals(product, locale).slice(0, 2)
+  });
+  // Only the best-supported situation is realized deterministically. Several
+  // situations answered from the same official evidence produce the same
+  // answer under a different opening, which is the near-duplicate FAQ this
+  // pipeline exists to remove. Situation breadth is the planner's job: it can
+  // match a situation to the specific evidence that answers it, and it now
+  // receives the same extracted situations as `reviewSituations`.
+  const candidate = candidates[0];
+  if (!candidate) {
+    return [];
+  }
+  const publicBenefits = selectPublicBenefitSignals(product, locale).slice(0, 2).map(cleanSignal).filter(Boolean);
+  const benefitPhrase = (locale === "ko-KR"
+    ? formatKoreanNaturalList(publicBenefits)
+    : formatDescriptionList(publicBenefits, locale, 2))
+    ?? input.benefit;
+  const proof = createStructuredClinicalEvidenceSummary(product, locale)
+    ?? createGroundedSuitabilityStudyContext(product, locale);
+  // Source safety-test names already carry their own completion marker
+  // ("민감 피부 자극 테스트 완료"); the sentence supplies one, so the duplicate
+  // is trimmed rather than read back as "완료가 완료된".
+  const safetyTests = formatDescriptionList(
+    (product.semanticFacts?.safetyTests ?? [])
+      .map((value) => cleanSignal(value).replace(/\s*(?:완료|済み|completed)$/iu, "").trim())
+      .filter(Boolean),
+    locale,
+    2
+  );
+  const question = createReviewCepFaqQuestion(locale, productName, candidate.situation);
+  const answer = createReviewCepFaqAnswer({
+    product,
+    locale,
+    productName,
+    situation: candidate.situation,
+    benefitPhrase,
+    proof,
+    safetyTests
+  });
+  return question && answer ? [{ question, answer }] : [];
+}
+
+/** Stage 4. The buyer's own phrasing of the situation, with the product named. */
+function createReviewCepFaqQuestion(
+  locale: PdpGeoLocale,
+  productName: string,
+  situation: string
+): string {
+  const context = trimTrailingSentencePunctuation(cleanSignal(situation));
+  if (!context) return "";
+  return fallback(locale, {
+    "ko-KR": `${appendKoreanTopicParticle(productName)} ${context} 사용하기에 적합한가요?`,
+    "ja-JP": `${productName}は${context}使うのに適していますか？`,
+    "en-US": `Is ${productName} a good choice ${context}?`,
+    "en-GB": `Is ${productName} a good choice ${context}?`
+  });
+}
+
+/**
+ * Stage 5. Answers the asked situation, then proves it from official evidence.
+ * Every clause after the opening is a product fact; the review sentence is
+ * explicitly attributed so review language never reads as a product effect.
+ */
+function createReviewCepFaqAnswer(input: {
+  product: PdpProductSignal;
+  locale: PdpGeoLocale;
+  productName: string;
+  situation: string;
+  benefitPhrase: string | undefined;
+  proof: string | undefined;
+  safetyTests: string | undefined;
+}): string {
+  const { product, locale, productName, benefitPhrase, proof, safetyTests } = input;
+  if (!benefitPhrase) return "";
+  const context = trimTrailingSentencePunctuation(cleanSignal(input.situation));
+  if (!context) return "";
+  if (locale === "ko-KR") {
+    const productType = formatKoreanFaqProductType(product);
+    return compactSentence(dedupeGeneratedSentenceParts([
+      `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(benefitPhrase)} 내세우는 ${appendKoreanInstrumentParticle(productType)}, ${context} 사용하는 경우에도 고려할 수 있습니다`,
+      proof,
+      safetyTests ? `제품 정보에는 ${appendKoreanSubjectParticle(safetyTests)} 완료된 것으로 표기되어 있습니다` : undefined,
+      "개인차가 있을 수 있습니다"
+    ]));
+  }
+  if (locale === "ja-JP") {
+    return compactSentence(dedupeGeneratedSentenceParts([
+      `${productName}は${benefitPhrase}を掲げる${selectLocalizedSchemaProductType(product, locale)}で、${context}使う場合にも検討できます`,
+      proof,
+      safetyTests ? `商品情報には${safetyTests}が完了と表記されています` : undefined,
+      "効果の感じ方には個人差があります"
+    ]));
+  }
+  return compactSentence(dedupeGeneratedSentenceParts([
+    `${productName} is ${englishProductTypeWithArticle(selectLocalizedSchemaProductType(product, locale))} presented for ${normalizeEnglishSupportObject(benefitPhrase)}, so it can be considered ${context}`,
+    proof,
+    safetyTests ? `The product information states that it has completed ${safetyTests}` : undefined,
+    "Individual results may vary"
+  ]));
+}
+
 function ensureFaq(
   product: PdpProductSignal,
   locale: PdpGeoLocale,
@@ -8831,14 +9890,22 @@ function ensureFaq(
 ): PdpGeoFaqItem[] {
   const usage = first(selectUsageInstructions(product).filter((value) => isNarrativeLocaleCompatible(value, locale)));
   const optimizedUsage = first(optimizedUsageSteps) ?? usage;
-  const ingredient = formatDescriptionList(selectLocalizedKeyIngredients(product, locale, 3), locale, 3);
+  // FAQ answers are prose, so these phrases narrow to a pair. Three would
+  // publish as `A, B, C를 주요 성분·기술로 구성한 …입니다` — the bare list the
+  // anti-enumeration contract names, with no role given to any of the three.
+  // The complete set stays in the product properties.
+  const ingredient = formatDescriptionList(
+    selectLocalizedKeyIngredients(product, locale, PROSE_COORDINATE_ITEM_LIMIT),
+    locale,
+    PROSE_COORDINATE_ITEM_LIMIT
+  );
   const claimedBenefitSignals = selectClaimedBenefitSignals(product, locale);
   const publicBenefitSignals = selectPublicBenefitSignals(product, locale);
   const benefit = first(claimedBenefitSignals) ?? first(publicBenefitSignals);
   const compositionBenefit = formatDescriptionList(
-    (claimedBenefitSignals.length > 0 ? claimedBenefitSignals : publicBenefitSignals).slice(0, 3),
+    (claimedBenefitSignals.length > 0 ? claimedBenefitSignals : publicBenefitSignals).slice(0, PROSE_COORDINATE_ITEM_LIMIT),
     locale,
-    3
+    PROSE_COORDINATE_ITEM_LIMIT
   ) ?? benefit;
   const ingredientBenefitLink = selectFaqIngredientBenefitLink(product, locale);
   const evidence = selectEvidenceSignal(product, locale);
@@ -8852,6 +9919,13 @@ function ensureFaq(
   const sourceFaq = selectSourceFaqForPublicUse(product.faq, locale, productName, faqStructuredClaimEvidence(product), product);
   const ocrFaqContexts = createOcrFaqBlendContexts(product, locale);
   const textureFinish = selectTextureFinishSignal(product, locale);
+  // Where the product's own copy describes its texture, the texture question
+  // states a product fact and the review question attributes an experience:
+  // two answers, two sources, both published. Where the only evidence is
+  // review wording, they collapse into the same sensory list under two
+  // headings, and the review question is the one that keeps it — it says whose
+  // words those are instead of presenting them as a product characteristic.
+  const officialTextureFinish = selectTextureFinishSignal(product, locale, true);
   const routineSynergy = selectRoutineSynergySignal(product, locale);
   const variantComparison = selectVariantComparisonSignal(product, locale);
   const faq: PdpGeoFaqItem[] = [];
@@ -8906,7 +9980,19 @@ function ensureFaq(
   }
 
   if (benefit) {
-    const hasReportedFinishedProductClinicalEvidence = hasFinishedProductClinicalEvidence(product, locale);
+    // The question may take its study framing only when the answer will state a
+    // result. `hasFinishedProductClinicalEvidence` says the product has such
+    // evidence somewhere; it does not say this answer gets it — and when
+    // `Product.description` owns the measurement, the answer's evidence slot is
+    // deliberately empty. The published pair then asked `…시험 결과로도
+    // 확인되나요?` over an answer with no result in it.
+    const answerStatesAResult = locale === "ko-KR"
+      ? Boolean(createKoreanFaqMetricEvidence(product, formatKoreanFaqBenefitPhrase(product, locale, benefit))?.fact)
+      // The English answer takes its result from the passed evidence, not from
+      // the Korean metric composer.
+      : Boolean(customerOutcomeEvidence && hasMinimumReportedEvidenceContext(customerOutcomeEvidence));
+    const hasReportedFinishedProductClinicalEvidence = hasFinishedProductClinicalEvidence(product, locale)
+      && answerStatesAResult;
     // "Self-assessment from clinical" 같은 자가평가 방법론은 질문을
     // "clinical study results"로 승격시키지 않는다 — 답변이 instrumental/
     // 자가평가 결과를 인용하면 trust-field-validator가 방법론 승격으로 본다.
@@ -8915,19 +10001,24 @@ function ensureFaq(
         && !/self[-\s]?assess/iu.test(claim.method ?? ""));
     const benefitCandidate = {
       question: fallback(locale, {
+        // A shopper asks whether the effect holds up, not what a published
+        // trial reported. `공개된 …결과는 어떻게 나타났나요` reads as an audit
+        // request — and calls a PDP-reported study "published", which these
+        // prompts warn against elsewhere. The method label still follows the
+        // source exactly; only the framing is the buyer's.
         "ko-KR": hasReportedFinishedProductClinicalEvidence
-          ? `${productName}의 주요 효능·효과는 무엇이며, 공개된 인체적용시험 결과는 어떻게 나타났나요?`
+          ? `${productName}은 어떤 효능이 있고, 시험 결과로도 확인되나요?`
           : `${productName}의 주요 효능·효과는 무엇인가요?`,
         "ja-JP": `${productName}の主な効果と、それを裏付ける商品根拠は何ですか？`,
         "en-US": hasReportedFinishedProductClinicalEvidence
           ? hasExplicitEnglishClinicalMethod
-            ? `What are the main benefits of ${productName}, and what do the reported clinical study results show?`
-            : `What are the main benefits of ${productName}, and what do the reported assessment results show?`
+            ? `What does ${productName} help with, and is that backed by the reported clinical study?`
+            : `What does ${productName} help with, and is that backed by the reported assessment results?`
           : `What are the main benefits of ${productName}?`,
         "en-GB": hasReportedFinishedProductClinicalEvidence
           ? hasExplicitEnglishClinicalMethod
-            ? `What are the main benefits of ${productName}, and what do the reported clinical study results show?`
-            : `What are the main benefits of ${productName}, and what do the reported assessment results show?`
+            ? `What does ${productName} help with, and is that backed by the reported clinical study?`
+            : `What does ${productName} help with, and is that backed by the reported assessment results?`
           : `What are the main benefits of ${productName}?`
       }),
       answer: createBenefitFaqAnswer(product, locale, productName, benefit, ingredient, customerOutcomeEvidence, guidance, ocrFaqContexts.benefit)
@@ -8950,6 +10041,16 @@ function ensureFaq(
       pushCanonicalFaq(benefitCandidate);
     }
   }
+  // Review-derived category entry points. These come from what customers said
+  // about their own buying/use situations, so they cover search surfaces the
+  // official-field templates below cannot reach. They rank above those
+  // templates for the same reason: a stated situation is a real query, a
+  // restated product field is not.
+  for (const item of createReviewCepFaqItems({ product, locale, productName, benefit })) {
+    if (canonicalQuestionKeys.has(normalizeFaqQuestionKey(item.question))) continue;
+    pushCanonicalFaq(item);
+  }
+
   if (optimizedUsage) {
     pushCanonicalFaq({
       question: fallback(locale, {
@@ -8976,12 +10077,16 @@ function ensureFaq(
     ? reviewDerivedSearchQueries
     : reviewDerivedSearchQueries.filter((query) => query.source === "product-fact");
   for (const query of reviewDerivedFaqQueries.slice(0, 3)) {
-    faq.push({
-      question: query.question,
-      answer: removeMisroutedReviewContextFromFaqAnswer(query.question, query.answer, locale)
-    });
+    // A slot-built answer already knows which of its facts are review-attributed,
+    // so the product-detail renderer drops them by role. Only answers composed
+    // as plain text still need the text-level check.
+    const faqAnswer = query.answerSlots
+      ? renderProductDetailFaqAnswerFactSlots(query.answerSlots)
+      : removeMisroutedReviewContextFromFaqAnswer(query.question, query.answer, locale);
+    faq.push({ question: query.question, answer: faqAnswer });
   }
-  if (textureFinish) {
+  const publishesReviewUseFeel = Boolean(reviewSignals) && (guidance.useReviewIntentFaq || Boolean(reviewSignals));
+  if (textureFinish && (officialTextureFinish || !publishesReviewUseFeel)) {
     faq.push({
       question: fallback(locale, {
         "ko-KR": `${productName}의 제형이나 사용감은 어떤가요?`,
@@ -9017,7 +10122,7 @@ function ensureFaq(
   if (guidance.useEvidenceBackedClaims && (evidence || reviewSignals)) {
     const evidenceCandidate = {
       question: createEvidenceFaqQuestion(locale, productName, evidence),
-      answer: createEvidenceFaqAnswer(locale, evidence, reviewSignals)
+      answer: createEvidenceFaqAnswer(locale, evidence, reviewSignals, customerOutcomeEvidence)
     };
     if (hasExternalAuthorityEvidenceSignal(product, evidence)) {
       faq.push(evidenceCandidate);
@@ -9056,19 +10161,9 @@ function ensureFaq(
     ?? faq.find((item) => isRequiredTargetCustomerFaq(item, locale));
   const requiredComposition = covered.find((item) => isRequiredCompositionBenefitFaq(item, locale))
     ?? faq.find((item) => isRequiredCompositionBenefitFaq(item, locale));
-  const routineCandidate = routineSynergy
-    ? faq.find((item) => /어떤\s*루틴|fit\s+into\s+(?:a\s+)?skincare\s+routine|どのようなルーティン/iu.test(item.question))
-    : undefined;
-  const normalizedRoutine = routineCandidate ? normalizeGeneratedFaqItem(routineCandidate, locale, productName) : undefined;
-  const requiredRoutine = normalizedRoutine && isFaqLocaleCompatible(
-    normalizedRoutine,
-    locale,
-    [productName, product.originalName, product.brand]
-  ) ? normalizedRoutine : undefined;
   return orderRequiredFaqAnchors([
     requiredTarget,
     requiredComposition,
-    requiredRoutine,
     ...covered
   ].filter((item): item is PdpGeoFaqItem => Boolean(item))
     .filter((item, index, items) => items.findIndex((candidate) =>
@@ -9179,7 +10274,7 @@ function rankFaqCandidatesForCitation(
 	        || candidate.preferred && (item.answer.length < 12 || item.answer.length > 620 || isQuestionLikeText(item.answer) || isNonAnswerLeadFaqAnswer(item.answer))
 	        || !isFaqLocaleCompatible(item, locale, [productName, product.originalName, product.brand])
 	        || isReviewBasedFaqCandidate(item, locale)
-	        || hasProductSpecificFaqQualityIssue(item, product)
+	        || hasProductSpecificFaqQualityIssue(item)
 	        || !isFaqQuestionAnswerAligned(item, product, locale, candidate.sourceBacked)) {
         return undefined;
       }
@@ -9308,13 +10403,22 @@ function createFaqSemanticDedupeKeys(item: PdpGeoFaqItem, locale: PdpGeoLocale):
   if (isIngredientOverviewFaqQuestion(question, locale)) {
     keys.push("ingredient-overview");
   }
-  if (isSuitabilityOverviewFaqQuestion(question, locale)) {
+  // A suitability question qualified by a use or purchase situation is a
+  // different search surface from one qualified by skin type or concern: the
+  // buyer arrives at it from a different query and needs a different proof.
+  // Giving it its own angle keeps both, instead of letting the audience
+  // question absorb the situational one.
+  const situational = namesUseSituation(question, locale);
+  if (situational) {
+    keys.push("situational-suitability");
+  }
+  if (!situational && isSuitabilityOverviewFaqQuestion(question, locale)) {
     keys.push("suitability-overview");
   }
   if (isGenericBenefitOverviewFaqQuestion(question, locale)) {
     keys.push("benefit-overview");
   }
-  if (isTargetConcernEffectSuitabilityFaq(item, locale)) {
+  if (!situational && isTargetConcernEffectSuitabilityFaq(item, locale)) {
     keys.push("target-concern-effect-suitability");
   }
   if (isExplicitReviewFaqCandidateQuestion(question)) {
@@ -9524,19 +10628,25 @@ function isRawReviewLikeKoreanFaqCandidateQuestion(value: string): boolean {
   return !hasQuestionForm || isOverlongReview || hasMultipleReviewClauses;
 }
 
-function hasProductSpecificFaqQualityIssue(item: PdpGeoFaqItem, product: PdpProductSignal): boolean {
+/**
+ * A FAQ item damaged by assembly rather than by its facts.
+ *
+ * What remains is broken Korean an answer engine would quote verbatim — a
+ * doubled ending, a particle stacked on a copula, a reassurance the source
+ * never gave. These are grammar defects, not subject matter.
+ *
+ * It also used to drop a FAQ whose wording named a cleansing benefit when the
+ * product was not a cleanser, by matching a list of this cleanser's own
+ * marketing labels against a list of cleanser product-type words. Both lists
+ * are gone: the labels were reaching non-cleansers because the benefit
+ * canonicalization table invented them from a loose trigger (`자극` became
+ * `저자극 세안`), and that is fixed where it happened. Deciding by product type
+ * was also wrong in the other direction — a cleansing balm's own `세정력` is
+ * its benefit, and a type list would have thrown it away.
+ */
+function hasProductSpecificFaqQualityIssue(item: PdpGeoFaqItem): boolean {
   const combined = cleanSignal(`${item.question} ${item.answer}`);
-  if (/입니다는|습니다는|제품이입니다|자생력이를|결과\s+결과|안심하고\s*사용하셔도\s*됩니다/.test(combined)) {
-    return true;
-  }
-  const productContext = cleanSignal([
-    product.name,
-    product.originalName,
-    product.category,
-    inferProductType(product)
-  ].filter(Boolean).join(" "));
-  const isCleanserProduct = /(?:클렌|세안|폼|워시|cleanser|cleansing|foam|wash)/i.test(productContext);
-  return /(?:저자극\s*세안|세정력|초미세먼지\s*세정|모공\s*속\s*노폐물\s*세정|마이크로\s*버블)/.test(combined) && !isCleanserProduct;
+  return /입니다는|습니다는|제품이입니다|자생력이를|결과\s+결과|안심하고\s*사용하셔도\s*됩니다/.test(combined);
 }
 
 function isFaqQuestionAnswerAligned(
@@ -9567,7 +10677,7 @@ function isFaqQuestionAnswerAligned(
   }
 
   if (/(?:성분|기술|ingredient|technology|formula)/i.test(question)
-    && /(?:상품\s*상세\s*테스트|확인\s*지표[^.!?。！？]{0,80}성분\s*설명|성분\s*설명입니다)/i.test(answer)) {
+    && sourceTestSectionOrIngredientLabelDumpPattern.test(answer)) {
     return false;
   }
 
@@ -9583,7 +10693,7 @@ function hasFaqCitationNoise(value: string | undefined): boolean {
   if (!text) {
     return false;
   }
-  return /(?:NEW\s*\||\|\s*(?:cream|serum)|상품\s*상세\s*테스트|확인\s*키워드|결과\s*성분\s*설명입니다|성분\s*설명입니다|확인\s*근거를\s*정리|확인\s*근거에는|정보를\s*정리합니다)/i.test(text);
+  return faqCitationNoisePattern.test(text);
 }
 
 function hasExternalAuthorityEvidenceSignal(product: PdpProductSignal, evidence: string | undefined): boolean {
@@ -10186,15 +11296,39 @@ function createRoutineSynergyFaqAnswer(
 }
 
 function createVariantComparisonFaqAnswer(locale: PdpGeoLocale, productName: string, variantComparison: string): string {
-  if (locale === "ko-KR") {
-    return `${appendKoreanTopicParticle(productName)} ${variantComparison} 기준으로 비교하면 됩니다. 옵션명, 용량, 제형, 가격 정보가 함께 제공될 때 현재 페이지의 상품 정보를 기준으로 선택할 수 있습니다.`;
+  // Two enumerations used to reach the reader here. The comparison signal
+  // carries the concrete option values with a meta-label tail appended
+  // ("60 mL and 90 mL option size, price, and version name"); the property path
+  // already strips that tail, and the same single-sourced pattern strips it
+  // here so the answer names values rather than the attributes it might carry.
+  // The closing sentence then spelled four attribute labels out in the template
+  // itself — a bare list in both locales, and a hardcoded one. It says the same
+  // thing without naming them.
+  const comparison = cleanSignal(variantComparison).replace(variantMetaLabelTailPattern, "").trim();
+  if (!comparison) {
+    return locale === "ko-KR"
+      ? `${appendKoreanTopicParticle(productName)} 현재 페이지에 표시된 옵션 정보를 기준으로 선택할 수 있습니다.`
+      : `${productName} can be chosen from the option details shown on this page.`;
   }
-  return `${productName} can be compared by ${variantComparison}. When option name, size, texture, and price are available, those details help shoppers choose the matching variant.`;
+  if (locale === "ko-KR") {
+    return `${appendKoreanTopicParticle(productName)} ${comparison} 기준으로 비교하면 됩니다. 옵션 정보가 함께 제공될 때 현재 페이지의 상품 정보를 기준으로 선택할 수 있습니다.`;
+  }
+  return `${productName} can be compared by ${comparison}. When those option details are shown on this page, they help shoppers choose the matching variant.`;
 }
 
-function selectTextureFinishSignal(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
-  const text = allProductEvidenceText(product);
-  const reviewKeywords = selectPublicReviewKeywords(product, locale).join(" ");
+/**
+ * @param officialOnly read only the brand's own copy, excluding review bodies
+ *   and review keywords. Normalization copies review text into `sourceTexts`,
+ *   so emptying `reviews` is not enough to answer "does the product itself
+ *   describe its texture".
+ */
+function selectTextureFinishSignal(
+  product: PdpProductSignal,
+  locale: PdpGeoLocale,
+  officialOnly = false
+): string | undefined {
+  const text = officialOnly ? nonReviewProductEvidenceText(product) : allProductEvidenceText(product);
+  const reviewKeywords = officialOnly ? "" : selectPublicReviewKeywords(product, locale).join(" ");
   const combined = `${text} ${reviewKeywords}`;
   const koSignals = [
     /산뜻(?:한)?\s*고밀도\s*텍스처/.test(combined) ? "산뜻한 고밀도 텍스처" : undefined,
@@ -10223,7 +11357,7 @@ function selectTextureFinishSignal(product: PdpProductSignal, locale: PdpGeoLoca
 function selectRoutineSynergySignal(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
   const text = allProductEvidenceText(product);
   if (locale === "ko-KR") {
-    if (/(?:세럼|앰플|에센스|토너|크림|스킨케어)\s*(?:후|다음|전|함께|단계|루틴)|스킨케어\s*루틴(?:\s*단계)?|(?:함께|같이)\s*(?:사용|레이어링)/.test(text)) {
+    if (/(?:세럼|앰플|에센스|토너|크림|스킨케어)\s*(?:후|다음|전|함께|단계|루틴)|(?:함께|같이)\s*(?:사용|레이어링)/.test(text)) {
       return "세럼, 앰플, 에센스 등 스킨케어 루틴 단계와 함께 사용할 수 있습니다";
     }
     if (/(?:아침|저녁|매일|데일리|밤)\s*(?:사용|루틴|케어)/.test(text)) {
@@ -10302,21 +11436,69 @@ function createBenefitFaqAnswer(
       ? formatKoreanCepTargetCustomer(inferredTarget)
       : undefined;
     const supportedLink = selectFaqIngredientBenefitLink(product, locale);
-    const finishedProductEvidence = createKoreanFaqFinishedProductStudyEvidence(product, benefitPhrase);
-    return compactSentence(dedupeGeneratedSentenceParts([
-      targetCustomer && guidance.useTargetCustomerContext
-        ? `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(targetCustomer)} 위한 ${productType}으로, ${appendKoreanObjectParticle(benefitPhrase)} 돕습니다`
-        : `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(benefitPhrase)} 돕는 ${productType}입니다`,
-      supportedLink ? createKoreanIngredientFaqSupportSentence(supportedLink.ingredient, supportedLink.benefit) : undefined,
-      finishedProductEvidence,
-      guidance.useEvidenceBackedClaims && !finishedProductEvidence && evidence ? localizedEvidenceContext(locale, evidence) : undefined,
-      !finishedProductEvidence && !evidence && isFaqSafeOcrContext(ocrContext) ? ocrContext : undefined,
-      finishedProductEvidence ? "시험 결과를 포함한 효능 체감은 개인에 따라 달라질 수 있습니다" : undefined
+    const metricEvidence = createKoreanFaqMetricEvidence(product, benefitPhrase);
+    const finishedProductEvidence = metricEvidence?.fact;
+    // The composition question already opens with target customer and benefit.
+    // When this question also asks what the published study showed, repeating
+    // that opening makes two FAQ entries read as one; the asked evidence is
+    // what distinguishes them, so the answer states the benefit compactly and
+    // gives the study the sentence it was asked for.
+    return renderProductDetailFaqAnswerFactSlots(mergeFaqAnswerFactSlots([
+      faqFactSlot(
+        "productBenefit",
+        // Every branch here needs the benefit as a noun — an object or a
+        // copular complement — so a signal with no nominal form closes the
+        // slot instead of being pushed in as a sentence.
+        benefitPhrase === undefined
+          ? undefined
+          : finishedProductEvidence
+            ? `${productName}의 주요 효능은 ${benefitPhrase}입니다`
+            : targetCustomer && guidance.useTargetCustomerContext
+              ? `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(targetCustomer)} 위한 ${appendKoreanInstrumentParticle(productType)}, ${appendKoreanObjectParticle(benefitPhrase)} 돕습니다`
+              : `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(benefitPhrase)} 돕는 ${productType}입니다`,
+        faqFactEvidenceTags("benefit", benefitPhrase),
+        productName
+      ),
+      supportedLink
+        ? faqFactSlot(
+            "ingredientRole",
+            createKoreanIngredientFaqSupportSentence(supportedLink.ingredient, supportedLink.benefit),
+            faqFactEvidenceTags("ingredient", supportedLink.ingredient),
+            supportedLink.ingredient
+          )
+        : undefined,
+      faqFactSlot("evidence", finishedProductEvidence, faqFactEvidenceTags("metric", finishedProductEvidence)),
+      faqFactSlot(
+        "evidence",
+        guidance.useEvidenceBackedClaims
+          && !finishedProductEvidence
+          && evidence
+          && !restatesDescriptionOwnedMeasurement(evidence, product)
+          ? localizedEvidenceContext(locale, evidence)
+          : undefined,
+        faqFactEvidenceTags("source", evidence)
+      ),
+      faqFactSlot(
+        "evidence",
+        !finishedProductEvidence && !evidence && isFaqSafeOcrContext(ocrContext) ? ocrContext : undefined,
+        faqFactEvidenceTags("source", ocrContext)
+      ),
+      // The caveat may name a study only when a study is what the evidence
+      // slot carries. The refined-sentence fallback states a measurement the
+      // page presents without any method, institution, or sample behind it —
+      // naming 시험 결과 there would assert a study this generator has no
+      // evidence for, so the caveat drops the methodology and qualifies only
+      // what it can: how the benefit is experienced.
+      faqFactSlot("qualifier", metricEvidence
+        ? metricEvidence.studyBacked
+          ? "시험 결과를 포함한 효능 체감은 개인에 따라 달라질 수 있습니다"
+          : "효능 체감은 개인에 따라 달라질 수 있습니다"
+        : undefined)
     ]));
   }
 
   if (locale === "en-US" || locale === "en-GB") {
-    const benefitPhrase = formatDescriptionList(selectClaimedBenefitSignals(product, locale).slice(0, 3), locale, 3) ?? benefit;
+    const benefitPhrase = formatDescriptionList(selectClaimedBenefitSignals(product, locale).slice(0, PROSE_COORDINATE_ITEM_LIMIT), locale, PROSE_COORDINATE_ITEM_LIMIT) ?? benefit;
     const inferredTargetCustomer = inferTargetCustomer(product, locale);
     const targetCustomer = simplifyKoreanTargetCustomerForSentence(inferredTargetCustomer) || inferredTargetCustomer;
     const targetContext = isSpecificTargetCustomer(targetCustomer, locale) ? ` for ${targetCustomer}` : "";
@@ -10364,18 +11546,43 @@ function createIngredientFaqAnswer(
       && descriptionFactMatches(link.benefit, supportedLink.benefit))) {
       supportedLinks.unshift(supportedLink);
     }
-    const linkSentences = supportedLinks.slice(0, 3).map((link) =>
-      `${appendKoreanTopicParticle(link.ingredient)} ${appendKoreanObjectParticle(link.benefit)} 돕습니다`);
-    return compactSentence(dedupeGeneratedSentenceParts([
-      targetContext
-        ? `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(targetContext)} 위해 ${appendKoreanObjectParticle(ingredient)} 주요 성분·기술로 구성한 ${productType}입니다`
-        : `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(ingredient)} 주요 성분·기술로 구성한 ${productType}입니다`,
-      ...linkSentences,
-      benefitPhrase ? `이와 함께 완제품은 ${appendKoreanObjectParticle(benefitPhrase)} 돕습니다` : undefined,
-      targetCustomer && benefitPhrase
-        ? `따라서 ${appendKoreanSubjectParticle(targetCustomer)} ${appendKoreanSubjectParticle(benefitPhrase)} 필요한 제품을 찾을 때 추천할 수 있습니다`
-        : undefined,
-      supportedLinks.length > 0 && isFaqSafeOcrContext(ocrContext) ? ocrContext : undefined
+    const linkSlots = supportedLinks.slice(0, 3).map((link) => faqFactSlot(
+      "ingredientRole",
+      `${appendKoreanTopicParticle(link.ingredient)} ${appendKoreanObjectParticle(link.benefit)} 돕습니다`,
+      faqFactEvidenceTags("ingredient", link.ingredient),
+      link.ingredient
+    ));
+    // OCR context is free prose, not a structured link, so its subject is
+    // recovered by checking whether it names an ingredient this answer
+    // already covers (`containsEntityToken`, reused rather than a new
+    // matcher) -- when it does, it is the same ingredientRole fact restated
+    // (this is the 판테놀 duplicate the deterministic renderer used to
+    // publish twice) and merges into that slot instead of adding a new one.
+    const ocrIngredientSubject = isFaqSafeOcrContext(ocrContext)
+      ? supportedLinks.find((link) => containsEntityToken(ocrContext, link.ingredient))?.ingredient
+      : undefined;
+    return renderProductDetailFaqAnswerFactSlots(mergeFaqAnswerFactSlots([
+      faqFactSlot(
+        "composition",
+        targetContext
+          ? `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(targetContext)} 위해 ${appendKoreanObjectParticle(ingredient)} 주요 성분·기술로 구성한 ${productType}입니다`
+          : `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(ingredient)} 주요 성분·기술로 구성한 ${productType}입니다`,
+        faqFactEvidenceTags("ingredient", ingredient),
+        ingredient
+      ),
+      ...linkSlots,
+      faqFactSlot(
+        "productBenefit",
+        benefitPhrase ? `이와 함께 완제품은 ${appendKoreanObjectParticle(benefitPhrase)} 돕습니다` : undefined,
+        faqFactEvidenceTags("benefit", benefitPhrase),
+        productName
+      ),
+      faqFactSlot(
+        ocrIngredientSubject ? "ingredientRole" : "evidence",
+        supportedLinks.length > 0 && isFaqSafeOcrContext(ocrContext) ? ocrContext : undefined,
+        faqFactEvidenceTags("source", ocrContext),
+        ocrIngredientSubject
+      )
     ]));
   }
 
@@ -10422,7 +11629,8 @@ function createUsageFaqAnswer(
   return ensurePublicSentence(localizedUsageRoutineContext(locale, productName, optimizedUsage), locale);
 }
 
-function createReviewIntentFaqAnswer(
+/** `index.ts`에 노출하지 않는다 -- 리뷰 슬롯이 상품상세 빌더에서 제외된 뒤에도 리뷰 의도 빌더 자체는 그대로 동작함을 고정하는 회귀 테스트용 내부 export. */
+export function createReviewIntentFaqAnswer(
   locale: PdpGeoLocale,
   productName: string,
   reviewSignals: string,
@@ -10475,36 +11683,56 @@ function createSuitabilityFaqAnswer(
         .replace(/^수분감$/u, "수분 케어")))
       ?? formatKoreanFaqBenefitPhrase(product, locale, benefit);
     const ingredientPhrase = formatDescriptionList(selectLocalizedKeyIngredients(product, locale, 2), locale, 2);
-    const reviewPhrase = hasPublicReviewEvidence(product, locale)
-      ? formatKoreanListForSentence(selectReviewIntentFaqKeywords(product, locale).slice(0, 3).join(", "))
-      : undefined;
     const studySentences = studyContext?.split(/(?<=[.!?。！？])\s+/u).filter(Boolean) ?? [];
-    const studyEvidence = createKoreanFaqFinishedProductStudyEvidence(product, `${targetCustomer} ${benefitPhrase}`)
+    const studyEvidence = createKoreanFaqMetricEvidence(product, `${targetCustomer} ${benefitPhrase}`)?.fact
       ?? studySentences.find((sentence) => /(?:인체\s*적용\s*시험|임상\s*시험|자가\s*평가|소비자\s*평가|\d+\s*명\s*대상)/u.test(sentence))
       ?? studySentences[0];
-    const ingredientRoleSentences = supportedLinks.map((link) =>
-      `${appendKoreanTopicParticle(link.ingredient)} ${appendKoreanObjectParticle(link.benefit)} 돕습니다`);
-    const unlinkedIngredientSentences = supportedLinks.length === 0 && ingredientPhrase
-      ? [
-          `${productName}에는 ${formatKoreanIngredientIncludedSubject(ingredientPhrase).replace("성분/기술", "성분·기술")} 포함되어 있습니다`
-        ]
-      : [];
-    return compactSentence(dedupeGeneratedSentenceParts([
-      hasTargetCustomer
-        ? `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(targetCustomer)} 위한 ${productType}입니다`
-        : `${appendKoreanTopicParticle(productName)} ${productType}입니다`,
-      createSupportedRecommendationContextAnswer(supportedRecommendationContext, locale, productName),
-      `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(benefitPhrase)} 돕습니다`,
-      studyEvidence,
-      ...ingredientRoleSentences,
-      ...unlinkedIngredientSentences,
-      hasTargetCustomer
-        ? `따라서 ${appendKoreanSubjectParticle(targetCustomer)} ${appendKoreanSubjectParticle(benefitPhrase)} 필요한 화장품을 찾을 때 고려할 수 있습니다`
-        : `${appendKoreanSubjectParticle(benefitPhrase)} 필요한 고객이 관련 제품을 비교할 때 고려할 수 있습니다`,
-      reviewPhrase
-        ? `고객 리뷰에서는 ${appendKoreanSubjectParticle(reviewPhrase)} 언급되어 사용감과 만족도를 판단할 때 참고할 수 있습니다`
-        : undefined,
-      studyEvidence ? "개인에 따라 사용 결과는 달라질 수 있습니다" : undefined
+    const ingredientRoleSlots = supportedLinks.map((link) => faqFactSlot(
+      "ingredientRole",
+      `${appendKoreanTopicParticle(link.ingredient)} ${appendKoreanObjectParticle(link.benefit)} 돕습니다`,
+      faqFactEvidenceTags("ingredient", link.ingredient),
+      link.ingredient
+    ));
+    const unlinkedIngredientSlot = supportedLinks.length === 0 && ingredientPhrase
+      ? faqFactSlot(
+          "composition",
+          `${productName}에는 ${formatKoreanIngredientIncludedSubject(ingredientPhrase).replace("성분/기술", "성분·기술")} 포함되어 있습니다`,
+          faqFactEvidenceTags("ingredient", ingredientPhrase),
+          ingredientPhrase
+        )
+      : undefined;
+    return renderProductDetailFaqAnswerFactSlots(mergeFaqAnswerFactSlots([
+      faqFactSlot(
+        hasTargetCustomer ? "target" : "identity",
+        hasTargetCustomer
+          ? `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(targetCustomer)} 위한 ${productType}입니다`
+          : `${appendKoreanTopicParticle(productName)} ${productType}입니다`,
+        hasTargetCustomer ? faqFactEvidenceTags("audience", targetCustomer) : [],
+        productName
+      ),
+      faqFactSlot(
+        "target",
+        createSupportedRecommendationContextAnswer(supportedRecommendationContext, locale, productName),
+        faqFactEvidenceTags("audience", supportedRecommendationContext)
+      ),
+      faqFactSlot(
+        "productBenefit",
+        benefitPhrase === undefined
+          ? undefined
+          : `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(benefitPhrase)} 돕습니다`,
+        faqFactEvidenceTags("benefit", benefitPhrase),
+        productName
+      ),
+      faqFactSlot("evidence", studyEvidence, faqFactEvidenceTags("metric", studyEvidence)),
+      ...ingredientRoleSlots,
+      unlinkedIngredientSlot,
+      // A review-attributed sentence used to be built here, but this is a
+      // product-detail (suitability) answer: `renderProductDetailFaqAnswerFactSlots`
+      // would strip a "review" slot at render time regardless, and the same
+      // customer-review keywords are already published with correct
+      // attribution by the dedicated review-intent FAQ entry
+      // (`ensureFaq`'s "고객 리뷰에서는 ..." question, `createReviewIntentFaqAnswer`).
+      faqFactSlot("qualifier", studyEvidence ? "개인에 따라 사용 결과는 달라질 수 있습니다" : undefined)
     ]));
   }
 
@@ -10535,7 +11763,48 @@ function createSuitabilityFaqAnswer(
   ]));
 }
 
-function createKoreanFaqFinishedProductStudyEvidence(product: PdpProductSignal, preferredContext = ""): string | undefined {
+/**
+ * The metric sentence a Korean FAQ evidence slot publishes, plus whether a
+ * study stands behind it.
+ *
+ * The two sources differ in what they can support. A structured claim carries
+ * method, institution, sample and period, so the composed sentence really does
+ * report a study. The refined-sentence fallback carries none of that — it is
+ * the measurement the page states, nothing more. Callers that want to say
+ * something *about* the study have to read `studyBacked` rather than infer a
+ * study from the sentence merely existing.
+ */
+interface KoreanFaqMetricEvidence {
+  fact: string;
+  studyBacked: boolean;
+}
+
+/**
+ * True when a FAQ evidence candidate states the measurement
+ * `Product.description` publishes.
+ *
+ * The owner rule below governs the metric slot, but the evidence slot reaches
+ * the same measurement through its own candidate and renders it in different
+ * words — `…로 제시됩니다` in the description against `…로 측정되었습니다` here —
+ * so comparing the two as text let the duplicate through and put one
+ * measurement in the graph twice.
+ *
+ * What identifies a measurement is its figures, not its wording: a candidate
+ * carrying only figures the owned sentence already states is that same
+ * measurement said differently. The suppression is conditioned on the
+ * description actually taking the refined sentence (the same condition the
+ * metric slot reads), so a product whose description composes a structured
+ * narrative instead does not lose its figures here.
+ */
+function restatesDescriptionOwnedMeasurement(candidate: string, product: PdpProductSignal): boolean {
+  const owned = selectKoreanScopedRefinedMetricStatement(product);
+  if (!owned || selectKoreanStructuredMetricNarrative(product) !== owned) {
+    return false;
+  }
+  return statesOnlyFiguresOf(candidate, owned);
+}
+
+function createKoreanFaqMetricEvidence(product: PdpProductSignal, preferredContext = ""): KoreanFaqMetricEvidence | undefined {
   const preferred = cleanSignal(preferredContext);
   const candidates = (product.semanticFacts?.metricClaims ?? [])
     .filter(hasSemanticClinicalClaimContext)
@@ -10553,7 +11822,24 @@ function createKoreanFaqFinishedProductStudyEvidence(product: PdpProductSignal, 
     .filter((item): item is typeof item & { outcome: string } => Boolean(item.outcome))
     .sort((left, right) => right.score - left.score || left.index - right.index);
   const selected = candidates[0];
-  if (!selected) return undefined;
+  // Same reason as `selectKoreanStructuredMetricNarrative`: with no structured
+  // claim fields there is no study context to compose, and the FAQ's evidence
+  // slot would go empty even though the extraction states the measurement in
+  // prose. The slot consumes that sentence instead of being left blank — and it
+  // is marked as not study-backed, because nothing here establishes a study.
+  //
+  // The refined sentence has one owner, and it is Product.description. That
+  // field is the product's own summary — the thing an answer engine quotes —
+  // so when the description path publishes this exact sentence, restating it
+  // here would put one measurement in the graph twice. The FAQ takes it only
+  // when the description path does not: a different sentence there, or none.
+  if (!selected) {
+    const refined = selectKoreanScopedRefinedMetricStatement(product);
+    if (!refined || selectKoreanStructuredMetricNarrative(product) === refined) {
+      return undefined;
+    }
+    return { fact: refined, studyBacked: false };
+  }
   const { claim, outcome } = selected;
   const institution = cleanSignal(claim.institution ?? "");
   const period = formatKoreanStudyPeriod(cleanSignal(claim.period ?? ""));
@@ -10566,10 +11852,13 @@ function createKoreanFaqFinishedProductStudyEvidence(product: PdpProductSignal, 
     ? `${appendKoreanSubjectParticle(institution.replace(/^㈜\s*/u, "(주)"))} `
     : "";
   const supportContext = inferKoreanFaqMetricSupportContext(claim, preferred);
-  return compactSentence([
-    `${studyOwner}${period ? `${period} ` : ""}진행한 ${finishedProductMethod}에서 ${outcome}`,
-    supportContext ? `이 결과는 ${appendKoreanObjectParticle(supportContext)} 뒷받침합니다` : undefined
-  ]);
+  return {
+    fact: compactSentence([
+      `${studyOwner}${period ? `${period} ` : ""}진행한 ${finishedProductMethod}에서 ${outcome}`,
+      supportContext ? `이 결과는 ${appendKoreanObjectParticle(supportContext)} 뒷받침합니다` : undefined
+    ]),
+    studyBacked: true
+  };
 }
 
 function scoreKoreanFaqMetricContextMatch(claim: PdpSemanticMetricClaim, preferredContext: string): number {
@@ -10833,12 +12122,12 @@ function localizedSuitabilityEvidenceContext(product: PdpProductSignal, locale: 
     const sample = extractTargetAudienceAgeSample(allProductEvidenceText(product), locale);
     const metricFact = createEvidenceMetricFact(evidence, locale);
 	    const metricBody = metricFact
-	      ? trimTrailingSentencePunctuation(metricFact).replace(/^(?:확인\s*지표|확인\s*근거|측정\s*결과)\s*:\s*/i, "").trim()
+	      ? trimTrailingSentencePunctuation(metricFact).replace(leadingLabelFieldPattern, "").trim()
 	      : undefined;
 	    if (metricBody && hasQuantifiedReportedSignal(metricBody) && !hasFaqCitationNoise(metricBody)) {
 	      return createKoreanEvidenceResultSentence(sample
 	        ? `${sample.replace(/\s*고객$/u, "")} 대상 시험/평가 기준 ${metricBody}`
-	        : metricBody);
+	        : metricBody) || undefined;
 	    }
     const cleanEvidence = trimTrailingSentencePunctuation(truncateAtCompleteSentence(normalizeEvidenceText(evidence), 180));
     return cleanEvidence && !hasFaqCitationNoise(cleanEvidence) ? ensureKoreanSentence(createKoreanEvidenceContentSentence(cleanEvidence)) : undefined;
@@ -10850,7 +12139,164 @@ function localizedSuitabilityEvidenceContext(product: PdpProductSignal, locale: 
 
 function isFaqSafeOcrContext(value: string | undefined): value is string {
   const text = cleanSignal(value ?? "");
-  return Boolean(text) && !hasFaqCitationNoise(text) && !isKoreanMetaNarrationText(text) && !isEnglishMetaNarrationText(text);
+  return Boolean(text)
+    && !hasFaqCitationNoise(text)
+    && !isKoreanMetaNarrationText(text)
+    && !isEnglishMetaNarrationText(text)
+    // An answer may quote a measurement, but not by pasting the panel it was
+    // printed on. A short before/after panel fragment is under the length the
+    // unsegmented-transcription gate reads, yet it is the same block the metric
+    // gate refuses as one claim — decided there, so it cannot re-enter public
+    // copy as an FAQ answer's OCR context instead.
+    && !isCompressedMultiClaimMetricBlock(text);
+}
+
+/**
+ * A source-backed fact used to build one FAQ answer, ordered along the
+ * Description Composition Contract's six-stage arc ("이게 뭐지" -> "나한테
+ * 맞나" -> "뭐로 만들었나" -> "그래서 뭐가 되나" -> "믿을 근거는" -> "남들은
+ * 어땠나"): identity -> target -> composition -> ingredientRole /
+ * productBenefit -> evidence -> review. `qualifier` holds caveats
+ * ("개인차가 있을 수 있습니다") that support none of the six stages on
+ * their own and sort last.
+ *
+ * `renderFaqAnswerFactSlots` below turns a slot list into only a
+ * minimally-connected paragraph -- that text is this pass's OUTPUT but the
+ * next natural-language pass's INPUT, not the published answer. No fact may
+ * be dropped and no slot's evidenceIds may be lost while restructuring it
+ * into prose.
+ */
+export type FaqAnswerFactSlotRole =
+  | "identity"
+  | "target"
+  | "composition"
+  | "ingredientRole"
+  | "productBenefit"
+  | "evidence"
+  | "review"
+  | "qualifier";
+
+const FAQ_ANSWER_FACT_SLOT_ORDER: FaqAnswerFactSlotRole[] = [
+  "identity", "target", "composition", "ingredientRole", "productBenefit", "evidence", "review", "qualifier"
+];
+
+/** `index.ts`에 노출하지 않는다 -- FAQ 답변 슬롯화(사실 단위 병합/arc 순서) 회귀 고정을 위한 내부 export. */
+export interface FaqAnswerFactSlot {
+  role: FaqAnswerFactSlotRole;
+  /**
+   * The ingredient/product this fact is about. Used only to detect two
+   * slots restating the same fact before rendering; never part of the
+   * rendered text.
+   */
+  subject?: string;
+  fact: string;
+  evidenceIds: string[];
+}
+
+/** Builds one fact slot, or omits it entirely when the fact is empty (never leaves a stray connector for `renderFaqAnswerFactSlots` to join). */
+export function faqFactSlot(
+  role: FaqAnswerFactSlotRole,
+  fact: string | undefined,
+  evidenceIds: string[] = [],
+  subject?: string
+): FaqAnswerFactSlot | undefined {
+  const text = cleanSignal(fact ?? "");
+  if (!text) return undefined;
+  const cleanSubject = subject ? cleanSignal(subject) : undefined;
+  return { role, fact: text, evidenceIds, ...(cleanSubject ? { subject: cleanSubject } : {}) };
+}
+
+/**
+ * Deterministic provenance tag for a fact slot: `${evidenceRole}:${text}`.
+ *
+ * The role vocabulary is the ledger's own (`PdpGeoEvidenceRole`), and the text
+ * is lowered the same way the ledger's key lowers it, so a later stage holding
+ * the ledger could resolve a tag back to a `PdpGeoAtomicEvidence.id` through
+ * `pdpGeoEvidenceKey` rather than a new equivalence table. The separator
+ * differs on purpose — a tag is read by people, the key is not — so any such
+ * join has to go through that one builder instead of comparing the strings.
+ *
+ * No stage consumes these ids yet; the rendered-FAQ path builds its own
+ * (`selectRenderedFaqEvidenceIds`). The lowering used to be
+ * `toLocaleLowerCase` on both sides, which is locale-dependent: under a
+ * Turkish runtime `I` lowers to `ı` and the two sides would key differently.
+ */
+export function faqFactEvidenceTags(role: PdpGeoEvidenceRole, ...values: Array<string | undefined>): string[] {
+  return unique(values
+    .map((value) => cleanSignal(value ?? ""))
+    .filter(Boolean)
+    .map((value) => `${role}:${value.toLowerCase()}`));
+}
+
+/**
+ * Merges fact slots that restate the same subject under the same role --
+ * e.g. an ingredient's role sentence supplied once by the structured
+ * ingredient-benefit link and again by OCR context. Equality reuses
+ * `descriptionFactMatches`, the same entity-key comparison the description
+ * pipeline already applies, so no new equivalence table is introduced here.
+ * The more informative fact (by `preferMoreDetailedFaqAnswer`) survives and
+ * evidenceIds from both sides are unioned, so downstream natural-language
+ * generation never loses provenance for a fact that merging kept.
+ */
+export function mergeFaqAnswerFactSlots(slots: Array<FaqAnswerFactSlot | undefined>): FaqAnswerFactSlot[] {
+  const merged: FaqAnswerFactSlot[] = [];
+  for (const slot of slots) {
+    if (!slot) continue;
+    const duplicateIndex = merged.findIndex((existing) => existing.role === slot.role
+      && (slot.subject && existing.subject
+        ? descriptionFactMatches(slot.subject, existing.subject)
+        : descriptionFactMatches(existing.fact, slot.fact)));
+    if (duplicateIndex === -1) {
+      merged.push(slot);
+      continue;
+    }
+    const existing = merged[duplicateIndex]!;
+    merged[duplicateIndex] = {
+      role: existing.role,
+      fact: preferMoreDetailedFaqAnswer(slot.fact, existing.fact) ? slot.fact : existing.fact,
+      evidenceIds: unique([...existing.evidenceIds, ...slot.evidenceIds]),
+      ...(existing.subject ?? slot.subject ? { subject: existing.subject ?? slot.subject } : {})
+    };
+  }
+  return merged;
+}
+
+/** Stable sort into the six-stage arc order; slots sharing a role keep their given relative order. */
+export function orderFaqAnswerFactSlots(slots: FaqAnswerFactSlot[]): FaqAnswerFactSlot[] {
+  return [...slots].sort((left, right) =>
+    FAQ_ANSWER_FACT_SLOT_ORDER.indexOf(left.role) - FAQ_ANSWER_FACT_SLOT_ORDER.indexOf(right.role));
+}
+
+/**
+ * Deterministic, minimally-connected paragraph built purely from fact
+ * slots, in arc order. This is the natural-language pass's INPUT, not the
+ * published copy: no slot is dropped (an empty slot was never built, see
+ * `faqFactSlot`) and no connective beyond `compactSentence`'s
+ * period-joining is added, so a later paraphrase step can restructure the
+ * prose freely without losing or duplicating a fact.
+ */
+export function renderFaqAnswerFactSlots(slots: Array<FaqAnswerFactSlot | undefined>): string {
+  return compactSentence(orderFaqAnswerFactSlots(slots.filter((slot): slot is FaqAnswerFactSlot => Boolean(slot)))
+    .map((slot) => slot.fact));
+}
+
+/**
+ * Renders the slots built by a product-detail-intent FAQ answer (composition,
+ * benefit, or suitability -- never review). `trust-field-validator`
+ * (validate.ts: `isExplicitReviewFaqQuestion` / `isReviewFaqAnswerSentence` /
+ * `isAllowedTargetCustomerReviewSummary`) already draws this line
+ * post-generation and repairs a product-detail answer that mixed in raw
+ * customer-review language. Applying the same distinction here -- by slot
+ * role, not by re-parsing question text -- means a product-detail builder
+ * can never emit review content in the first place, whatever facts a future
+ * edit adds to its slot array. The review-intent builders
+ * (`createReviewIntentFaqAnswer`, `createReviewCepFaqAnswer`) are unaffected;
+ * the fact a stripped `review` slot would have carried already has its own
+ * dedicated review-intent FAQ entry (`ensureFaq`'s "고객 리뷰에서는 ..."
+ * question), so nothing is lost -- it stays where it is attributed.
+ */
+function renderProductDetailFaqAnswerFactSlots(slots: Array<FaqAnswerFactSlot | undefined>): string {
+  return renderFaqAnswerFactSlots(slots.filter((slot) => slot?.role !== "review"));
 }
 
 function dedupeGeneratedSentenceParts(parts: Array<string | undefined>): Array<string | undefined> {
@@ -10901,11 +12347,22 @@ function createEvidenceFaqQuestion(locale: PdpGeoLocale, productName: string, ev
   });
 }
 
-function createEvidenceFaqAnswer(locale: PdpGeoLocale, evidence: string | undefined, reviewSignals: string): string {
+function createEvidenceFaqAnswer(
+  locale: PdpGeoLocale,
+  evidence: string | undefined,
+  reviewSignals: string,
+  structuredEvidenceSummary?: string
+): string {
   if (locale === "ko-KR") {
-    const metricFact = evidence ? createEvidenceMetricFact(evidence, locale) : undefined;
+    // The structured metricClaims narrative (same one used for Product.
+    // additionalProperty's "Reported details") is the single source of truth
+    // for reported-evidence copy; only fall back to re-parsing raw evidence
+    // text when the extractor produced nothing structured to summarize.
+    const metricFact = structuredEvidenceSummary ?? (evidence ? createEvidenceMetricFact(evidence, locale) : undefined);
     const evidenceSentence = metricFact
-      ? createKoreanEvidenceFactSentence(metricFact)
+      ? structuredEvidenceSummary
+        ? metricFact
+        : createKoreanEvidenceFactSentence(metricFact)
       : evidence ? createKoreanEvidenceContentSentence(trimTrailingSentencePunctuation(truncateAtCompleteSentence(evidence, 260))) : undefined;
     const evidenceDetail = evidenceSentence
       ? isHardEvidenceSignal(evidence)
@@ -11031,7 +12488,23 @@ function localizedTargetContext(locale: PdpGeoLocale, targetCustomer: string): s
   });
 }
 
-function localizedEvidenceContext(locale: PdpGeoLocale, evidence: string): string {
+/**
+ * One evidence string, written as a sentence an answer can carry — or nothing,
+ * when what arrived is a transcription rather than a statement.
+ *
+ * The `undefined` case is the point. This is the last place a raw evidence
+ * string becomes public copy, and the strings that reach it are whatever the
+ * reported-detail selectors found: for a product whose page prints its results
+ * as a before/after panel, that is the panel. Rendering it produces an answer
+ * that reads as a transcription of an image, which is the failure this
+ * reconstruction exists to remove. What may not be published as one atomic
+ * claim is decided once, by the normalizer, and read here — the metric gate and
+ * this slot cannot disagree about what an OCR panel is.
+ */
+export function localizedEvidenceContext(locale: PdpGeoLocale, evidence: string): string | undefined {
+  if (isCompressedMultiClaimMetricBlock(evidence) || isKoreanSerializedStudyFieldRun(evidence)) {
+    return undefined;
+  }
   const cleanEvidence = normalizeEvidenceText(truncateAtCompleteSentence(evidence, 260));
   if (locale === "ko-KR") {
     if (hasCompleteReportedDetailContext(evidence)) {
@@ -11045,6 +12518,12 @@ function localizedEvidenceContext(locale: PdpGeoLocale, evidence: string): strin
     }
     const metricFact = createEvidenceMetricFact(evidence, locale);
     const evidenceSentence = metricFact ? createKoreanEvidenceFactSentence(metricFact) : createKoreanEvidenceContentSentence(cleanEvidence);
+    // R-F made an unformattable value return the empty string, and this is the
+    // caller that has to read it. Wrapping it produced `를 참고할 수 있습니다` —
+    // a particle with nothing in front of it, published as a sentence.
+    if (!evidenceSentence) {
+      return undefined;
+    }
     return isKoreanCompleteSentence(evidenceSentence)
       ? evidenceSentence
       : `${evidenceSentence}를 참고할 수 있습니다`;
@@ -11161,7 +12640,7 @@ function createSchemaMarkup(input: {
   const howToSteps = input.howToSteps.length >= 1 ? input.howToSteps : [];
   const reviewItems = selectReviewItems(input.product, input.locale);
   const schemaImages = selectSchemaImages(input.product, input.productName, input.sourceUrl);
-  // commerce contract Tier-2: variant별 신뢰 가능한 Offer 배열이 성립하면 우선 사용,
+  // GEO-128 Tier-2: variant별 신뢰 가능한 Offer 배열이 성립하면 우선 사용,
   // 아니면 기존 단일(현재 variant) Offer로 fail-closed 폴백.
   const variantOffers = createVariantOfferSchemas(input.product, input.locale, input.market, sourceUrl);
   const offer = variantOffers ?? createOfferSchema(input.product, input.locale, input.market, sourceUrl);
@@ -11215,7 +12694,7 @@ function createSchemaMarkup(input: {
       alternateName: input.product.originalName && input.product.originalName !== input.productName ? input.product.originalName : undefined,
       url: sourceUrl,
       mainEntityOfPage: input.targets.includes("WebPage") ? { "@id": webpageId } : sourceUrl,
-      // commerce contract: 명시적 merchant SKU가 있으면 추론(URL/본문)보다 우선한다
+      // GEO-128: 명시적 merchant SKU가 있으면 추론(URL/본문)보다 우선한다
       // (schema-org-product 정책: 구조화 식별자 위에서 추론하지 말 것).
       sku: input.product.sku ?? extractProductSku(input.product, input.sourceUrl),
       gtin: input.product.gtin,
@@ -11335,7 +12814,9 @@ function createHowToStepName(locale: PdpGeoLocale, index: number): string {
   });
 }
 
-function selectSchemaImages(product: PdpProductSignal, productName: string, sourceUrl?: string, limit = 8): string[] {
+/** Exported for tests only — not part of the package surface (index.ts). */
+export function selectSchemaImages(product: PdpProductSignal, productName: string, sourceUrl?: string, limit = 8): string[] {
+  const evidenceKeys = evidenceBackedImageUrls(product, sourceUrl);
   const canonicalCandidates = product.images
     .map((imageUrl, index) => {
       const canonical = canonicalizeSchemaImageUrl(imageUrl, sourceUrl);
@@ -11355,15 +12836,66 @@ function selectSchemaImages(product: PdpProductSignal, productName: string, sour
     deduped.push(item);
   }
 
+  // 탈락 임계(35/20/0)와 4장 상한은 근거 가산 이전의 base score로 확정한다 —
+  // 가산점이 제거 로직에 스며들면 근거 없는 이미지가 탈락 임계를 넘어
+  // "제거되지 않아야 할 이미지가 살아남는" 부작용이 생긴다. 근거는 여기서
+  // 통과한 후보들의 순서만 바꾼다(아래 정렬 전용 sortScore).
   const hasHighConfidence = deduped.some((item) => item.score >= 35);
   const scoped = hasHighConfidence
     ? deduped.filter((item) => item.score >= 20)
     : deduped.filter((item) => item.score >= 0).slice(0, Math.min(limit, 4));
 
   return scoped
-    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map((item) => ({
+      ...item,
+      sortScore: item.score + (evidenceKeys.has(schemaImageDedupeKey(item.url)) ? 15 : 0)
+    }))
+    .sort((a, b) => b.sortScore - a.sortScore || a.index - b.index)
     .slice(0, limit)
     .map((item) => item.url);
+}
+
+/**
+ * OCR `sourceTextMeta`와 `semanticFacts` 클레임(metricClaims /
+ * ingredientBenefitLinks / citations)이 인용한 이미지 URL을
+ * `schemaImageDedupeKey` 기준으로 모은다. `selectSchemaImages`가 동률에
+ * 가까운 후보 중 근거가 뒷받침하는 이미지를 우선 정렬하는 데만 쓰인다 —
+ * 근거 없는 이미지를 제거하지는 않는다.
+ */
+function evidenceBackedImageUrls(product: PdpProductSignal, sourceUrl?: string): Set<string> {
+  const rawUrls: string[] = [];
+  for (const meta of Object.values(product.sourceTextMeta ?? {})) {
+    if (meta.imageUrls) {
+      rawUrls.push(...meta.imageUrls);
+    }
+  }
+  const facts = product.semanticFacts;
+  if (facts) {
+    for (const claim of facts.metricClaims ?? []) {
+      if (claim.imageUrls) {
+        rawUrls.push(...claim.imageUrls);
+      }
+    }
+    for (const link of facts.ingredientBenefitLinks ?? []) {
+      if (link.imageUrls) {
+        rawUrls.push(...link.imageUrls);
+      }
+    }
+    for (const citation of facts.citations ?? []) {
+      if (citation.imageUrls) {
+        rawUrls.push(...citation.imageUrls);
+      }
+    }
+  }
+
+  const keys = new Set<string>();
+  for (const url of rawUrls) {
+    const canonical = canonicalizeSchemaImageUrl(url, sourceUrl);
+    if (canonical) {
+      keys.add(schemaImageDedupeKey(canonical));
+    }
+  }
+  return keys;
 }
 
 function canonicalizeSchemaImageUrl(imageUrl: string, sourceUrl?: string): string | undefined {
@@ -11510,7 +13042,7 @@ function createOfferSchema(product: PdpProductSignal, locale: PdpGeoLocale, mark
     price: amount,
     priceCurrency: currency,
     name: extractCurrentVariantLabel(product),
-    // commerce contract: availability/itemCondition은 정규화된 canonical enum이 있을
+    // GEO-128: availability/itemCondition은 정규화된 canonical enum이 있을
     // 때만 출력한다. InStock 추정 금지 — 재고 오표기는 커머스 표면 신뢰를
     // 직접 훼손한다(fail-closed).
     availability: product.availability ? schemaEnumUrl(product.availability) : undefined,
@@ -11597,7 +13129,7 @@ function createShippingDetailsSchema(shipping: PdpProductSignal["shipping"]): Js
 }
 
 /**
- * commerce contract Tier-2 variant modeling: a single Product carrying one Offer per
+ * GEO-128 Tier-2 variant modeling: a single Product carrying one Offer per
  * trustworthy variant. Emitted only when at least two variants each have a
  * normalized price+currency AND the offers are actually differentiated
  * (distinct price/availability, or distinct variant identities). Falls back
@@ -11827,7 +13359,6 @@ function createAdditionalProperties(
   const claimSentences = selectOptimizedSourceBackedClaimSentences(product, locale, 7);
   const ingredientEffectDetail = createIngredientEffectDetailProperty(product, locale, claimSentences[0]);
   const reportedDetailsValue = createReportedDetailsProperty(product, locale);
-  const reportedResultSummaryValue = createClinicalResultSummaryProperty(product, locale);
   const reviewUseFeelContext = hasPublicReviewEvidence(product, locale) ? createReviewUseFeelProperty(product, locale) : undefined;
   const modelPlannedCepProperties = createModelPlannedCepProperties(contentPlan);
   const reviewDerivedCepProperties = contentPlan?.mode === "model"
@@ -11854,9 +13385,12 @@ function createAdditionalProperties(
     ...modelPlannedCepProperties,
     ...reviewDerivedCepProperties,
     { name: "Consumer satisfaction", value: createConsumerSatisfactionProperty(product, locale, suppressRatingSummary) },
+    // The evidence has one home. A second, methodology-named property would
+    // republish this same value and could only add a methodology claim the name
+    // "Reported details" is careful not to make; `validate.ts`'s trust validator
+    // is where that judgment is enforced.
     { name: "Reported details", value: reportedDetailsValue },
-    { name: createReportedResultSummaryPropertyName(product, reportedResultSummaryValue), value: reportedResultSummaryValue },
-    // commerce contract: 구조화된 variant Offer 배열이 발행되면 평탄화 요약
+    // GEO-128: 구조화된 variant Offer 배열이 발행되면 평탄화 요약
     // (Variant comparison/Options)은 억제한다 — variant 구조의 손실성 중복
     // 금지(schema-org-product 정책 §additionalProperty).
     { name: "Variant comparison", value: suppressVariantFlattening ? undefined : selectVariantComparisonSignal(product, locale) },
@@ -11882,27 +13416,6 @@ function createAdditionalProperties(
   });
 }
 
-function createReportedResultSummaryPropertyName(product: PdpProductSignal, summaryValue?: string): string {
-  // 라벨은 발행되는 요약 "값"의 방법론을 따라야 한다(방법론 승격 금지).
-  // 자가평가만 담긴 요약은 코퍼스에 clinical 단어가 있어도 clinical 라벨을
-  // 쓸 수 없다 — trust-field-validator와 동일 술어.
-  if (summaryValue
-    && /(?:self[-\s]?assessment|자가\s*평가)/iu.test(summaryValue)
-    && !/(?:instrumental|clinical\s+(?:study|trial|test)|인체\s*적용\s*시험|임상\s*(?:시험|평가))/iu.test(summaryValue)) {
-    return "Reported assessment summary";
-  }
-  const claimCorpus = [
-    ...(product.metrics ?? []),
-    ...(product.semanticFacts?.metricClaims ?? []).flatMap((claim) => [
-      claim.method,
-      claim.sentence,
-      claim.sourceText
-    ])
-  ].filter((value): value is string => Boolean(value)).join(" ");
-  return /(?:\bclinical(?:\s+(?:study|test|trial|assessment))?\b|human[-\s]application\s+(?:study|test)|인체\s*적용\s*시험|임상\s*(?:시험|평가)|臨床\s*(?:試験|評価))/iu.test(claimCorpus)
-    ? "Clinical result summary"
-    : "Reported assessment summary";
-}
 
 /**
  * Publishes only the factual portion of an accepted model CEP plan. Query-only
@@ -12126,8 +13639,8 @@ function normalizeBrandScienceSignal(value: string, locale: PdpGeoLocale): strin
     return undefined;
   }
   if (locale === "ko-KR") {
-    const science = text.match(/(?:\d+\s*년\s*)?[^.!?。！？]{0,24}(?:식물 성분 연구|피부과학|과학|연구)[^.!?。！？]{0,60}/)?.[0];
-    const technology = text.match(/(?:식물 복합체|레티놀|펩타이드|콜라겐|사포닌|기술|포뮬러)[^.!?。！？]{0,60}/)?.[0];
+    const science = text.match(/(?:\d+\s*년\s*)?[^.!?。！？]{0,24}(?:인삼과학|피부과학|과학|연구)[^.!?。！？]{0,60}/)?.[0];
+    const technology = text.match(/(?:보태니컴플렉스|레티놀|펩타이드|콜라겐|사포닌|기술|포뮬러)[^.!?。！？]{0,60}/)?.[0];
     const candidate = cleanSignal(science ?? technology ?? truncateAtCompleteSentence(text, 120));
     const hasCompletePredicate = /(?:연구(?:했|한|하여|합니다|됩니다)|개발(?:했|한|하여|합니다|되었습니다)|적용(?:했|한|되어|됩니다)|설계(?:했|한|되어|됩니다)|구현(?:했|한|되어|됩니다)|담(?:았|은)|구성(?:했|된|됩니다)|기술|포뮬러|연구)$/u.test(candidate);
     if (!candidate
@@ -12167,6 +13680,7 @@ function selectSourceSentencesByIntent(
     .filter((value): value is string => Boolean(value))
     .flatMap(splitEvidenceIntoSentenceCandidates)
     .map((value) => sanitizeProductSchemaText(value, locale))
+    .filter(isCitationReadyProse)
     .filter((value) => value.length >= 6 && value.length <= 180)
     .filter((value) => pattern.test(value))
     .filter((value) => !isCommerceMetricArtifact(value))
@@ -12220,13 +13734,6 @@ function formatRatingValue(value: number): string {
   return Number(value.toFixed(2)).toString();
 }
 
-function createClinicalResultSummaryProperty(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
-  const reported = createReportedDetailsProperty(product, locale);
-  if (!reported || !/(?:%|\d+(?:\.\d+)?\s*배|임상|인체\s*적용|자가\s*평가|테스트|시험|결과|clinical|study|self-assess|instrumental|participants?|users?|subjects?)/i.test(reported)) {
-    return undefined;
-  }
-  return reported;
-}
 
 function createRenewalGuidanceProperty(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
   const text = allProductEvidenceText(product);
@@ -12265,7 +13772,7 @@ const nonIngredientTokenPattern = /^(?:what|which|how|why|when|where|who|it|this
 const listSeparatorCommaPattern = /(?<!\d),|,(?!\d)/;
 
 /** Trailing enumeration of bare attribute labels ("... option size, price, and version name" / "... 옵션의 용량, 가격, 버전명"). */
-const variantMetaLabelTailPattern = /\s*,?\s*(?:(?:option\s+)?(?:sizes?|prices?|versions?(?:\s+names?)?|colou?rs?|names?)(?:\s*,\s*|\s+and\s+)){1,}(?:option\s+)?(?:sizes?|prices?|versions?(?:\s+names?)?|colou?rs?|names?)\s*$|\s*옵션의\s*(?:용량|가격|버전명?|색상)(?:\s*,\s*(?:용량|가격|버전명?|색상))*\s*$/i;
+const variantMetaLabelTailPattern = /\s*,?\s*(?:(?:option\s+)?(?:sizes?|prices?|versions?(?:\s+names?)?|colou?rs?|names?)(?:\s*,\s*(?:and\s+)?|\s+and\s+)){1,}(?:option\s+)?(?:sizes?|prices?|versions?(?:\s+names?)?|colou?rs?|names?)\s*$|\s*옵션의\s*(?:용량|가격|버전명?|색상)(?:\s*,\s*(?:용량|가격|버전명?|색상))*\s*$/i;
 
 function sanitizeProductSchemaPropertyText(name: string, value: string, locale: PdpGeoLocale): string {
   if (name === "Key ingredients") {
@@ -12308,9 +13815,6 @@ function compactSchemaPropertyText(name: string, value: string, locale: PdpGeoLo
   }
   if (isReviewDerivedQueryPropertyName(name)) {
     return truncateAtCompleteSentence(text, locale === "ko-KR" ? 420 : 520);
-  }
-  if (/^(?:Clinical result|Reported assessment) summary$/i.test(name)) {
-    return truncateAtCompleteSentence(text, locale === "ko-KR" ? 360 : 420);
   }
   if (/^Reported details$/i.test(name)) {
     return truncateAtCompleteSentence(text, locale === "ko-KR" ? 520 : 760);
@@ -12430,14 +13934,24 @@ function createReportedDetailsProperty(product: PdpProductSignal, locale: PdpGeo
   const groupedIngredientPerformanceDetails = preferGroupedDescription
     ? selectIngredientPerformanceReportedDetails(product, locale, 1)
     : [];
+  // A structured metric claim and the panel it was printed on are the same
+  // reading, and only the structured one carries its sample and period. Offered
+  // side by side, the raw transcription won and published a chart-label chain
+  // (`… 97.1% 세정 사용 전 사용 후 … 사용 2주 후 사용 4주 후`) whose figures then
+  // had no population attached — the value read as an unscoped percentage. So
+  // the raw details are the fallback for when nothing was structured, not a
+  // peer of the claim that was.
   const detailCandidates = preferGroupedDescription
     ? [...descriptionEfficacyDetails, ...groupedIngredientPerformanceDetails]
-    : [...descriptionEfficacyDetails, ...structuredMetricDetails, ...formattedDetails];
+    : structuredMetricDetails.length > 0
+      ? [...descriptionEfficacyDetails, ...structuredMetricDetails]
+      : [...descriptionEfficacyDetails, ...formattedDetails];
   const details = dedupeReportedPropertyClauses(detailCandidates
+    .filter(isCitationReadyProse)
     .map((detail) => normalizeReportedPropertyClause(detail, locale))
     .filter((value): value is string => Boolean(value))
     .filter((value) => !isNonCitationEvidenceArtifact(value) && !isLowQualityPublicEvidenceText(value))
-    .filter((value) => !/(?:상품\s*상세\s*테스트|확인\s*지표|평가\s*지표|product\s*detail\s*test)/iu.test(value))
+    .filter((value) => !sourceTestSectionOrAnalysisLabelPattern.test(value))
     .filter(hasMinimumReportedEvidenceContext), 3);
   if (details.length > 0) {
     const value = compactRepeatedStudyContextText(details.map((detail) => ensurePublicSentence(detail, locale)).join(" "));
@@ -12466,7 +13980,9 @@ function selectIngredientPerformanceReportedDetails(
     ...product.effects,
     ...(product.semanticFacts?.metricClaims ?? []).flatMap((claim) => [claim.sentence, claim.sourceText].filter((value): value is string => Boolean(value))),
     ...(product.semanticFacts?.evidenceSentences ?? [])
-  ]).filter(isIngredientPerformanceOnlyMetricText);
+  ])
+    .filter(isCitationReadyProse)
+    .filter(isIngredientPerformanceOnlyMetricText);
   return candidates
     .map((value) => locale === "ko-KR"
       ? formatKoreanIngredientPerformanceReportedDetail(value)
@@ -12508,7 +14024,7 @@ function normalizeReportedPropertyClause(value: string, locale: PdpGeoLocale): s
   const formatted = formatReportedDetailForProperty(value, locale);
   if (!formatted) return undefined;
   const text = trimTrailingSentencePunctuation(cleanSignal(formatted))
-    .replace(/^(?:확인\s*지표|확인\s*근거|측정\s*결과|시험\s*결과|reported\s*result|consumer\s*assessment)\s*:\s*/i, "")
+    .replace(leadingLabelFieldPattern, "")
     .replace(/^(?:또한|also)\s*[,，:]?\s*/i, "")
     .replace(/표기되어\s*있다(?=[.!?。！？]|$)/gu, "표기되어 있습니다")
     .replace(/제시된다(?=[.!?。！？]|$)/gu, "제시됩니다")
@@ -12567,6 +14083,32 @@ function hasReportedSampleScope(value: string): boolean {
     || /(?:시험\s*대상|조사\s*대상|표본|sample|audience|participants?|subjects?).{0,32}(?:확인되지|확인\s*불가|미공개|명시되지|not\s+disclosed|not\s+stated|not\s+specified)/i.test(value);
 }
 
+/**
+ * A quantified outcome claim (a percentage/multiplier paired with an outcome
+ * word such as 개선/증가/감소/향상/회복…) asserts a measured result and needs
+ * a verified comparison basis — a study/test method plus a sample — before
+ * it can be published as a reported result (mirrors the bar
+ * `hasSemanticClinicalClaimContext` applies to structured metricClaims).
+ * Free text that never made it into a structured metricClaim and carries
+ * neither a method nor a sample mention is excluded here instead of being
+ * sentence-ified as-is; without this, `createSimpleReportedMetricProperty`
+ * would turn an under-qualified number (see 1145 review reproduction:
+ * "Clinical test 결과 세라마이드 84.3% 개선") into a grammatical-looking but
+ * unverifiable public claim.
+ */
+function isUnstructuredQuantifiedOutcomeClaim(value: string): boolean {
+  const text = cleanSignal(value);
+  // The direction has to be read in both scripts. This gate used the Korean
+  // list alone while its only caller runs for every locale, so
+  // `Ceramide level improved 84.3% after 4 weeks` never reached the gate and
+  // was published as a reported result with neither method nor sample.
+  const hasQuantifiedOutcome = hasQuantifiedReportedSignal(text) && METRIC_DIRECTION_PATTERN.test(text);
+  if (!hasQuantifiedOutcome) {
+    return false;
+  }
+  return !(statesStudyMethod(text) && statesStudyPopulation(text));
+}
+
 function createSimpleReportedMetricProperty(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
   const metric = first([
     ...product.metrics,
@@ -12574,7 +14116,9 @@ function createSimpleReportedMetricProperty(product: PdpProductSignal, locale: P
     ...product.benefits
   ]
     .map((value) => trimTrailingSentencePunctuation(sanitizeProductSchemaText(value, locale)))
-    .filter((value) => hasMinimumReportedEvidenceContext(value) && !isCommerceMetricArtifact(value) && !isQuestionLikeText(value)));
+    .filter(isCitationReadyProse)
+    .filter((value) => hasMinimumReportedEvidenceContext(value) && !isCommerceMetricArtifact(value) && !isQuestionLikeText(value))
+    .filter((value) => !isUnstructuredQuantifiedOutcomeClaim(value)));
   if (!metric) {
     return undefined;
   }
@@ -12585,9 +14129,11 @@ function createSimpleReportedMetricProperty(product: PdpProductSignal, locale: P
     if (locale === "ja-JP") {
       return `${metric}。`;
     }
-    return /^Reported result:/i.test(metric) ? ensurePublicSentence(metric, locale) : `Reported result: ${metric}.`;
+    return isAnalysisLabelPrefixed(metric)
+      ? ensurePublicSentence(metric, locale)
+      : `${PRIMARY_ANALYSIS_LABEL[locale]}: ${metric}.`;
   })();
-  return ensurePublicSentence(reported, locale);
+  return reported ? ensurePublicSentence(reported, locale) : undefined;
 }
 
 function createStructuredClinicalEvidenceSummary(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
@@ -12604,6 +14150,7 @@ function createStructuredClinicalEvidenceSummary(product: PdpProductSignal, loca
       ...product.benefits,
       ...product.sourceTexts
     ])
+      .filter(isCitationReadyProse)
       .filter(hasMinimumReportedEvidenceContext)
       .filter((value) => !isIngredientPerformanceOnlyMetricText(value));
     return first(evidenceCandidates
@@ -12613,7 +14160,110 @@ function createStructuredClinicalEvidenceSummary(product: PdpProductSignal, loca
   return undefined;
 }
 
+/**
+ * Metrics sharing an `evidenceGroup` (several subjects measured in the same
+ * study, e.g. two different cleansing endpoints from one wash test) render
+ * best as one observation: shared study context, one clause per subject,
+ * then a single conclusion. Tried before the per-claim path below because a
+ * study-level outcome word (개선/증가/…) is often absent from any one claim's
+ * own sentence even though the group as a whole reports a real result.
+ */
+function createKoreanEvidenceGroupNarrative(product: PdpProductSignal): string | undefined {
+  const claims = product.semanticFacts?.metricClaims ?? [];
+  const groups = new Map<string, PdpSemanticMetricClaim[]>();
+  for (const claim of claims) {
+    const group = cleanSignal(claim.evidenceGroup ?? "");
+    if (!group) continue;
+    groups.set(group, [...(groups.get(group) ?? []), claim]);
+  }
+  for (const groupClaims of groups.values()) {
+    const narrative = formatKoreanEvidenceGroupObservation(groupClaims);
+    if (narrative) {
+      return narrative;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Whether a stated direction is an improvement rather than a reduction.
+ *
+ * Read off the contract's direction vocabulary rather than a private set: a
+ * fifth spelling of the same closed list in the file that imports the canonical
+ * one is how these lists drift apart.
+ */
+function isKoreanImprovementDirection(direction: string): boolean {
+  return KOREAN_IMPROVEMENT_DIRECTION_PATTERN.test(direction.trim());
+}
+
+/**
+ * Renders an evidenceGroup's claims as: shared study context → one clause per
+ * subject (baseline, if any, plus value) → a conclusion clause derived from
+ * the group's shared `metric` field → the `caveat`, if any, as its own
+ * sentence. "개선" is only added to the conclusion when the group's shared
+ * `direction` is an improvement/increase type, so maintenance-type metrics
+ * (e.g. content/level that merely persists) are not overstated.
+ */
+function formatKoreanEvidenceGroupObservation(claims: PdpSemanticMetricClaim[]): string | undefined {
+  if (claims.length < 2) {
+    return undefined;
+  }
+  const representative = claims[0];
+  if (!representative) {
+    return undefined;
+  }
+
+  const metric = cleanSignal(representative.metric ?? "");
+  if (!metric || claims.some((claim) => cleanSignal(claim.metric ?? "") !== metric)) {
+    // Mixing unrelated metrics under one evidenceGroup would misattribute the
+    // shared conclusion clause to subjects it doesn't describe.
+    return undefined;
+  }
+
+  const clauses = claims.map(formatKoreanEvidenceGroupClause);
+  if (clauses.some((clause) => !clause)) {
+    return undefined;
+  }
+
+  const studyContext = formatKoreanStructuredStudyContext(representative);
+  if (!studyContext) {
+    return undefined;
+  }
+
+  const direction = cleanSignal(representative.direction ?? "");
+  const conclusionNoun = metric.endsWith("효과") ? metric : `${metric} 효과`;
+  const conclusion = isKoreanImprovementDirection(direction)
+    ? `개선된 ${conclusionNoun}가 있었습니다`
+    : `${conclusionNoun}가 있었습니다`;
+  const observation = `${studyContext}에서 ${clauses.join(", ")} ${metric}된 것으로 ${conclusion}`;
+
+  const caveat = first(claims.map((claim) => cleanSignal(claim.caveat ?? "")).filter(Boolean));
+  const caveatSentence = caveat ? `단, ${ensureKoreanSentence(caveat)}` : undefined;
+
+  return ensurePublicSentence([observation, caveatSentence].filter(Boolean).join(" "), "ko-KR");
+}
+
+function formatKoreanEvidenceGroupClause(claim: PdpSemanticMetricClaim): string | undefined {
+  const subject = cleanSignal(claim.subject ?? claim.label ?? "");
+  const value = joinMetricValueWithUnit(claim.value, claim.unit);
+  if (!subject || !value) {
+    return undefined;
+  }
+  const baseline = cleanSignal(claim.baseline ?? "");
+  const baselinePhrase = baseline
+    ? `${/(?:대비|비교)$/u.test(baseline) ? baseline : `${baseline} 대비`} `
+    : "";
+  return `${appendKoreanTopicParticle(subject)} ${baselinePhrase}${value}`;
+}
+
 function createSemanticClinicalEvidenceSummary(product: PdpProductSignal, locale: PdpGeoLocale): string | undefined {
+  if (locale === "ko-KR") {
+    const groupNarrative = createKoreanEvidenceGroupNarrative(product);
+    if (groupNarrative) {
+      return groupNarrative;
+    }
+  }
+
   const claims = (product.semanticFacts?.metricClaims ?? [])
     .filter((item) => hasSemanticClinicalClaimContext(item))
     .filter((item) => hasQuantifiedReportedSignal([item.label, item.value, item.unit, item.sentence, item.sourceText].filter(Boolean).join(" ")))
@@ -12739,7 +14389,7 @@ function formatKoreanSemanticClinicalClaim(claim: PdpSemanticMetricClaim): strin
   if (!result || !hasQuantifiedReportedSignal(result)) {
     return undefined;
   }
-	  return createKoreanEvidenceResultSentence(context ? `${context} 기준 ${result}` : result);
+	  return createKoreanEvidenceResultSentence(context ? `${context} 기준 ${result}` : result) || undefined;
 }
 
 function numericClaimSignature(value: string): string[] {
@@ -12760,10 +14410,27 @@ function hasSemanticClinicalClaimContext(claim: PdpSemanticMetricClaim): boolean
     claim.sentence,
     claim.sourceText
   ].filter(Boolean).join(" "));
-  const hasMethod = /(?:인체\s*적용|자가\s*평가|소비자\s*평가|시험|테스트|clinical|study|self[-\s]?assessment|instrumental|survey|home\s+usage)/i.test(text);
-  const hasPopulation = /(?:\d+\s*명|\d+\s*(?:women|men|users?|subjects?|participants?)|대상|참여자|사용자|participants?|subjects?)/i.test(text);
+  const hasMethod = statesStudyMethod(text);
+  const hasPopulation = statesStudyPopulation(text);
+  // Two readings, and the structural one is the addition. A change-direction
+  // word was the only test here, and a cleansing efficacy figure states a level
+  // rather than a movement (`세정력은 97.1%`), so it carried no such word and the
+  // claim was not read as measured at all. Its sample and period then never
+  // reached a published sentence, which is the one deduction E-E-A-T kept
+  // making.
+  //
+  // What identifies a measured result is that it has been attributed: an
+  // argument, a magnitude, and a predicate governing them. That reading does not
+  // ask what was measured, so a level and a change are treated alike, and a
+  // transcribed panel — a magnitude with no predicate — still fails it.
+  //
+  // The word reading stays as the other alternative rather than being replaced,
+  // because a claim the extractor filled as typed fields arrives with a
+  // fragmentary `sentence` that no attribution reading can pass; its direction
+  // is in `claim.direction`, which is part of the joined text above. Replacing
+  // one with the other dropped five structured-claim fixtures.
   const hasMeasuredOutcome = hasQuantifiedReportedSignal(text)
-    && /(?:충전|회복|개선|증가|감소|향상|완화|지속|charge|reach|improv|recover|increase|decrease|reduc|last)/iu.test(text);
+    && (isAttributedMeasurementStatement(text) || METRIC_DIRECTION_PATTERN.test(text));
   return hasMethod && hasPopulation && hasMeasuredOutcome;
 }
 
@@ -12797,7 +14464,7 @@ function createKoreanClinicalEvidenceSummary(value: string): string | undefined 
 
   const context = [method, sample, period].filter(Boolean).join(", ");
 	  const summary = createKoreanEvidenceResultSentence(`${context} 기준 ${metricPhrase}`);
-	  return ensurePublicSentence(summary.replace(/결과\s+결과/g, "결과"), "ko-KR");
+	  return summary ? ensurePublicSentence(summary.replace(/결과\s+결과/g, "결과"), "ko-KR") : undefined;
 }
 
 function extractKoreanWrinkleMetricGroups(value: string): string[] {
@@ -12831,7 +14498,18 @@ function formatReportedDetailItem(detail: string, locale: PdpGeoLocale): string 
   if (/(?:of\s+users?\s+had\s+visible\s+improvement|users?\s+had\s+visible\s+improvement)/i.test(detail)) {
     return formatClaimSentence(detail, locale);
   }
-  return createEvidenceMetricFact(detail, locale) ?? formatClaimSentence(detail, locale);
+  const metricFact = createEvidenceMetricFact(detail, locale);
+  if (metricFact) {
+    return metricFact;
+  }
+  // formatClaimSentence below only appends a trailing period — it has no
+  // exclusion logic of its own, so an unattributed evidence claim that
+  // createEvidenceMetricFact already declined to publish (see
+  // isUnattributedForeignMethodClaim) must not be echoed verbatim here.
+  if (locale === "ko-KR" && isUnattributedForeignMethodClaim(detail)) {
+    return undefined;
+  }
+  return formatClaimSentence(detail, locale);
 }
 
 function formatReportedDetailForProperty(value: string | undefined, locale: PdpGeoLocale): string | undefined {
@@ -12839,14 +14517,13 @@ function formatReportedDetailForProperty(value: string | undefined, locale: PdpG
     return undefined;
   }
   if (locale === "en-US" || locale === "en-GB") {
-    return value.replace(/^Consumer assessment:\s*/i, "Reported result: ");
+    return value.replace(leadingLabelFieldPattern, `${PRIMARY_ANALYSIS_LABEL[locale]}: `);
   }
   if (locale === "ko-KR") {
     const normalized = value
       .replace(/^네,\s*/u, "")
-      .replace(/확인\s*지표/g, "시험 결과")
-      .replace(/확인\s*근거/g, "시험 결과")
-      .replace(/(.+?)\s+기준\s+시험\s*결과\s*:/g, "$1 결과:")
+      .replace(RENAMEABLE_KOREAN_LABEL_PATTERN, PUBLISHABLE_KOREAN_RESULT_PHRASE)
+      .replace(new RegExp(`(.+?)\\s+기준\\s+${PUBLISHABLE_KOREAN_RESULT_PHRASE}\\s*:`, "g"), "$1 결과:")
       .replace(/\s+/g, " ")
       .trim();
     if (isBrokenKoreanReportedDetail(normalized)) {
@@ -12898,6 +14575,14 @@ type ReviewDerivedSearchQuery = {
   question: string;
   keywords: string[];
   answer: string;
+  /**
+   * The facts `answer` was rendered from, when the builder composed it slot by
+   * slot. A review-attributed property may publish all of them; a
+   * product-detail FAQ answer may not, and that difference is decided by slot
+   * role rather than by scanning the finished sentence — the same rule Task 3
+   * applied to the FAQ builders.
+   */
+  answerSlots?: FaqAnswerFactSlot[];
   source: PdpGeoInferredSearchQueryDiagnostic["source"];
   score: number;
 };
@@ -12926,8 +14611,22 @@ function createReviewDerivedSearchQueries(product: PdpProductSignal, locale: Pdp
 
 function createReviewDerivedIndirectSearchQueries(product: PdpProductSignal, locale: PdpGeoLocale): ReviewDerivedSearchQuery[] {
   const target = cleanSignal(createTargetCustomerProperty(product, locale) ?? inferTargetCustomer(product, locale));
-  const benefits = selectClaimedBenefitSignals(product, locale).slice(0, 3);
-  const benefitPhrase = formatDescriptionList(benefits, locale, 3);
+  // The prose limit, not a local count. Both phrases below are joined into a
+  // question and an answer sentence, and three coordinate items under one
+  // predicate is the shape the enumeration contract reports — the assembly cap
+  // was applied to the description composers and missed this one, which is why
+  // `…고객을 위한 클렌저로, 피부 장벽, 세정력, 저자극 세안을 돕습니다` reached a
+  // published FAQ answer.
+  const benefits = selectClaimedBenefitSignals(product, locale).slice(0, PROSE_COORDINATE_ITEM_LIMIT);
+  const listedBenefits = formatDescriptionList(benefits, locale, PROSE_COORDINATE_ITEM_LIMIT);
+  // The question asks `…을 돕는 클렌저는 무엇인가요?` and the answer repeats the
+  // phrase as an object, so both need a noun. A benefit stored as a sentence
+  // produced `…세정합니다를 돕는`, and the guard below drops the whole query
+  // when no nominal form exists — an indirect query with a broken object is
+  // worse than one fewer query.
+  const benefitPhrase = locale === "ko-KR" && listedBenefits
+    ? koreanObjectSlotPhrase(listedBenefits)
+    : listedBenefits;
   const supportBenefitPhrase = locale === "en-US" || locale === "en-GB"
     ? normalizeEnglishSupportObject(benefitPhrase ?? "")
     : benefitPhrase;
@@ -12939,38 +14638,62 @@ function createReviewDerivedIndirectSearchQueries(product: PdpProductSignal, loc
   const productName = createPublicProductEntityName(product);
   const supportedLink = selectFaqIngredientBenefitLink(product, locale);
   const reviewSignals = hasPublicReviewEvidence(product, locale)
-    ? selectPublicReviewKeywords(product, locale).filter((value) => !isNegativeReviewSignalText(value)).slice(0, 3)
+    ? selectPublicReviewKeywords(product, locale).filter((value) => !isNegativeReviewSignalText(value)).slice(0, PROSE_COORDINATE_ITEM_LIMIT)
     : [];
-  const reviewPhrase = formatDescriptionList(reviewSignals, locale, 3);
+  const reviewPhrase = formatDescriptionList(reviewSignals, locale, PROSE_COORDINATE_ITEM_LIMIT);
   const question = fallback(locale, {
     "ko-KR": `${formatKoreanReviewCepTarget(target) ?? "고객에게"} ${appendKoreanObjectParticle(benefitPhrase)} 돕는 ${appendKoreanTopicParticle(productType)} 무엇인가요?`,
     "ja-JP": `${target}に${benefitPhrase}をサポートする${productType}は何ですか？`,
     "en-US": `Which ${lowercaseEnglishProductType(productType)} supports ${supportBenefitPhrase} for ${target}?`,
     "en-GB": `Which ${lowercaseEnglishProductType(productType)} supports ${supportBenefitPhrase} for ${target}?`
   });
-  const answer = locale === "ko-KR"
-    ? compactSentence([
-      `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(formatKoreanReviewCepTarget(target)?.replace(/에게$/u, "") ?? target)} 위한 ${appendKoreanInstrumentParticle(productType)}, ${appendKoreanObjectParticle(benefitPhrase)} 돕습니다`,
-      supportedLink ? `${formatKoreanIngredientTopicPhrase(supportedLink.ingredient)} ${appendKoreanObjectParticle(supportedLink.benefit)} 뒷받침합니다` : undefined,
-        reviewPhrase ? `고객 리뷰에서 고객들은 ${appendKoreanObjectParticle(formatKoreanListForSentence(reviewPhrase))} 긍정적으로 평가했습니다` : undefined
-    ])
+  // Built as fact slots rather than as one string: the same three facts are
+  // published in two places with different rules. The review-attributed
+  // property may carry the review sentence — its name says where the sentence
+  // came from — while a product-detail FAQ answer may not, and separating them
+  // by slot role is what keeps the FAQ rule from depending on a phrase match
+  // against the finished text.
+  const answerSlots = mergeFaqAnswerFactSlots(locale === "ko-KR"
+    ? [
+      faqFactSlot(
+        "target",
+        `${appendKoreanTopicParticle(productName)} ${appendKoreanObjectParticle(formatKoreanReviewCepTarget(target)?.replace(/에게$/u, "") ?? target)} 위한 ${appendKoreanInstrumentParticle(productType)}, ${appendKoreanObjectParticle(benefitPhrase)} 돕습니다`,
+        faqFactEvidenceTags("audience", target),
+        productName
+      ),
+      supportedLink
+        ? faqFactSlot(
+            "ingredientRole",
+            `${formatKoreanIngredientTopicPhrase(supportedLink.ingredient)} ${appendKoreanObjectParticle(supportedLink.benefit)} 뒷받침합니다`,
+            faqFactEvidenceTags("ingredient", supportedLink.ingredient),
+            supportedLink.ingredient
+          )
+        : undefined,
+      faqFactSlot(
+        "review",
+        reviewPhrase ? `고객 리뷰에서 고객들은 ${appendKoreanObjectParticle(formatKoreanListForSentence(reviewPhrase))} 긍정적으로 평가했습니다` : undefined,
+        faqFactEvidenceTags("review", reviewPhrase)
+      )
+    ]
     : locale === "ja-JP"
-      ? compactSentence([
-        `${productName}は${target}向けに${benefitPhrase}をサポートする${productType}です`,
-        supportedLink ? `${supportedLink.ingredient}は${supportedLink.benefit}を支えます` : undefined,
-        reviewPhrase ? `レビューでは${reviewPhrase}などの使用感が見られます` : undefined
-      ])
-      : compactSentence([
-        `${productName} is ${englishProductTypeWithArticle(productType)} for ${target} that supports ${supportBenefitPhrase}`,
-        supportedLink ? `${supportedLink.ingredient} supports ${normalizeEnglishSupportObject(supportedLink.benefit)}` : undefined,
-        reviewPhrase ? `Customer reviews highlight ${reviewPhrase}` : undefined
+      ? [
+        faqFactSlot("target", `${productName}は${target}向けに${benefitPhrase}をサポートする${productType}です`, faqFactEvidenceTags("audience", target), productName),
+        faqFactSlot("ingredientRole", supportedLink ? `${supportedLink.ingredient}は${supportedLink.benefit}を支えます` : undefined, faqFactEvidenceTags("ingredient", supportedLink?.ingredient), supportedLink?.ingredient),
+        faqFactSlot("review", reviewPhrase ? `レビューでは${reviewPhrase}などの使用感が見られます` : undefined, faqFactEvidenceTags("review", reviewPhrase))
+      ]
+      : [
+        faqFactSlot("target", `${productName} is ${englishProductTypeWithArticle(productType)} for ${target} that supports ${supportBenefitPhrase}`, faqFactEvidenceTags("audience", target), productName),
+        faqFactSlot("ingredientRole", supportedLink ? `${supportedLink.ingredient} supports ${normalizeEnglishSupportObject(supportedLink.benefit)}` : undefined, faqFactEvidenceTags("ingredient", supportedLink?.ingredient), supportedLink?.ingredient),
+        faqFactSlot("review", reviewPhrase ? `Customer reviews highlight ${reviewPhrase}` : undefined, faqFactEvidenceTags("review", reviewPhrase))
       ]);
+  const answer = renderFaqAnswerFactSlots(answerSlots);
   const keywords = selectReviewQueryCoreKeywords(product, locale, reviewSignals, target);
   return question && answer && keywords.length > 0 ? [{
     kind: "indirect",
     question,
     keywords,
     answer,
+    answerSlots,
     source: reviewSignals.length > 0 ? "review-derived-cep" : "product-fact",
     score: 32 + benefits.length + keywords.length
   }] : [];
@@ -13461,10 +15184,20 @@ function enforceDescriptionEntityMentionBudget(
     : locale === "ja-JP"
       ? "本品"
       : "the product";
-  return value.replace(pattern, (match) => {
-    mentions += 1;
-    return mentions <= budget ? match : replacement;
-  });
+  // A sentence stating a measurement keeps its name whatever the budget says.
+  // The budget exists so the name does not open every sentence; the sentence an
+  // answer engine lifts on its own is the one that cannot afford a deictic —
+  // without the name the figure is not attributed to this product at all, which
+  // is the whole reason the measurement sentence names it.
+  return value
+    .split(/(?<=[.!?。！？])\s+/u)
+    .map((sentence) => measurementFigures(sentence).size > 0
+      ? sentence
+      : sentence.replace(pattern, (match) => {
+        mentions += 1;
+        return mentions <= budget ? match : replacement;
+      }))
+    .join(" ");
 }
 
 function normalizeKoreanSurfaceParticles(value: string): string {
@@ -13509,7 +15242,7 @@ function isUsefulSchemaPropertyValue(name: string, value: string): boolean {
   if (isStitchedMarketingPageDump(value)) {
     return false;
   }
-  if (/^(?:Functional certification|Brand science|Customer review context|Ingredient\/effect detail|Reported details|Clinical result summary|Reported assessment summary)$/i.test(name)
+  if (/^(?:Functional certification|Brand science|Customer review context|Ingredient\/effect detail|Reported details)$/i.test(name)
     && /(?:NEW\s*[,.]|확인\s*키워드|성분\s*설명입니다|상품\s*상세\s*테스트|결과\s*성분\s*설명|\\[rn])/i.test(value)) {
     return false;
   }
@@ -13521,9 +15254,6 @@ function isUsefulSchemaPropertyValue(name: string, value: string): boolean {
   }
   if (/^Customer review context$/i.test(name) && value.length > 240) {
     return false;
-  }
-  if (/^(?:Clinical result|Reported assessment) summary$/i.test(name)) {
-    return hasCompleteReportedDetailContext(value);
   }
   if (/^Reported details$/i.test(name)) {
     return !isQuestionLikeText(value)
@@ -13552,8 +15282,7 @@ function hasCompleteReportedDetailContext(value: string): boolean {
   }
   const hasPopulation = hasReportedSampleScope(text);
   const hasPeriod = /(?:\d+(?:\.\d+)?\s*(?:주|일|시간|weeks?|days?|hours?)|시험\s*기간|after\s+\d|사용\s*중단\s*1\s*주\s*후|daily\s+use)/i.test(text);
-  const hasMethod = /(?:인체\s*적용|자가\s*평가|소비자\s*평가|시험|테스트|clinical|study|self[-\s]?assessment|instrumental|survey|home\s+usage)/i.test(text);
-  return hasPopulation && hasPeriod && hasMethod;
+  return hasPopulation && hasPeriod && statesStudyMethod(text);
 }
 
 export function createPdpGeoContentHtml(sections: PdpGeoContentSections, locale: PdpGeoLocale): string {
@@ -13659,7 +15388,7 @@ function createRecommendations(
       reason: "Review-backed positive keywords were included as search-ready product signals."
     });
   }
-  // commerce contract: availability는 fail-closed로 생략되므로, 누락을 운영자가
+  // GEO-128: availability는 fail-closed로 생략되므로, 누락을 운영자가
   // 인지할 수 있게 진단 권고를 남긴다. ChatGPT 쇼핑/Google 머천트 리스팅은
   // price·availability를 1차 커머스 신호로 취급한다.
   if (!product.availability) {
@@ -13880,7 +15609,7 @@ function quickFactSentence(locale: PdpGeoLocale, label: string, value?: string):
       return ensurePublicSentence(text, locale);
     }
     return /^In an?\b/i.test(text)
-      ? `Consumer assessment: ${text}.`
+      ? `${CONSUMER_ASSESSMENT_LABEL}: ${text}.`
       : `The product is described with ${text}.`;
   }
   return ensurePublicSentence(text, locale);
@@ -14026,7 +15755,7 @@ function createKoreanEvidenceFactSentence(evidence: string): string {
   const cleanEvidence = trimTrailingSentencePunctuation(evidence).trim();
   if (hasQuantifiedReportedSignal(cleanEvidence)) {
     const naturalEvidence = createKoreanEvidenceResultSentence(cleanEvidence);
-    if (naturalEvidence && !/측정\/평가\s*결과를\s*포함합니다/u.test(naturalEvidence)) {
+    if (naturalEvidence) {
       return naturalEvidence;
     }
   }
@@ -14034,7 +15763,7 @@ function createKoreanEvidenceFactSentence(evidence: string): string {
     return cleanEvidence;
   }
   const metrics = cleanEvidence
-    .replace(/(?:확인\s*지표|확인\s*근거|측정\s*결과|평가\s*지표)\s*:\s*/gi, " ")
+    .replace(analysisLabelPrefixesAnywhere, " ")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\s*결과$/u, "");
@@ -14054,9 +15783,6 @@ function rewriteKoreanMetaClaimSentence(value: string): string | undefined {
   return undefined;
 }
 
-function isKoreanCompleteSentence(value: string): boolean {
-  return /(?:습니다|합니다|됩니다|입니다|니다|어요|예요|돼요|세요|주세요|십시오)$/u.test(value.trim());
-}
 
 
 function formatUsageForProductDescription(usage: string | undefined, locale: PdpGeoLocale): string | undefined {
@@ -14150,21 +15876,30 @@ function formatKoreanListForSentence(value: string): string {
   return `${head}${hasKoreanBatchim(head) ? "과" : "와"} ${tail}`;
 }
 
-function formatKoreanFaqBenefitPhrase(product: PdpProductSignal, locale: PdpGeoLocale, fallbackBenefit: string): string {
+function formatKoreanFaqBenefitPhrase(product: PdpProductSignal, locale: PdpGeoLocale, fallbackBenefit: string): string | undefined {
   const sourceCandidates = selectClaimedBenefitSignals(product, locale).slice(0, 3);
   const candidates = sourceCandidates.length ? sourceCandidates : selectPublicBenefitSignals(product, locale).slice(0, 3);
   return formatKoreanCarePhraseForFaq(formatKoreanNaturalList(candidates) ?? fallbackBenefit);
 }
 
-function formatKoreanCarePhraseForFaq(value: string): string {
-  return cleanSignal(value)
+/**
+ * A FAQ-slot phrase for a Korean benefit signal.
+ *
+ * Benefit signals arrive as sentences, and every slot below puts them where a
+ * noun belongs — as an object (`…을 돕습니다`) or as a copular complement
+ * (`주요 효능은 …입니다`). Both need a noun phrase, so the conversion happens
+ * here rather than at each slot, and a signal with no safe nominal form yields
+ * nothing so the slot can close.
+ */
+function formatKoreanCarePhraseForFaq(value: string): string | undefined {
+  return koreanObjectSlotPhrase(cleanSignal(value)
     .replace(/\s*효능\s*\/\s*케어/g, " 효능/케어")
     .replace(/\s+케어\s+케어/g, " 케어")
     .replace(/수분감/g, "수분 케어")
     .replace(/피부\s*장벽(?!\s*(?:관리|케어|강화))/g, "피부 장벽 관리")
     .replace(/케어과(?=\s|$)/g, "케어와")
     .replace(/관리과(?=\s|$)/g, "관리와")
-    .trim();
+    .trim());
 }
 
 function formatKoreanFaqProductType(product: PdpProductSignal): string {

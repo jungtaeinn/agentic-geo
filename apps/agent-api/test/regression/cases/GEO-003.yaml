@@ -1,4 +1,4 @@
-# GEO-003 — 예시더마 배리어케어365 캡슐 토너 (ko-KR)
+# GEO-003 — 예시더마 모이베리어365 캡슐 토너 (ko-KR)
 #
 # 원본은 packages/pdp-geo-generator-agent/tests/fixtures/pdp-extractor-live-products.ts 의
 # 동결 픽스처(실제 PDP 수집본, 2026-07-31)이며 agentApiSubmitPayloads 계약을 따른다.
@@ -7,7 +7,7 @@
 # 원본 PDP와 달라지는 순간 비교 기준이 무너진다.
 
 id: GEO-003
-name: "예시더마 배리어케어365 캡슐 토너 (ko-KR)"
+name: "예시더마 모이베리어365 캡슐 토너 (ko-KR)"
 tags: ["examplederma","ko-KR","toner"]
 
 # agent-api 요청 본문 그대로. YAML은 JSON의 상위집합이라 API에 보내는 JSON을
@@ -15,18 +15,18 @@ tags: ["examplederma","ko-KR","toner"]
 request: {
     "locale": "ko-KR",
     "product": {
-      "canonicalUrl": "https://www.examplederma.com/web/product/view.do?prdSeq=1149",
-      "offerUrl": "https://www.examplederma.com/web/product/view.do?prdSeq=1149",
+      "canonicalUrl": "https://shop.example.com/web/product/view.do?prdSeq=1149",
+      "offerUrl": "https://shop.example.com/web/product/view.do?prdSeq=1149",
       "geoProduct": {
-        "name": "예시더마 배리어케어365 캡슐 토너",
+        "name": "예시더마 모이베리어365 캡슐 토너",
         "brand": "EXAMPLEDERMA",
         "description": "세안 후 약해진 피부장벽을 강화하고 피부결을 정돈해 촉촉하고 건강한 피부 바탕을 만들어주는 장벽보습 캡슐 토너. 세안 후 즉각 수분공급 장벽보습 캡슐토너.",
         "images": [
-          "https://image.examplederma.com/upload/product/1149_1098_DSPIMG_S.png",
-          "https://image.examplederma.com/upload/product/1149_1099_DSPIMG_S.png",
-          "https://image.examplederma.com/upload/product/1149_1100_DSPIMG_S.png",
-          "https://image.examplederma.com/upload/product/1149_1101_DSPIMG_S.png",
-          "https://image.examplederma.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png"
+          "https://cdn.example.com/upload/product/1149_1098_DSPIMG_S.png",
+          "https://cdn.example.com/upload/product/1149_1099_DSPIMG_S.png",
+          "https://cdn.example.com/upload/product/1149_1100_DSPIMG_S.png",
+          "https://cdn.example.com/upload/product/1149_1101_DSPIMG_S.png",
+          "https://cdn.example.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png"
         ],
         "options": [
           "300ml"
@@ -66,10 +66,10 @@ request: {
         "faq": [
           {
             "question": "캡슐이 워터 안에 떠있는 것이 왜 중요한가요?",
-            "answer": "피부장벽 개선/강화에 가장 효과적인 성분 중 하나인 세라마이드는 물에 녹지 않습니다. 이 때문에 토너 또는 수분 세럼같이 수분 함량이 높은 스킨케어 앞 단계 제품들에서는 세라마이드를 통한 장벽 개선 효과를 얻기 어렵습니다. 배리어케어365 캡슐 토너에는 고밀도 세라마이드 캡슐이 그대로 PHA 토닝 워터 안에 서스펜션 되어 있어 세안 후 첫 단계부터 강력한 세라마이드 장벽 보습 케어가 가능합니다. 또한, 균일하게 떠있는 캡슐이 사용할 때마다 피부에 필요한 만큼 적절하게 토출되어 언제나 유사한 효과를 나타냅니다."
+            "answer": "피부장벽 개선/강화에 가장 효과적인 성분 중 하나인 세라마이드는 물에 녹지 않습니다. 이 때문에 토너 또는 수분 세럼같이 수분 함량이 높은 스킨케어 앞 단계 제품들에서는 세라마이드를 통한 장벽 개선 효과를 얻기 어렵습니다. 모이베리어365 캡슐 토너에는 고밀도 세라마이드 캡슐이 그대로 PHA 토닝 워터 안에 서스펜션 되어 있어 세안 후 첫 단계부터 강력한 세라마이드 장벽 보습 케어가 가능합니다. 또한, 균일하게 떠있는 캡슐이 사용할 때마다 피부에 필요한 만큼 적절하게 토출되어 언제나 유사한 효과를 나타냅니다."
           },
           {
-            "question": "배리어케어365 크림에 함유된 캡슐과 동일한 캡슐인가요? 캡슐이 있어서 좋은 이유는 무엇인가요?",
+            "question": "모이베리어365 크림에 함유된 캡슐과 동일한 캡슐인가요? 캡슐이 있어서 좋은 이유는 무엇인가요?",
             "answer": "캡슐 토너에 함유된 캡슐은 자사의 특허 성분인 '고밀도 세라마이드 캡슐'로 동일합니다. 캡슐은 실제 피부 장벽 지질과 유사성분/구조로 이루어져 있으며 캡슐 형태이기 때문에 손상된 피부장벽 틈에 오래 잔존하며 장벽을 튼튼하게 강화시켜줍니다."
           },
           {
@@ -116,10 +116,10 @@ request: {
             "faq": [
               {
                 "question": "캡슐이 워터 안에 떠있는 것이 왜 중요한가요?",
-                "answer": "피부장벽 개선/강화에 가장 효과적인 성분 중 하나인 세라마이드는 물에 녹지 않습니다. 이 때문에 토너 또는 수분 세럼같이 수분 함량이 높은 스킨케어 앞 단계 제품들에서는 세라마이드를 통한 장벽 개선 효과를 얻기 어렵습니다. 배리어케어365 캡슐 토너에는 고밀도 세라마이드 캡슐이 그대로 PHA 토닝 워터 안에 서스펜션 되어 있어 세안 후 첫 단계부터 강력한 세라마이드 장벽 보습 케어가 가능합니다. 또한, 균일하게 떠있는 캡슐이 사용할 때마다 피부에 필요한 만큼 적절하게 토출되어 언제나 유사한 효과를 나타냅니다."
+                "answer": "피부장벽 개선/강화에 가장 효과적인 성분 중 하나인 세라마이드는 물에 녹지 않습니다. 이 때문에 토너 또는 수분 세럼같이 수분 함량이 높은 스킨케어 앞 단계 제품들에서는 세라마이드를 통한 장벽 개선 효과를 얻기 어렵습니다. 모이베리어365 캡슐 토너에는 고밀도 세라마이드 캡슐이 그대로 PHA 토닝 워터 안에 서스펜션 되어 있어 세안 후 첫 단계부터 강력한 세라마이드 장벽 보습 케어가 가능합니다. 또한, 균일하게 떠있는 캡슐이 사용할 때마다 피부에 필요한 만큼 적절하게 토출되어 언제나 유사한 효과를 나타냅니다."
               },
               {
-                "question": "배리어케어365 크림에 함유된 캡슐과 동일한 캡슐인가요? 캡슐이 있어서 좋은 이유는 무엇인가요?",
+                "question": "모이베리어365 크림에 함유된 캡슐과 동일한 캡슐인가요? 캡슐이 있어서 좋은 이유는 무엇인가요?",
                 "answer": "캡슐 토너에 함유된 캡슐은 자사의 특허 성분인 '고밀도 세라마이드 캡슐'로 동일합니다. 캡슐은 실제 피부 장벽 지질과 유사성분/구조로 이루어져 있으며 캡슐 형태이기 때문에 손상된 피부장벽 틈에 오래 잔존하며 장벽을 튼튼하게 강화시켜줍니다."
               },
               {
@@ -135,36 +135,36 @@ request: {
           "ocr": {
             "imageTexts": [
               {
-                "imageUrl": "https://image.examplederma.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
-                "text": "배리어케어365 캡슐토너. 세안 후 약해진 피부장벽을 강화하고 피부결을 정돈해 촉촉하고 건강한 피부 바탕을 만들어주는 장벽보습 캡슐 토너. EXAMPLEDERMA BARRIERCARE365 CAPSULE TONER. BarrierCapsule + PHA WATER. Barrier-strengthening hydration for smoother skin. For dry & sensitive skin. 10.14 fl. oz. / 300 mL."
+                "imageUrl": "https://cdn.example.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
+                "text": "모이베리어365 캡슐토너. 세안 후 약해진 피부장벽을 강화하고 피부결을 정돈해 촉촉하고 건강한 피부 바탕을 만들어주는 장벽보습 캡슐 토너. EXAMPLEDERMA BARRIERCARE365 CAPSULE TONER. BotanON + PHA WATER. Barrier-strengthening hydration for smoother skin. For dry & sensitive skin. 10.14 fl. oz. / 300 mL."
               },
               {
-                "imageUrl": "https://image.examplederma.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
+                "imageUrl": "https://cdn.example.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
                 "text": "PHA: 민감피부에도 자극 없는 PHA 워터가 각질은 잠재우고 피부결은 정돈하는 효과. 고밀도 세라마이드 캡슐: 길이가 긴 롱체인 세라마이드와 연결고리를 조여주는 링커 세라마이드로 민감피부의 짧고 부족한 세라마이드를 보완해 보다 촘촘하고 견고한 구조의 캡슐로 장벽 보습."
               },
               {
-                "imageUrl": "https://image.examplederma.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
+                "imageUrl": "https://cdn.example.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
                 "text": "PHA 워터에 띄워진 고밀도 세라마이드 캡슐. 물에 녹지 않는 세라마이드를 캡슐 형태로 워터에 띄워놓은 하이드로겔 플로팅 포뮬러 기술. 특허 출원 포뮬러 (특허 출원 번호: KR10-2023-0133775). 하이드로겔 서스펜션 고밀도 세라마이드 캡슐 토너. 사용할 때마다 필요한 만큼만 적절하게 토출되어 피부에 효과적으로 세라마이드 장벽 보습을 제공. 즉각적인 수분 공급 & 결케어 이후 첫 단계 장벽 코팅으로 수분x장벽 시너지 효과."
               },
               {
-                "imageUrl": "https://image.examplederma.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
+                "imageUrl": "https://cdn.example.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
                 "text": "피부장벽의 빈틈을 촘촘하게, 특허 받은 고밀도 세라마이드 캡슐. 피부지질 구성성분(세라마이드/콜레스테롤/지방산) + 피부지질 유사구조(층판형 구조). 1회 도포 후 18시간 장벽에서 잔존하는 세라마이드 (원료적 특성에 한함, ex vivo 테스트 결과). 캡슐 제형일 때 190% 높은 잔존 효과 (캡슐 vs 비캡슐 세정 실험, 원료적 특성에 한함, in vitro 테스트 결과). 핵심 성분: PHA, 고밀도 세라마이드 캡슐. 추천 피부 타입: 건조 피부 또는 민감 피부. 효능: 세안 후 약해진 피부장벽과 건조함 즉시 케어, 캡슐로 더 오래 지속되는 토너의 보습력."
               },
               {
-                "imageUrl": "https://image.examplederma.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
+                "imageUrl": "https://cdn.example.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
                 "text": "세안 후 첫 단계 민감 건조 피부 급속 수분 충전. 사용 직후 수분량 1.3배 증가 (피부 수분량 인덱스 54.6 → 72.8). 3일/7일 사용 후 얼굴 3대 부위(뺨, 이마, 턱) 기초 수분량 증가. 세정에 의한 장벽 손상 93% 즉시 회복. 외부자극(Tape Stripping)에 의한 장벽 손상 즉시 회복: 사용 직후 60.5% 회복, 사용 7일 후 87.3% 회복. 사용 직후 각질량 82% 즉시 감소, 12시간 후까지도 잠재우는 피부 각질. 사용할수록 매끈해지는 피부결 & 투명해지는 피부: 사용 7일 후 피부결 7.9%, 투명도 6.0% 개선."
               },
               {
-                "imageUrl": "https://image.examplederma.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
+                "imageUrl": "https://cdn.example.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
                 "text": "사용법: 1. 아침, 저녁 세안 후, 적당량의 내용물을 덜어줍니다. 2. 캡슐을 부드럽게 녹이듯 골고루 펴 바른 후 가볍게 두드려 흡수시켜줍니다."
               },
               {
-                "imageUrl": "https://image.examplederma.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
+                "imageUrl": "https://cdn.example.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
                 "text": "철저히 검증한 피부 안전성 테스트: 극민감 테스트 완료, 민감 피부 자극 테스트 완료, 피부과 테스트 완료, 알러지 테스트 완료, 여드름성 피부 사용 적합 테스트 완료(논코메도제닉), 독일 더마 테스트 EXCELLENT 등급."
               }
             ],
             "textBlocks": [
-              "배리어케어365 캡슐토너. 세안 후 약해진 피부장벽을 강화하고 피부결을 정돈해 촉촉하고 건강한 피부 바탕을 만들어주는 장벽보습 캡슐 토너. EXAMPLEDERMA BARRIERCARE365 CAPSULE TONER. BarrierCapsule + PHA WATER. Barrier-strengthening hydration for smoother skin. For dry & sensitive skin. 10.14 fl. oz. / 300 mL.",
+              "모이베리어365 캡슐토너. 세안 후 약해진 피부장벽을 강화하고 피부결을 정돈해 촉촉하고 건강한 피부 바탕을 만들어주는 장벽보습 캡슐 토너. EXAMPLEDERMA BARRIERCARE365 CAPSULE TONER. BotanON + PHA WATER. Barrier-strengthening hydration for smoother skin. For dry & sensitive skin. 10.14 fl. oz. / 300 mL.",
               "PHA: 민감피부에도 자극 없는 PHA 워터가 각질은 잠재우고 피부결은 정돈하는 효과. 고밀도 세라마이드 캡슐: 길이가 긴 롱체인 세라마이드와 연결고리를 조여주는 링커 세라마이드로 민감피부의 짧고 부족한 세라마이드를 보완해 보다 촘촘하고 견고한 구조의 캡슐로 장벽 보습.",
               "PHA 워터에 띄워진 고밀도 세라마이드 캡슐. 물에 녹지 않는 세라마이드를 캡슐 형태로 워터에 띄워놓은 하이드로겔 플로팅 포뮬러 기술. 특허 출원 포뮬러 (특허 출원 번호: KR10-2023-0133775). 하이드로겔 서스펜션 고밀도 세라마이드 캡슐 토너. 사용할 때마다 필요한 만큼만 적절하게 토출되어 피부에 효과적으로 세라마이드 장벽 보습을 제공. 즉각적인 수분 공급 & 결케어 이후 첫 단계 장벽 코팅으로 수분x장벽 시너지 효과.",
               "피부장벽의 빈틈을 촘촘하게, 특허 받은 고밀도 세라마이드 캡슐. 피부지질 구성성분(세라마이드/콜레스테롤/지방산) + 피부지질 유사구조(층판형 구조). 1회 도포 후 18시간 장벽에서 잔존하는 세라마이드 (원료적 특성에 한함, ex vivo 테스트 결과). 캡슐 제형일 때 190% 높은 잔존 효과 (캡슐 vs 비캡슐 세정 실험, 원료적 특성에 한함, in vitro 테스트 결과). 핵심 성분: PHA, 고밀도 세라마이드 캡슐. 추천 피부 타입: 건조 피부 또는 민감 피부. 효능: 세안 후 약해진 피부장벽과 건조함 즉시 케어, 캡슐로 더 오래 지속되는 토너의 보습력.",
@@ -174,7 +174,7 @@ request: {
             ],
             "sentenceInsights": [
               {
-                "imageUrl": "https://image.examplederma.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
+                "imageUrl": "https://cdn.example.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
                 "text": "물에 녹지 않는 세라마이드를 캡슐 형태로 워터에 띄워놓은 하이드로겔 플로팅 포뮬러 기술 (특허 출원 번호: KR10-2023-0133775).",
                 "category": "ingredient",
                 "keywords": [
@@ -184,7 +184,7 @@ request: {
                 ]
               },
               {
-                "imageUrl": "https://image.examplederma.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
+                "imageUrl": "https://cdn.example.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
                 "text": "사용 직후 수분량 1.3배 증가 (피부 수분량 인덱스 54.6 → 72.8).",
                 "category": "metric",
                 "keywords": [
@@ -194,7 +194,7 @@ request: {
                 ]
               },
               {
-                "imageUrl": "https://image.examplederma.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
+                "imageUrl": "https://cdn.example.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
                 "text": "세정에 의한 장벽 손상 93% 즉시 회복.",
                 "category": "metric",
                 "keywords": [
@@ -204,7 +204,7 @@ request: {
                 ]
               },
               {
-                "imageUrl": "https://image.examplederma.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
+                "imageUrl": "https://cdn.example.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
                 "text": "PHA 워터가 민감피부에도 자극 없이 각질은 잠재우고 피부결은 정돈합니다.",
                 "category": "effect",
                 "keywords": [
@@ -215,7 +215,7 @@ request: {
                 ]
               },
               {
-                "imageUrl": "https://image.examplederma.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
+                "imageUrl": "https://cdn.example.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
                 "text": "극민감·민감 피부 자극·피부과·알러지·논코메도제닉 테스트 완료, 독일 더마 테스트 EXCELLENT 등급.",
                 "category": "metric",
                 "keywords": [
@@ -362,7 +362,7 @@ request: {
         "aiAnalysis": {
           "keywords": {
             "product": [
-              "예시더마 배리어케어365 캡슐 토너",
+              "예시더마 모이베리어365 캡슐 토너",
               "EXAMPLEDERMA",
               "캡슐 토너"
             ],
@@ -733,10 +733,10 @@ request: {
           "faq": [
             {
               "question": "캡슐이 워터 안에 떠있는 것이 왜 중요한가요?",
-              "answer": "피부장벽 개선/강화에 가장 효과적인 성분 중 하나인 세라마이드는 물에 녹지 않습니다. 이 때문에 토너 또는 수분 세럼같이 수분 함량이 높은 스킨케어 앞 단계 제품들에서는 세라마이드를 통한 장벽 개선 효과를 얻기 어렵습니다. 배리어케어365 캡슐 토너에는 고밀도 세라마이드 캡슐이 그대로 PHA 토닝 워터 안에 서스펜션 되어 있어 세안 후 첫 단계부터 강력한 세라마이드 장벽 보습 케어가 가능합니다. 또한, 균일하게 떠있는 캡슐이 사용할 때마다 피부에 필요한 만큼 적절하게 토출되어 언제나 유사한 효과를 나타냅니다."
+              "answer": "피부장벽 개선/강화에 가장 효과적인 성분 중 하나인 세라마이드는 물에 녹지 않습니다. 이 때문에 토너 또는 수분 세럼같이 수분 함량이 높은 스킨케어 앞 단계 제품들에서는 세라마이드를 통한 장벽 개선 효과를 얻기 어렵습니다. 모이베리어365 캡슐 토너에는 고밀도 세라마이드 캡슐이 그대로 PHA 토닝 워터 안에 서스펜션 되어 있어 세안 후 첫 단계부터 강력한 세라마이드 장벽 보습 케어가 가능합니다. 또한, 균일하게 떠있는 캡슐이 사용할 때마다 피부에 필요한 만큼 적절하게 토출되어 언제나 유사한 효과를 나타냅니다."
             },
             {
-              "question": "배리어케어365 크림에 함유된 캡슐과 동일한 캡슐인가요? 캡슐이 있어서 좋은 이유는 무엇인가요?",
+              "question": "모이베리어365 크림에 함유된 캡슐과 동일한 캡슐인가요? 캡슐이 있어서 좋은 이유는 무엇인가요?",
               "answer": "캡슐 토너에 함유된 캡슐은 자사의 특허 성분인 '고밀도 세라마이드 캡슐'로 동일합니다. 캡슐은 실제 피부 장벽 지질과 유사성분/구조로 이루어져 있으며 캡슐 형태이기 때문에 손상된 피부장벽 틈에 오래 잔존하며 장벽을 튼튼하게 강화시켜줍니다."
             },
             {
@@ -784,7 +784,7 @@ request: {
         },
         "ocr": {
           "textBlocks": [
-            "배리어케어365 캡슐토너. 세안 후 약해진 피부장벽을 강화하고 피부결을 정돈해 촉촉하고 건강한 피부 바탕을 만들어주는 장벽보습 캡슐 토너. EXAMPLEDERMA BARRIERCARE365 CAPSULE TONER. BarrierCapsule + PHA WATER. Barrier-strengthening hydration for smoother skin. For dry & sensitive skin. 10.14 fl. oz. / 300 mL.",
+            "모이베리어365 캡슐토너. 세안 후 약해진 피부장벽을 강화하고 피부결을 정돈해 촉촉하고 건강한 피부 바탕을 만들어주는 장벽보습 캡슐 토너. EXAMPLEDERMA BARRIERCARE365 CAPSULE TONER. BotanON + PHA WATER. Barrier-strengthening hydration for smoother skin. For dry & sensitive skin. 10.14 fl. oz. / 300 mL.",
             "PHA: 민감피부에도 자극 없는 PHA 워터가 각질은 잠재우고 피부결은 정돈하는 효과. 고밀도 세라마이드 캡슐: 길이가 긴 롱체인 세라마이드와 연결고리를 조여주는 링커 세라마이드로 민감피부의 짧고 부족한 세라마이드를 보완해 보다 촘촘하고 견고한 구조의 캡슐로 장벽 보습.",
             "PHA 워터에 띄워진 고밀도 세라마이드 캡슐. 물에 녹지 않는 세라마이드를 캡슐 형태로 워터에 띄워놓은 하이드로겔 플로팅 포뮬러 기술. 특허 출원 포뮬러 (특허 출원 번호: KR10-2023-0133775). 하이드로겔 서스펜션 고밀도 세라마이드 캡슐 토너. 사용할 때마다 필요한 만큼만 적절하게 토출되어 피부에 효과적으로 세라마이드 장벽 보습을 제공. 즉각적인 수분 공급 & 결케어 이후 첫 단계 장벽 코팅으로 수분x장벽 시너지 효과.",
             "피부장벽의 빈틈을 촘촘하게, 특허 받은 고밀도 세라마이드 캡슐. 피부지질 구성성분(세라마이드/콜레스테롤/지방산) + 피부지질 유사구조(층판형 구조). 1회 도포 후 18시간 장벽에서 잔존하는 세라마이드 (원료적 특성에 한함, ex vivo 테스트 결과). 캡슐 제형일 때 190% 높은 잔존 효과 (캡슐 vs 비캡슐 세정 실험, 원료적 특성에 한함, in vitro 테스트 결과). 핵심 성분: PHA, 고밀도 세라마이드 캡슐. 추천 피부 타입: 건조 피부 또는 민감 피부. 효능: 세안 후 약해진 피부장벽과 건조함 즉시 케어, 캡슐로 더 오래 지속되는 토너의 보습력.",
@@ -794,7 +794,7 @@ request: {
           ],
           "keywords": {
             "product": [
-              "예시더마 배리어케어365 캡슐 토너",
+              "예시더마 모이베리어365 캡슐 토너",
               "EXAMPLEDERMA",
               "캡슐 토너"
             ],
@@ -840,7 +840,7 @@ request: {
           },
           "sentenceInsights": [
             {
-              "imageUrl": "https://image.examplederma.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
+              "imageUrl": "https://cdn.example.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
               "text": "물에 녹지 않는 세라마이드를 캡슐 형태로 워터에 띄워놓은 하이드로겔 플로팅 포뮬러 기술 (특허 출원 번호: KR10-2023-0133775).",
               "category": "ingredient",
               "keywords": [
@@ -850,7 +850,7 @@ request: {
               ]
             },
             {
-              "imageUrl": "https://image.examplederma.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
+              "imageUrl": "https://cdn.example.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
               "text": "사용 직후 수분량 1.3배 증가 (피부 수분량 인덱스 54.6 → 72.8).",
               "category": "metric",
               "keywords": [
@@ -860,7 +860,7 @@ request: {
               ]
             },
             {
-              "imageUrl": "https://image.examplederma.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
+              "imageUrl": "https://cdn.example.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
               "text": "세정에 의한 장벽 손상 93% 즉시 회복.",
               "category": "metric",
               "keywords": [
@@ -870,7 +870,7 @@ request: {
               ]
             },
             {
-              "imageUrl": "https://image.examplederma.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
+              "imageUrl": "https://cdn.example.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
               "text": "PHA 워터가 민감피부에도 자극 없이 각질은 잠재우고 피부결은 정돈합니다.",
               "category": "effect",
               "keywords": [
@@ -881,7 +881,7 @@ request: {
               ]
             },
             {
-              "imageUrl": "https://image.examplederma.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
+              "imageUrl": "https://cdn.example.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png",
               "text": "극민감·민감 피부 자극·피부과·알러지·논코메도제닉 테스트 완료, 독일 더마 테스트 EXCELLENT 등급.",
               "category": "metric",
               "keywords": [
@@ -897,17 +897,17 @@ request: {
             {
               "id": "examplederma-capsule-toner-product-1",
               "kind": "product",
-              "text": "예시더마 배리어케어365 캡슐 토너\n세안 후 약해진 피부장벽을 강화하고 피부결을 정돈해 촉촉하고 건강한 피부 바탕을 만들어주는 장벽보습 캡슐 토너. 세안 후 즉각 수분공급 장벽보습 캡슐토너.\n장벽 보습\n피부결 정돈\n세안 후 즉각 수분 공급\n세안 후 약해진 피부장벽 강화\n촉촉하고 건강한 피부 바탕\n각질 진정과 피부결 정돈"
+              "text": "예시더마 모이베리어365 캡슐 토너\n세안 후 약해진 피부장벽을 강화하고 피부결을 정돈해 촉촉하고 건강한 피부 바탕을 만들어주는 장벽보습 캡슐 토너. 세안 후 즉각 수분공급 장벽보습 캡슐토너.\n장벽 보습\n피부결 정돈\n세안 후 즉각 수분 공급\n세안 후 약해진 피부장벽 강화\n촉촉하고 건강한 피부 바탕\n각질 진정과 피부결 정돈"
             },
             {
               "id": "examplederma-capsule-toner-faq-1",
               "kind": "faq",
-              "text": "Q. 캡슐이 워터 안에 떠있는 것이 왜 중요한가요?\nA. 피부장벽 개선/강화에 가장 효과적인 성분 중 하나인 세라마이드는 물에 녹지 않습니다. 이 때문에 토너 또는 수분 세럼같이 수분 함량이 높은 스킨케어 앞 단계 제품들에서는 세라마이드를 통한 장벽 개선 효과를 얻기 어렵습니다. 배리어케어365 캡슐 토너에는 고밀도 세라마이드 캡슐이 그대로 PHA 토닝 워터 안에 서스펜션 되어 있어 세안 후 첫 단계부터 강력한 세라마이드 장벽 보습 케어가 가능합니다. 또한, 균일하게 떠있는 캡슐이 사용할 때마다 피부에 필요한 만큼 적절하게 토출되어 언제나 유사한 효과를 나타냅니다."
+              "text": "Q. 캡슐이 워터 안에 떠있는 것이 왜 중요한가요?\nA. 피부장벽 개선/강화에 가장 효과적인 성분 중 하나인 세라마이드는 물에 녹지 않습니다. 이 때문에 토너 또는 수분 세럼같이 수분 함량이 높은 스킨케어 앞 단계 제품들에서는 세라마이드를 통한 장벽 개선 효과를 얻기 어렵습니다. 모이베리어365 캡슐 토너에는 고밀도 세라마이드 캡슐이 그대로 PHA 토닝 워터 안에 서스펜션 되어 있어 세안 후 첫 단계부터 강력한 세라마이드 장벽 보습 케어가 가능합니다. 또한, 균일하게 떠있는 캡슐이 사용할 때마다 피부에 필요한 만큼 적절하게 토출되어 언제나 유사한 효과를 나타냅니다."
             },
             {
               "id": "examplederma-capsule-toner-faq-2",
               "kind": "faq",
-              "text": "Q. 배리어케어365 크림에 함유된 캡슐과 동일한 캡슐인가요? 캡슐이 있어서 좋은 이유는 무엇인가요?\nA. 캡슐 토너에 함유된 캡슐은 자사의 특허 성분인 '고밀도 세라마이드 캡슐'로 동일합니다. 캡슐은 실제 피부 장벽 지질과 유사성분/구조로 이루어져 있으며 캡슐 형태이기 때문에 손상된 피부장벽 틈에 오래 잔존하며 장벽을 튼튼하게 강화시켜줍니다."
+              "text": "Q. 모이베리어365 크림에 함유된 캡슐과 동일한 캡슐인가요? 캡슐이 있어서 좋은 이유는 무엇인가요?\nA. 캡슐 토너에 함유된 캡슐은 자사의 특허 성분인 '고밀도 세라마이드 캡슐'로 동일합니다. 캡슐은 실제 피부 장벽 지질과 유사성분/구조로 이루어져 있으며 캡슐 형태이기 때문에 손상된 피부장벽 틈에 오래 잔존하며 장벽을 튼튼하게 강화시켜줍니다."
             },
             {
               "id": "examplederma-capsule-toner-faq-3",
@@ -922,7 +922,7 @@ request: {
             {
               "id": "examplederma-capsule-toner-ocr-1",
               "kind": "ocr",
-              "text": "배리어케어365 캡슐토너. 세안 후 약해진 피부장벽을 강화하고 피부결을 정돈해 촉촉하고 건강한 피부 바탕을 만들어주는 장벽보습 캡슐 토너. EXAMPLEDERMA BARRIERCARE365 CAPSULE TONER. BarrierCapsule + PHA WATER. Barrier-strengthening hydration for smoother skin. For dry & sensitive skin. 10.14 fl. oz. / 300 mL."
+              "text": "모이베리어365 캡슐토너. 세안 후 약해진 피부장벽을 강화하고 피부결을 정돈해 촉촉하고 건강한 피부 바탕을 만들어주는 장벽보습 캡슐 토너. EXAMPLEDERMA BARRIERCARE365 CAPSULE TONER. BotanON + PHA WATER. Barrier-strengthening hydration for smoother skin. For dry & sensitive skin. 10.14 fl. oz. / 300 mL."
             },
             {
               "id": "examplederma-capsule-toner-ocr-2",

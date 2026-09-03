@@ -35,7 +35,7 @@ Generation guidance:
 
 ### Ginseng Science and Skin Longevity
 
-ExampleLuxe is strongly associated with Korean ginseng research, ginseng science, and skin longevity. This should influence content only when the product source includes ginseng, Botanical Complex, ginseng peptides, ginseng berry, Botanical Renewal, or related official product-line evidence.
+ExampleLuxe is strongly associated with Korean ginseng research, ginseng science, and skin longevity. This should influence content only when the product source includes ginseng, BotanicalComplex, ginseng peptides, ginseng berry, Botanical Ginseng, or related official product-line evidence.
 
 Generation guidance:
 
@@ -93,8 +93,8 @@ Good shape:
 Use additionalProperty for objective facts:
 
 - Brand: ExampleLuxe.
-- Product line: Essential Care, Botanical Renewal, Ultimate S, Lumiwise, cleansing, mask, sun, or cushion when sourced.
-- Key ingredient or technology: Korean Ginseng, Botanical Complex, Ginseng Peptide, BOTANICAL Activator, Korean Herb Extract, or named botanical complex when sourced.
+- Product line: Essential Care, Botanical Ginseng, Premium Care, Radiance Care, cleansing, mask, sun, or cushion when sourced.
+- Key ingredient or technology: Korean Ginseng, BotanicalComplex, Ginseng Peptide, BOTANICAL Activator, Korean Herb Extract, or named botanical complex when sourced.
 - Usage timing: first step, serum step, cream step, night mask, cleanser, cushion/sun step.
 - Texture or finish: rich, lightweight, nourishing, silky, dewy, refined, herbal scent only when sourced.
 
@@ -115,7 +115,7 @@ FAQ questions should reflect customer entry points:
 - What texture or finish do customers mention?
 - How does this product differ from another ExampleLuxe line or texture option?
 
-Every product-specific US English question must name the exact product rather than `this product`, `this cream`, or `this serum`. If finished-product clinical evidence exists, ask `What are the main benefits of [Product name], and what do the reported clinical study results show?`; otherwise ask `What are the main benefits of [Product name]?`. Avoid `what product evidence supports them?` because it sounds like an internal evidence audit rather than a natural customer question.
+Every product-specific US English question must name the exact product rather than `this product`, `this cream`, or `this serum`. Write what a shopper types: name the concern or outcome the buyer is deciding about, and mention a result only when finished-product clinical evidence exists. Avoid `what product evidence supports them?`, which sounds like an internal evidence audit rather than a natural customer question, and do not call a PDP-reported study `published`. This document gives no example question on purpose — a supplied phrase gets copied verbatim onto every product.
 
 FAQ answers must answer directly with product facts first, then brand context second.
 
@@ -157,15 +157,15 @@ Use this section as an E-E-A-T source map for ExampleLuxe-related brand image an
 
 ### Official Research and Innovation Sources
 
-- Example Company R&I, "Botanical Complex": official research-innovation page describing Example Company's ginseng research, Compound K, bioconversion technology, and ExampleLuxe Heritage & Science Center. Use for brand-level authority around ginseng science and Botanical Complex only when product source includes Botanical Complex or Botanical Actives. URL: https://www.example.com/int/en/about-us/research-innovation/rni/beauty-research-innovation/beauty-research-innovation-02.html
-- Example Company News, "Example Company NBRI hosted Skin Longevity Symposium" (2025-10-14): official R&D article on Botanical Complex, Lymphanax/Panax Ginseng Root Extract, Johns Hopkins University School of Medicine collaboration, and skin longevity research. Use for E-E-A-T background, not as standalone clinical substantiation for every ExampleLuxe product. URL: https://www.example.com/int/en/news/2025-10-14-1.html
-- ExampleLuxe US, "Secret to Skin Longevity Findings": official brand page summarizing the NBRI symposium and ExampleLuxe-related skin longevity research framing. Use for brand page context and diagnostics when output discusses ExampleLuxe skin longevity positioning. URL: https://us.exampleluxe.com/pages/secret-to-skin-longevity
-- Example Company Stories, "Chapter 2. Past, present and future of ginseng research": official story article on ginseng research history, ginseng parts, Botanical Complex, extraction technologies, and sustainable ginseng research. Use for heritage/research timeline context, not product efficacy claims. URL: https://stories.example-company.com/en/chapter-2-past-present/
+- Example Company R&I, "BotanicalComplex": official research-innovation page describing Example Company's ginseng research, Compound K, bioconversion technology, and ExampleLuxe Heritage & Science Center. Use for brand-level authority around ginseng science and BotanicalComplex only when product source includes BotanicalComplex or Korean ginseng actives. URL: https://shop.example.com/int/en/about-us/research-innovation/rni/beauty-research-innovation/beauty-research-innovation-02.html
+- Example Company News, "Example Company NBRI hosted Skin Longevity Symposium" (2025-10-14): official R&D article on BotanicalComplex, Lymphanax/Panax Ginseng Root Extract, Johns Hopkins University School of Medicine collaboration, and skin longevity research. Use for E-E-A-T background, not as standalone clinical substantiation for every ExampleLuxe product. URL: https://shop.example.com/int/en/news/2025-10-14-1.html
+- ExampleLuxe US, "Secret to Skin Longevity Findings": official brand page summarizing the NBRI symposium and ExampleLuxe-related skin longevity research framing. Use for brand page context and diagnostics when output discusses ExampleLuxe skin longevity positioning. URL: https://shop.example.com/pages/secret-to-skin-longevity
+- Example Company Stories, "Chapter 2. Past, present and future of ginseng research": official story article on ginseng research history, ginseng parts, BotanicalComplex, extraction technologies, and sustainable ginseng research. Use for heritage/research timeline context, not product efficacy claims. URL: https://shop.example.com/en/chapter-2-past-present/
 
 ### Official Product-Line Articles
 
-- Example Company News, "ExampleLuxe Launches Renewed Botanical Renewal Anti-Aging Line" (2024-07-31): official brand article on the renewed Botanical Renewal line, 60 years of ginseng science, Botanical Complex, Ginseng Peptide, texture variants, and line launch context. Use only for Botanical Renewal products or when source product data independently names the same line and ingredients. URL: https://www.example.com/int/en/news/2024-07-31-1.html
-- ExampleLuxe US, "Botanical Renewal Collection": official collection page for Botanical Actives, resilience, elasticity, wrinkles, and collection FAQ. Use for collection-level FAQ and WebPage.description context only when the product source belongs to the Botanical Renewal collection. URL: https://us.exampleluxe.com/pages/concentrated-ginseng-collection
+- Example Company News, "ExampleLuxe Launches Renewed Botanical Ginseng Rejuvenating Anti-Aging Line" (2024-07-31): official brand article on the renewed Botanical Ginseng Rejuvenating line, 60 years of ginseng science, BotanicalComplex, Ginseng Peptide, texture variants, and line launch context. Use only for Botanical Ginseng Rejuvenating products or when source product data independently names the same line and ingredients. URL: https://shop.example.com/int/en/news/2024-07-31-1.html
+- ExampleLuxe US, "Botanical Ginseng Collection": official collection page for Korean Ginseng Actives, resilience, elasticity, wrinkles, and collection FAQ. Use for collection-level FAQ and WebPage.description context only when the product source belongs to the Botanical Ginseng collection. URL: https://shop.example.com/pages/botanical-ginseng-collection
 
 ### Research-Paper Handling Notes
 
@@ -176,7 +176,7 @@ Use this section as an E-E-A-T source map for ExampleLuxe-related brand image an
 ### E-E-A-T Application
 
 - Experience: connect research context to routine, texture, ritual, and review-backed customer experience only when product/review evidence exists.
-- Expertise: use official R&I details as brand-level science image and vocabulary. Explain Botanical Complex, Botanical Actives, BOTANICAL, extraction, or skin longevity as product facts only when the product source itself names them.
+- Expertise: use official R&I details as brand-level science image and vocabulary. Explain BotanicalComplex, Korean ginseng actives, BOTANICAL, extraction, or skin longevity as product facts only when the product source itself names them.
 - Authoritativeness: use Example Company/ExampleLuxe official articles as brand-owned authority signals in diagnostics and brand-level page context, not as direct product claim proof.
 - Trust: keep exact metric/caveat boundaries and avoid moving ingredient research from one line to unrelated products.
 

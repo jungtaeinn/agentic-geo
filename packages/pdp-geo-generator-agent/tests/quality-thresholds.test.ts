@@ -59,7 +59,7 @@ describe("quality-score stability thresholds", () => {
       const steps = howTo.step as Array<Record<string, unknown>>;
       expect(steps.length).toBeGreaterThanOrEqual(1);
       for (const step of steps) {
-        expect(String(step.text)).not.toMatch(/EXAMPLEDERMA\s+BARRIERCARE|CREAM\s+MIST|REVIEW PLATFORM/i);
+        expect(String(step.text)).not.toMatch(/EXAMPLEDERMA\s+BARRIERCARE|CREAM\s+MIST|GLOWPICK/i);
       }
       // The page node may only reference schema nodes that exist.
       const ids = new Set(graph.map((node) => String(node["@id"] ?? "")));
@@ -69,16 +69,16 @@ describe("quality-score stability thresholds", () => {
       }
     }
 
-    // No stitched marketing dump ("REVIEW PLATFORM AWARDS ... Step 1 ... Step 4")
+    // No stitched marketing dump ("GLOWPICK AWARDS ... Step 1 ... Step 4")
     // may appear as a PropertyValue or FAQ answer.
     const productNode = graph.find((node) => node["@type"] === "Product") as Record<string, unknown>;
     for (const item of (productNode.additionalProperty as Array<Record<string, unknown>> | undefined) ?? []) {
-      expect(String(item.value)).not.toMatch(/REVIEW PLATFORM|Step\s*1[\s\S]*Step\s*4/i);
+      expect(String(item.value)).not.toMatch(/GLOWPICK|Step\s*1[\s\S]*Step\s*4/i);
     }
     const faqPage = graph.find((node) => node["@type"] === "FAQPage") as Record<string, unknown> | undefined;
     for (const item of (faqPage?.mainEntity as Array<Record<string, unknown>> | undefined) ?? []) {
       const answer = (item.acceptedAnswer as Record<string, unknown> | undefined)?.text;
-      expect(String(answer ?? "")).not.toMatch(/REVIEW PLATFORM|BARRIERCARE\s+365\s+CREAM\s+MIST/i);
+      expect(String(answer ?? "")).not.toMatch(/GLOWPICK|BARRIERCARE\s+365\s+CREAM\s+MIST/i);
     }
   });
 });

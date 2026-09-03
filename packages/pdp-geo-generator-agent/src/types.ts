@@ -330,6 +330,8 @@ export interface PdpSemanticMetricClaim {
   caveat?: string;
   sentence?: string;
   sourceText?: string;
+  /** OCR image(s) this claim's sourceText was transcribed from. */
+  imageUrls?: string[];
 }
 
 export interface PdpSemanticIngredientBenefitLink {
@@ -338,6 +340,8 @@ export interface PdpSemanticIngredientBenefitLink {
   effect?: string;
   sentence?: string;
   sourceText?: string;
+  /** OCR image(s) this link's sourceText was transcribed from. */
+  imageUrls?: string[];
 }
 
 /** Source metadata retained for a research paper or editorial article cited by the PDP. */
@@ -350,6 +354,8 @@ export interface PdpSemanticCitation {
   url?: string;
   finding?: string;
   sourceText?: string;
+  /** OCR image(s) this citation's sourceText was transcribed from. */
+  imageUrls?: string[];
 }
 
 export interface PdpSemanticFacts {
@@ -393,7 +399,7 @@ export type PdpItemConditionToken =
   | "DamagedCondition";
 
 /**
- * Structure-preserving variant signal from the commerce contract input contract.
+ * Structure-preserving variant signal from the GEO-128 input contract.
  * Only source-backed fields are retained; commerce values are normalized
  * (GS1 check digit, ItemAvailability enum) or dropped at normalize time.
  */
@@ -413,7 +419,7 @@ export interface PdpProductVariantSignal {
 /**
  * Normalized product facts inferred from arbitrary product JSON.
  *
- * commerce contract: sku/gtin/availability/variants는 구조 보존 필드로 반영되어
+ * GEO-128: sku/gtin/availability/variants는 구조 보존 필드로 반영되어
  * JSON-LD에 매핑된다(Product.sku/gtin, Offer.availability =
  * "https://schema.org/<값>", 신뢰 가능한 variant가 2개 이상이면 variant별
  * offers 배열). tags/seoTitle/seoDescription 및 metafields의 구조 보존은
@@ -455,6 +461,13 @@ export interface PdpShippingSignal {
   transitDaysMin?: number;
   transitDaysMax?: number;
   rate?: { amount: number; currency: string };
+}
+
+/** sourceTexts[i]와 인덱스 정렬된 OCR 유래 메타. 비-OCR 항목은 undefined. */
+export interface PdpSourceTextMeta {
+  imageUrls?: string[];
+  /** 해당 문장을 만든 이미지 전사 confidence 최솟값(0-1). */
+  ocrConfidence?: number;
 }
 
 export interface PdpProductSignal {
@@ -499,6 +512,8 @@ export interface PdpProductSignal {
   };
   breadcrumbs: PdpGeoBreadcrumbItem[];
   sourceTexts: string[];
+  /** 정리된 sourceTexts 값 → OCR 유래 메타. 텍스트 키잉이라 배열 재필터에도 정합이 깨지지 않는다. */
+  sourceTextMeta?: Record<string, PdpSourceTextMeta>;
   semanticFacts?: PdpSemanticFacts;
 }
 
@@ -813,6 +828,10 @@ export interface PdpGeoAtomicEvidence {
   locale: PdpGeoLocale;
   productScope: "product";
   confidence: number;
+  /** 이 원자를 만든 OCR 원본 이미지들. 이미지 유래가 아닐 때 없음. */
+  imageUrls?: string[];
+  /** 이미지 전사 confidence 최솟값(0-1). 이미지 유래가 아닐 때 없음. */
+  ocrConfidence?: number;
 }
 
 export interface PdpGeoPlannedField {
@@ -989,6 +1008,11 @@ export interface PdpGeoFinalProofreadingField {
   constraint: "fluency-only" | "punctuation-only";
   evidenceIds: string[];
   immutableTokens: string[];
+  /**
+   * 직전 시도에서 이 필드의 제안이 기각된 사유. 재시도 요청에만 실린다.
+   * 첫 요청에는 없으며, 재시도는 필드당 한 번만 일어난다.
+   */
+  priorRejection?: string;
 }
 
 export interface PdpGeoFinalProofreadingRequest {
@@ -1055,6 +1079,8 @@ export interface PdpGeoPublicCopySentenceProvenance {
   text: string;
   sourceHash: string;
   evidenceIds: string[];
+  /** 인용 atom들의 이미지 계보 합집합. OCR 유래 근거가 없으면 없음. */
+  imageUrls?: string[];
 }
 
 export interface PdpGeoPublicCopyProvenance {
@@ -1064,6 +1090,8 @@ export interface PdpGeoPublicCopyProvenance {
   origin: "model-plan" | "deterministic-renderer";
   evidenceIds: string[];
   sentences: PdpGeoPublicCopySentenceProvenance[];
+  /** 인용 atom들의 이미지 계보 합집합. OCR 유래 근거가 없으면 없음. */
+  imageUrls?: string[];
 }
 
 export interface PdpGeoFinalProofreadingDiagnostics {
@@ -1130,6 +1158,22 @@ export interface PdpGeoValidationFinding {
   before?: JsonValue;
   suggestedAfter?: JsonValue;
   evidence?: string[];
+  /**
+   * How two runs decide this is the same finding.
+   *
+   * `"text"` (the default) means the finding is about specific text, so the
+   * text is part of its identity — a different duplicated word is a different
+   * finding. `"field-shape"` means the finding describes a property the
+   * field's prose has, so it stays the same finding however that prose is
+   * worded.
+   *
+   * The proofreading pass compares the findings before and after its edits and
+   * reverts everything if it introduced any. A field-shape finding keyed by
+   * text can never match across an edit to that field, so a defect that was
+   * already there read as newly introduced: the pass reverted every edit it had
+   * made and reported a reason that was not true.
+   */
+  identity?: "text" | "field-shape";
 }
 
 export interface PdpGeoTokenUsage {

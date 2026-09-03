@@ -4,6 +4,7 @@ import { ValidationPipe } from "@nestjs/common";
 import request from "supertest";
 import { GeoTestController } from "../src/geo/geo-test.controller";
 import { GenerationService } from "../src/geo/generation.service";
+import { OcrEnrichmentService } from "../src/geo/ocr-enrichment.service";
 
 const artifact = {
   resultStatus: "SUCCEEDED" as const,
@@ -129,5 +130,58 @@ describe("GeoTestController (e2e)", () => {
       .send({ locale: "", product: "not-an-object" })
       .expect(400);
     expect(generate).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 위 describe와 달리 GenerationService를 목으로 대체하지 않는다 — OCR 보강 배선이
+ * 실제 GenerationService → OcrEnrichmentService → (mock 프로바이더) 생성기까지 이어지는지
+ * 검증하려면 실물이 필요하다. mock 프로바이더는 이미지 OCR 대상이 있으면 네트워크 호출
+ * 없이 경고만 내므로(packages/pdp-extractor-agent) 이 스위트도 여전히 실 LLM/네트워크와 무관하다.
+ */
+describe("GeoTestController (e2e) — OCR enrichment wiring", () => {
+  let app: INestApplication;
+  const flagBefore = process.env.GEO_TEST_SYNC_ENDPOINT;
+  const providerBefore = process.env.AGENTIC_GEO_PROVIDER;
+
+  beforeAll(async () => {
+    process.env.AGENTIC_GEO_PROVIDER = "mock";
+    const ref = await Test.createTestingModule({
+      controllers: [GeoTestController],
+      providers: [GenerationService, OcrEnrichmentService],
+    }).compile();
+    app = ref.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+    if (providerBefore === undefined) delete process.env.AGENTIC_GEO_PROVIDER;
+    else process.env.AGENTIC_GEO_PROVIDER = providerBefore;
+  });
+
+  beforeEach(() => {
+    process.env.GEO_TEST_SYNC_ENDPOINT = "true";
+  });
+
+  afterEach(() => {
+    if (flagBefore === undefined) delete process.env.GEO_TEST_SYNC_ENDPOINT;
+    else process.env.GEO_TEST_SYNC_ENDPOINT = flagBefore;
+  });
+
+  it("product.ocrImages가 있으면 mock 프로바이더 미구성 경고로 SUCCEEDED_WITH_WARNINGS를 반환한다", async () => {
+    const res = await request(app.getHttpServer())
+      .post("/internal/v1/geo/test-generations")
+      .set("x-api-key", "test-key")
+      .send({
+        locale: "ko-KR",
+        product: { name: "테스트 크림", ocrImages: ["https://cdn.example.com/a.png"] },
+        includeDiagnostics: true,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.resultStatus).toBe("SUCCEEDED_WITH_WARNINGS");
+    expect(res.body.diagnostics.ocrEnrichment.skippedReason).toBe("provider-not-configured");
   });
 });

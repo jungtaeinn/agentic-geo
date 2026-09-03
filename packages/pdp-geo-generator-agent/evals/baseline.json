@@ -1,23 +1,23 @@
 {
-  "generatedAt": "2026-08-28",
+  "generatedAt": "2026-09-03",
   "aggregates": {
     "goldens": 24,
-    "claimRecall": 0.858,
-    "contextPrecision": 0.747,
+    "claimRecall": 0.903,
+    "contextPrecision": 0.748,
     "classification": {
-      "tp": 317,
+      "tp": 318,
       "fp": 107,
-      "fn": 376,
+      "fn": 375,
       "tn": 57,
       "precision": 0.748,
-      "recall": 0.457,
-      "accuracy": 0.436
+      "recall": 0.459,
+      "accuracy": 0.438
     },
     "noiseChunkRate": 0.012,
     "byTarget": {
       "faq": {
         "goldens": 5,
-        "claimRecall": 0.9,
+        "claimRecall": 0.833,
         "contextPrecision": 0.678,
         "classification": {
           "tp": 61,
@@ -32,20 +32,20 @@
       "howToUse": {
         "goldens": 4,
         "claimRecall": 1,
-        "contextPrecision": 0.449,
+        "contextPrecision": 0.444,
         "classification": {
           "tp": 31,
-          "fp": 38,
+          "fp": 39,
           "fn": 33,
-          "tn": 28,
-          "precision": 0.449,
+          "tn": 27,
+          "precision": 0.443,
           "recall": 0.484,
-          "accuracy": 0.454
+          "accuracy": 0.446
         }
       },
       "productDescription": {
         "goldens": 7,
-        "claimRecall": 0.583,
+        "claimRecall": 0.786,
         "contextPrecision": 0.768,
         "classification": {
           "tp": 96,
@@ -74,15 +74,15 @@
       "schema": {
         "goldens": 4,
         "claimRecall": 1,
-        "contextPrecision": 0.914,
+        "contextPrecision": 0.928,
         "classification": {
-          "tp": 63,
-          "fp": 6,
-          "fn": 64,
-          "tn": 0,
-          "precision": 0.913,
-          "recall": 0.496,
-          "accuracy": 0.474
+          "tp": 64,
+          "fp": 5,
+          "fn": 63,
+          "tn": 1,
+          "precision": 0.928,
+          "recall": 0.504,
+          "accuracy": 0.489
         }
       }
     }

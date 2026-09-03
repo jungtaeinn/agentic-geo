@@ -8,14 +8,38 @@ import {
   hasRoutinePlacementCue,
   hasSensoryEvaluationFrame,
   isProceduralUsageInstruction,
+  isSafetyOrTestClaimUsage,
   usageDescriptionSignalScore,
   usageProcedureSignalScore,
 } from "./contracts/usage-contract";
 import { selectAtomicFunctionalCertificationValues } from "./contracts/certification-contract";
+import {
+  REPORTING_LEAD_LABEL_ALTERNATION,
+  analysisLabelPrefixesAnywhere,
+  leadingInternalLabelPattern,
+  matchAssessmentContextLabel
+} from "./contracts/analysis-label-contract";
+import { isPublishableImageUrl } from "./contracts/image-source-contract";
+
+/**
+ * A value that is only a figure, with or without the label introducing it.
+ *
+ * `확인 지표: 84.3%` and a bare `84.3%` are the same non-statement: a number
+ * with nothing predicated of it, which no answer engine can quote. The label
+ * half reads from the canonical vocabulary so this check and the composers that
+ * strip the label cannot disagree about what one is.
+ */
+const bareFigureWithOptionalLabelPattern = new RegExp(
+  `^(?:${REPORTING_LEAD_LABEL_ALTERNATION})?\\s*[:：]?\\s*[+\\-−]?\\d+(?:[.,]\\d+)?\\s*(?:%|％|배|시간|일|주|weeks?|days?|hours?)[.!。]?$`,
+  "iu"
+);
+import { KOREAN_METRIC_OUTCOME_PATTERN, statesEvidenceContext } from "./contracts/metric-statement-contract";
 import type { JsonObject, JsonValue, PdpGeoContentArtifact, PdpGeoContentSections, PdpGeoLocale, PdpGeoSchemaMarkup, PdpGeoValidationFinding, PdpGeoValidationRepair, PdpProductSignal } from "./types";
 import { captureStructuredContentSnapshot, repairPdpSchemaGraphIntegrity, synchronizeStructuredContentWithGraph } from "./graph-integrity";
+import { namesUseSituation } from "./review-cep";
 import { isNegativeReviewSignalText } from "./review-sentiment";
 import { resolvePrimaryProductNode, schemaNodeHasType } from "./schema-graph";
+import { unpredicatedEnumerationSentence } from "./contracts/enumeration-contract";
 
 export interface ValidateAndRepairInput {
   schemaMarkup: PdpGeoSchemaMarkup;
@@ -126,7 +150,7 @@ export function validatePdpGeoArtifacts(input: ValidateAndRepairInput): Validate
     });
   }
 
-  for (const finding of collectPublicWordingFindings(input.schemaMarkup.jsonLd, input.sourceProduct)) {
+  for (const finding of collectPublicWordingFindings(input.schemaMarkup.jsonLd, input.locale ?? "en-US", input.sourceProduct)) {
     validationWarnings.push(`${finding.field}: ${finding.issue}`);
     validationFindings.push(finding);
   }
@@ -265,7 +289,7 @@ export function applySafePublicCopyRepairs(input: ValidateAndRepairInput): SafeP
   };
 }
 
-function collectPublicWordingFindings(jsonLd: JsonObject, sourceProduct?: PdpProductSignal): PdpGeoValidationFinding[] {
+function collectPublicWordingFindings(jsonLd: JsonObject, locale: PdpGeoLocale, sourceProduct?: PdpProductSignal): PdpGeoValidationFinding[] {
   const graph = Array.isArray(jsonLd["@graph"])
     ? jsonLd["@graph"].flatMap((node) => isRecord(node) ? [node] : [])
     : [];
@@ -302,6 +326,43 @@ function collectPublicWordingFindings(jsonLd: JsonObject, sourceProduct?: PdpPro
     || sourceProduct.reviews.keywords.some((item) => item.trim().length >= 3)
   ));
   for (const entry of entries) {
+    // Prose only. A property value is a list by design — `Key ingredients` is
+    // supposed to name every ingredient — so the rule reads the two fields that
+    // are written as sentences. A finding rather than a repair: narrowing the
+    // list means rewriting Korean, re-attaching the shared particle to a
+    // different final item, and a wrong rewrite ships as published copy.
+    const enumeratingSentence = entry.field.endsWith(".description") || entry.field.endsWith("acceptedAnswer.text")
+      ? unpredicatedEnumerationSentence(entry.text, (sentence, index) => (
+        // WebPage.description opens with the page's scope, and naming what the
+        // page carries — ingredients, directions, tests, reviews — is the form
+        // that opening is supposed to take. Page wording belongs to that
+        // opening only, which is why the exemption is positional.
+        (index === 0 && entry.field === "WebPage.description")
+        // A sentence attributing to customer reviews lists what reviewers
+        // mentioned. The items are the mentions; giving each one a product role
+        // would be the claim the review cannot support.
+        || isReviewFaqAnswerSentence(sentence, locale)
+      ))
+      : undefined;
+    if (enumeratingSentence !== undefined) {
+      findings.push({
+        field: entry.field,
+        source: "sentence-qa",
+        issue: "Public prose listed three or more items under one predicate without giving any of them a role.",
+        suggestedAction: "Give each item its own predicate, or narrow the sentence to the item the evidence supports and leave the full list to the property field.",
+        // The offending sentence, not the whole field — a reader needs to see
+        // which sentence enumerates, and the rest of the field is noise.
+        before: enumeratingSentence,
+        // This describes the shape of the field's prose, not one piece of text,
+        // so it is the same finding however that prose is worded. Keyed by text
+        // it could never match across an edit to this field, and the
+        // proofreading pass — which edits exactly these fields — read a
+        // pre-existing enumeration as one it had just introduced, reverted
+        // every edit, and reported a reason that was not true.
+        identity: "field-shape",
+        evidence: ["public sentence contract", "anti-enumeration contract"]
+      });
+    }
     if (/\((?:timing|sample|method|baseline|comparator|period)\s+[^)]*(?:,\s*(?:timing|sample|method|baseline|comparator|period)\s+[^)]*)+\)/iu.test(entry.text)) {
       findings.push({
         field: entry.field,
@@ -510,7 +571,7 @@ function normalizeIngredientEvidence(value: string): string {
   return value
     .toLowerCase()
     .replace(/[™®©]/g, "")
-    // 별칭 표기("AKA Botanical Complex")는 성분 정체성을 바꾸지 않는다 —
+    // 별칭 표기("AKA BotanicalComplex")는 성분 정체성을 바꾸지 않는다 —
     // 생성기가 별칭 마커를 정리한 표기가 소스 불일치로 오탐되지 않게 한다.
     .replace(/\b(?:aka|a\.k\.a\.?)\s+/gi, "")
     .replace(/\s+/g, " ")
@@ -1451,7 +1512,8 @@ function repairKoreanWebPageMixedIngredientMetricEvidenceSentence(value: string,
   const split = withoutAwkwardPredicate.match(/^(.{2,260}?(?:구성|포뮬러|워터|캡슐|지방산|콜레스테롤|세라마이드))과\s+(.{2,320})$/u);
   if (!split?.[1] || !split[2]) {
     const base = stripTrailingKoreanSubjectParticle(withoutAwkwardPredicate);
-    return base ? [createKoreanEvidenceResultSentence(base)] : undefined;
+    const repairedBase = base ? createKoreanEvidenceResultSentence(base) : "";
+    return repairedBase ? [repairedBase] : undefined;
   }
 
   const ingredientPhrase = normalizeKoreanIngredientMetricEvidencePhrase(split[1]);
@@ -1462,24 +1524,30 @@ function repairKoreanWebPageMixedIngredientMetricEvidenceSentence(value: string,
       ? `핵심 성분/기술은 ${ingredientPhrase}이며, ${appendKoreanObjectParticle(benefitContext)} 뒷받침합니다.`
       : `핵심 성분/기술은 ${ingredientPhrase}입니다.`);
   }
-  if (metricPhrase) {
-    repaired.push(createKoreanEvidenceResultSentence(metricPhrase));
+  const repairedMetric = metricPhrase ? createKoreanEvidenceResultSentence(metricPhrase) : "";
+  if (repairedMetric) {
+    repaired.push(repairedMetric);
   }
   return repaired.length > 0 ? repaired : undefined;
 }
 
-const KOREAN_METRIC_OUTCOME_PATTERN = "회복|개선|감소|증가|상승|향상|완화|잔존|지속";
-
+/**
+ * A measured result written as a Korean sentence, or nothing.
+ *
+ * The repair side of the same rule the generator composes with. It used to end
+ * in a `측정/평가 결과는 …입니다` shell, which meant a repair could put back the
+ * very dump the generator had stopped producing — a page fragment, or a
+ * testing organisation the source never verified, relabelled as a finding. An
+ * unformattable value now yields the empty string, which every caller here
+ * already reads as "drop this sentence".
+ */
 function createKoreanEvidenceResultSentence(value: string): string {
   const text = normalizeKoreanEvidenceResultValue(value);
   if (isKoreanNaturalMetricResultSentence(text)) {
     return `${text}.`;
   }
   const naturalSentence = formatKoreanEvidenceResultSentence(text);
-  if (naturalSentence) {
-    return `${naturalSentence}.`;
-  }
-  return text ? `${appendKoreanTopicParticle("측정/평가 결과")} ${text}입니다.` : "";
+  return naturalSentence ? `${naturalSentence}.` : "";
 }
 
 function isKoreanNaturalMetricResultSentence(value: string): boolean {
@@ -1489,9 +1557,8 @@ function isKoreanNaturalMetricResultSentence(value: string): boolean {
 
 function normalizeKoreanEvidenceResultValue(value: string): string {
   return normalizeKoreanRepairPhrase(value)
-    .replace(/^(?:측정\/평가\s*결과|측정\s*결과|평가\s*지표|확인\s*지표)(?:는|은|:)?\s*/u, "")
+    .replace(leadingInternalLabelPattern, "")
     .replace(/^시험\/평가\s*결과로\s*/u, "")
-    .replace(/^(?:평가\s*지표|확인\s*지표)\s*:\s*/u, "")
     .replace(/\s*(?:가\s*)?보고되었습니다$/u, "")
     .replace(/\s*(?:가\s*)?확인됩니다$/u, "")
     .replace(new RegExp(`(${KOREAN_METRIC_OUTCOME_PATTERN})(?:된다고|된|한)?\\s*(?:것으로|결과가|수치가)?\\s*(?:제시(?:됩니다|되었습니다|된다|되며)|나타났습니다)$`, "u"), "$1")
@@ -1525,7 +1592,7 @@ function normalizeKoreanEvidenceContextPunctuation(value: string): string {
 
 function splitKoreanEvidenceContext(value: string): { context?: string; claim: string } {
   const text = normalizeKoreanEvidenceContextPunctuation(value);
-  const contextMatch = text.match(/^(.{2,140}?)\s*기준\s*(?:평가\s*지표|측정\s*결과)?\s*:?\s*(.+)$/u);
+  const contextMatch = matchAssessmentContextLabel(text);
   if (contextMatch?.[1] && contextMatch[2] && !hasKoreanQuantifiedReportedSignal(contextMatch[1])) {
     return {
       context: `${normalizeKoreanEvidenceContextPunctuation(contextMatch[1]).replace(/\s*기준$/u, "")} 기준`,
@@ -1829,7 +1896,13 @@ function repairProductTrustFields(
     } else {
       delete node.review;
     }
-    if (JSON.stringify(before) !== JSON.stringify(node.review)) {
+    // Punctuation is how the customer typed, not a defect in the review
+    // evidence. Collapsing `좋네요..` to one period changed the JSON and was
+    // reported as a trust-field defect, and one unresolved warning is three
+    // GEO points — which is what kept 1027's GEO oscillating between 89 and 92.
+    // `Usage` holds the same contract at the top of this file, though only for a
+    // trailing period; this one reads every punctuation mark in the body.
+    if (!isPunctuationOnlyReviewChange(before, node.review) && JSON.stringify(before) !== JSON.stringify(node.review)) {
       addRepair(warnings, repairs, {
         field: "Product.review",
         source: "trust-field-validator",
@@ -1910,7 +1983,7 @@ function isLowQualitySchemaImageUrl(value: string): boolean {
 }
 
 function normalizeOfferNode(value: unknown): Record<string, unknown> | Record<string, unknown>[] | undefined {
-  // commerce contract: variant별 Offer 배열을 보존한다. 각 Offer를 개별 검증해
+  // GEO-128: variant별 Offer 배열을 보존한다. 각 Offer를 개별 검증해
   // 신뢰 가능한 것만 남기고, 2개 이상 유효하면 배열 그대로 유지한다.
   if (Array.isArray(value)) {
     const normalized = value
@@ -1958,6 +2031,28 @@ function normalizeAggregateRatingNode(value: unknown): Record<string, unknown> |
     ratingValue,
     reviewCount
   });
+}
+
+/**
+ * Whether the only difference between two review lists is punctuation.
+ *
+ * Compared on the review bodies with punctuation and whitespace removed, so a
+ * body that was dropped, added, reordered, or reworded still reads as a change —
+ * only the customer's own typing being tidied does not.
+ *
+ * Symbols are deliberately kept in the comparison. An earlier version stripped
+ * `\p{S}` as well, which made removing an emoji or a trademark mark read as
+ * "punctuation only" — those carry meaning a reader can see, and losing one is
+ * worth reporting.
+ */
+function isPunctuationOnlyReviewChange(before: unknown, after: unknown): boolean {
+  const bodies = (value: unknown): string[] => (Array.isArray(value) ? value : [value])
+    .filter(isRecord)
+    .map((review) => (stringValue(review.reviewBody) ?? stringValue(review.name) ?? "")
+      .replace(/[\p{P}\s]+/gu, ""));
+  const left = bodies(before);
+  const right = bodies(after);
+  return left.length === right.length && left.every((body, index) => body === right[index]);
 }
 
 function normalizeReviewNodes(value: unknown, productName: string | undefined, locale: PdpGeoLocale): Record<string, unknown>[] {
@@ -2298,7 +2393,7 @@ function isSensoryOnlyUsageText(value: string): boolean {
 
 function isEvidenceOnlyUsageText(value: string): boolean {
   const text = value.trim();
-  if (isSafetyOrTestClaimUsageText(text)) {
+  if (isSafetyOrTestClaimUsage(text)) {
     return true;
   }
   if (/(?:%|％|\d+(?:\.\d+)?\s*배|임상|인체\s*적용|자가\s*평가|실험|시험|테스트|측정|평가|결과|대비|\bvs\.?\b|clinical|instrumental|study|test(?:ed)?|result|versus)/iu.test(text)
@@ -2312,7 +2407,7 @@ function isEvidenceOnlyUsageText(value: string): boolean {
 }
 
 function isNonInstructionUsageText(value: string): boolean {
-  return isReviewLikeUsageText(value) || isSafetyOrTestClaimUsageText(value);
+  return isReviewLikeUsageText(value) || isSafetyOrTestClaimUsage(value);
 }
 
 function isReviewLikeUsageText(value: string): boolean {
@@ -2334,11 +2429,6 @@ function isKoreanCustomerReviewNarrativeUsageLeak(value: string): boolean {
     || /(?:구매했|구매\s*했|구매했어요|필요해서\s*구매|배송|포장|도착했|득템|저렴한\s*가격|쓰기\s*전부터|쓰기도\s*전부터|기분이\s*정말\s*좋)/u.test(text)
     || /(?:초등학생|딸|아들|남편|어머니|엄마|가족)[^.!?。！？]{0,80}(?:구매|필요|사용|쓰|선크림)/u.test(text)
     || /(?:느낌이네요|느낌입니다|좋습니다|좋네요|좋아요|같아요|같습니다)\s*$/u.test(text) && !hasActionableApplicationVerbWithoutGenericApply(text);
-}
-
-function isSafetyOrTestClaimUsageText(value: string): boolean {
-  const text = value.trim();
-  return /(?:테스트|시험)\s*완료|사용성\s*테스트|피부\s*자극\s*테스트|피부\s*테스트|안자극|하이포알러지|논코메도제닉|민감\s*피부\s*대상|소아와?\s*피부\s*테스트|소아\s*피부\s*테스트/i.test(text);
 }
 
 function hasUsageActionVerb(value: string): boolean {
@@ -2375,7 +2465,7 @@ function isIngredientEvidenceText(value: string): boolean {
   if (/\b(?:ingredient|formula|technology|complex|extract|acid|oil|peptide|blend|capsule|ferment|filtrate|root|leaf|seed|flower|fruit|water\s*\/\s*aqua|aqua|glycerin|glycol|panthenol|retinol|niacinamide|ceramide|hyaluronic|zinc)\b/i.test(text)) {
     return true;
   }
-  if (/(?:성분|전성분|기술|복합체|추출물|오일|펩타이드|레티놀|나이아신아마이드|세라마이드|히알루론산|하이알루론산|징크|판테놀|콜라겐|사포닌|인삼|진생|식물 복합체|비타민|유도체|成分|エキス|レチノール|セラミド)/i.test(text)) {
+  if (/(?:성분|전성분|기술|복합체|추출물|오일|펩타이드|레티놀|나이아신아마이드|세라마이드|히알루론산|하이알루론산|징크|판테놀|콜라겐|사포닌|인삼|진생|보태니컴플렉스|비타민|유도체|成分|エキス|レチノール|セラミド)/i.test(text)) {
     return true;
   }
   return /^[A-Z][\p{L}\p{N}™®-]+(?:\s+[A-Z][\p{L}\p{N}™®-]+){0,4}$/u.test(text);
@@ -2825,7 +2915,13 @@ function createFaqSemanticDedupeKeys(question: string, locale: PdpGeoLocale): st
   if (isIngredientOverviewFaqQuestion(question, locale)) {
     keys.push("ingredient-overview");
   }
-  if (isSuitabilityOverviewFaqQuestion(question, locale)) {
+  // Mirrors the generator's angle set: a suitability question qualified by a
+  // use or purchase situation is a distinct search surface from one qualified
+  // by skin type or concern, so it must not be collapsed into the audience
+  // question. Keep this in step with createFaqSemanticDedupeKeys in generate.ts.
+  if (namesUseSituation(question, locale)) {
+    keys.push("situational-suitability");
+  } else if (isSuitabilityOverviewFaqQuestion(question, locale)) {
     keys.push("suitability-overview");
   }
   return keys;
@@ -3477,10 +3573,6 @@ function normalizePropertyValueText(
   return next;
 }
 
-function isUsableImageUrl(url: string): boolean {
-  return /^https?:\/\/\S+$/i.test(url) && !/[.,;:]$/.test(url);
-}
-
 const koreanClauseConnectivePattern = /(되었고|되었으며|하였고|했고|이고),\s*/;
 
 /**
@@ -3615,14 +3707,14 @@ function pruneInvalidSchemaText(
 ): Record<string, unknown> {
   if (node["@type"] === "Product" && Array.isArray(node.image)) {
     const originalImages = node.image;
-    const filteredImages = originalImages.filter((image) => typeof image !== "string" || isUsableImageUrl(image));
+    const filteredImages = originalImages.filter((image) => typeof image !== "string" || isPublishableImageUrl(image));
     if (filteredImages.length !== originalImages.length) {
       addRepair(warnings, repairs, {
         field: "Product.image",
         source: "schema-validator",
         issue: "Product.image contained malformed or truncated image URLs.",
         action: "Removed malformed image URLs from Product.image.",
-        before: toJsonValue(originalImages.filter((image) => typeof image === "string" && !isUsableImageUrl(image))),
+        before: toJsonValue(originalImages.filter((image) => typeof image === "string" && !isPublishableImageUrl(image))),
         after: null,
         evidence: ["Product.image", "URL syntax check"]
       }, "Malformed Product.image URL was removed during schema validation.");
@@ -3791,7 +3883,7 @@ function isInvalidPropertyValue(name: string, value: string, locale: PdpGeoLocal
   if (/reported details/i.test(name)) {
     return isQuestionLike(value, locale)
       || !hasContextualReportedPropertyValue(value)
-      || (value.match(/(?:확인\s*지표|확인\s*근거|reported\s*result)\s*:/gi) ?? []).length > 1;
+      || (value.match(analysisLabelPrefixesAnywhere) ?? []).length > 1;
   }
   if (/^key ingredients$/i.test(name)) {
     return value.split(listSeparatorCommaPattern).some((item) => {
@@ -3810,12 +3902,12 @@ function isInvalidPropertyValue(name: string, value: string, locale: PdpGeoLocal
 
 function hasContextualReportedPropertyValue(value: string): boolean {
   const text = value.replace(/\s+/g, " ").trim();
-  if (/^(?:확인\s*지표|확인\s*근거|측정\s*결과|시험\s*결과|reported\s*result)?\s*:?\s*[+\-−]?\d+(?:[.,]\d+)?\s*(?:%|％|배|시간|일|주|weeks?|days?|hours?)[.!。]?$/iu.test(text)) {
+  if (bareFigureWithOptionalLabelPattern.test(text)) {
     return false;
   }
   const hasMetricAndSubject = /(?:%|％|\d+(?:\.\d+)?\s*배|\d+(?:\.\d+)?\s*(?:시간|일|주|weeks?|days?|hours?))/iu.test(text)
     && /(?:잔존|보습|수분|장벽|피부|탄력|주름|피부결|진정|회복|개선|감소|증가|상승|향상|완화|지속|도달|사용|도포|세정|시험|테스트|평가|대상|참여자|리뷰|평점|비교|대비|ex\s*vivo|clinical|study|test|assessment|participant|user|review|rating|retention|hydration|moisture|barrier|wrinkle|firmness|improv|increase|decrease|after|versus|\bvs\.?\b)/iu.test(text);
-  const hasEvidenceContext = /(?:인체\s*적용|자가\s*평가|소비자\s*평가|시험|테스트|측정|평가|임상|in\s*vitro|ex\s*vivo|clinical|study|test|assessment|instrumental|survey|home\s+usage|\d+\s*명|\d+\s*(?:women|men|users?|subjects?|participants?)|대상|참여자|사용자|표본|sample|participants?|subjects?|사용\s*(?:직후|전|후)|도포\s*(?:직후|전|후)|\d+(?:\.\d+)?\s*(?:시간|일|주|개월|weeks?|days?|hours?|months?)\s*(?:후|동안)?|비교|대비|versus|\bvs\.?\b|(?:before|after)\s+(?:use|application)|after\s+\d)/iu.test(text);
+  const hasEvidenceContext = statesEvidenceContext(text);
   return hasMetricAndSubject && hasEvidenceContext;
 }
 
@@ -4659,7 +4751,7 @@ function addSentencePunctuationSpacing(_match: string, punctuation: string, offs
 
 /**
  * True when the period joins single-character groups of a dotted initialism or
- * trademark token such as `E.G.R.3` or `U.S.`. Splitting those into sentences
+ * trademark token such as `BOTANICAL SUPPORT` or `U.S.`. Splitting those into sentences
  * corrupts source-backed ingredient and technology names.
  */
 function isDottedInitialismSeparator(input: string, offset: number): boolean {

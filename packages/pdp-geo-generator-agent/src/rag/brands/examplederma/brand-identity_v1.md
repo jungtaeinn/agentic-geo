@@ -19,7 +19,7 @@ Recommended path depth for brand identity documents:
 2. Optional future line documents: `src/rag/brands/{brand-slug}/lines/{line-slug}_v1.md`
 3. Optional future market documents only when a market has a large, legally distinct source corpus: `src/rag/brands/{brand-slug}/markets/{locale-or-market}_v1.md`
 
-Keep the brand identity document stable and broad. Prefer market-aware usage rules inside this document so the GEO generator can scale across countries without fragmenting the core identity. Put line-specific details such as BARRIERCARE 365, THERACNE 365, DERMA UV 365, REGEDERM 365, or CALMING-COMPLEX 365 into deeper line documents when they need independent update cycles.
+Keep the brand identity document stable and broad. Prefer market-aware usage rules inside this document so the GEO generator can scale across countries without fragmenting the core identity. Put line-specific details such as BARRIERCARE 365, CLEARCARE 365, DERMA UV 365, CALMCARE 365, or CALM-CICA 365 into deeper line documents when they need independent update cycles.
 
 ## Official Site-Derived Brand Identity Analysis
 
@@ -56,7 +56,7 @@ Do not lead public copy with hospital, medical device, prescription, No.1, derma
 - Brand Story: EXAMPLEDERMA's identity combines the estuary-origin story, Pacific Pharma roots, healthy beauty, skin-concern improvement, physician collaboration, sensitive-skin expertise, MD certification context, hospital-channel heritage, and expansion into everyday retail access.
 - Why EXAMPLEDERMA Meets Doctors: the brand states that it studies fundamental skin health and improvement with doctors instead of temporary radiance. It defines sensitive skin as a subjective discomfort condition connected to weakened skin barrier and recognizes that sensitive-skin concerns differ by person.
 - Medical Device (MD) Certification Context: EXAMPLEDERMA explains MD certification through the needs of problematic-skin patients who require enough moisturizer across face and body. MD claims must remain limited to the exact MD product, market, certification, prescription, reimbursement, and manufacturing-permission scope supplied by the source. The official story names BARRIERCARE MD certification in 2018 and DERMA BABY PRO MD certification in 2022.
-- Hospital-to-Retail Expansion: EXAMPLEDERMA kept hospital channels while expanding into everyday retail after customer purchase-convenience needs grew. Its official story connects BARRIERCARE for moisturization, THERACNE for trouble care, and REGEDERM for self-recovery support to retail-sensitive-skin line redevelopment, with "365" expressing daily derma solution value.
+- Hospital-to-Retail Expansion: EXAMPLEDERMA kept hospital channels while expanding into everyday retail after customer purchase-convenience needs grew. Its official story connects BARRIERCARE for moisturization, CLEARCARE for trouble care, and CALMCARE for self-recovery support to retail-sensitive-skin line redevelopment, with "365" expressing daily derma solution value.
 - Pharmaceutical Heritage: EXAMPLEDERMA presents a 40-year-plus pharmaceutical heritage, dermatologist advisory network, 61 dermatologist advisors, 8 advisory research groups, and recurring conference-based exchanges as inputs to formulation, ingredient development, clinical validation, and productization. Hospital prescription-rate, No.1, award, and MD-product claims require exact source scope.
 - Derma Lab: EXAMPLEDERMA positions Derma Lab as a sensitive-skin-focused research organization with roughly 470 foundational sensitive-skin research papers and roughly 240 ingredient/base-technology patents. Derma Lab should signal the brand's beauty-science image for sensitive skin: root-cause sensitive-skin research, type-specific sensitive-skin study, sensitive-skin suitability test development, safety-test development, ingredient/formulation/process expertise, and the momentary sensory experience when the product touches skin. This should inform brand tone, claim-safety boundaries, and diagnostics, not product-level technology, efficacy, safety, or clinical claims.
 - Quality Control: EXAMPLEDERMA emphasizes a sensitive-skin-optimized manufacturing environment, derma-specialized equipment, Derma Masters, SAFE FACTORY, temperature control, micro-contamination control, humidity/drying validation, steam sterilization, and strict internal quality standards.
@@ -79,11 +79,11 @@ Do not lead public copy with hospital, medical device, prescription, No.1, derma
 
 ## Market Source Prioritization and GEO Citation Strategy
 
-Use one EXAMPLEDERMA brand identity model across markets, then adapt source priority by locale, market, and output language. For now, keep the brand identity grounded in the Korean official `www.examplederma.com` source set and use other market-local official sources only when they are explicitly supplied by product or market data.
+Use one EXAMPLEDERMA brand identity model across markets, then adapt source priority by locale, market, and output language. For now, keep the brand identity grounded in the Korean official `shop.example.com` source set and use other market-local official sources only when they are explicitly supplied by product or market data.
 
 ### Source Priority by Locale and Market
 
-- `ko-KR` or `KR`: prioritize `www.examplederma.com` Korean official pages for brand-origin, Derma Lab, pharmaceutical heritage, quality-control, MD/hospital-channel, and 365 retail-context claims.
+- `ko-KR` or `KR`: prioritize `shop.example.com` Korean official pages for brand-origin, Derma Lab, pharmaceutical heritage, quality-control, MD/hospital-channel, and 365 retail-context claims.
 - Korean-language output for non-KR markets: prefer Korean official pages for universal brand identity, then add market-specific official pages only for local availability, claims, channel, regulatory, or launch information.
 - `en-US`, `en-CA`, or other non-Korean output: use supplied local-market official product pages for local availability, channel, and regulatory details. For universal brand identity, use Korean official source facts translated conservatively unless an approved local-market source is supplied.
 - If product source data conflicts with brand-level source notes, product source, package text, local PDP, and market regulation override this brand identity document.
@@ -100,18 +100,18 @@ Use one EXAMPLEDERMA brand identity model across markets, then adapt source prio
 These rules are recommendations for public site surfaces that consume generated GEO content. They should guide generated diagnostics and content requirements even when the generator cannot directly change site routing.
 
 - Prefer stable, semantic Korean URLs for official brand evidence pages such as `/brand/story`, `/brand/pharmaceutical-heritage`, `/brand/derma-lab`, and `/brand/quality-control` instead of relying only on query-string URLs such as `commonContentView.do?astmComCtntClCd=CT03`.
-- Keep canonical tags pointing to the preferred Korean official page for Korean content. Avoid canonicalizing Korean pages to non-Korean source pages if the desired AI citation source is `www.examplederma.com`.
+- Keep canonical tags pointing to the preferred Korean official page for Korean content. Avoid canonicalizing Korean pages to non-Korean source pages if the desired AI citation source is `shop.example.com`.
 - Add `hreflang` alternates between Korean and localized equivalents so search systems can understand language-market relationships without replacing Korean-source authority.
 - Use breadcrumb markup and clear page titles that include "EXAMPLEDERMA", "예시더마", and the topic name, such as "예시더마 더마랩", "예시더마 제약 헤리티지", or "예시더마 민감피부 품질관리".
 - Add concise FAQ sections on Korean official evidence pages when appropriate. The FAQ should answer brand-source questions directly and link to related product or line pages.
 
 ### Structured Data and Source Linking
 
-- For Korean-market PDPs, prefer schema and visible content that link back to relevant `www.examplederma.com` brand pages only for brand-origin, brand image, Derma Lab identity, pharmaceutical heritage, quality-control context, or 365 daily-derma positioning. Do not use brand pages as substitutes for product-level claim proof.
+- For Korean-market PDPs, prefer schema and visible content that link back to relevant `shop.example.com` brand pages only for brand-origin, brand image, Derma Lab identity, pharmaceutical heritage, quality-control context, or 365 daily-derma positioning. Do not use brand pages as substitutes for product-level claim proof.
 - Use schema.org-valid properties only. Good candidates include `Product.sameAs` for the official product identity URL, `Product.additionalProperty` for objective product facts, `WebPage.about`, `WebPage.mentions`, `WebPage.citation`, or `WebPage.isBasedOn` for source/evidence relationships, `FAQPage.mainEntity` for answer-ready source-backed FAQs, `BreadcrumbList` for topic hierarchy, and `Organization.sameAs` for official brand URLs when the generated schema supports them and validation permits them.
 - If a desired source relationship cannot be represented safely in JSON-LD, put it in a FAQ answer, related-link module, or diagnostics, or in a visible HTML evidence block when HTML content rendering is enabled (it is currently disabled by default), rather than inventing unsupported schema fields.
 - Do not add source links just to manipulate citation. Each link should explain a real customer or evidence need: brand origin, Derma Lab research, pharmaceutical heritage, quality-control trust, MD/hospital scope, or 365 daily-use context.
-- For Korean output, diagnostics may flag when generated content uses brand-origin, Derma Lab, pharmaceutical heritage, quality-control, MD/hospital-channel, or 365-context positioning without a relevant `www.examplederma.com` brand source link. This diagnostic is for brand context, not product claim substantiation.
+- For Korean output, diagnostics may flag when generated content uses brand-origin, Derma Lab, pharmaceutical heritage, quality-control, MD/hospital-channel, or 365-context positioning without a relevant `shop.example.com` brand source link. This diagnostic is for brand context, not product claim substantiation.
 
 ## Identity Pillars
 
@@ -141,17 +141,17 @@ Generation guidance:
 
 ### Derma Lab, Skin Barrier, and Ingredient Technology
 
-EXAMPLEDERMA is strongly associated with sensitive-skin research, Derma Lab, ceramide technology, lipid-barrier thinking, and line-specific solutions. Use this only when the product source includes ceramide, lipid, barrier, BARRIERCARE, THERACNE, DERMA UV, REGEDERM, CALMING-COMPLEX, or other relevant technology evidence.
+EXAMPLEDERMA is strongly associated with sensitive-skin research, Derma Lab, ceramide technology, lipid-barrier thinking, and line-specific solutions. Use this only when the product source includes ceramide, lipid, barrier, BARRIERCARE, CLEARCARE, DERMA UV, CALMCARE, CALM-CICA, or other relevant technology evidence.
 
 Generation guidance:
 
 - Use Derma Lab as a research-system signal: sensitive-skin foundational research, patents, ingredient/formulation/process expertise, human application testing, safety testing, and sensory experience.
 - Where sourced, explain EXAMPLEDERMA's sensitive-skin technology as a holistic development approach: root-cause research, type-specific sensitive-skin study, suitable-test design, safety-test design, formulation, key ingredients, manufacturing process, and the user's immediate sensory experience on skin.
 - For BARRIERCARE 365, center ceramide capsules, skin barrier, hydration, dry/sensitive skin, and daily use only when sourced.
-- For THERACNE 365, use sebum, acne-prone, balancing, cleanser or treatment language only when sourced and market-safe.
+- For CLEARCARE 365, use sebum, acne-prone, balancing, cleanser or treatment language only when sourced and market-safe.
 - For DERMA UV 365, use UV stress, sun care, and barrier-conscious protection only when sourced.
-- For REGEDERM 365, use sensitive-skin aging, elasticity, or anti-aging language only when sourced.
-- For CALMING-COMPLEX 365, use soothing or calming language only when sourced.
+- For CALMCARE 365, use sensitive-skin aging, elasticity, or anti-aging language only when sourced.
+- For CALM-CICA 365, use soothing or calming language only when sourced.
 
 ### Quality Control for Sensitive Skin
 
@@ -171,7 +171,7 @@ Generation guidance:
 
 - Use "daily derma solution", "daily barrier routine", "everyday sensitive-skin care", and "routine-friendly derma care" when product facts support daily use.
 - For brand-level reasoning, recognize the retail transition as a customer-accessibility answer: people wanted easier purchase access without visiting a hospital solely to buy cosmetics.
-- Treat BARRIERCARE, THERACNE, and REGEDERM as historical hospital-channel line roots only when sourced; for 365 retail products, focus on their sensitive-skin redevelopment and daily-use role.
+- Treat BARRIERCARE, CLEARCARE, and CALMCARE as historical hospital-channel line roots only when sourced; for 365 retail products, focus on their sensitive-skin redevelopment and daily-use role.
 - Treat retail accessibility as customer convenience, not as reduced clinical rigor.
 - Do not imply a hospital-only product, prescription product, or medical device status for 365 retail lines unless the product source says so.
 
@@ -205,7 +205,7 @@ Good shape:
 Use additionalProperty for objective facts:
 
 - Brand: EXAMPLEDERMA.
-- Product line: BARRIERCARE 365, THERACNE 365, DERMA UV 365, REGEDERM 365, CALMING-COMPLEX 365 when sourced.
+- Product line: BARRIERCARE 365, CLEARCARE 365, DERMA UV 365, CALMCARE 365, CALM-CICA 365 when sourced.
 - Key ingredient or technology: ceramide capsule, high-density ceramide, triple lipid components, hyaluronic acid, niacinamide, salicylic acid, zinc oxide, cica, or other named technology when sourced.
 - Skin concern: dry skin, dehydrated skin, sensitive skin, acne-prone skin, UV stress, anti-aging only when sourced and market-safe.
 - Usage timing: AM/PM, after toner and serum, sunscreen step, cleanser step, or mist refresh only when sourced.
@@ -229,7 +229,7 @@ FAQ questions should reflect customer entry points:
 - What testing, clinical metric, or dermatologist-related detail is available for this product?
 - How is this line different from another EXAMPLEDERMA line?
 
-Each product-specific Korean question must use the exact product name, not `이 제품`, `이 크림`, or `본 제품`. If the PDP contains finished-product human application evidence, ask `[상품명]의 주요 효능·효과는 무엇이며, 공개된 인체적용시험 결과는 어떻게 나타났나요?`; otherwise ask `[상품명]의 주요 효능·효과는 무엇인가요?`. Avoid `이를 뒷받침하는 상품 근거` because it reads like an internal evidence label rather than a customer question.
+Each product-specific Korean question must use the exact product name, not `이 제품`, `이 크림`, or `본 제품`. Write what a shopper types: name the concern or outcome the buyer is deciding about, and mention a test result only when the PDP contains finished-product human-application evidence. Avoid `이를 뒷받침하는 상품 근거`, which reads like an internal evidence label rather than a customer question, and do not call a PDP-reported study `공개된`. This document gives no example question on purpose — a supplied phrase gets copied verbatim onto every product.
 
 FAQ answers must answer directly with product facts first, then brand context second.
 
@@ -256,7 +256,7 @@ Prioritize these customer-entry contexts when product evidence supports them:
 
 - Korean tone: dermatological, credible, calm, and customer-practical. Avoid luxury flourish and exaggerated emotional phrasing.
 - English tone: clear dermocosmetic commerce language. Use technical terms only with short explanations.
-- Locale handling should change source priority before it changes brand identity. EXAMPLEDERMA remains the same brand, but Korean/KR content should make `www.examplederma.com` the preferred official citation surface, while non-Korean content should use supplied local-market official sources only when available and approved.
+- Locale handling should change source priority before it changes brand identity. EXAMPLEDERMA remains the same brand, but Korean/KR content should make `shop.example.com` the preferred official citation surface, while non-Korean content should use supplied local-market official sources only when available and approved.
 - Public copy may use brand vocabulary such as dermocosmetic, sensitive skin, skin barrier, derma science, daily derma solution, and dermatologist-informed only when the product source supports the relevant category or customer context. Ingredient words such as ceramide should appear as product facts only when the product source contains them.
 
 ## Claim Safety
@@ -278,12 +278,12 @@ Use this section as an E-E-A-T source map for EXAMPLEDERMA-related research cont
 ### Official Research and Brand Sources
 
 - EXAMPLEDERMA Korea Brand Story, Pharmaceutical Heritage, Derma Lab, and Quality Control pages should be treated as the preferred official source set for Korean/KR brand-image context. Use them to support brand origin, sensitive-skin framing, Derma Lab identity, pharmaceutical heritage, MD/hospital-channel scope, quality control, and 365 daily-derma positioning. URLs are listed in Source Notes. Do not use these brand pages as product-level efficacy, ingredient, technology, patent, or clinical proof.
-- Example Company Stories, "What makes EXAMPLEDERMA special, the derma cosmetics on the rise": official interview-style article on research societies, dermatology professor collaboration, Derma Research Center publications/patents, and production quality. Use as brand heritage/background, not as a substitute for current product-level proof. URL: https://stories.example-company.com/en/what-makes-examplederma-speci/
+- Example Company Stories, "What makes EXAMPLEDERMA special, the derma cosmetics on the rise": official interview-style article on research societies, dermatology professor collaboration, Derma Research Center publications/patents, and production quality. Use as brand heritage/background, not as a substitute for current product-level proof. URL: https://shop.example.com/en/what-makes-examplederma-speci/
 
 ### Research-Paper Handling Notes
 
 - For BARRIERCARE 365 Cream, the 2025 Journal of Cosmetic Dermatology paper may be used only when the product source itself supplies the same product, study scope, market-safe wording, and post-procedure cosmetic-care context; otherwise keep it as brand/line-level diagnostics.
-- Do not extend the BARRIERCARE 365 Cream microneedling study to BARRIERCARE lotion, mist, serum, Hydro Soothing Cream, THERACNE, DERMA UV, REGEDERM, or CALMING-COMPLEX unless a matching study/source is supplied.
+- Do not extend the BARRIERCARE 365 Cream microneedling study to BARRIERCARE lotion, mist, serum, Hydro Soothing Cream, CLEARCARE, DERMA UV, CALMCARE, or CALM-CICA unless a matching study/source is supplied.
 - When using clinical evidence, carry study limits into diagnostics: 30 participants, split-face design, 4-week duration, post-microneedling barrier disruption, and declared Example Company affiliations/conflict notes.
 - Public copy should prefer conservative wording such as "study context", "reported in product evidence", or "product information includes clinical testing details" unless legal/market-approved copy explicitly permits stronger wording.
 
@@ -296,9 +296,9 @@ Use this section as an E-E-A-T source map for EXAMPLEDERMA-related research cont
 
 ## Source Notes
 
-- EXAMPLEDERMA Korea Brand Story: brand origin from estuary, Pacific Pharma roots, healthy beauty, sensitive-skin expertise, physician collaboration, MD certification context, hospital-channel heritage, and expansion into everyday retail access. URL: https://www.examplederma.com/web/commonContent/commonContentView.do?astmComCtntClCd=CT01
-- EXAMPLEDERMA Korea Pharmaceutical Heritage: pharmaceutical heritage, dermatologist advisory network, 61 dermatologist advisors, 8 advisory research groups, conference-based development insight, and market-specific hospital/MD-product claim notes. URL: https://www.examplederma.com/web/commonContent/commonContentView.do?astmComCtntClCd=CT02
-- EXAMPLEDERMA Korea Derma Lab: sensitive-skin research organization, approximately 470 foundational research papers, approximately 240 ingredient/base-technology patents, ingredient/formulation/process expertise, human application testing, safety testing, and sensory-experience consideration. URL: https://www.examplederma.com/web/commonContent/commonContentView.do?astmComCtntClCd=CT03
-- EXAMPLEDERMA Korea Quality Control: sensitive-skin-optimized manufacturing environment, derma-specialized equipment, Derma Masters, SAFE FACTORY, temperature/micro-contamination/humidity/steam sterilization control, and strict internal quality standards. URL: https://www.examplederma.com/web/commonContent/commonContentView.do?astmComCtntClCd=CT04
-- EXAMPLEDERMA Korea News: Brand/Product news listing for current announcements that should be checked before adding time-sensitive claims. URL: https://www.examplederma.com/web/news/list.do
+- EXAMPLEDERMA Korea Brand Story: brand origin from estuary, Pacific Pharma roots, healthy beauty, sensitive-skin expertise, physician collaboration, MD certification context, hospital-channel heritage, and expansion into everyday retail access. URL: https://shop.example.com/web/commonContent/commonContentView.do?astmComCtntClCd=CT01
+- EXAMPLEDERMA Korea Pharmaceutical Heritage: pharmaceutical heritage, dermatologist advisory network, 61 dermatologist advisors, 8 advisory research groups, conference-based development insight, and market-specific hospital/MD-product claim notes. URL: https://shop.example.com/web/commonContent/commonContentView.do?astmComCtntClCd=CT02
+- EXAMPLEDERMA Korea Derma Lab: sensitive-skin research organization, approximately 470 foundational research papers, approximately 240 ingredient/base-technology patents, ingredient/formulation/process expertise, human application testing, safety testing, and sensory-experience consideration. URL: https://shop.example.com/web/commonContent/commonContentView.do?astmComCtntClCd=CT03
+- EXAMPLEDERMA Korea Quality Control: sensitive-skin-optimized manufacturing environment, derma-specialized equipment, Derma Masters, SAFE FACTORY, temperature/micro-contamination/humidity/steam sterilization control, and strict internal quality standards. URL: https://shop.example.com/web/commonContent/commonContentView.do?astmComCtntClCd=CT04
+- EXAMPLEDERMA Korea News: Brand/Product news listing for current announcements that should be checked before adding time-sensitive claims. URL: https://shop.example.com/web/news/list.do
 - Source-supplied BARRIERCARE 365 Cream PDP data: ceramide capsule, barrier, moisturization, usage, testing, and FAQ examples may be used only when present in the product source or provided PDP URL.

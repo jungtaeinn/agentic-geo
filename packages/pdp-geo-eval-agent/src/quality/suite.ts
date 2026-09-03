@@ -58,6 +58,9 @@ export function getEvaluationSuiteCopy(language: EvalUiLanguage) {
       narrativeWhyFlat: "두 버전 모두 질문에 비슷한 수준으로 답해서 인용 차이가 나지 않았어요.",
       attributionLabel: "인용 기여",
       overallAttributionLabel: "전체 인용 기여 (어느 섹션이 인용을 벌었나)",
+      imageAttributionLabel: "이미지 기여",
+      overallImageAttributionLabel: "전체 이미지별 인용 기여 (어느 이미지가 인용을 벌었나)",
+      imageOtherLabel: "이미지 근거 없는 인용",
       sectionLabels: {
         productName: "상품명",
         description: "설명",
@@ -147,6 +150,9 @@ export function getEvaluationSuiteCopy(language: EvalUiLanguage) {
     narrativeWhyFlat: "Both versions answered the questions about equally well, so citations did not shift.",
     attributionLabel: "Citation contribution",
     overallAttributionLabel: "Overall contribution (which section earned the citations)",
+    imageAttributionLabel: "Image contribution",
+    overallImageAttributionLabel: "Overall image contribution (which image earned the citations)",
+    imageOtherLabel: "citations without image lineage",
     sectionLabels: {
       productName: "Product name",
       description: "Description",
@@ -316,11 +322,33 @@ export function truncateQuote(value: string, max = 110): string {
 
 export function formatSectionAttribution(
   attribution: NonNullable<CitationProbeResult["sectionAttribution"]>,
-  suite: EvaluationSuiteCopy
+  suite: EvaluationSuiteCopy,
+  formatId: (id: string) => string = (id) => suite.sectionLabels[id] ?? id
 ): string {
   return attribution
     .filter((item) => item.share >= 0.05)
     .slice(0, 3)
-    .map((item) => `${suite.sectionLabels[item.sectionId] ?? item.sectionId} ${shareToPct(item.share)}%`)
+    .map((item) => `${formatId(item.sectionId)} ${shareToPct(item.share)}%`)
     .join(" · ");
+}
+
+/**
+ * Display formatter for image-attribution section ids, which are source
+ * image URLs rather than content-section keys: shows the URL's basename
+ * (query string stripped) so the UI doesn't spill raw CDN URLs. The "other"
+ * id is the image dimension's own sentinel for citations with no image
+ * lineage — usually the largest share — so it gets suite-localized copy
+ * instead of the raw sentinel string leaking into the UI.
+ */
+export function formatImageSectionId(id: string, suite: EvaluationSuiteCopy): string {
+  if (id === "other") {
+    return suite.imageOtherLabel;
+  }
+  try {
+    const pathname = new URL(id, "https://placeholder.invalid").pathname;
+    const basename = pathname.split("/").filter(Boolean).pop();
+    return basename || id;
+  } catch {
+    return id;
+  }
 }

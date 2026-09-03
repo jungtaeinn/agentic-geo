@@ -1,12 +1,12 @@
 import { Column, Entity, PrimaryColumn } from "typeorm";
 
 /**
- * neo.geo_generation 부분 매핑 (설계 §9, 의도적).
- * agent-api는 이 row를 INSERT하지 않는다 — 접수는 upstream API가 소유한다.
+ * agentic_geo.geo_generation 부분 매핑 (설계 §9, 의도적).
+ * agent-api는 이 row를 INSERT하지 않는다 — 접수는 upstream-api가 소유한다.
  * agent-api는 status를 PROCESSING→SUCCEEDED/FAILED로 가드 UPDATE하고 product/locale/status를 읽을 뿐이므로,
  * dedup_key·attempt_count·next_retry_at·created_at 등 접수/재시도 전용 컬럼은 매핑하지 않는다.
  */
-@Entity({ schema: "neo", name: "geo_generation" })
+@Entity({ schema: "agentic_geo", name: "geo_generation" })
 export class GeoGeneration {
   @PrimaryColumn({ name: "geo_generation_id", type: "uuid" })
   geoGenerationId!: string;

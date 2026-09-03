@@ -2,8 +2,7 @@
   "name": "@agentic-geo/agent-api",
   "private": true,
   "version": "0.2.0",
-  "license": "SEE LICENSE IN ../../LICENSE",
-  "description": "Async GEO generation API service that persists results to PostgreSQL.",
+  "description": "Async GEO generation API service called by dispatcher; persists results to shared Aurora.",
   "scripts": {
     "build": "nest build --webpack",
     "dev": "nest start --webpack --watch",
@@ -22,6 +21,7 @@
     "@nestjs/platform-express": "^11.1.28",
     "@nestjs/typeorm": "^11.0.3",
     "@opentelemetry/sdk-node": "^0.221.0",
+    "@agentic-geo/pdp-extractor-agent": "workspace:*",
     "@agentic-geo/pdp-geo-generator-agent": "workspace:*",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
@@ -57,5 +57,7 @@
     "webpack": "^5.109.2",
     "webpack-node-externals": "^3.0.0",
     "yaml": "^2.9.0"
-  }
+  },
+  "author": "jungtaeinn",
+  "license": "SEE LICENSE IN LICENSE"
 }

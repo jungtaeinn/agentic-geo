@@ -2,10 +2,10 @@
  * Golden-set product fixtures extracted from live PDPs on 2026-07-31.
  *
  * Sources:
- * - https://example.com/products/botanical-renewal-serum?variant=example-variant-1
- * - https://example.com/products/essential-activating-serum?variant=example-variant-2
- * - https://example.com/web/product/view.do?prdSeq=1149
- * - https://example.com/web/product/view.do?prdSeq=1027
+ * - https://shop.example.com/products/botanical-ginseng-rejuvenating-serum?variant=43202379841581
+ * - https://shop.example.com/products/essential-activating-serum?variant=41665230798893
+ * - https://shop.example.com/web/product/view.do?prdSeq=1149
+ * - https://shop.example.com/web/product/view.do?prdSeq=1027
  *
  * Field values are curated verbatim or lightly normalized from the source PDP
  * (Shopify product JSON / EXAMPLEDERMA product page). These fixtures are frozen
@@ -13,14 +13,14 @@
  * every historical baseline comparison.
  */
 
-export const exampleluxeBotanicalRenewalSerum = {
-  name: "Botanical Renewal Serum",
+export const exampleluxeBotanicalGinsengSerum = {
+  name: "Botanical Ginseng Rejuvenating Serum",
   brand: "ExampleLuxe",
   category: "Skincare Serum",
   sku: "270320853",
   gtin: "8809925175266",
   price: { raw: "$215.00", amount: 215, currency: "USD" },
-  images: ["https://cdn.example.com/products/BRAND.COM_1080x1080_NewCGRSerum_01.Packshot_50ml.jpg"],
+  images: ["https://cdn.example.com/products/sample-77d130b7c425.jpg"],
   options: ["50 mL"],
   benefits: ["anti-aging", "firming", "moisturizing"],
   effects: [
@@ -30,7 +30,7 @@ export const exampleluxeBotanicalRenewalSerum = {
     "improved moisturization"
   ],
   ingredients: [
-    "Botanical Actives",
+    "Korean Ginseng Actives",
     "Ginseng Peptide",
     "Ginseng Capsules with Retinol",
     "Niacinamide"
@@ -44,25 +44,25 @@ export const exampleluxeBotanicalRenewalSerum = {
   breadcrumbs: [
     { name: "Home" },
     { name: "Serums" },
-    { name: "Botanical Renewal Serum" }
+    { name: "Botanical Ginseng Rejuvenating Serum" }
   ],
   sourceTexts: [
-    "Unlock your skin's youthful radiance with our Botanical Renewal Serum. This powerful formula is enhanced with our advanced capsule technology for optimal absorption.",
+    "Unlock your skin's youthful radiance with our Botanical Ginseng Rejuvenating Serum. This powerful formula is enhanced with our advanced capsule technology for optimal absorption.",
     "Retinol-infused capsules melt into skin on contact to visibly reduce fine lines and improve firmness. This advanced system improves moisturization, rejuvenates, and refines the look of skin texture.",
-    "KEY INGREDIENTS: Botanical Actives, Ginseng Peptide, Ginseng Capsules with Retinol, Niacinamide.",
+    "KEY INGREDIENTS: Korean Ginseng Actives, Ginseng Peptide, Ginseng Capsules with Retinol, Niacinamide.",
     "SOLUTION FOR: Fine lines and wrinkles, loss of firmness and elasticity, and uneven texture.",
     "WORKS BEST FOR: Normal, dry, combination, and oily skin types."
   ]
 };
 
-export const exampleluxeEssentialActivatingSerum = {
+export const exampleluxeEssentialCareActivatingSerum = {
   name: "Essential Activating Serum",
   brand: "ExampleLuxe",
   category: "Skincare Serum",
   sku: "270321066",
   gtin: "8809803584777",
   price: { raw: "$89.00", amount: 89, currency: "USD" },
-  images: ["https://cdn.example.com/products/2023activating-serum6thGeneration-60ml-1_270320590_Brand.com_1080px1_1ratio.jpg"],
+  images: ["https://cdn.example.com/products/sample-2edebdf15ad1.jpg"],
   options: ["60 mL", "90 mL"],
   benefits: ["firming", "hydrating", "radiance"],
   effects: [
@@ -97,10 +97,10 @@ export const exampleluxeEssentialActivatingSerum = {
 };
 
 export const exampledermaBarrierCareCapsuleToner = {
-  name: "예시더마 배리어케어365 캡슐 토너",
+  name: "예시더마 모이베리어365 캡슐 토너",
   brand: "EXAMPLEDERMA",
   category: "토너",
-  images: ["https://example.com/upload/product/1149_1098_DSPIMG_S.png"],
+  images: ["https://cdn.example.com/upload/product/1149_1098_DSPIMG_S.png"],
   options: ["300ml"],
   benefits: ["장벽 보습", "피부결 정돈", "세안 후 즉각 수분 공급"],
   effects: ["약해진 피부장벽 강화", "촉촉하고 건강한 피부 바탕"],
@@ -117,10 +117,10 @@ export const exampledermaBarrierCareCapsuleToner = {
   faq: [
     {
       question: "캡슐이 워터 안에 떠있는 것이 왜 중요한가요?",
-      answer: "세라마이드는 물에 녹지 않아 수분 함량이 높은 토너에서는 장벽 개선 효과를 얻기 어렵습니다. 배리어케어365 캡슐 토너는 고밀도 세라마이드 캡슐이 PHA 토닝 워터 안에 서스펜션되어 있어 세안 후 첫 단계부터 세라마이드 장벽 보습 케어가 가능하며, 균일하게 떠있는 캡슐이 사용할 때마다 적절하게 토출됩니다."
+      answer: "세라마이드는 물에 녹지 않아 수분 함량이 높은 토너에서는 장벽 개선 효과를 얻기 어렵습니다. 모이베리어365 캡슐 토너는 고밀도 세라마이드 캡슐이 PHA 토닝 워터 안에 서스펜션되어 있어 세안 후 첫 단계부터 세라마이드 장벽 보습 케어가 가능하며, 균일하게 떠있는 캡슐이 사용할 때마다 적절하게 토출됩니다."
     },
     {
-      question: "배리어케어365 크림에 함유된 캡슐과 동일한 캡슐인가요?",
+      question: "모이베리어365 크림에 함유된 캡슐과 동일한 캡슐인가요?",
       answer: "네, 자사의 특허 성분인 고밀도 세라마이드 캡슐로 동일합니다. 캡슐은 실제 피부 장벽 지질과 유사한 성분/구조로 이루어져 있으며, 손상된 피부장벽 틈에 오래 잔존하며 장벽을 강화합니다."
     },
     {
@@ -137,7 +137,7 @@ export const exampledermaBarrierCareCapsuleToner = {
     { name: "HOME" },
     { name: "EXAMPLEDERMA 365" },
     { name: "BARRIERCARE365" },
-    { name: "예시더마 배리어케어365 캡슐 토너" }
+    { name: "예시더마 모이베리어365 캡슐 토너" }
   ],
   sourceTexts: [
     "세안 후 즉각 수분공급 장벽보습 캡슐토너.",
@@ -147,10 +147,10 @@ export const exampledermaBarrierCareCapsuleToner = {
 };
 
 export const exampledermaBarrierCareCreamMist = {
-  name: "배리어케어365 크림 미스트",
+  name: "모이베리어 365 크림 미스트",
   brand: "EXAMPLEDERMA",
   category: "미스트",
-  images: ["https://example.com/upload/product/1027_217_DSPIMG_S.png"],
+  images: ["https://cdn.example.com/upload/product/1027_217_DSPIMG_S.png"],
   options: ["120ml"],
   benefits: ["고보습", "피부장벽 보호", "속건조 완화"],
   effects: ["미세분사로 즉각적인 보습", "오래 유지되는 촉촉함"],
@@ -167,16 +167,16 @@ export const exampledermaBarrierCareCreamMist = {
   metrics: [],
   faq: [
     {
-      question: "배리어케어 제품 중 동물유래성분이 들어있는 제품이 있나요?",
+      question: "모이베리어 제품 중 동물유래성분이 들어있는 제품이 있나요?",
       answer: "외부 기관 비건 인증을 받은 것은 아니지만 동물성 원료는 들어있지 않으며, 동물실험도 하지 않았습니다."
     },
     {
       question: "건성 피부라 피부가 따가운 상태인데 사용해도 될까요?",
-      answer: "배리어케어 라인은 민감하고 건조한 피부에 특화된 보습 솔루션을 제공합니다. 다만 피부 상태를 정확히 알기 어려우므로 국소 부위에 먼저 사용해 본 뒤 사용하시기를 권장합니다."
+      answer: "모이베리어 라인은 민감하고 건조한 피부에 특화된 보습 솔루션을 제공합니다. 다만 피부 상태를 정확히 알기 어려우므로 국소 부위에 먼저 사용해 본 뒤 사용하시기를 권장합니다."
     },
     {
       question: "피부 장벽의 기능이 무엇인가요?",
-      answer: "피부장벽은 외부 유해요소를 막고 내부 수분 손실을 방지하는 벽 역할을 합니다. 장벽 지질은 세라마이드, 콜레스테롤, 지방산으로 이루어져 있으며, 배리어케어 라인은 피부 지질과 유사한 구조로 만든 특허 캡슐로 피부장벽을 강화합니다."
+      answer: "피부장벽은 외부 유해요소를 막고 내부 수분 손실을 방지하는 벽 역할을 합니다. 장벽 지질은 세라마이드, 콜레스테롤, 지방산으로 이루어져 있으며, 모이베리어 라인은 피부 지질과 유사한 구조로 만든 특허 캡슐로 피부장벽을 강화합니다."
     },
     {
       question: "크림 미스트를 평상시 루틴으로 사용하는 경우 사용 순서는 어떻게 되나요?",
@@ -197,7 +197,7 @@ export const exampledermaBarrierCareCreamMist = {
     { name: "HOME" },
     { name: "EXAMPLEDERMA 365" },
     { name: "BARRIERCARE365" },
-    { name: "배리어케어365 크림 미스트" }
+    { name: "모이베리어 365 크림 미스트" }
   ],
   sourceTexts: [
     "세라마이드 보습 크림 미스트.",
@@ -208,8 +208,8 @@ export const exampledermaBarrierCareCreamMist = {
 };
 
 export const evalProducts = {
-  "exampleluxe-renewal-serum": exampleluxeBotanicalRenewalSerum,
-  "exampleluxe-activating-serum": exampleluxeEssentialActivatingSerum,
+  "exampleluxe-cgr-serum": exampleluxeBotanicalGinsengSerum,
+  "exampleluxe-fcas-vi": exampleluxeEssentialCareActivatingSerum,
   "examplederma-capsule-toner": exampledermaBarrierCareCapsuleToner,
   "examplederma-cream-mist": exampledermaBarrierCareCreamMist
 } as const;

@@ -1,7 +1,8 @@
 import { GenerationService } from "../src/geo/generation.service";
+import { OcrEnrichmentService } from "../src/geo/ocr-enrichment.service";
 
 describe("GenerationService (mock provider)", () => {
-  const service = new GenerationService();
+  const service = new GenerationService(new OcrEnrichmentService());
 
   it("generates schema markup for a product with mock provider", async () => {
     const artifact = await service.generate({
@@ -21,20 +22,20 @@ describe("GenerationService (mock provider)", () => {
 });
 
 describe("GenerationService brand identity", () => {
-  const service = new GenerationService();
+  const service = new GenerationService(new OcrEnrichmentService());
 
   it("emits Brand.sameAs from the caller's official brand entity URLs", async () => {
     const artifact = await service.generate({
       geoGenerationId: "33333333-3333-3333-3333-333333333333",
       locale: "ko-KR",
       product: { item: { title: "Hydra Barrier Cream", brand: "ExampleLuxe", body: "Daily cream for dry skin." } },
-      brandSameAs: ["https://www.exampleluxe.com/"],
+      brandSameAs: ["https://shop.example.com/"],
     });
 
     const graph = (artifact.jsonLd as { "@graph"?: Array<Record<string, unknown>> })["@graph"] ?? [];
     const product = graph.find((node) => node["@type"] === "Product") as Record<string, unknown> | undefined;
     const brand = product?.brand as Record<string, unknown> | undefined;
 
-    expect(brand?.sameAs).toEqual(["https://www.exampleluxe.com/"]);
+    expect(brand?.sameAs).toEqual(["https://shop.example.com/"]);
   });
 });

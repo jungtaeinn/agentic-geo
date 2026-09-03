@@ -55,9 +55,11 @@ const KNOWN_INTENTIONAL_DUPLICATE_PAIRS: RuleWhitelistEntry[] = [
     // wording drift that pushes it over 0.8 does not become a surprise
     // failure; it is a known, reviewed duplicate either way.
     // Re-pointed from -008 to -010 when the composition contract gained the two
-    // named-technology bullets ahead of this one; the fingerprint below is what
-    // caught the shift, which is what it is there for.
-    ruleIds: ["CONTENT-FIELD-CONTRACTS-010", "BEST-PRACTICE-044"],
+    // named-technology bullets ahead of this one, and from -010 to -013 when
+    // Task 7b/7d added the question-chain, concern-mechanism, and source-stated
+    // contrast bullets ahead of it; the fingerprint below is what caught each
+    // shift, which is what it is there for.
+    ruleIds: ["CONTENT-FIELD-CONTRACTS-013", "BEST-PRACTICE-044"],
     reason:
       "content-field-contracts_v1.md Description Composition Contract usage clause vs best-practice_v1.md:110 field-usage bullet — intentional echo from the Task 3 fix; canonical document is authoritative.",
     textFingerprints: ["usagecontextbelongsinusagehowtoandmustno", "usagecontextbelongsinusagehowtosoitdoesn"]

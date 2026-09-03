@@ -68,7 +68,7 @@ GEO_REGRESSION_OPEN=on-failure pnpm --filter @agentic-geo/agent-api test:regress
 
 ```yaml
 id: GEO-001                      # 필수, 고유
-name: 예시럭셔리 보태니컬 리뉴얼 세럼           # 선택, 리포트 가독성용
+name: 예시럭셔리 보태니컬 세럼           # 선택, 리포트 가독성용
 tags: [exampleluxe, en-US]         # 선택, 필터·그룹핑용
 skip: false                      # 선택, 일시 제외
 timeoutMs: 900000                # 선택
@@ -87,7 +87,7 @@ expect:                          # 전부 선택 — 없으면 루브릭 점수�
   schemaTypes: [Product, WebPage, FAQPage]
   forbiddenSchemaTypes: [Review]
   maxValidationWarnings: 0
-  contains: ["보태니컬 리뉴얼"]
+  contains: ["보태니컬"]
   notContains: ["최고", "1위"]
   jsonPath:
     - { path: "@graph.brand.name", equals: ExampleLuxe }

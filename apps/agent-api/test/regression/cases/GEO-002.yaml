@@ -15,8 +15,8 @@ tags: ["exampleluxe","en-US","serum"]
 request: {
     "locale": "en-US",
     "product": {
-      "canonicalUrl": "https://us.exampleluxe.com/products/essential-activating-serum?variant=example-variant-2",
-      "offerUrl": "https://us.exampleluxe.com/products/essential-activating-serum?variant=example-variant-2",
+      "canonicalUrl": "https://shop.example.com/products/essential-activating-serum?variant=41665230798893",
+      "offerUrl": "https://shop.example.com/products/essential-activating-serum?variant=41665230798893",
       "geoProduct": {
         "name": "Essential Activating Serum",
         "brand": "ExampleLuxe",
@@ -27,11 +27,11 @@ request: {
         },
         "description": "A powerhouse serum that addresses the look of existing fine lines while strengthening skin to help prevent future visible signs of aging.",
         "images": [
-          "https://cdn.example.com/products/2023FCAS6thGeneration-60ml-1_270320590_Brand.com_1080px1_1ratio.jpg",
-          "https://cdn.example.com/products/02.FCASRe-PushThumbnailRefresh_CLINICAL__Brand.com_1080px1_1ratio.jpg",
-          "https://cdn.example.com/products/FCAS_Brand.com_1080_10801.jpg",
-          "https://cdn.example.com/products/05.FCASRe-PushThumbnailRefresh_SALESDATA__Brand.com_1080px1_1ratio.jpg",
-          "https://cdn.example.com/products/03.FCAS90ml_Brand.com_1080px1_1ratio.jpg"
+          "https://cdn.example.com/products/sample-2edebdf15ad1.jpg",
+          "https://cdn.example.com/products/sample-262717ffed8a.jpg",
+          "https://cdn.example.com/products/sample-7ba5bfce2308.jpg",
+          "https://cdn.example.com/products/sample-b96a8c2857e3.jpg",
+          "https://cdn.example.com/products/sample-1802315039f0.jpg"
         ],
         "options": [
           "60 mL",
@@ -110,15 +110,15 @@ request: {
           "ocr": {
             "imageTexts": [
               {
-                "imageUrl": "https://cdn.example.com/products/02.FCASRe-PushThumbnailRefresh_CLINICAL__Brand.com_1080px1_1ratio.jpg",
+                "imageUrl": "https://cdn.example.com/products/sample-262717ffed8a.jpg",
                 "text": "AFTER 4 WEEKS OF USE, 92% AGREE SKIN LOOKS CLEAR AND BRIGHT. 86% AGREE FINE LINES LOOK REDUCED. *Home usage test survey, 600 women, with daily use."
               },
               {
-                "imageUrl": "https://cdn.example.com/products/FCAS_Brand.com_1080_10801.jpg",
+                "imageUrl": "https://cdn.example.com/products/sample-7ba5bfce2308.jpg",
                 "text": "AFTER ONE BOTTLE OF DAILY USE, 100% users had visible improvement in FINE LINES, SKIN ELASTICITY, DULLNESS. *Instrumental result, 30 subjects, after 8 weeks of daily use."
               },
               {
-                "imageUrl": "https://cdn.example.com/products/05.FCASRe-PushThumbnailRefresh_SALESDATA__Brand.com_1080px1_1ratio.jpg",
+                "imageUrl": "https://cdn.example.com/products/sample-b96a8c2857e3.jpg",
                 "text": "ExampleLuxe Essential Activating Serum, Korea's number one anti-aging serum (sales data)."
               }
             ],
@@ -129,7 +129,7 @@ request: {
             ],
             "sentenceInsights": [
               {
-                "imageUrl": "https://cdn.example.com/products/02.FCASRe-PushThumbnailRefresh_CLINICAL__Brand.com_1080px1_1ratio.jpg",
+                "imageUrl": "https://cdn.example.com/products/sample-262717ffed8a.jpg",
                 "text": "After 4 weeks of use, 92% agree skin looks clear and bright (home usage test survey, 600 women).",
                 "category": "metric",
                 "keywords": [
@@ -140,7 +140,7 @@ request: {
                 ]
               },
               {
-                "imageUrl": "https://cdn.example.com/products/FCAS_Brand.com_1080_10801.jpg",
+                "imageUrl": "https://cdn.example.com/products/sample-7ba5bfce2308.jpg",
                 "text": "After one bottle of daily use, 100% users had visible improvement in fine lines, skin elasticity, dullness (instrumental result, 30 subjects, 8 weeks).",
                 "category": "metric",
                 "keywords": [
@@ -152,7 +152,7 @@ request: {
                 ]
               },
               {
-                "imageUrl": "https://cdn.example.com/products/05.FCASRe-PushThumbnailRefresh_SALESDATA__Brand.com_1080px1_1ratio.jpg",
+                "imageUrl": "https://cdn.example.com/products/sample-b96a8c2857e3.jpg",
                 "text": "Korea's number one anti-aging serum (sales data).",
                 "category": "trend",
                 "keywords": [
@@ -640,7 +640,7 @@ request: {
           },
           "sentenceInsights": [
             {
-              "imageUrl": "https://cdn.example.com/products/02.FCASRe-PushThumbnailRefresh_CLINICAL__Brand.com_1080px1_1ratio.jpg",
+              "imageUrl": "https://cdn.example.com/products/sample-262717ffed8a.jpg",
               "text": "After 4 weeks of use, 92% agree skin looks clear and bright (home usage test survey, 600 women).",
               "category": "metric",
               "keywords": [
@@ -651,7 +651,7 @@ request: {
               ]
             },
             {
-              "imageUrl": "https://cdn.example.com/products/FCAS_Brand.com_1080_10801.jpg",
+              "imageUrl": "https://cdn.example.com/products/sample-7ba5bfce2308.jpg",
               "text": "After one bottle of daily use, 100% users had visible improvement in fine lines, skin elasticity, dullness (instrumental result, 30 subjects, 8 weeks).",
               "category": "metric",
               "keywords": [
@@ -663,7 +663,7 @@ request: {
               ]
             },
             {
-              "imageUrl": "https://cdn.example.com/products/05.FCASRe-PushThumbnailRefresh_SALESDATA__Brand.com_1080px1_1ratio.jpg",
+              "imageUrl": "https://cdn.example.com/products/sample-b96a8c2857e3.jpg",
               "text": "Korea's number one anti-aging serum (sales data).",
               "category": "trend",
               "keywords": [
@@ -677,22 +677,22 @@ request: {
         "rag": {
           "chunks": [
             {
-              "id": "exampleluxe-activating-serum-product-1",
+              "id": "exampleluxe-fcas-vi-product-1",
               "kind": "product",
               "text": "Essential Activating Serum\nA powerhouse serum that addresses the look of existing fine lines while strengthening skin to help prevent future visible signs of aging.\nfirming\nhydrating\nradiance\nvisible reduction of fine lines after 4 weeks\nhydrated, more even-toned skin after 4 weeks\nstrengthened skin to help prevent future visible signs of aging"
             },
             {
-              "id": "exampleluxe-activating-serum-ocr-1",
+              "id": "exampleluxe-fcas-vi-ocr-1",
               "kind": "ocr",
               "text": "AFTER 4 WEEKS OF USE, 92% AGREE SKIN LOOKS CLEAR AND BRIGHT. 86% AGREE FINE LINES LOOK REDUCED. *Home usage test survey, 600 women, with daily use."
             },
             {
-              "id": "exampleluxe-activating-serum-ocr-2",
+              "id": "exampleluxe-fcas-vi-ocr-2",
               "kind": "ocr",
               "text": "AFTER ONE BOTTLE OF DAILY USE, 100% users had visible improvement in FINE LINES, SKIN ELASTICITY, DULLNESS. *Instrumental result, 30 subjects, after 8 weeks of daily use."
             },
             {
-              "id": "exampleluxe-activating-serum-ocr-3",
+              "id": "exampleluxe-fcas-vi-ocr-3",
               "kind": "ocr",
               "text": "ExampleLuxe Essential Activating Serum, Korea's number one anti-aging serum (sales data)."
             }
@@ -710,7 +710,7 @@ request: {
           "hydrating",
           "radiance",
           "best seller",
-          "essential care",
+          "first care",
           "serum"
         ]
       }

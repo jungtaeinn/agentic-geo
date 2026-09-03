@@ -16,7 +16,7 @@ fi
 
 TARGET="${1:-geo-generator}"
 
-# agent-api는 자체 .env를 사용한다
+# agent-api(=agentic_geo-agent-api)는 자체 .env를 사용한다
 if [ "$TARGET" = "agent-api" ] && [ ! -f apps/agent-api/.env ]; then
   cp apps/agent-api/.env.example apps/agent-api/.env
   echo "[run.sh] apps/agent-api/.env를 생성했습니다. 값을 채운 뒤 다시 실행하세요:"

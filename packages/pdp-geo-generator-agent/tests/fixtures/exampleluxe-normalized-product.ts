@@ -23,8 +23,8 @@ export const exampleluxeNormalizedProduct = {
     "500-Hour Fermented Ginseng",
     "Korean Herb Extract",
     "Vitamin C Derivative",
-    "500-Hour Aged Ginseng Extract (LYMPHANAX™)",
-    "E.G.R.3 Technology™"
+    "500-Hour Aged Ginseng Extract (BOTANICAL EXTRACT™)",
+    "BOTANICAL SUPPORT Technology™"
   ],
   "usage": [
     "After your morning and evening cleansing ritual, apply three pumps to damp skin with your fingertips and press serum into skin with an open palm for increased absorption.",
@@ -45,11 +45,11 @@ export const exampleluxeNormalizedProduct = {
   "breadcrumbs": [
     {
       "name": "Home",
-      "url": "https://example.com"
+      "url": "https://shop.example.com"
     },
     {
       "name": "Essential Activating Serum",
-      "url": "https://example.com/products/essential-activating-serum"
+      "url": "https://shop.example.com/products/essential-activating-serum"
     }
   ],
   "sourceTexts": [],
@@ -57,7 +57,7 @@ export const exampleluxeNormalizedProduct = {
     "ingredients": [
       "500-Hour Fermented Ginseng",
       "Korean Herb Extract",
-      "500-Hour Aged Ginseng Extract (LYMPHANAX™)"
+      "500-Hour Aged Ginseng Extract (BOTANICAL EXTRACT™)"
     ],
     "benefits": [
       "Its silky texture absorbs instantly into damp skin, delivering immediate hydration while improving dryness, dullness, and overall tone."

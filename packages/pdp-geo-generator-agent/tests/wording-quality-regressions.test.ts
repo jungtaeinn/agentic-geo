@@ -80,7 +80,7 @@ describe("wording quality regressions", () => {
     const { result } = await generatePdpGeo({
       product: {
         geoProduct: {
-          name: "Botanical Renewal Serum",
+          name: "Botanical Ginseng Rejuvenating Serum",
           description: "A serum for firmness, hydration, and anti-aging care.",
           category: "Serum",
           benefits: ["firmness", "hydration", "anti-aging care"],
@@ -110,12 +110,15 @@ describe("wording quality regressions", () => {
     const product = graph.find((node) => node["@type"] === "Product") as Record<string, any>;
     const properties = product.additionalProperty as Array<Record<string, any>>;
     const reported = String(properties.find((item) => item.name === "Reported details")?.value ?? "");
-    const assessmentSummary = properties.find((item) => item.name === "Reported assessment summary");
     const serialized = JSON.stringify(graph);
 
     expect(serialized).toContain("In an instrumental assessment of 32 women who used the product daily, 100% of participants showed improvement in fine lines, wrinkles, elasticity, and firmness after 6 weeks of use.");
-    expect(assessmentSummary?.value).toContain("In an instrumental assessment");
-    expect(properties.some((item) => item.name === "Clinical result summary")).toBe(false);
+    // The methodology-labelled summary was retired: it republished this exact
+    // value under a second name. The evidence now has one home, and the name it
+    // carries makes no methodology claim, so it cannot mislabel a
+    // self-assessment as clinical either.
+    expect(reported).toContain("In an instrumental assessment");
+    expect(properties.some((item) => /result summary|assessment summary/i.test(String(item.name)))).toBe(false);
     expect(reported).not.toMatch(/\((?:timing|sample|method)\s/i);
     expect(result.diagnostics.validationFindings).toEqual([]);
   });
@@ -156,7 +159,7 @@ describe("wording quality regressions", () => {
     const fragment = "apply morning and night after toner";
     const input = {
       geoProduct: {
-        name: "Botanical Renewal Serum",
+        name: "Botanical Ginseng Rejuvenating Serum",
         description: "A serum for firmness and hydration.",
         category: "Serum",
         benefits: ["firmness", "hydration"],

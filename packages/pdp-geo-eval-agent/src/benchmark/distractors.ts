@@ -19,7 +19,7 @@ import type { EvalProductId } from "./fixtures";
  */
 
 export const geoEvalDistractors: Record<EvalProductId, string[]> = {
-  "exampleluxe-renewal-serum": [
+  "exampleluxe-cgr-serum": [
     // [0] generic category blog
     "How to build an anti-aging routine in your 40s. Fine lines and loss of firmness come from slower cell turnover and reduced collagen production. Dermatologists usually recommend introducing a retinoid gradually, starting two nights a week, and always pairing it with a moisturizer to reduce irritation. Look for supporting ingredients like peptides and niacinamide, which help with elasticity and tone. Whatever serum you choose, consistency for at least eight weeks matters more than price. Always finish your morning routine with sunscreen, since retinoids increase sun sensitivity.",
     // [1] fictional competitor product page
@@ -29,7 +29,7 @@ export const geoEvalDistractors: Record<EvalProductId, string[]> = {
     // [3] community forum thread
     "Forum thread: Best serum for fine lines? — I've tried maybe six serums this year and honestly most did nothing. The only thing that changed my skin was being consistent with retinol at night and drinking more water. Reply 1: Same, but capsule-type retinol products irritated me less than the plain ones. Reply 2: Whatever you pick, patch test first. My cheeks got red for a week from a strong one. Reply 3: Korean serums with ginseng are trendy now, anyone tried them long-term?"
   ],
-  "exampleluxe-activating-serum": [
+  "exampleluxe-fcas-vi": [
     "What is an essence-serum and where does it fit in a Korean skincare routine? A first-step treatment goes on right after cleansing, before toner and moisturizer, when skin absorbs actives best. The idea is to prime skin so that the rest of your routine works harder. Common actives include fermented extracts, herbal complexes, and vitamin C derivatives for tone. If your skin is dull or rough, a booster like this is an easy first upgrade before buying more products.",
     "LumeCell First Essence Booster. A watery first-step essence with 80% fermented galactomyces, panthenol, and a vitamin C derivative for radiance. Dispense a coin-sized amount into palms and press into skin immediately after cleansing. Suitable for all skin types including combination skin. Dermatologist tested. 150 mL, $54. LumeCell — clean beauty, cruelty free.",
     "Essential Care Essence Serum 60ml — Limited stock. Ships from overseas warehouse, 5-9 business days. Specs: 60 ml / 90 ml options, use morning and evening, first step after cleansing. Frequently bought together: cotton pads, toner 200ml, travel pouch. Return policy: unopened items only. Authenticity guaranteed by the marketplace seller program.",

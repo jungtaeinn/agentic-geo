@@ -9,13 +9,13 @@ const clientRenderedReviewHtml = `
 <!doctype html>
 <html>
   <head>
-    <title>Botanical Renewal Serum</title>
+    <title>Botanical Ginseng Rejuvenating Serum</title>
     <meta name="description" content="Firming serum formulated with herbal botanicals to improve elasticity." />
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
         "@type": "Product",
-        "name": "Botanical Renewal Serum",
+        "name": "Botanical Ginseng Rejuvenating Serum",
         "brand": { "@type": "Brand", "name": "ExampleLuxe" },
         "offers": { "@type": "Offer", "price": "215.00", "priceCurrency": "USD" },
         "aggregateRating": {
@@ -30,7 +30,7 @@ const clientRenderedReviewHtml = `
   </head>
   <body>
     <main>
-      <h1>Botanical Renewal Serum</h1>
+      <h1>Botanical Ginseng Rejuvenating Serum</h1>
       <img src="/clinical.jpg" data-ocr-text="AFTER 6 WEEKS OF USE 100% SHOWED IMPROVEMENT IN FIRMNESS AND ELASTICITY. GINSENG PEPTIDE HELPS SUPPORT SKIN FIRMNESS AND ELASTICITY." />
       <section class="pdp-benefits">
         <h2>Benefits</h2>
@@ -50,7 +50,7 @@ describe("review evidence", () => {
   it("records the aggregate rating source and flags missing review bodies", async () => {
     const { result, diagnostics } = await extractProductFromHtml(
       clientRenderedReviewHtml,
-      "https://example.com/products/botanical-renewal-serum"
+      "https://shop.example.com/products/botanical-ginseng-rejuvenating-serum"
     );
 
     expect(result.geoProduct.reviews.rating).toBe(4.8);
@@ -81,7 +81,7 @@ describe("review evidence", () => {
 
     const { result, diagnostics } = await extractProductFromHtml(
       partialJsonLdHtml,
-      "https://example.com/products/botanical-renewal-serum"
+      "https://shop.example.com/products/botanical-ginseng-rejuvenating-serum"
     );
 
     expect(result.geoProduct.reviews.rating).toBe(4.8);
@@ -93,7 +93,7 @@ describe("review evidence", () => {
   it("keeps OCR and product copy out of review keywords", async () => {
     const { result } = await extractProductFromHtml(
       clientRenderedReviewHtml,
-      "https://example.com/products/botanical-renewal-serum"
+      "https://shop.example.com/products/botanical-ginseng-rejuvenating-serum"
     );
 
     const reviewKeywords = result.geoProduct.reviews.keywords.map((keyword) => keyword.toLowerCase());
@@ -114,7 +114,7 @@ describe("review evidence", () => {
 
     const { result, diagnostics } = await extractProductFromHtml(
       withReviewBodies,
-      "https://example.com/products/botanical-renewal-serum"
+      "https://shop.example.com/products/botanical-ginseng-rejuvenating-serum"
     );
 
     expect(result.geoProduct.reviews.items).toHaveLength(1);

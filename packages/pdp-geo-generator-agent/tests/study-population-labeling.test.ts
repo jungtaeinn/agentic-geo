@@ -42,7 +42,7 @@ describe("study population labeling", () => {
 });
 
 const unstatedGenderProduct = {
-  name: "배리어케어365 하이드로 수딩 크림",
+  name: "모이베리어365 하이드로 수딩 크림",
   brand: "예시더마",
   category: "크림",
   description: "건조하고 민감한 피부를 위한 보습 크림입니다.",

@@ -13,9 +13,16 @@ Agentic GEO는 상품 상세 페이지(PDP)를 근거 중심으로 해석하고,
 
 ## Product Feedback Loop
 
-![고객 의도에서 Agentic GEO 생성과 평가로 이어지는 피드백 루프](docs/images/agentic-geo-feedback-loop.png)
+```mermaid
+flowchart LR
+  intent["상품·리뷰·FAQ·OCR 근거"] --> extraction["PDP Extractor"]
+  extraction --> generation["GEO Generator + RAG"]
+  generation --> evaluation["GEO Evaluation"]
+  evaluation --> review["사용자 검토 및 콘텐츠 활용"]
+  evaluation -->|"품질 진단"| generation
+```
 
-위 그림은 프로젝트가 지향하는 제품 루프를 세 단계로 요약합니다. 그림 안의 비율과 노출 수치는 설명을 위한 예시이며 이 저장소의 실측 결과가 아닙니다.
+이 흐름은 프로젝트의 추출·생성·평가 경계를 보여줍니다. 외부 검색 서비스의 실제 인용률이나 매출 개선을 보장하지 않습니다.
 
 | 단계 | 최신 코드에서의 구현 | 주요 결과 |
 | --- | --- | --- |
@@ -38,16 +45,24 @@ Agentic GEO는 상품 상세 페이지(PDP)를 근거 중심으로 해석하고,
 
 ## Operational Architecture
 
-![Agentic GEO의 PostgreSQL 기반 비동기 운영 아키텍처](docs/images/agentic-geo-operational-architecture.gif)
+```mermaid
+flowchart LR
+  upstream["외부 요청·Dispatcher"] --> api["Agent API"]
+  api --> queue["인프로세스 큐"]
+  queue --> ocr["선택적 이미지 OCR 보강"]
+  ocr --> generator["Generator + Eval"]
+  generator --> database["PostgreSQL 결과 저장"]
+  database --> upstream
+```
 
-이 그림은 Brand Admin, API, PostgreSQL workflow store, batch dispatcher, agent runtime과 callback을 연결한 목표 운영 토폴로지입니다. 다이어그램의 `neo/...` 표기는 역할 이름이며, 공개 저장소에서 대응하는 실제 경로와 구현 범위는 아래와 같습니다.
+앱, 에이전트, 저장소와 외부 연동 경계를 분리합니다. 실제 경로와 구현 범위는 아래와 같습니다.
 
 | 다이어그램 역할 | 저장소 대응 | 현재 책임과 경계 |
 | --- | --- | --- |
 | Brand Admin / Request Input | 외부 연동 경계 | 상품·리뷰·locale·callback 정보를 만드는 upstream UI/API는 포함하지 않습니다. |
 | `external/upstream-api` | `apps/agent-api` | `x-api-key` 보호, DTO 검증, `geoGenerationId` 상태 확인, 인프로세스 큐 접수와 즉시 HTTP 202 응답을 담당합니다. |
 | PostgreSQL Workflow Store | `apps/agent-api/src/geo/persistence` | 기존 `geo_generation` 상태를 읽고 `geo_result`를 기록합니다. TypeORM은 `synchronize:false`, `migrationsRun:false`이며 스키마 소유권은 upstream에 있습니다. |
-| `agentic-geo/core` extraction | `packages/pdp-extractor-agent` | URL/REST/HTML을 GEO RAW JSON으로 바꿉니다. 대화형 앱에서는 Generator 앞에 연결되며, 현재 `agent-api`의 비동기 endpoint는 이미 준비된 Product JSON만 받아 이 agent를 호출하지 않습니다. |
+| `agentic-geo/core` extraction | `packages/pdp-extractor-agent` | URL/REST/HTML을 GEO RAW JSON으로 바꿉니다. 대화형 앱은 전체 추출을 수행하고, `agent-api`는 입력 상품에 OCR 이미지가 있으면 이 agent로 이미지 근거를 보강합니다. |
 | `agentic-geo/core` generation | `packages/pdp-geo-generator-agent` | 정규화, RAG, schema/content 생성, 검증과 quality gate를 실행합니다. `apps/agent-api`가 직접 재사용합니다. |
 | 평가 계층 | `packages/pdp-geo-eval-agent` | Generator와 구조적 타입 계약으로 연결되며, 독립 품질 평가·benchmark·citation probe도 제공합니다. |
 | `external/dispatcher`, callback, 알림 | 외부 연동 경계 | poll/lease, stale job 회수, callback 전달, Teams 같은 운영 알림은 다이어그램의 target architecture이며 이 저장소에는 구현되어 있지 않습니다. |
@@ -60,7 +75,7 @@ Agentic GEO는 상품 상세 페이지(PDP)를 근거 중심으로 해석하고,
 | --- | --- | --- |
 | `apps/geo-generator` | 추출·생성·평가 결과를 한 화면에서 실행하고 비교하는 Next.js 16 콘솔 | Extractor, Generator, Eval |
 | `apps/pdp-extractor` | 추출 단계와 GEO RAW JSON/evidence만 독립 검토하는 Next.js 16 콘솔 | Extractor |
-| `apps/agent-api` | PostgreSQL 상태와 연동해 생성 요청을 비동기로 처리하는 NestJS 11 서비스 | Generator(내부 quality gate를 통해 Eval 사용) |
+| `apps/agent-api` | PostgreSQL 상태와 연동해 생성 요청을 비동기로 처리하는 NestJS 11 서비스 | 선택적 Extractor OCR, Generator, Eval |
 | `packages/pdp-extractor-agent` | URL, REST API, HTML, 리뷰, FAQ, OCR 후보를 정규화하는 재사용 agent | 독립 패키지 |
 | `packages/pdp-geo-generator-agent` | 임의 상품 JSON에서 RAG-grounded schema/content/diagnostics를 만드는 재사용 agent | Eval에 의존 |
 | `packages/pdp-geo-eval-agent` | 임의의 PDP JSON-LD와 diagnostics를 평가하는 무의존 agent | 다른 workspace package에 의존하지 않음 |
@@ -86,7 +101,7 @@ Agentic GEO는 상품 상세 페이지(PDP)를 근거 중심으로 해석하고,
 | --- | --- | --- |
 | 1. 작업 준비 | 외부 upstream/dispatcher | PostgreSQL에 `PROCESSING` 작업을 준비하고 product payload와 `geoGenerationId`를 전달합니다. |
 | 2. 접수 | `apps/agent-api` | API key와 body를 검증하고 DB 상태·큐 용량·중복 ID를 확인한 뒤 202를 반환합니다. |
-| 3. 실행 | `GeoQueue` + `GeoProcessor` | concurrency 제한이 있는 인프로세스 큐가 Generator를 호출하고 실패한 실행을 제한된 횟수만큼 backoff 재시도합니다. |
+| 3. 실행 | `GeoQueue` + `GeoProcessor` | concurrency 제한이 있는 인프로세스 큐가 필요한 이미지 OCR 보강 후 Generator를 호출하고 실패한 실행을 제한된 횟수만큼 backoff 재시도합니다. |
 | 4. 저장 | repository layer | 성공 결과의 JSON-LD, script tag, schema types, hash, RAG profile, diagnostics를 저장하고 상태를 원자적으로 `GENERATED`로 전이합니다. 영구 실패는 `FAILED`로 전이합니다. |
 | 5. 전달/회수 | 외부 dispatcher | 결과 callback, delivery retry, stale `PROCESSING` 회수와 운영 알림을 담당합니다. |
 
@@ -121,7 +136,7 @@ Generator가 외부에 보고하는 실제 stage ID를 기능별로 묶으면 �
 | `rag-load`, `chunk` | 기본·예시 브랜드 overlay RAG를 로드하고 heading/intent/field target 단위로 contextual chunk 구성 |
 | `embed`, `retrieve`, `rerank` | local/managed embedding, agentic subquery, hybrid retrieval, coverage 보강, custom/semantic reranking 수행 |
 | `generate` | atomic Evidence Ledger와 evidence-bound Content/Schema Plan을 바탕으로 JSON-LD와 HTML을 렌더링하고 선택적 final proofreading 수행 |
-| `validate`, `repair` | graph/field/HTML 계약을 검사하고 허용된 좁은 안전 보정과 findings를 기록 |
+| `validate` | 최종 공개 산출물을 다시 쓰지 않고 graph/field/HTML 계약을 검사해 findings와 warnings를 기록 |
 | `quality-gate` | 공통 평가 rubric으로 점수를 측정하고 미달 항목만 한 번 보정한 뒤 deterministic better-or-rollback 규칙 적용 |
 | `artifact` | 최종 `schemaMarkup`, `content`, provenance, diagnostics 반환 |
 
@@ -176,7 +191,8 @@ Next.js 앱과 Agent API의 기본 포트는 모두 `3000`이므로 동시에 �
 | `pnpm build` | 전체 workspace build |
 | `pnpm build:pages` | GEO Generator GitHub Pages 산출물 생성 |
 | `pnpm build:pages:pdp` | PDP Extractor GitHub Pages 산출물 생성 |
-| `pnpm --filter @agentic-geo/agent-api test` | Nest HTTP 계약과 PostgreSQL 통합 테스트 실행 |
+| `pnpm --filter @agentic-geo/agent-api test` | Docker 없이 단위 테스트와 Nest HTTP 계약 검사 |
+| `pnpm --filter @agentic-geo/agent-api test:int` | Docker/PostgreSQL 기반 통합 테스트 실행 |
 | `pnpm --filter @agentic-geo/pdp-geo-eval-agent test` | 독립 평가 rubric/citation/benchmark 단위 테스트 실행 |
 | `pnpm --filter @agentic-geo/geo-generator geo:benchmark -- --provider <provider>` | Generator 산출물을 주입해 paired GEO benchmark 실행 |
 
@@ -187,6 +203,14 @@ Next.js 앱과 Agent API의 기본 포트는 모두 `3000`이므로 동시에 �
 설정 이름과 빈 예시는 [`.env.example`](.env.example)과 [`apps/agent-api/.env.example`](apps/agent-api/.env.example)에 있습니다. 실제 API key, access token, DB password가 들어간 `.env`/`.env.local` 파일은 커밋하지 마세요. UI에 입력한 provider credential은 요청 시점 설정으로만 사용하고 공개 저장소에는 저장하지 않습니다.
 
 Agent API의 로컬 Langfuse 연동은 선택 사항이며 키가 없으면 완전히 비활성화됩니다. 운영 아키텍처에서 authentication, secret storage, callback allowlist, PII/retention 정책은 배포 환경이 책임져야 합니다.
+
+## Public Example Data
+
+2026-09-03에 최신 OCR 관계 추출, 이미지 근거 연결, FAQ·성분 계약 및 최종 교정 개선을 반영했습니다. 예제 브랜드 `ExampleLuxe`, `ExampleDerma`와 `example.com` 계열 URL은 기능 검증용 가상 예시이며 실제 상품이나 서비스의 연결 정보가 아닙니다. 네트워크 기반 OCR 회귀 평가를 실행하려면 본인이 사용 권한을 가진 이미지 URL과 비공개 provider 설정을 별도로 준비하세요.
+
+실제 환경 파일, 비밀값, 내부 배포 설정과 업무용 문서는 포함하지 않습니다. 환경 변수 이름과 빈 `.env.example` 템플릿은 실행 설정을 위해 유지합니다. 작성자 표기는 `jungtaeinn`입니다.
+
+브랜드·제품 어휘 변경은 결정적 해시 임베딩과 검색 점수에도 영향을 줍니다. `evals/baseline.json`은 공개용 가상 코퍼스로 다시 측정하며, 검색 알고리즘과 회귀 허용오차는 변경하지 않습니다. 이전 코퍼스 점수와 직접 비교해 성능 개선으로 해석하지 마세요.
 
 ## More Docs
 

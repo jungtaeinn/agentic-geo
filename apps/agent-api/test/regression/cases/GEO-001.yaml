@@ -1,4 +1,4 @@
-# GEO-001 — 예시럭셔리 Botanical Renewal Serum (en-US)
+# GEO-001 — 예시럭셔리 Botanical Ginseng Rejuvenating Serum (en-US)
 #
 # 원본은 packages/pdp-geo-generator-agent/tests/fixtures/pdp-extractor-live-products.ts 의
 # 동결 픽스처(실제 PDP 수집본, 2026-07-31)이며 agentApiSubmitPayloads 계약을 따른다.
@@ -7,7 +7,7 @@
 # 원본 PDP와 달라지는 순간 비교 기준이 무너진다.
 
 id: GEO-001
-name: "예시럭셔리 Botanical Renewal Serum (en-US)"
+name: "예시럭셔리 Botanical Ginseng Rejuvenating Serum (en-US)"
 tags: ["exampleluxe","en-US","serum"]
 
 # agent-api 요청 본문 그대로. YAML은 JSON의 상위집합이라 API에 보내는 JSON을
@@ -15,22 +15,22 @@ tags: ["exampleluxe","en-US","serum"]
 request: {
     "locale": "en-US",
     "product": {
-      "canonicalUrl": "https://us.exampleluxe.com/products/botanical-renewal-serum?variant=example-variant-1",
-      "offerUrl": "https://us.exampleluxe.com/products/botanical-renewal-serum?variant=example-variant-1",
+      "canonicalUrl": "https://shop.example.com/products/botanical-ginseng-rejuvenating-serum?variant=43202379841581",
+      "offerUrl": "https://shop.example.com/products/botanical-ginseng-rejuvenating-serum?variant=43202379841581",
       "geoProduct": {
-        "name": "Botanical Renewal Serum",
+        "name": "Botanical Ginseng Rejuvenating Serum",
         "brand": "ExampleLuxe",
         "price": {
           "raw": "$215.00",
           "amount": 215,
           "currency": "USD"
         },
-        "description": "Unlock your skin's youthful radiance with our Botanical Renewal Serum. This powerful formula is enhanced with our advanced capsule technology for optimal absorption. Retinol-infused capsules melt into skin on contact to visibly reduce fine lines and improve firmness. This advanced system improves moisturization, rejuvenates, and refines the look of skin texture.",
+        "description": "Unlock your skin's youthful radiance with our Botanical Ginseng Rejuvenating Serum. This powerful formula is enhanced with our advanced capsule technology for optimal absorption. Retinol-infused capsules melt into skin on contact to visibly reduce fine lines and improve firmness. This advanced system improves moisturization, rejuvenates, and refines the look of skin texture.",
         "images": [
-          "https://cdn.example.com/products/BRAND.COM_1080x1080_NewCGRSerum_01.Packshot_50ml.jpg",
-          "https://cdn.example.com/products/CGR_Serum_01._Texture_Brand.com_1080px_1_1_ratio.jpg",
-          "https://cdn.example.com/products/BRAND.COM_1080x1080_NewCGRSerum_05.IngredientInfographic_4f97acea-b35d-4f31-906a-568f186a978f.jpg",
-          "https://cdn.example.com/products/CGR_Serum_02._Clinical_Infographic_Brand.com__1080px_1_1_ratio.jpg"
+          "https://cdn.example.com/products/sample-77d130b7c425.jpg",
+          "https://cdn.example.com/products/sample-a2c13717cdbc.jpg",
+          "https://cdn.example.com/products/sample-7a6018c6069a.jpg",
+          "https://cdn.example.com/products/sample-7a92bbbc71e1.jpg"
         ],
         "options": [
           "50 mL"
@@ -47,7 +47,7 @@ request: {
           "improved moisturization"
         ],
         "ingredients": [
-          "Botanical Actives",
+          "Korean Ginseng Actives",
           "Ginseng Peptide",
           "Ginseng Capsules with Retinol",
           "Niacinamide"
@@ -65,14 +65,14 @@ request: {
         },
         "sourceExtraction": {
           "html": {
-            "description": "Unlock your skin's youthful radiance with our Botanical Renewal Serum. This powerful formula is enhanced with our advanced capsule technology for optimal absorption. Retinol-infused capsules melt into skin on contact to visibly reduce fine lines and improve firmness. This advanced system improves moisturization, rejuvenates, and refines the look of skin texture.",
+            "description": "Unlock your skin's youthful radiance with our Botanical Ginseng Rejuvenating Serum. This powerful formula is enhanced with our advanced capsule technology for optimal absorption. Retinol-infused capsules melt into skin on contact to visibly reduce fine lines and improve firmness. This advanced system improves moisturization, rejuvenates, and refines the look of skin texture.",
             "sections": [
               {
                 "title": "Key ingredients",
                 "category": "ingredient",
-                "text": "KEY INGREDIENTS: Botanical Actives, Ginseng Peptide, Ginseng Capsules with Retinol, Niacinamide.",
+                "text": "KEY INGREDIENTS: Korean Ginseng Actives, Ginseng Peptide, Ginseng Capsules with Retinol, Niacinamide.",
                 "bullets": [
-                  "Botanical Actives",
+                  "Korean Ginseng Actives",
                   "Ginseng Peptide",
                   "Ginseng Capsules with Retinol",
                   "Niacinamide"
@@ -105,11 +105,11 @@ request: {
           "ocr": {
             "imageTexts": [
               {
-                "imageUrl": "https://cdn.example.com/products/BRAND.COM_1080x1080_NewCGRSerum_05.IngredientInfographic_4f97acea-b35d-4f31-906a-568f186a978f.jpg",
+                "imageUrl": "https://cdn.example.com/products/sample-7a6018c6069a.jpg",
                 "text": "GINSENG ACTIVES. Help rejuvenate and strengthen for healthy, youthful-looking skin. GINSENG PEPTIDE(TM). Helps support skin firmness and elasticity. GINSENG CAPSULES WITH RETINOL. Bursts upon application to deliver powerful anti-aging benefits and enhance absorption. NIACINAMIDE. Helps improve skin radiance."
               },
               {
-                "imageUrl": "https://cdn.example.com/products/CGR_Serum_02._Clinical_Infographic_Brand.com__1080px_1_1_ratio.jpg",
+                "imageUrl": "https://cdn.example.com/products/sample-7a92bbbc71e1.jpg",
                 "text": "AFTER 6 WEEKS OF USE, 100% SHOWED IMPROVEMENT IN FINE LINES, WRINKLES, ELASTICITY, FIRMNESS. *Instrumental result, 32 women, with daily use."
               }
             ],
@@ -119,7 +119,7 @@ request: {
             ],
             "sentenceInsights": [
               {
-                "imageUrl": "https://cdn.example.com/products/BRAND.COM_1080x1080_NewCGRSerum_05.IngredientInfographic_4f97acea-b35d-4f31-906a-568f186a978f.jpg",
+                "imageUrl": "https://cdn.example.com/products/sample-7a6018c6069a.jpg",
                 "text": "Ginseng Capsules with Retinol bursts upon application to deliver powerful anti-aging benefits and enhance absorption.",
                 "category": "ingredient",
                 "keywords": [
@@ -129,7 +129,7 @@ request: {
                 ]
               },
               {
-                "imageUrl": "https://cdn.example.com/products/BRAND.COM_1080x1080_NewCGRSerum_05.IngredientInfographic_4f97acea-b35d-4f31-906a-568f186a978f.jpg",
+                "imageUrl": "https://cdn.example.com/products/sample-7a6018c6069a.jpg",
                 "text": "Niacinamide helps improve skin radiance.",
                 "category": "ingredient",
                 "keywords": [
@@ -138,7 +138,7 @@ request: {
                 ]
               },
               {
-                "imageUrl": "https://cdn.example.com/products/CGR_Serum_02._Clinical_Infographic_Brand.com__1080px_1_1_ratio.jpg",
+                "imageUrl": "https://cdn.example.com/products/sample-7a92bbbc71e1.jpg",
                 "text": "After 6 weeks of use, 100% showed improvement in fine lines, wrinkles, elasticity, firmness (instrumental result, 32 women, with daily use).",
                 "category": "metric",
                 "keywords": [
@@ -152,7 +152,7 @@ request: {
             ],
             "semanticFacts": {
               "ingredients": [
-                "Botanical Actives",
+                "Korean Ginseng Actives",
                 "Ginseng Peptide",
                 "Ginseng Capsules with Retinol",
                 "Niacinamide"
@@ -222,7 +222,7 @@ request: {
         "aiAnalysis": {
           "keywords": {
             "product": [
-              "Botanical Renewal Serum",
+              "Botanical Ginseng Rejuvenating Serum",
               "ExampleLuxe",
               "serum"
             ],
@@ -240,7 +240,7 @@ request: {
               "refined skin texture"
             ],
             "ingredient": [
-              "Botanical Actives",
+              "Korean Ginseng Actives",
               "Ginseng Peptide",
               "Ginseng Capsules with Retinol",
               "Niacinamide"
@@ -263,9 +263,9 @@ request: {
             {
               "title": "Key ingredients",
               "category": "ingredient",
-              "text": "KEY INGREDIENTS: Botanical Actives, Ginseng Peptide, Ginseng Capsules with Retinol, Niacinamide.",
+              "text": "KEY INGREDIENTS: Korean Ginseng Actives, Ginseng Peptide, Ginseng Capsules with Retinol, Niacinamide.",
               "bullets": [
-                "Botanical Actives",
+                "Korean Ginseng Actives",
                 "Ginseng Peptide",
                 "Ginseng Capsules with Retinol",
                 "Niacinamide"
@@ -296,7 +296,7 @@ request: {
           "summary": "ExampleLuxe anti-aging serum evidence: retinol-infused ginseng capsules, instrumental 6-week improvement claims, and skin-type coverage were categorized into product fields.",
           "semanticFacts": {
             "ingredients": [
-              "Botanical Actives",
+              "Korean Ginseng Actives",
               "Ginseng Peptide",
               "Ginseng Capsules with Retinol",
               "Niacinamide"
@@ -364,7 +364,7 @@ request: {
         },
         "semanticFacts": {
           "ingredients": [
-            "Botanical Actives",
+            "Korean Ginseng Actives",
             "Ginseng Peptide",
             "Ginseng Capsules with Retinol",
             "Niacinamide"
@@ -442,7 +442,7 @@ request: {
             "improved moisturization"
           ],
           "ingredients": [
-            "Botanical Actives",
+            "Korean Ginseng Actives",
             "Ginseng Peptide",
             "Ginseng Capsules with Retinol",
             "Niacinamide"
@@ -465,9 +465,9 @@ request: {
             {
               "title": "Key ingredients",
               "category": "ingredient",
-              "text": "KEY INGREDIENTS: Botanical Actives, Ginseng Peptide, Ginseng Capsules with Retinol, Niacinamide.",
+              "text": "KEY INGREDIENTS: Korean Ginseng Actives, Ginseng Peptide, Ginseng Capsules with Retinol, Niacinamide.",
               "bullets": [
-                "Botanical Actives",
+                "Korean Ginseng Actives",
                 "Ginseng Peptide",
                 "Ginseng Capsules with Retinol",
                 "Niacinamide"
@@ -504,7 +504,7 @@ request: {
           ],
           "keywords": {
             "product": [
-              "Botanical Renewal Serum",
+              "Botanical Ginseng Rejuvenating Serum",
               "ExampleLuxe",
               "serum"
             ],
@@ -522,7 +522,7 @@ request: {
               "refined skin texture"
             ],
             "ingredient": [
-              "Botanical Actives",
+              "Korean Ginseng Actives",
               "Ginseng Peptide",
               "Ginseng Capsules with Retinol",
               "Niacinamide"
@@ -543,7 +543,7 @@ request: {
           },
           "sentenceInsights": [
             {
-              "imageUrl": "https://cdn.example.com/products/BRAND.COM_1080x1080_NewCGRSerum_05.IngredientInfographic_4f97acea-b35d-4f31-906a-568f186a978f.jpg",
+              "imageUrl": "https://cdn.example.com/products/sample-7a6018c6069a.jpg",
               "text": "Ginseng Capsules with Retinol bursts upon application to deliver powerful anti-aging benefits and enhance absorption.",
               "category": "ingredient",
               "keywords": [
@@ -553,7 +553,7 @@ request: {
               ]
             },
             {
-              "imageUrl": "https://cdn.example.com/products/BRAND.COM_1080x1080_NewCGRSerum_05.IngredientInfographic_4f97acea-b35d-4f31-906a-568f186a978f.jpg",
+              "imageUrl": "https://cdn.example.com/products/sample-7a6018c6069a.jpg",
               "text": "Niacinamide helps improve skin radiance.",
               "category": "ingredient",
               "keywords": [
@@ -562,7 +562,7 @@ request: {
               ]
             },
             {
-              "imageUrl": "https://cdn.example.com/products/CGR_Serum_02._Clinical_Infographic_Brand.com__1080px_1_1_ratio.jpg",
+              "imageUrl": "https://cdn.example.com/products/sample-7a92bbbc71e1.jpg",
               "text": "After 6 weeks of use, 100% showed improvement in fine lines, wrinkles, elasticity, firmness (instrumental result, 32 women, with daily use).",
               "category": "metric",
               "keywords": [
@@ -578,17 +578,17 @@ request: {
         "rag": {
           "chunks": [
             {
-              "id": "exampleluxe-renewal-serum-product-1",
+              "id": "exampleluxe-cgr-serum-product-1",
               "kind": "product",
-              "text": "Botanical Renewal Serum\nUnlock your skin's youthful radiance with our Botanical Renewal Serum. This powerful formula is enhanced with our advanced capsule technology for optimal absorption. Retinol-infused capsules melt into skin on contact to visibly reduce fine lines and improve firmness. This advanced system improves moisturization, rejuvenates, and refines the look of skin texture.\nanti-aging\nfirming\nmoisturizing\nvisibly reduced fine lines\nimproved firmness and elasticity\nrefined skin texture\nimproved moisturization"
+              "text": "Botanical Ginseng Rejuvenating Serum\nUnlock your skin's youthful radiance with our Botanical Ginseng Rejuvenating Serum. This powerful formula is enhanced with our advanced capsule technology for optimal absorption. Retinol-infused capsules melt into skin on contact to visibly reduce fine lines and improve firmness. This advanced system improves moisturization, rejuvenates, and refines the look of skin texture.\nanti-aging\nfirming\nmoisturizing\nvisibly reduced fine lines\nimproved firmness and elasticity\nrefined skin texture\nimproved moisturization"
             },
             {
-              "id": "exampleluxe-renewal-serum-ocr-1",
+              "id": "exampleluxe-cgr-serum-ocr-1",
               "kind": "ocr",
               "text": "GINSENG ACTIVES. Help rejuvenate and strengthen for healthy, youthful-looking skin. GINSENG PEPTIDE(TM). Helps support skin firmness and elasticity. GINSENG CAPSULES WITH RETINOL. Bursts upon application to deliver powerful anti-aging benefits and enhance absorption. NIACINAMIDE. Helps improve skin radiance."
             },
             {
-              "id": "exampleluxe-renewal-serum-ocr-2",
+              "id": "exampleluxe-cgr-serum-ocr-2",
               "kind": "ocr",
               "text": "AFTER 6 WEEKS OF USE, 100% SHOWED IMPROVEMENT IN FINE LINES, WRINKLES, ELASTICITY, FIRMNESS. *Instrumental result, 32 women, with daily use."
             }

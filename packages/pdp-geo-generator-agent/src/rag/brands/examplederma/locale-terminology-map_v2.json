@@ -15,7 +15,7 @@
         "en-US": ["eczema treatment", "disease treatment"],
         "en-GB": ["eczema treatment", "disease treatment"]
       },
-      "notes": "Use when EXAMPLEDERMA product evidence supports barrier, ceramide, BarrierCapsule, or sensitive-skin context."
+      "notes": "Use when EXAMPLEDERMA product evidence supports barrier, ceramide, BotanON, or sensitive-skin context."
     },
     {
       "concept": "sensitive-skin-friendly",

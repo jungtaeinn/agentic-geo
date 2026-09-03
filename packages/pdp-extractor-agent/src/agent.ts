@@ -1,11 +1,20 @@
 import { load } from "cheerio";
 import { createKeywordClassifier } from "./llm/providers";
 import {
+  parseSliceFragment,
   prepareImageOcrInputs,
   stripSliceFragment,
   type ImageOcrInput
 } from "./llm/providers/image-slicing";
-import type { AzureRoleDeployments, EmbeddingRuntimeConfig, RerankerRuntimeConfig } from "./llm/types";
+import type {
+  AzureRoleDeployments,
+  EmbeddingRuntimeConfig,
+  ImageTextExtractionResponse,
+  KeywordClassifier,
+  OcrLayoutGroup,
+  OcrLayoutLineRole,
+  RerankerRuntimeConfig
+} from "./llm/types";
 import { normalizeExtractorProductProfileWithAgent } from "./product-normalizer";
 import { defaultProductExtractorRagProfile } from "./rag/default-profile";
 import { productExtractorRagManifest } from "./rag/manifest";
@@ -27,11 +36,18 @@ import {
   type GeoSemanticFacts,
   type GeoSemanticMetricClaim,
   type GeoSemanticIngredientBenefitLink,
+  type ImageOcrEvidenceRequest,
+  type ImageOcrEvidenceResult,
   type KeywordCategory,
   type OcrDiagnostics,
+  type OcrLayoutDiagnostics,
+  type OcrLayoutDiscardReason,
   type OcrDroppedTextDiagnostic,
   type OcrExtraction,
+  type OcrRelationDiagnostics,
+  type OcrRelationSentenceDiagnostic,
   type OcrTargetDiagnostic,
+  type OcrTextEvidence,
   type ProductContentCategory,
   type ProductContentSection,
   type ProductExtractorRagUsageDiagnostic,
@@ -50,6 +66,14 @@ import {
   type RuntimePipelineStep,
   type RuntimePipelineUsage
 } from "./types";
+import { normalizeOcrComparisonText, parseOcrBlockSections, segmentItemSentences } from "./ocr-block-structure";
+import { metricClaimsFromOcrLayout } from "./ocr-layout-metrics";
+import {
+  ocrLayoutSections,
+  stitchSlicedLayoutGroups,
+  verifyOcrLayoutGroups,
+  type SlicedLayoutReading
+} from "./ocr-layout-relations";
 
 /** Options for swapping model providers without changing the public input contract. */
 export interface ProductExtractorOptions {
@@ -574,7 +598,7 @@ async function extractProductFromApiPayload(
     })),
     ...apiTextCandidates
   ];
-  const imageTexts = mergeOcrCandidates(rawOcrCandidates, ocrDiagnosticsCollector.mergeStats).slice(0, OCR_EVIDENCE_LIMIT);
+  const imageTexts = mergeOcrCandidates(rawOcrCandidates, ocrDiagnosticsCollector.mergeStats, OCR_EVIDENCE_LIMIT);
   ocrDiagnosticsCollector.candidatesIn = rawOcrCandidates.length;
   ocrDiagnosticsCollector.candidatesOut = imageTexts.length;
   const classified = await classifyOcrCandidates(source, product.name, imageTexts, runtimeOptions, warnings, runtimeSteps, ocrDiagnosticsCollector);
@@ -591,10 +615,13 @@ async function extractProductFromApiPayload(
         text: item.text,
         confidence: item.confidence ?? classified.confidence,
         keywords,
-        sentenceInsights: sentenceInsightsForCandidate(item, classified.sentenceInsights, keywords, classified.confidence)
+        sentenceInsights: sentenceInsightsForCandidate(item, classified.sentenceInsights, keywords, classified.confidence),
+        ...(item.imageUrls ? { imageUrls: item.imageUrls } : {}),
+        ...(item.groups ? { groups: item.groups } : {})
       };
     })
   };
+  ocrDiagnosticsCollector.relations = buildOcrRelationDiagnostics(ocr.extractedTexts, classified.semanticFacts);
   process.done("ocr", `${ocr.imagesScanned}개 OCR 근거 텍스트에서 문장과 키워드를 분류했습니다.`);
 
   process.start("review", "REST API 리뷰 데이터를 키워드 근거로 정규화합니다.");
@@ -707,11 +734,24 @@ interface ProductSectionBuckets {
   sections: ProductContentSection[];
 }
 
-interface OcrTextCandidate {
+export interface OcrTextCandidate {
   imageUrl: string;
   text: string;
   /** Vision-model transcription confidence (0-1) when the provider reports one. */
   confidence?: number;
+  /**
+   * 전사와 함께 보고된 레이아웃 관계. 프로바이더가 보고하지 않으면 없으며,
+   * 그때는 소비 측이 전사 줄 목록에서 관계를 복원한다.
+   */
+  groups?: OcrLayoutGroup[];
+  /** Every source image that contributed text to this candidate (primary first). */
+  imageUrls?: string[];
+  /** 1-based slice position when this text came from one tall-image slice. */
+  sliceIndex?: number;
+  /** Total slices of the source image when sliced. */
+  sliceCount?: number;
+  /** Page reading-order position of the source image (0-based). */
+  sourceOrder?: number;
 }
 
 interface ImageOcrTargetCandidate {
@@ -2402,7 +2442,29 @@ function isProductEvidenceCandidate(title: string, text: string): boolean {
     return false;
   }
 
-  return hasProductCareSignal(value) || isReviewEvidenceText(value) || isFaqEvidenceText(value) || isProductMetricEvidenceText(value);
+  return hasProductCareSignal(value)
+    // 줄 구조가 살아 있는 원문을 넘긴다. 공백으로 눌린 텍스트에서는 절 제목이
+    // 한 줄로 뭉쳐 보이지 않는다.
+    || declaresProductSectionRole(`${title}\n${text}`)
+    || isReviewEvidenceText(value)
+    || isFaqEvidenceText(value)
+    || isProductMetricEvidenceText(value);
+}
+
+/**
+ * 원문이 절 제목으로 역할을 선언했는지.
+ *
+ * 관리 어휘(피부·보습·skin·hydration…)를 요구하는 판정은 한국어 사용법에는
+ * 대개 그런 낱말이 섞여 있어 통했지만, 영문 사용법 지시문에는 하나도 없다 —
+ * "Dispense an appropriate amount onto wet hands and lather." 그래서 미국 대상
+ * 페이지의 사용법 이미지가 통째로 공개 출력에서 빠졌다.
+ *
+ * 제목이 "이것은 사용법이다"라고 이미 말했다면 그것이 제품 근거라는 증거다.
+ * 어휘를 언어별로 늘리는 대신, 제목→역할을 읽는 단일 출처를 그대로 쓴다.
+ */
+function declaresProductSectionRole(value: string): boolean {
+  return parseOcrBlockSections(value)
+    .some((section) => section.heading !== undefined && sectionHeadingCategory(section.heading) !== undefined);
 }
 
 function isNonProductCommerceText(text: string): boolean {
@@ -2643,16 +2705,6 @@ function stripSourceSectionLabel(text: string): string {
 
 function normalizeFingerprint(text: string): string {
   return cleanText(text).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").slice(0, 260);
-}
-
-/**
- * Full-length, whitespace-free normalization for OCR text comparison. Unlike
- * normalizeFingerprint it never truncates (so long transcriptions compare on
- * their whole content, not a shared prefix) and drops separators entirely (so
- * Korean spacing variants like "피부 장벽" and "피부장벽" compare equal).
- */
-function normalizeOcrComparisonText(text: string): string {
-  return cleanText(text).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
 function isSectionHeadingText(text: string): boolean {
@@ -3075,6 +3127,11 @@ function parseReviewCount(value: string | undefined): number | undefined {
   return numberValue(explicit?.[1]?.replace(/,/g, "") ?? (/^\d+$/.test(text) ? text : undefined));
 }
 
+interface OcrEvidenceCoreResult {
+  ocr: OcrExtraction;
+  classified: Awaited<ReturnType<typeof classifyOcrCandidates>>;
+}
+
 async function extractOcrKeywords(
   $: ReturnType<typeof load>,
   source: string,
@@ -3087,12 +3144,47 @@ async function extractOcrKeywords(
   collector?: OcrDiagnosticsCollector
 ): Promise<OcrExtraction> {
   const visionTargets = collectImageOcrTargets($, source, imageUrls, productName);
+  const core = await extractOcrEvidenceFromTargets(
+    visionTargets,
+    collectImageTextCandidates($, source),
+    source,
+    productName,
+    options,
+    warnings,
+    runtimeSteps,
+    onProgress,
+    collector
+  );
+  return core.ocr;
+}
+
+async function extractOcrEvidenceFromTargets(
+  visionTargets: string[],
+  extraCandidates: OcrTextCandidate[],
+  source: string,
+  productName: string,
+  options: ProductExtractorOptions,
+  warnings: AgentWarning[],
+  runtimeSteps: RuntimePipelineStep[],
+  onProgress?: (message: string) => void,
+  collector?: OcrDiagnosticsCollector
+): Promise<OcrEvidenceCoreResult> {
   const visionOcrTexts = await extractVisionOcrCandidates(visionTargets, source, productName, options, warnings, runtimeSteps, onProgress, collector);
   const rawCandidates = [
     ...visionOcrTexts,
-    ...collectImageTextCandidates($, source)
+    ...extraCandidates
   ];
-  const evidenceCandidates = rawCandidates.filter((item) => {
+  const orderByImage = new Map<string, number>();
+  for (const candidate of rawCandidates) {
+    if (!orderByImage.has(candidate.imageUrl)) {
+      orderByImage.set(candidate.imageUrl, orderByImage.size);
+    }
+  }
+  const orderedCandidates = rawCandidates.map((candidate) => ({
+    ...candidate,
+    sourceOrder: candidate.sourceOrder ?? orderByImage.get(candidate.imageUrl) ?? orderByImage.size
+  }));
+  const evidenceCandidates = orderedCandidates.filter((item) => {
     if (isProductEvidenceCandidate("", item.text)) {
       return true;
     }
@@ -3103,7 +3195,7 @@ async function extractOcrKeywords(
     });
     return false;
   });
-  const imageTexts = mergeOcrCandidates(evidenceCandidates, collector?.mergeStats).slice(0, OCR_EVIDENCE_LIMIT);
+  const imageTexts = mergeOcrCandidates(evidenceCandidates, collector?.mergeStats, OCR_EVIDENCE_LIMIT);
 
   if (collector) {
     collector.candidatesIn = evidenceCandidates.length;
@@ -3111,13 +3203,16 @@ async function extractOcrKeywords(
   }
 
   if (imageTexts.length === 0) {
-    return { imagesScanned: 0, extractedTexts: [] };
+    return {
+      ocr: { imagesScanned: 0, extractedTexts: [] },
+      classified: { keywords: [], sentenceInsights: [], confidence: 0 }
+    };
   }
 
   onProgress?.(`${imageTexts.length}개 OCR 텍스트 후보를 reasoning 모델로 의미 분석/문장/키워드 분류 중입니다.`);
   const classified = await classifyOcrCandidates(source, productName, imageTexts, options, warnings, runtimeSteps, collector);
 
-  return {
+  const ocrResult: OcrExtraction = {
     imagesScanned: imageTexts.length,
     extractedTexts: imageTexts.map((item) => {
       const keywords = mergeKeywords(
@@ -3130,9 +3225,130 @@ async function extractOcrKeywords(
         text: item.text,
         confidence: item.confidence ?? classified.confidence,
         keywords,
-        sentenceInsights: sentenceInsightsForCandidate(item, classified.sentenceInsights, keywords, classified.confidence)
+        sentenceInsights: sentenceInsightsForCandidate(item, classified.sentenceInsights, keywords, classified.confidence),
+        ...(item.imageUrls ? { imageUrls: item.imageUrls } : {}),
+        ...(item.groups ? { groups: item.groups } : {})
       };
     })
+  };
+
+  if (collector) {
+    collector.relations = buildOcrRelationDiagnostics(ocrResult.extractedTexts, classified.semanticFacts);
+  }
+
+  return { ocr: ocrResult, classified };
+}
+
+/**
+ * OcrExtraction+분류 결과를 공개 OCR 근거 블록으로 조립한다(순수 함수).
+ *
+ * Exported for tests only — not part of the package surface (index.ts).
+ */
+export function assembleImageOcrEvidence(
+  ocr: OcrExtraction,
+  classifiedSemanticFacts: Partial<GeoSemanticFacts> | undefined,
+  classifiedKeywords: ClassifiedKeyword[],
+  // 필수 인자다. 기본값을 두었을 때는 인자를 빼먹은 호출부가 차트 계열 귀속을
+  // 조용히 끄고, 수치가 주체 없이 발행됐다.
+  productName: string
+): Pick<ImageOcrEvidenceResult, "ocr" | "keywords"> {
+  const sentenceInsights = ocr.extractedTexts.flatMap((item) => item.sentenceInsights);
+  const insightFacts = sentenceInsights.length > 0 ? semanticFactsFromSentenceInsights(sentenceInsights) : undefined;
+  const layoutClaims = layoutMetricClaimsFromOcr(ocr, productName);
+  const skinTypes = skinTypesFromOcr(ocr);
+  const layoutFacts = layoutClaims.length > 0 || skinTypes.length > 0
+    ? { ...(layoutClaims.length > 0 ? { metricClaims: layoutClaims } : {}), ...(skinTypes.length > 0 ? { skinTypes } : {}) }
+    : undefined;
+  const semanticFactsParts = [classifiedSemanticFacts, insightFacts, layoutFacts];
+  const keywords = toGeoKeywordGroups(mergeKeywords(classifiedKeywords, ocr.extractedTexts.flatMap((item) => item.keywords)));
+
+  return {
+    ocr: {
+      imageTexts: ocr.extractedTexts.map((item) => ({
+        imageUrl: item.imageUrl,
+        text: item.text,
+        ...(item.imageUrls ? { imageUrls: item.imageUrls } : {}),
+        confidence: item.confidence
+      })),
+      textBlocks: ocr.extractedTexts.map((item) => item.text),
+      sentenceInsights: toGeoSentenceInsights(ocr.extractedTexts),
+      semanticFacts: semanticFactsParts.some(Boolean) ? mergeSemanticFacts(...semanticFactsParts) : undefined
+    },
+    keywords
+  };
+}
+
+/**
+ * runtimeSteps를 라벨 단위로 병합해(배치별 중복 스텝 제거) OCR 전용
+ * runtimeUsage를 구성한다(순수 함수).
+ *
+ * Exported for tests only — not part of the package surface (index.ts).
+ */
+export function buildImageOcrRuntimeUsage(runtimeSteps: RuntimePipelineStep[]): RuntimePipelineUsage | undefined {
+  if (runtimeSteps.length === 0) {
+    return undefined;
+  }
+  const steps = mergeRuntimeSteps(runtimeSteps);
+  const tokenTotals = mergeTokenUsages(steps.map((step) => step.tokenUsage).filter((usage): usage is AiTokenUsage => Boolean(usage)));
+  return {
+    steps,
+    tokenTotals: tokenTotals ?? {},
+    tokenNote: tokenTotals
+      ? "Token counts are summed from provider usage metadata returned by model APIs."
+      : "Token counts were not returned or do not apply to deterministic/search-only stages."
+  };
+}
+
+/** 이미지 URL 목록만으로 OCR과 문장-이미지 관계 해석을 수행하는 공개 진입점. */
+export async function extractImageOcrEvidence(
+  request: ImageOcrEvidenceRequest,
+  options: ProductExtractorOptions = {}
+): Promise<ImageOcrEvidenceResult> {
+  const runtimeOptions = resolveRuntimeRagOptions(options);
+  const warnings: AgentWarning[] = [];
+  const runtimeSteps: RuntimePipelineStep[] = [];
+
+  const validUrls: string[] = [];
+  for (const imageUrl of request.imageUrls) {
+    if (/^https?:\/\//i.test(imageUrl)) {
+      validUrls.push(imageUrl);
+    } else {
+      warnings.push({
+        code: "IMAGE_OCR_TARGET_SKIPPED",
+        message: `Skipped a non-http(s) image OCR target: ${imageUrl.slice(0, 40)}`
+      });
+    }
+  }
+
+  const collector = createOcrDiagnosticsCollector(resolveProviderConfig(runtimeOptions).provider);
+  const core = await extractOcrEvidenceFromTargets(
+    validUrls,
+    [],
+    request.source,
+    request.productName ?? "",
+    runtimeOptions,
+    warnings,
+    runtimeSteps,
+    undefined,
+    collector
+  );
+
+  const assembled = assembleImageOcrEvidence(
+    core.ocr,
+    core.classified.semanticFacts,
+    core.classified.keywords,
+    request.productName ?? ""
+  );
+  const ocrDiagnostics = finalizeOcrDiagnostics(collector, core.ocr, []);
+
+  return {
+    ...assembled,
+    diagnostics: {
+      ocr: ocrDiagnostics,
+      warnings,
+      runtimeUsage: buildImageOcrRuntimeUsage(runtimeSteps)
+    },
+    generatedAt: new Date().toISOString()
   };
 }
 
@@ -3195,11 +3411,29 @@ async function extractVisionOcrCandidates(
       onProgress?.(`${batchStart}-${batchEnd}번 OCR 이미지 입력에서 ${extracted.images.length}개 텍스트 후보를 수신했습니다.`);
       runtimeSteps.push(createModelRuntimeStep("ocr", "OCR/structure extraction", options, "ocr", extracted.usage, `${batch.length} product-detail image inputs sent for visible text extraction.`));
 
-      const batchTexts = extracted.images.map((image) => ({
-        imageUrl: stripSliceFragment(image.imageUrl),
-        text: normalizeOcrText(image.text),
-        confidence: image.confidence
-      })).filter((item) => item.text.length >= 8);
+      const firstReading = extracted.images.map((image) => {
+        const slice = parseSliceFragment(image.imageUrl);
+        return {
+          imageUrl: slice.baseUrl,
+          displayUrl: image.imageUrl,
+          text: normalizeOcrText(image.text),
+          confidence: image.confidence,
+          ...(image.groups ? { groups: image.groups } : {}),
+          ...(slice.sliceIndex !== undefined ? { sliceIndex: slice.sliceIndex } : {}),
+          ...(slice.sliceCount !== undefined ? { sliceCount: slice.sliceCount } : {})
+        };
+      }).filter((item) => item.text.length >= 8);
+      const batchTexts = await verifyOcrBatchReadings({
+        classifier,
+        source,
+        productName,
+        batch,
+        firstReading,
+        collector,
+        runtimeSteps,
+        options,
+        onProgress
+      });
       extractedTexts.push(...batchTexts);
 
       if (collector) {
@@ -3248,7 +3482,7 @@ async function extractVisionOcrCandidates(
     });
   }
 
-  const merged = mergeOcrCandidates(extractedTexts, collector?.mergeStats);
+  const merged = mergeOcrCandidates(joinSliceCandidates(extractedTexts, collector?.mergeStats), collector?.mergeStats);
 
   if (merged.length === 0 && failures.length === 0) {
     warnings.push({
@@ -3263,6 +3497,18 @@ async function extractVisionOcrCandidates(
 interface OcrMergeStats {
   duplicatesAbsorbed: number;
   overlapJoins: number;
+  /** 슬라이스 경계에서 이어 붙인 그룹 수. */
+  layoutSliceStitches: number;
+  /** 슬라이스 단계에서 구조를 폐기한 이미지와 사유. */
+  layoutDiscarded: Array<{ imageUrl: string; reason: OcrLayoutDiscardReason }>;
+  /**
+   * 이어붙이지 못한 슬라이스 경계의 실측 기록.
+   *
+   * 경계가 어긋나면 겹친 줄이 두 번 남고 구조가 폐기된다. 왜 어긋났는지는
+   * 그때의 두 판독을 봐야만 알 수 있어(토큰이 빠졌는가, 줄이 다르게 끊겼는가),
+   * 실행이 스스로 답을 남기게 한다.
+   */
+  unmatchedBoundaries: Array<{ imageUrl: string; sliceIndex: number; tailPreview: string; headPreview: string }>;
 }
 
 /** Mutable trace filled in while the OCR pipeline runs; finalized into OcrDiagnostics. */
@@ -3276,6 +3522,7 @@ interface OcrDiagnosticsCollector {
   candidatesOut: number;
   droppedCandidates: OcrDroppedTextDiagnostic[];
   classification: OcrDiagnostics["classification"];
+  relations?: OcrRelationDiagnostics;
 }
 
 function createOcrDiagnosticsCollector(provider: string): OcrDiagnosticsCollector {
@@ -3284,7 +3531,7 @@ function createOcrDiagnosticsCollector(provider: string): OcrDiagnosticsCollecto
     targetsConsidered: 0,
     inputsSent: 0,
     targets: new Map(),
-    mergeStats: { duplicatesAbsorbed: 0, overlapJoins: 0 },
+    mergeStats: { duplicatesAbsorbed: 0, overlapJoins: 0, layoutSliceStitches: 0, layoutDiscarded: [], unmatchedBoundaries: [] },
     candidatesIn: 0,
     candidatesOut: 0,
     droppedCandidates: [],
@@ -3366,6 +3613,8 @@ function finalizeOcrDiagnostics(
       : undefined
   ]);
 
+  const layout = buildOcrLayoutDiagnostics(ocr, collector.mergeStats);
+
   return {
     provider: collector.provider,
     targetsConsidered: collector.targetsConsidered,
@@ -3386,7 +3635,88 @@ function finalizeOcrDiagnostics(
       ragChunksFromOcr: ragChunks.filter((chunk) => chunk.kind === "ocr").length,
       unusedTexts: unusedTexts.slice(0, 20)
     },
-    issues
+    issues,
+    ...(layout ? { layout } : {}),
+    ...(collector.relations ? { relations: collector.relations } : {})
+  };
+}
+
+/**
+ * 레이아웃 관계의 채택·폐기를 집계한다. 검증은 순수 함수이므로 여기서 다시
+ * 돌려 "보고된 것"과 "실제로 소비된 것"을 나란히 남긴다 — 그 차이가 프로바이더의
+ * 구조 보고 품질이다.
+ */
+function buildOcrLayoutDiagnostics(ocr: OcrExtraction, mergeStats: OcrMergeStats): OcrLayoutDiagnostics | undefined {
+  const reported = ocr.extractedTexts.filter((item) => item.groups && item.groups.length > 0);
+  if (reported.length === 0 && mergeStats.layoutDiscarded.length === 0) {
+    return undefined;
+  }
+
+  const lineRoles: Record<OcrLayoutLineRole, number> = { title: 0, body: 0, label: 0, value: 0, footnote: 0 };
+  const structureDiscarded = [...mergeStats.layoutDiscarded];
+  let groupsReported = 0;
+  let groupsKept = 0;
+
+  for (const item of reported) {
+    groupsReported += item.groups?.length ?? 0;
+    const verified = verifyOcrLayoutGroups(item.text, item.groups ?? []);
+    if (!verified) {
+      structureDiscarded.push({ imageUrl: item.imageUrl, reason: "quorum" });
+      continue;
+    }
+    groupsKept += verified.length;
+    for (const group of verified) {
+      for (const line of group.lines) {
+        lineRoles[line.role] += 1;
+      }
+    }
+  }
+
+  return {
+    groupsReported,
+    groupsKept,
+    lineRoles,
+    sliceStitches: mergeStats.layoutSliceStitches,
+    structureDiscarded,
+    ...(mergeStats.unmatchedBoundaries.length > 0
+      ? { unmatchedBoundaries: mergeStats.unmatchedBoundaries.slice(0, 12) }
+      : {})
+  };
+}
+
+/**
+ * OCR 문장이 어떤 이미지에서 왔고 어떤 방식으로 귀속됐는지, 그리고 그 귀속이 의미적 사실
+ * 추출(수치 주장, 성분-효능 링크, 인용)에 얼마나 반영됐는지를 사후 분석용으로 전수 기록한다.
+ */
+function buildOcrRelationDiagnostics(
+  extractedTexts: OcrTextEvidence[],
+  semanticFacts: Partial<GeoSemanticFacts> | undefined
+): OcrRelationDiagnostics {
+  const sentences = extractedTexts.flatMap((item) =>
+    item.sentenceInsights.map((insight): OcrRelationSentenceDiagnostic => ({
+      text: insight.text,
+      category: insight.category,
+      imageUrls: insight.imageUrls ?? item.imageUrls ?? [item.imageUrl],
+      attribution: insight.attribution ?? "fuzzy"
+    }))
+  );
+  const countLinks = (claims: Array<{ imageUrls?: string[] }> | undefined) => ({
+    total: claims?.length ?? 0,
+    withImage: claims?.filter((claim) => (claim.imageUrls?.length ?? 0) > 0).length ?? 0
+  });
+
+  return {
+    sentences: sentences.slice(0, 120),
+    attributionCounts: {
+      declared: sentences.filter((item) => item.attribution === "declared").length,
+      fuzzy: sentences.filter((item) => item.attribution === "fuzzy").length,
+      local: sentences.filter((item) => item.attribution === "local").length
+    },
+    semanticFactLinks: {
+      metricClaims: countLinks(semanticFacts?.metricClaims),
+      ingredientBenefitLinks: countLinks(semanticFacts?.ingredientBenefitLinks),
+      citations: countLinks(semanticFacts?.citations)
+    }
   };
 }
 
@@ -3551,8 +3881,29 @@ async function classifyOcrCandidates(
       const classified = await classifier.classifyKeywords(await createKeywordClassificationRequest(source, productName, batch, options, runtimeSteps));
       runtimeSteps.push(createModelRuntimeStep("final", "Semantic OCR classification/reasoning", options, "reasoning", classified.usage, `${batch.length} OCR text candidates semantically classified${batchLabel}.`));
       batchKeywords.push(classified.keywords ?? []);
-      providerInsights.push(...(classified.sentenceInsights ?? []));
-      semanticFactsParts.push(classified.semanticFacts);
+
+      const resolveDeclared = <T extends { evidenceIndex?: number; imageUrls?: string[] }>(item: T): T => {
+        const declared = item.evidenceIndex !== undefined && item.evidenceIndex >= 1
+          ? batch[item.evidenceIndex - 1]
+          : undefined;
+        if (!declared) {
+          // 해석된 선언만 출처가 된다. provider JSON은 캐스팅으로만 검증되므로, 스키마 밖에서
+          // 흘러든 imageUrls를 선언으로 오인하면 그 인사이트는 어느 후보에도 붙지 못하고 사라진다.
+          return item.imageUrls ? { ...item, imageUrls: undefined } : item;
+        }
+        return { ...item, imageUrls: declared.imageUrls?.length ? declared.imageUrls : [declared.imageUrl] };
+      };
+
+      providerInsights.push(...(classified.sentenceInsights ?? []).map((insight) => {
+        const resolved = resolveDeclared(insight);
+        return resolved.imageUrls ? { ...resolved, attribution: "declared" as const } : resolved;
+      }));
+      semanticFactsParts.push(classified.semanticFacts && {
+        ...classified.semanticFacts,
+        metricClaims: classified.semanticFacts.metricClaims?.map(resolveDeclared),
+        ingredientBenefitLinks: classified.semanticFacts.ingredientBenefitLinks?.map(resolveDeclared),
+        citations: classified.semanticFacts.citations?.map(resolveDeclared)
+      });
       classifiedBatchCount += 1;
     } catch (error) {
       lastError = error;
@@ -3663,40 +4014,79 @@ function sentenceInsightsForCandidate(
   keywords: ClassifiedKeyword[],
   confidence: number
 ): ClassifiedSentenceInsight[] {
-  const providerMatches = providerInsights
+  const candidateImageUrls = new Set(candidate.imageUrls?.length ? candidate.imageUrls : [candidate.imageUrl]);
+  const normalized = providerInsights
     .map(normalizeProviderSentenceInsight)
-    .filter((insight): insight is ClassifiedSentenceInsight => Boolean(insight))
-    .filter((insight) => providerSentenceInsightBelongsToCandidate(insight, candidate, keywords));
-  const localInsights = extractSentenceInsightsFromText(candidate.text, keywords, confidence);
-  const localBackfill = providerMatches.length > 0
-    ? localInsights.filter((insight) => shouldKeepLocalSentenceBackfill(insight, providerMatches))
-    : localInsights;
+    .filter((insight): insight is ClassifiedSentenceInsight => Boolean(insight));
 
-  return mergeSentenceInsights(providerMatches, localBackfill).slice(0, 8);
+  // 이 후보로 선언된 인사이트. 수치 문장은 후보 텍스트에 같은 수치가 실재하는지 검증해
+  // 선언 오류로 환각 수치가 다른 이미지에 귀속되는 것을 막는다.
+  const declaredHere = normalized.filter((insight) =>
+    insight.imageUrls?.some((url) => candidateImageUrls.has(url))
+    && metricTokensAreSupported(insight.text, candidate.text));
+  // 다른 후보로 선언된 인사이트는 이 후보의 퍼지 풀에서 제외한다.
+  const undeclared = normalized.filter((insight) => !insight.imageUrls || insight.imageUrls.length === 0);
+  const fuzzyMatches = undeclared
+    .filter((insight) => providerSentenceInsightBelongsToCandidate(insight, candidate, keywords))
+    .map((insight) => ({ ...insight, imageUrls: [...candidateImageUrls], attribution: "fuzzy" as const }));
+
+  const localInsights = extractSentenceInsightsFromText(candidate.text, keywords, confidence, candidate.groups)
+    .map((insight) => ({ ...insight, imageUrls: [...candidateImageUrls], attribution: "local" as const }));
+  // 원문의 절 제목이 역할을 선언한 문장은 그 역할과 경계가 출처 구조 자체다.
+  // 모델(또는 목업)의 문장 분할·분류 추측이 그것을 덮으면, 절 관계로 복원한
+  // 항목이 다시 다른 절의 본문과 이어붙은 형태로 되돌아간다.
+  const sectionDeclared = localInsights.filter((insight) => insight.roleSource === "section-heading");
+  const providerMatches = mergeSentenceInsights(declaredHere, fuzzyMatches)
+    .filter((insight) => !sectionDeclared.some((declared) => sentenceTextsOverlap(declared.text, insight.text)));
+  const remainingLocal = localInsights.filter((insight) => insight.roleSource !== "section-heading");
+  const localBackfill = providerMatches.length > 0
+    ? remainingLocal.filter((insight) => shouldKeepLocalSentenceBackfill(insight, providerMatches))
+    : remainingLocal;
+
+  return mergeSentenceInsights(sectionDeclared, providerMatches, localBackfill).slice(0, 8);
+}
+
+/** 두 문장이 같은 원문 구간을 가리키는지. 한쪽이 다른 쪽을 품고 있으면 같은 구간이다. */
+function sentenceTextsOverlap(left: string, right: string): boolean {
+  const a = normalizeOcrComparisonText(left);
+  const b = normalizeOcrComparisonText(right);
+  return Boolean(a) && Boolean(b) && (a === b || a.includes(b) || b.includes(a));
 }
 
 function extractSentenceInsightsFromText(
   text: string,
   keywords: ClassifiedKeyword[],
-  confidence: number
+  confidence: number,
+  groups?: OcrLayoutGroup[]
 ): ClassifiedSentenceInsight[] {
-  return splitEvidenceSentences(text).flatMap((sentence): ClassifiedSentenceInsight[] => {
+  return splitOcrEvidenceUnits(text, groups).flatMap((unit): ClassifiedSentenceInsight[] => {
+    const sentence = unit.text;
     const sentenceKeywords = mergeKeywords(
       keywords.filter((keyword) => includesKeyword(sentence, keyword.keyword)),
       keywordsFromTextAcrossCategories(sentence, "ocr")
     ).filter((keyword) => keyword.category !== "unknown");
-    const category = inferSentenceInsightCategory(sentence, sentenceKeywords);
+    // 절 제목이 역할을 선언한 항목은 그 역할이 근거다. 본문 어휘로 역할을 다시
+    // 추측하면 제형마다 다른 동작 동사를 목록으로 쫓아야 하고, 목록에 없는
+    // 동작(세정 단계의 "씻어줍니다")이 그대로 탈락한다.
+    const category = unit.declaredCategory ?? inferSentenceInsightCategory(sentence, sentenceKeywords);
 
-    if (!category || category === "unknown" || !isSentenceInsightValue(sentence, category)) {
+    if (!category || category === "unknown") {
+      return [];
+    }
+    if (unit.declaredCategory ? !isDeclaredSectionItemValue(sentence) : !isSentenceInsightValue(sentence, category)) {
       return [];
     }
 
+    const trimmed = trimSentenceInsight(sentence, category);
     return [{
-      text: trimSentenceInsight(sentence, category),
+      // 원문이 매긴 서수는 절차의 순서 근거다. 사용법 항목은 그 번호를 달고
+      // 나가야 다운스트림이 단일 노트가 아닌 순서 있는 절차로 발행할 수 있다.
+      text: unit.declaredCategory === "usage" && unit.ordinal !== undefined ? `${unit.ordinal}. ${trimmed}` : trimmed,
       category,
       keywords: unique(sentenceKeywords.map((keyword) => keyword.keyword)).slice(0, 10),
       confidence,
-      source: "ocr"
+      source: "ocr",
+      roleSource: unit.declaredCategory ? "section-heading" : undefined
     }];
   });
 }
@@ -3715,7 +4105,10 @@ function normalizeProviderSentenceInsight(insight: ClassifiedSentenceInsight): C
     keywords: unique((insight.keywords ?? []).map(cleanText)).slice(0, 10),
     confidence: typeof insight.confidence === "number" ? insight.confidence : 0.72,
     source: insight.source === "llm" || insight.source === "mock" ? insight.source : "llm",
-    semanticFacts: insight.semanticFacts
+    semanticFacts: insight.semanticFacts,
+    evidenceIndex: insight.evidenceIndex,
+    imageUrls: insight.imageUrls,
+    attribution: insight.attribution
   };
 }
 
@@ -3849,22 +4242,160 @@ function categoryHasCandidateEvidence(category: KeywordCategory, candidateText: 
   return true;
 }
 
-function splitEvidenceSentences(text: string): string[] {
-  const usageSequence = extractExplicitNumberedUsageSteps(text);
-  const lines = usageSequence.remainder
-    .replace(/\r\n?/g, "\n")
-    .split("\n")
-    .map((line) => cleanText(stripSourceSectionLabel(line)))
-    .filter(Boolean);
-  const semanticUnits = reconstructOcrSemanticUnits(lines);
-  const candidates = [...usageSequence.steps, ...semanticUnits.flatMap(segmentSemanticUnit)];
+/**
+ * 절 제목이 선언할 수 있는 역할. 문장 인사이트가 실을 수 있는 역할로 좁힌다
+ * ("rating"처럼 문장 단위 역할이 아닌 값은 제외).
+ */
+type DeclaredSectionRole = Extract<ProductContentCategory, KeywordCategory>;
 
-  return unique(candidates
-    .map((value) => stripSourceSectionLabel(value.replace(/\s+/g, " ")))
-    .filter((value) => value.length >= 12)
-    .filter((value) => !isLikelyStandaloneOcrHeading(value))
-    .filter((value) => value.split(/\s+/).length >= 3 || /[가-힣ぁ-んァ-ン]/.test(value)))
-    .slice(0, 12);
+/** 값이 실릴 수 있는 상품 필드의 역할. 어휘 게이트와 면제가 함께 쓰는 목록이다. */
+type ProductFieldRole = "benefit" | "effect" | "ingredient" | "usage";
+
+/** 절 관계를 달고 나오는 OCR 근거 단위. */
+interface OcrEvidenceUnit {
+  text: string;
+  declaredCategory?: DeclaredSectionRole;
+  ordinal?: number;
+}
+
+/**
+ * OCR 블록을 절 관계(제목 → 서수 항목)로 읽어 근거 단위를 만든다.
+ *
+ * 제목이 역할을 선언한 절의 항목은 그 역할을 달고 나가고, 제목이 없는 영역은
+ * 종전대로 문장 단위로 분해한다. 관계를 먼저 세우기 때문에 다른 절의 본문이
+ * 이어붙거나 제목 문자열이 값 안으로 섞이지 않는다.
+ */
+function splitOcrEvidenceUnits(text: string, groups?: OcrLayoutGroup[]): OcrEvidenceUnit[] {
+  // 관계를 모델이 보고했으면 그것을 쓴다. 레이아웃이 실제로 묶어 둔 관계는
+  // 줄 순서로 복원할 수 없는 것까지 담고 있다 — 나란한 패널의 경계, 차트의
+  // 값과 눈금, 각주가 한정하는 대상.
+  //
+  // 보고가 없거나 전사가 뒷받침하지 않으면 줄 파서로 되돌아간다. 제목처럼
+  // 생긴 줄은 역할을 알아보든 못 알아보든 절 경계다 — 경계 판정과 역할 판정을
+  // 분리해야 역할을 모르는 제목("추천 피부 타입")이 앞 절의 항목이 되어 그
+  // 절의 역할을 뒤집어쓰지 않는다.
+  const verifiedGroups = groups ? verifyOcrLayoutGroups(text, groups) : undefined;
+  const sections = verifiedGroups ? ocrLayoutSections(verifiedGroups) : parseOcrBlockSections(text);
+  const units = sections.flatMap((section) => {
+    const declaredCategory = section.heading ? sectionHeadingCategory(section.heading) : undefined;
+    return section.items.flatMap((item): OcrEvidenceUnit[] => {
+      // 이미지 한 장이 줄바꿈 없이 한 덩어리로 오면 절 구조가 없다. 그때만
+      // 인라인 서수 복구가 필요하다.
+      const inlineSequence = extractExplicitNumberedUsageSteps(item.text);
+      if (inlineSequence.steps.length >= 2) {
+        return [
+          ...inlineSequence.steps.map((step) => ({
+            text: step.text,
+            declaredCategory: "usage" as const,
+            ordinal: step.ordinal
+          })),
+          ...segmentItemSentences(inlineSequence.remainder).map((value) => ({ text: value }))
+        ];
+      }
+      // 측정 행("사용 전 … 사용 직후 … 105% 개선")은 자기 안에 시험 구조를
+      // 갖고 있다. 절 제목은 주제를 선언할 뿐이므로, 그런 행이 효능·성분 절에
+      // 놓였다는 이유로 그 절의 주장으로 발행되면 안 된다. 측정은 측정 경로로
+      // 보낸다.
+      const declaresMeasurementRow = declaredCategory !== undefined
+        && declaredCategory !== "effect"
+        && declaredCategory !== "metric"
+        && isMeasurementTimelineSentence(item.text);
+      if (declaredCategory && !declaresMeasurementRow) {
+        return [{ text: item.text, declaredCategory, ordinal: item.ordinal }];
+      }
+      return segmentItemSentences(item.text).map((value) => ({ text: value }));
+    });
+  });
+
+  const seen = new Set<string>();
+  return units
+    .map((unit) => ({ ...unit, text: cleanText(stripSourceSectionLabel(unit.text.replace(/\s+/g, " "))) }))
+    .filter((unit) => unit.text && isPublishableOcrEvidenceUnit(unit))
+    .filter((unit) => {
+      const key = unit.text.toLocaleLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 16);
+}
+
+/**
+ * 절 제목이 선언하는 역할. DOM 섹션 제목과 같은 분류기를 쓴다 — 제목에서
+ * 역할을 읽는 규칙이 두 벌로 갈라지면 한쪽만 갱신되기 때문이다.
+ */
+function sectionHeadingCategory(heading: string): DeclaredSectionRole | undefined {
+  if (isMeasurementAxisLabel(heading)) {
+    return undefined;
+  }
+  const category = sectionCategory(heading, "", []);
+  return category === "unknown" || category === "rating" ? undefined : category;
+}
+
+/**
+ * 비교 축의 눈금 라벨("사용 전", "세정 후", "4주 후", "Before")은 절을 여는
+ * 제목이 아니라 두 이미지를 견주는 축의 이름이다. 제목으로 읽으면 그 뒤에
+ * 오는 시험 문장 전체가 그 라벨의 역할을 뒤집어쓴다 — "사용 전"이 사용법 절을
+ * 선언해 임상 수치가 사용 단계로 발행되는 식이다.
+ */
+function isMeasurementAxisLabel(value: string): boolean {
+  const text = cleanText(value);
+  if (!text || text.split(/\s+/u).length > MAX_AXIS_LABEL_WORDS) {
+    return false;
+  }
+  // 눈금은 시점만 가리킨다. 결과어나 측정 수치가 함께 있으면 그것은 축의 이름이
+  // 아니라 주장이다("4주 후 수분 105% 개선").
+  if (/[%％]/u.test(text) || METRIC_DIRECTION_WORD.test(text)) {
+    return false;
+  }
+  return TEMPORAL_REFERENCE.test(text);
+}
+
+/** 눈금 라벨의 길이. 축의 이름은 시점 하나를 가리키므로 짧다. */
+const MAX_AXIS_LABEL_WORDS = 4;
+
+/**
+ * 시점을 가리키는 표지.
+ *
+ * 형태를 열거하던 때는 목록에 없는 눈금이 제목으로 읽혔다 — `제품 사용 후`,
+ * `1회 사용 후`, `도포 4주 후`, `After 4 weeks`, `Week 4`, `Baseline`이 모두
+ * 그랬다. 시간 지시는 어느 상품이 와도 같은 닫힌 부류이므로(의존명사 `전·후·뒤`,
+ * 기간 단위, 영문 시간 명사), 형태 조합이 아니라 그 부류로 규정한다.
+ */
+const TEMPORAL_REFERENCE = /(?:^|\s)(?:전|후|뒤|직후|중)(?:$|\s)|\d+(?:\.\d+)?\s*(?:주|일|개월|시간|년)|\b(?:before|after|baseline|initial|later|weeks?|days?|months?|hours?)\b/iu;
+
+/** 측정이 움직인 방향. 이것이 있으면 그 줄은 시점이 아니라 결과다. */
+const METRIC_DIRECTION_WORD = /(?:개선|증가|감소|상승|향상|회복|완화|잔존|지속)|\b(?:improv|increas|decreas|reduc|recover)/iu;
+
+function isPublishableOcrEvidenceUnit(unit: OcrEvidenceUnit): boolean {
+  if (unit.declaredCategory) {
+    // 절 관계가 이미 역할을 정했으므로 역할 추측은 건너뛴다. 값 자격은 남는다 —
+    // 짧은 항목("가벼운 메이크업 세정력")은 원문이 세운 하나의 값이지만, 수치만
+    // 남은 줄과 각주는 값이 아니다.
+    return unit.text.length >= 6
+      && hasPredicatedMeasurement(unit.text)
+      && !isFootnoteLine(unit.text);
+  }
+  return unit.text.length >= 12
+    && !isLikelyStandaloneOcrHeading(unit.text)
+    && (unit.text.split(/\s+/).length >= 3 || /[가-힣ぁ-んァ-ン]/.test(unit.text));
+}
+
+/**
+ * 절 항목의 발행 가능성.
+ *
+ * 역할은 관계가 정했으므로 역할을 다시 추측하지 않는다. 그러나 **값이 될 수
+ * 있는지**는 여전히 그 줄의 형태가 정한다 — 이 두 질문을 하나로 묶어 선언
+ * 경로에서 값 자격 검사를 통째로 면제했더니, 배지 눈금(`+63.6%`)과 규격
+ * (`7.05 oz. / 200 g`)과 시험 고지(`※ …시험 결과`)가 효능 주장으로 발행됐다.
+ */
+function isDeclaredSectionItemValue(value: string): boolean {
+  const text = cleanText(value);
+  return text.length >= 6
+    && text.length <= 900
+    && !isNonProductCommerceText(text)
+    && hasPredicatedMeasurement(text)
+    && !isFootnoteLine(text);
 }
 
 const USAGE_SEQUENCE_HEADER_PATTERN = /(?:사용\s*방법|사용법|how\s*to\s*use|directions?|使い方|使用方法)\s*[.:：]?\s*/iu;
@@ -3880,8 +4411,8 @@ const USAGE_SEQUENCE_HEADER_PATTERN = /(?:사용\s*방법|사용법|how\s*to\s*u
  * composition may only publish a multi-step procedure when the source order is
  * explicit.
  */
-function extractExplicitNumberedUsageSteps(text: string): { steps: string[]; remainder: string } {
-  const noSequence = { steps: [], remainder: text };
+function extractExplicitNumberedUsageSteps(text: string): { steps: Array<{ ordinal: number; text: string }>; remainder: string } {
+  const noSequence = { steps: [] as Array<{ ordinal: number; text: string }>, remainder: text };
   const cleaned = cleanText(text);
   const headerMatch = USAGE_SEQUENCE_HEADER_PATTERN.exec(cleaned);
   if (!headerMatch) {
@@ -3889,7 +4420,7 @@ function extractExplicitNumberedUsageSteps(text: string): { steps: string[]; rem
   }
 
   const body = cleaned.slice(headerMatch.index + headerMatch[0].length);
-  const steps: string[] = [];
+  const steps: Array<{ ordinal: number; text: string }> = [];
   let cursor = 0;
 
   for (let position = 1; ; position += 1) {
@@ -3905,7 +4436,7 @@ function extractExplicitNumberedUsageSteps(text: string): { steps: string[]; rem
     if (stepText.length < 8) {
       break;
     }
-    steps.push(`${position}. ${stepText}`);
+    steps.push({ ordinal: position, text: stepText });
     cursor = nextMarker
       ? stepStart + nextMarker.index
       : stepStart + (sentenceEnd >= 0 ? sentenceEnd + 1 : rawStep.length);
@@ -3920,101 +4451,6 @@ function extractExplicitNumberedUsageSteps(text: string): { steps: string[]; rem
 
   const remainder = cleanText(`${cleaned.slice(0, headerMatch.index)} ${body.slice(cursor)}`);
   return { steps, remainder };
-}
-
-function reconstructOcrSemanticUnits(lines: string[]): string[] {
-  const units: string[] = [];
-  let current = "";
-
-  for (const line of lines) {
-    if (!line || isLikelyStandaloneOcrHeading(line)) {
-      if (current) {
-        units.push(current);
-        current = "";
-      }
-      continue;
-    }
-
-    if (!current) {
-      current = line;
-      continue;
-    }
-
-    if (startsNewOcrSemanticUnit(current, line)) {
-      units.push(current);
-      current = line;
-      continue;
-    }
-
-    current = joinOcrContinuation(current, line);
-  }
-
-  if (current) {
-    units.push(current);
-  }
-
-  return unique(units.map(cleanText).filter((unit) => unit.length >= 12));
-}
-
-function startsNewOcrSemanticUnit(current: string, next: string): boolean {
-  if (isFullIngredientLabel(next)) {
-    return true;
-  }
-  if (isFullIngredientLabel(current)) {
-    return false;
-  }
-  if (isLikelyStandaloneOcrHeading(next)) {
-    return true;
-  }
-  if (shouldContinueOcrLine(current, next)) {
-    return false;
-  }
-
-  return /[.!?。！？]$/.test(current) && /^[A-Z가-힣ぁ-んァ-ン0-9]/.test(next);
-}
-
-function shouldContinueOcrLine(current: string, next: string): boolean {
-  const previousWords = current.split(/\s+/);
-  const nextWords = next.split(/\s+/);
-  const previousTail = previousWords.at(-1) ?? "";
-  const previousTwoWords = previousWords.slice(-2).join(" ");
-  const nextHead = nextWords[0] ?? "";
-
-  if (current.endsWith("-")) {
-    return true;
-  }
-  if (/^[a-z]/.test(nextHead)) {
-    return true;
-  }
-  if (/(?:,|:|;|\(|\[|with|and|or|of|for|to|that|which|by|from|in|on|as|is|are|was|were|into|using|including|combines?|contains?|supports?|helps?|working|enhances?)$/i.test(previousTail)
-    || /(?:a|an|the|a potent|5 other)$/i.test(previousTwoWords)) {
-    return true;
-  }
-  if (/^(?:and|or|with|that|which|while|working|helping|to|for|of|in|by|as|from|into|plus|including|containing)\b/i.test(next)) {
-    return true;
-  }
-  if (!/[.!?。！？]$/.test(current) && !isLikelyStandaloneOcrHeading(next)) {
-    return true;
-  }
-
-  return false;
-}
-
-function joinOcrContinuation(current: string, next: string): string {
-  if (current.endsWith("-")) {
-    return `${current.slice(0, -1)}${next}`;
-  }
-  return `${current} ${next}`;
-}
-
-function segmentSemanticUnit(value: string): string[] {
-  const cleaned = cleanText(value);
-  const sentences = cleaned
-    .split(/(?<=[.!?。！？])\s+(?=[A-Z0-9"“‘'가-힣ぁ-んァ-ン])/)
-    .map(cleanText)
-    .filter((item) => item.length >= 12);
-
-  return sentences.length > 0 ? sentences : [cleaned];
 }
 
 function isLikelyStandaloneOcrHeading(value: string): boolean {
@@ -4119,13 +4555,52 @@ function isSentenceInsightValue(value: string, category: KeywordCategory): boole
     return false;
   }
   if (category === "metric") {
-    return isSemanticFieldValue(text, "metric") || /(clinical|result|agreed|showed|after\s+\d)/i.test(text);
+    return hasPredicatedMeasurement(text)
+      && (isSemanticFieldValue(text, "metric") || /(clinical|result|agreed|showed|after\s+\d)/i.test(text));
   }
   if (category === "faq" || category === "review") {
     return true;
   }
 
   return isSemanticFieldValue(text, category);
+}
+
+/**
+ * 측정 주장은 "무엇이 어떻게 되었는지"를 말한다. 수치·단위·구분기호를 걷어낸
+ * 뒤에 아무 내용어도 남지 않는 줄("7.05 oz. / 200 g", "+63.6%")은 규격이나
+ * 배지 눈금이지 측정 결과를 말하는 문장이 아니다. 어떤 단위 목록을 열거하는
+ * 대신, 남는 말이 있는지를 본다.
+ */
+function hasPredicatedMeasurement(value: string): boolean {
+  return figureFreeRemainder(value).length >= 2;
+}
+
+/**
+ * 수치와 그에 붙은 단위를 걷어낸 뒤 남는 말.
+ *
+ * 단위 목록은 열거하지 않는다 — 형제 모듈(`ocr-layout-metrics.ts`)이 같은
+ * 판단을 이미 그렇게 규정했다("목록으로 규정하면 새 단위가 올 때마다 깨진다").
+ * 값 라인은 숫자 하나와 그에 붙은 짧은 표기로 이루어지므로, 숫자 뒤에 남는
+ * 짧은 비숫자 꼬리가 곧 단위다. 열거했을 때는 `120 mmHg`·`1.7 ㎍/㎖`가 목록에
+ * 없어 측정 주장으로 통과했다.
+ */
+function figureFreeRemainder(value: string): string {
+  return cleanText(value)
+    .replace(/[+\-−±]?\d+(?:[.,]\d+)?\s*(?:[^\s\d]{1,4})?/gu, " ")
+    .replace(/[%％]|[+\-−±*＊※·•]|[()[\]{}]|[/／,、.:;~〜]/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+/**
+ * 참조 기호로 시작하는 줄은 각주다.
+ *
+ * 각주는 절의 주장이 아니라 그 절이 실은 수치의 조건이다(`※ 성인 여성 30명
+ * 대상 4주 사용 시험 결과`). 어휘가 아니라 조판 형태로 규정한다 — 시험 고지는
+ * 어느 브랜드에서나 이 기호로 열린다.
+ */
+function isFootnoteLine(value: string): boolean {
+  return /^\s*[※*＊†‡]/u.test(cleanText(value));
 }
 
 function trimSentenceInsight(value: string, category: KeywordCategory): string {
@@ -4239,18 +4714,110 @@ function createSentenceSignalBuckets(insights: ClassifiedSentenceInsight[]): Pro
     }
   }
 
+  const declared = declaredSectionTexts(insights);
+  const field = (values: string[], category: ProductFieldRole, limit: number) =>
+    valuesWithDeclaredRelationsExempt(values, declared, category, limit);
+
   return {
-    benefits: semanticFieldValues(buckets.benefits, "benefit", 12),
-    effects: semanticFieldValues(buckets.effects, "effect", 12),
-    ingredients: semanticFieldValues(buckets.ingredients, "ingredient", 16),
-    usage: semanticFieldValues(buckets.usage, "usage", 12),
+    benefits: field(buckets.benefits, "benefit", 12),
+    effects: field(buckets.effects, "effect", 12),
+    ingredients: field(buckets.ingredients, "ingredient", 16),
+    usage: field(buckets.usage, "usage", 12),
     metrics: unique(buckets.metrics).slice(0, 16),
     sections: []
   };
 }
 
+/** 절 제목이 역할을 선언해 준 문장들의 본문. */
+function declaredSectionTexts(insights: ClassifiedSentenceInsight[]): Set<string> {
+  return new Set(insights
+    .filter((insight) => insight.roleSource === "section-heading")
+    .map((insight) => cleanText(insight.text))
+    .filter((text) => text.length > 0));
+}
+
+/**
+ * 어휘 게이트를 지나되, 관계로 역할이 확정된 값은 면제한다.
+ *
+ * 재검증은 역할이 **추측**일 때 필요한 방어다. 원문 절 제목이 역할을 선언한 값에
+ * 다시 걸면 그 목록에 없는 정상 문장(세정 단계, 짧은 효능 항목)이 마지막 단계에서
+ * 사라진다.
+ *
+ * 이 규정이 두 곳에 서로 다른 기법으로 구현되어 있었다 — 한쪽은 버킷을 둘로
+ * 나누고, 한쪽은 본문 Set을 들고 걸렀다. 면제 카테고리를 늘리거나 본문 길이
+ * 처리를 바꾸면 한쪽만 갱신되어 값이 다시 사라진다.
+ */
+function valuesWithDeclaredRelationsExempt(
+  values: string[],
+  declared: Set<string>,
+  category: ProductFieldRole,
+  limit: number
+): string[] {
+  return unique([
+    ...values
+      .map(cleanText)
+      .filter((value) => declared.has(value) && !isNonProductCommerceText(value)),
+    ...semanticFieldValues(values, category, limit)
+  ]).slice(0, limit);
+}
+
+/**
+ * 원문이 밝힌 피부 타입. 문장이 주장 자격을 갖췄는지 묻지 않는다.
+ *
+ * 피부 타입은 주장이 아니라 표기다 — "추천 피부 타입: 건조 피부 또는 민감 피부"는
+ * 무엇이 개선된다는 말이 아니라 이 제품이 누구를 위한 것인지 밝히는 라벨이다.
+ * 그런데 추출이 문장 인사이트에만 의존해, 그 라벨 절의 역할을 알아보지 못하면
+ * (`RECOMMENDED FOR`, `추천 피부 타입`) 인사이트가 만들어지지 않아 타입이 통째로
+ * 사라졌다. 표기는 원문에서 바로 읽는다.
+ */
+function skinTypesFromOcr(ocr: OcrExtraction): string[] {
+  return unique(ocr.extractedTexts.flatMap((item) => skinTypesStatedIn(item.text)));
+}
+
+/**
+ * 한 이미지의 원문에서 **긍정으로 밝힌** 피부 타입만 읽는다.
+ *
+ * 원문은 배제도 함께 적는다("지성 피부에는 권장하지 않습니다", "Not recommended
+ * for oily skin"). 전문을 한 덩어리로 읽으면 그 배제 대상이 추천 타입으로
+ * 발행된다 — 제품이 권장하지 않는 대상을 추천으로 뒤집는 셈이다.
+ *
+ * 문장 단위로 갈라 부정된 문장을 버린다. 한국어의 부정은 어휘가 아니라
+ * 구문이다(`-지 않다`·`-지 말다`·`못`), 영문은 부정어가 닫힌 부류다.
+ */
+function skinTypesStatedIn(value: string): string[] {
+  return unique(cleanText(value)
+    .split(/(?<=[.!?。！？])\s+|\n+/u)
+    .filter((sentence) => !KOREAN_NEGATED_PREDICATE.test(sentence) && !ENGLISH_NEGATOR.test(sentence))
+    .flatMap((sentence) => extractSkinTypeSignals(sentence)));
+}
+
+/** `-지 않다`·`-지 말다`·`못` — 한국어가 부정을 만드는 구문. */
+const KOREAN_NEGATED_PREDICATE = /(?:지\s*(?:않|말)|못\s*[가-힣]|삼가|금지|비추천)/u;
+
+/** 영문 부정어. 닫힌 부류다. */
+const ENGLISH_NEGATOR = /\b(?:not|never|no|avoid|unsuitable|except)\b|n't\b/iu;
+
+function layoutMetricClaimsFromOcr(ocr: OcrExtraction, productName: string): GeoSemanticMetricClaim[] {
+  return ocr.extractedTexts.flatMap((item) => {
+    if (!item.groups) {
+      return [];
+    }
+    const verified = verifyOcrLayoutGroups(item.text, item.groups);
+    if (!verified) {
+      return [];
+    }
+    const imageUrls = item.imageUrls ?? [item.imageUrl];
+    return metricClaimsFromOcrLayout(verified, productName)
+      .map((claim) => ({ ...claim, ...(imageUrls.length > 0 ? { imageUrls } : {}) }));
+  });
+}
+
 function semanticFactsFromExtraction(product: ProductProfile, ocr: OcrExtraction, modelFacts?: Partial<GeoSemanticFacts>): GeoSemanticFacts {
   const insightFacts = semanticFactsFromSentenceInsights(ocr.extractedTexts.flatMap((item) => item.sentenceInsights));
+  const layoutFacts: Partial<GeoSemanticFacts> = {
+    metricClaims: layoutMetricClaimsFromOcr(ocr, product.name),
+    skinTypes: skinTypesFromOcr(ocr)
+  };
   return mergeSemanticFacts({
     ingredients: product.ingredients,
     benefits: product.benefits,
@@ -4261,7 +4828,7 @@ function semanticFactsFromExtraction(product: ProductProfile, ocr: OcrExtraction
     evidenceSentences: [],
     ingredientBenefitLinks: [],
     citations: []
-  }, insightFacts, modelFacts);
+  }, insightFacts, layoutFacts, modelFacts);
 }
 
 function semanticFactsFromSentenceInsights(insights: ClassifiedSentenceInsight[]): GeoSemanticFacts {
@@ -4269,13 +4836,18 @@ function semanticFactsFromSentenceInsights(insights: ClassifiedSentenceInsight[]
     ingredients: insight.category === "ingredient" ? semanticKeywordOrSentenceValues(insight) : [],
     benefits: insight.category === "benefit" ? [insight.text] : [],
     effects: insight.category === "effect" ? [insight.text] : [],
-    skinTypes: extractSkinTypeSignals(insight.text),
+    // 부정 검사를 지나는 한 곳으로 모은다. 여기서 `extractSkinTypeSignals`를
+    // 직접 부르던 때는 같은 판정이 두 벌이 되어, 원문이 배제한 타입이 이 경로로
+    // 다시 들어왔다.
+    skinTypes: skinTypesStatedIn(insight.text),
     usageSteps: insight.category === "usage" ? [insight.text] : [],
-    metricClaims: insight.category === "metric" || hasMetricSignal(insight.text) ? [{ sentence: insight.text, sourceText: insight.text }] : [],
+    metricClaims: insight.category === "metric" || hasMetricSignal(insight.text)
+      ? [{ sentence: insight.text, sourceText: insight.text, ...(insight.imageUrls ? { imageUrls: insight.imageUrls } : {}) }]
+      : [],
     evidenceSentences: [insight.text],
     citations: [],
     ingredientBenefitLinks: insight.category === "ingredient" && hasBenefitOrEffectLanguage(insight.text)
-      ? [{ sentence: insight.text, sourceText: insight.text }]
+      ? [{ sentence: insight.text, sourceText: insight.text, ...(insight.imageUrls ? { imageUrls: insight.imageUrls } : {}) }]
       : [],
     ...insight.semanticFacts
   })));
@@ -4326,18 +4898,27 @@ function uniqueSemanticMetricClaims(values: GeoSemanticMetricClaim[]): GeoSemant
       metric: stringValue(value.metric),
       direction: stringValue(value.direction),
       timing: stringValue(value.timing),
+      comparator: stringValue(value.comparator),
+      baseline: stringValue(value.baseline),
       period: stringValue(value.period),
       sample: stringValue(value.sample),
       method: stringValue(value.method),
       caveat: stringValue(value.caveat),
       sentence: stringValue(value.sentence),
-      sourceText: stringValue(value.sourceText)
+      sourceText: stringValue(value.sourceText),
+      ...(numberValue(value.evidenceIndex) !== undefined ? { evidenceIndex: numberValue(value.evidenceIndex) } : {}),
+      ...(Array.isArray(value.imageUrls) ? { imageUrls: value.imageUrls.filter((url): url is string => typeof url === "string") } : {})
     };
+    // 같은 값이 다른 시점·다른 비교 대상으로 보고되면 서로 다른 주장이다.
+    // 차트는 한 값(+84.3%)을 여러 시점에 인쇄하므로, 지문에 시점과 비교 대상이
+    // 없으면 뒤에 온 시점의 주장이 중복으로 버려진다.
     const key = normalizeFingerprint([
       claim.label,
       claim.subject,
       claim.value,
       claim.metric,
+      claim.timing,
+      claim.comparator,
       claim.sentence,
       claim.sourceText
     ].filter(Boolean).join(" "));
@@ -4360,7 +4941,9 @@ function uniqueSemanticIngredientBenefitLinks(values: GeoSemanticIngredientBenef
       benefit: stringValue(value.benefit),
       effect: stringValue(value.effect),
       sentence: stringValue(value.sentence),
-      sourceText: stringValue(value.sourceText)
+      sourceText: stringValue(value.sourceText),
+      ...(numberValue(value.evidenceIndex) !== undefined ? { evidenceIndex: numberValue(value.evidenceIndex) } : {}),
+      ...(Array.isArray(value.imageUrls) ? { imageUrls: value.imageUrls.filter((url): url is string => typeof url === "string") } : {})
     };
     const key = normalizeFingerprint([
       link.ingredient,
@@ -4377,13 +4960,36 @@ function uniqueSemanticIngredientBenefitLinks(values: GeoSemanticIngredientBenef
   });
 }
 
+/** 피부 타입을 가리키는 수식어. 두 언어에서 같은 집합을 가리킨다. */
+const SKIN_TYPE_MODIFIER_EN = "dry|sensitive|oily|combination|normal";
+const SKIN_TYPE_MODIFIER_KO = "건조|건성|민감|지성|복합성|중성";
+
+/**
+ * 원문이 밝힌 피부 타입을 뽑는다.
+ *
+ * 두 언어가 등위를 다르게 쓴다. 한국어는 머리 명사를 되풀이하고("건조 피부 또는
+ * 민감 피부"), 영문은 마지막에 한 번만 쓴다("Dry or sensitive skin"). 되풀이를
+ * 전제한 규칙으로 영문을 읽으면 앞의 타입이 통째로 빠진다 — 미국 대상 페이지에서
+ * `dry skin`이 사라지고 `sensitive skin`만 남았다.
+ *
+ * 그래서 수식어의 등위를 먼저 읽고, 각 수식어에 머리 명사를 붙여 같은 형태로
+ * 돌려준다.
+ */
 function extractSkinTypeSignals(value: string): string[] {
   const text = cleanText(value);
+  const englishGroups = text.match(
+    new RegExp(`(?:${SKIN_TYPE_MODIFIER_EN})(?:\\s*(?:,|/|or|and)\\s*(?:${SKIN_TYPE_MODIFIER_EN}))*\\s+skin`, "gi")
+  ) ?? [];
+  const koreanGroups = text.match(
+    new RegExp(`(?:${SKIN_TYPE_MODIFIER_KO})(?:\\s*(?:,|/|또는|과|와|이나)\\s*(?:${SKIN_TYPE_MODIFIER_KO}))*\\s*피부`, "g")
+  ) ?? [];
+
   return unique([
-    text.match(/(?:dry|sensitive|oily|combination)\s+skin/gi)?.join(", "),
-    text.match(/(?:건조|건성|민감|지성|복합성)\s*피부/g)?.join(", ")
-  ].filter((item): item is string => Boolean(item))
-    .flatMap((item) => item.split(/\s*,\s*/)));
+    ...englishGroups.flatMap((group) =>
+      (group.match(new RegExp(SKIN_TYPE_MODIFIER_EN, "gi")) ?? []).map((modifier) => `${modifier.toLowerCase()} skin`)),
+    ...koreanGroups.flatMap((group) =>
+      (group.match(new RegExp(SKIN_TYPE_MODIFIER_KO, "g")) ?? []).map((modifier) => `${modifier} 피부`))
+  ]);
 }
 
 function hasMetricSignal(value: string): boolean {
@@ -4397,7 +5003,8 @@ function hasBenefitOrEffectLanguage(value: string): boolean {
 function toGeoSentenceInsights(items: OcrExtraction["extractedTexts"]): GeoSentenceInsight[] {
   return uniqueGeoSentenceInsights(items.flatMap((item) =>
     item.sentenceInsights.map((insight) => ({
-      imageUrl: item.imageUrl,
+      imageUrl: insight.imageUrls?.[0] ?? item.imageUrl,
+      imageUrls: insight.imageUrls ?? item.imageUrls ?? [item.imageUrl],
       text: insight.text,
       category: insight.category,
       keywords: insight.keywords,
@@ -4593,27 +5200,303 @@ function scoreImageOcrTarget(value: string, context?: ImageOcrContext, productNa
 }
 
 /**
+ * Re-transcribes the dense inputs of a batch and keeps only what both readings
+ * agree on. See `reconcileOcrReadings` for why one reading is not checkable.
+ *
+ * Only sliced inputs are re-read. Slicing is the pipeline's own signal that an
+ * image carries small, dense text, which is where transcription invents words;
+ * a product shot whose whole text is a label on a bottle does not need a second
+ * opinion and would double its cost for nothing.
+ */
+async function verifyOcrBatchReadings(input: {
+  classifier: KeywordClassifier;
+  source: string;
+  productName?: string;
+  batch: ImageOcrInput[];
+  firstReading: Array<{
+    imageUrl: string;
+    displayUrl: string;
+    text: string;
+    confidence?: number;
+    groups?: OcrLayoutGroup[];
+    sliceIndex?: number;
+    sliceCount?: number;
+  }>;
+  collector?: OcrDiagnosticsCollector;
+  runtimeSteps: RuntimePipelineStep[];
+  options: ProductExtractorOptions;
+  onProgress?: (message: string) => void;
+}): Promise<OcrTextCandidate[]> {
+  const asCandidates = () => input.firstReading.map(({ imageUrl, text, confidence, groups, sliceIndex, sliceCount }) => ({
+    imageUrl,
+    text,
+    confidence,
+    ...(groups ? { groups } : {}),
+    ...(sliceIndex !== undefined ? { sliceIndex } : {}),
+    ...(sliceCount !== undefined ? { sliceCount } : {})
+  }));
+  const denseInputs = input.batch.filter(isSliceOrInlineImageOcrInput);
+  if (!input.classifier.extractImageTexts || denseInputs.length === 0) {
+    return asCandidates();
+  }
+
+  let verification: ImageTextExtractionResponse;
+  try {
+    input.onProgress?.(`밀집 텍스트 이미지 ${denseInputs.length}개를 2차 판독해 두 판독이 일치하는 텍스트만 남깁니다.`);
+    verification = await input.classifier.extractImageTexts({
+      source: input.source,
+      productName: input.productName,
+      imageUrls: denseInputs.map((item) => item.displayUrl),
+      imageInputs: denseInputs
+    });
+    input.runtimeSteps.push(createModelRuntimeStep(
+      "ocr",
+      "OCR verification reading",
+      input.options,
+      "ocr",
+      verification.usage,
+      `${denseInputs.length} dense product-detail image input(s) re-transcribed so only text both readings agree on is kept.`
+    ));
+  } catch (error) {
+    // A failed second opinion must not discard the first reading: the pipeline
+    // is no worse off than before verification existed.
+    const message = error instanceof Error ? error.message : "Image OCR verification failed.";
+    input.onProgress?.(`2차 판독이 실패해 1차 판독 결과를 그대로 사용합니다: ${message}`);
+    return asCandidates();
+  }
+
+  const verificationByUrl = new Map(verification.images.map((image): [string, string] => [image.imageUrl, normalizeOcrText(image.text)]));
+  return input.firstReading.flatMap((item): OcrTextCandidate[] => {
+    const sliceFields = {
+      // 구조는 1차 판독의 산물이다. 대조가 텍스트를 좁혀도 그대로 실어 보내고,
+      // 어긋난 라인은 검증(verifyOcrLayoutGroups)이 최종 텍스트 기준으로 걸러낸다.
+      ...(item.groups ? { groups: item.groups } : {}),
+      ...(item.sliceIndex !== undefined ? { sliceIndex: item.sliceIndex } : {}),
+      ...(item.sliceCount !== undefined ? { sliceCount: item.sliceCount } : {})
+    };
+    const second = verificationByUrl.get(item.displayUrl);
+    if (!second) {
+      return [{ imageUrl: item.imageUrl, text: item.text, confidence: item.confidence, ...sliceFields }];
+    }
+    const { text, droppedTokens } = reconcileOcrReadings(item.text, second);
+    if (droppedTokens.length > 0 && input.collector) {
+      const targetDiagnostic = ocrTargetDiagnostic(input.collector, item.imageUrl);
+      targetDiagnostic.issues.push(
+        `${droppedTokens.length} token(s) differed between two readings and were dropped as unverified: ${unique(droppedTokens).slice(0, 6).join(", ")}`
+      );
+    }
+    return text.length >= 8 ? [{ imageUrl: item.imageUrl, text, confidence: item.confidence, ...sliceFields }] : [];
+  });
+}
+
+/**
+ * Reconciles two independent transcriptions of the same image, keeping only
+ * what both readings agree on.
+ *
+ * A single transcription cannot be checked against anything. The EXAMPLEDERMA
+ * 크림 미스트 detail image reads "대학병원 피부과에서"; one reading returned
+ * "휘경보건 피부과에서" and reported 0.91 confidence, so a clinic that does not
+ * exist entered the pipeline as a fact. Confidence is the model's own opinion
+ * of a reading, and it was wrong about this one.
+ *
+ * Two readings disagree exactly where one of them invented something. Aligning
+ * them and keeping the agreed tokens turns an invented proper noun into an
+ * absent one, which is the failure mode this pipeline can afford: a missing
+ * institution costs a provenance detail, while a fabricated one publishes a
+ * false statement about a real third party.
+ *
+ * Agreement is computed over tokens rather than whole strings because the two
+ * readings differ in harmless ways too — spacing, line breaks, a trailing
+ * marker — and discarding a whole block over those would lose real text.
+ */
+export function reconcileOcrReadings(first: string, second: string): { text: string; droppedTokens: string[] } {
+  const firstTokens = first.split(/(\s+)/u);
+  const secondTokens = second.split(/\s+/u).filter(Boolean).map(normalizeOcrComparisonText);
+  // Reconciliation only means anything when the two readings are readings of
+  // the same thing. When they diverge broadly — a slice boundary landed
+  // differently, one pass skipped a column — intersecting their tokens shreds
+  // both into a text neither reported. The first reading is then kept whole:
+  // this guard exists to remove invented words, not to assemble a third
+  // version out of two disagreeing ones.
+  // The ratio only carries information once there is enough text to measure:
+  // over a handful of tokens a single legitimate difference already looks like
+  // a different reading.
+  const contentTokenCount = firstTokens.filter((token) => !/^\s*$/u.test(token)).length;
+  if (contentTokenCount >= 12 && agreementRatio(firstTokens, secondTokens) < 0.8) {
+    return { text: normalizeOcrText(first), droppedTokens: [] };
+  }
+  const secondCounts = new Map<string, number>();
+  for (const token of secondTokens) {
+    secondCounts.set(token, (secondCounts.get(token) ?? 0) + 1);
+  }
+  const droppedTokens: string[] = [];
+  const kept = firstTokens.map((token) => {
+    if (/^\s*$/u.test(token)) return token;
+    const key = normalizeOcrComparisonText(token);
+    const remaining = secondCounts.get(key) ?? 0;
+    if (remaining > 0) {
+      secondCounts.set(key, remaining - 1);
+      return token;
+    }
+    droppedTokens.push(token);
+    return "";
+  });
+  return {
+    text: normalizeOcrText(kept.join("").replace(/[ \t]{2,}/gu, " ")),
+    droppedTokens
+  };
+}
+
+/** Share of the first reading's tokens that the second reading also reports. */
+function agreementRatio(firstTokens: string[], secondTokens: string[]): number {
+  const available = new Map<string, number>();
+  for (const token of secondTokens) {
+    available.set(token, (available.get(token) ?? 0) + 1);
+  }
+  let total = 0;
+  let matched = 0;
+  for (const token of firstTokens) {
+    if (/^\s*$/u.test(token)) continue;
+    total += 1;
+    const key = normalizeOcrComparisonText(token);
+    const remaining = available.get(key) ?? 0;
+    if (remaining > 0) {
+      available.set(key, remaining - 1);
+      matched += 1;
+    }
+  }
+  return total === 0 ? 1 : matched / total;
+}
+
+/**
+ * Re-joins tall-image slice transcriptions in their known slice order before
+ * the general merge. Overlap-aware joining is tried first; when the model
+ * transcribed the overlap band differently the slices are still concatenated
+ * in order instead of silently staying apart (the pre-fix failure mode).
+ */
+export function joinSliceCandidates(candidates: OcrTextCandidate[], stats?: OcrMergeStats): OcrTextCandidate[] {
+  const groups = new Map<string, OcrTextCandidate[]>();
+  const groupPositions = new Map<string, number>();
+  const passthrough: Array<{ candidate: OcrTextCandidate; position: number }> = [];
+
+  candidates.forEach((candidate, position) => {
+    if (candidate.sliceIndex === undefined) {
+      passthrough.push({ candidate, position });
+      return;
+    }
+    const group = groups.get(candidate.imageUrl) ?? [];
+    group.push(candidate);
+    groups.set(candidate.imageUrl, group);
+    if (!groupPositions.has(candidate.imageUrl)) {
+      groupPositions.set(candidate.imageUrl, position);
+    }
+  });
+
+  const joined: Array<{ candidate: OcrTextCandidate; position: number }> = [...passthrough];
+
+  for (const [imageUrl, group] of groups) {
+    const ordered = [...group].sort((a, b) => (a.sliceIndex ?? 0) - (b.sliceIndex ?? 0));
+    const first = ordered[0];
+    if (!first) {
+      continue;
+    }
+    // 구조는 슬라이스 단위로 왔으므로, 텍스트를 잇는 동안 각 슬라이스가 선두에서
+    // 몇 줄을 내놓았는지(=앞 슬라이스가 소유한 줄)를 함께 모아 둔다.
+    const readings: SlicedLayoutReading[] = [{
+      sliceIndex: first.sliceIndex ?? 1,
+      ...(first.groups ? { groups: first.groups } : {})
+    }];
+    const merged = ordered.slice(1).reduce<OcrTextCandidate>((acc, slice) => {
+      const overlapResult = joinOverlappingOcrTextsResult(acc.text, slice.text, { tolerateDroppedTokens: true });
+      const overlapJoined = overlapResult.joined ? overlapResult : undefined;
+      if (overlapJoined !== undefined && stats) {
+        stats.overlapJoins += 1;
+      }
+      if (!overlapResult.joined && stats) {
+        const tailLines = acc.text.split("\n");
+        const headLines = slice.text.split("\n");
+        stats.unmatchedBoundaries.push({
+          imageUrl,
+          sliceIndex: slice.sliceIndex ?? readings.length + 1,
+          tailPreview: tailLines.slice(-3).join(" ⏎ ").slice(-160),
+          headPreview: headLines.slice(0, 3).join(" ⏎ ").slice(0, 160)
+        });
+      }
+      readings.push({
+        sliceIndex: slice.sliceIndex ?? readings.length + 1,
+        ...(slice.groups ? { groups: slice.groups } : {}),
+        ...(overlapResult.joined
+          ? { consumedLines: overlapResult.consumedLines }
+          : { overlapUnmatched: true })
+      });
+      return {
+        ...acc,
+        text: overlapJoined?.text ?? `${acc.text}\n${slice.text}`,
+        confidence: minDefinedConfidence(acc.confidence, slice.confidence)
+      };
+    }, first);
+    const stitchedGroups = stitchSlicedLayoutGroups(readings);
+    if (stats) {
+      const reportedGroups = readings.reduce((sum, reading) => sum + (reading.groups?.length ?? 0), 0);
+      if (stitchedGroups) {
+        // 재기점 뒤 남은 그룹 수가 보고된 수보다 적으면 그만큼 경계에서 합쳐졌거나
+        // 오버랩 소유권으로 빠진 것이다.
+        stats.layoutSliceStitches += Math.max(0, reportedGroups - stitchedGroups.length);
+      } else if (reportedGroups > 0) {
+        stats.layoutDiscarded.push({
+          imageUrl,
+          reason: readings.some((reading) => reading.overlapUnmatched) ? "overlap-unmatched" : "slice-partial"
+        });
+      }
+    }
+    joined.push({
+      candidate: {
+        imageUrl,
+        text: merged.text,
+        ...(merged.confidence !== undefined ? { confidence: merged.confidence } : {}),
+        imageUrls: [imageUrl],
+        ...(stitchedGroups ? { groups: stitchedGroups } : {}),
+        ...(first.sliceCount !== undefined ? { sliceCount: first.sliceCount } : {}),
+        ...(first.sourceOrder !== undefined ? { sourceOrder: first.sourceOrder } : {})
+      },
+      position: groupPositions.get(imageUrl) ?? 0
+    });
+  }
+
+  return joined.sort((a, b) => a.position - b.position).map((item) => item.candidate);
+}
+
+/**
  * Merges OCR text candidates with overlap awareness. Exact and contained
  * duplicates collapse onto the longer text, and candidates whose boundary
  * lines overlap (sliced tall images, adjacent srcset variants) are joined so
  * sentences crossing a slice boundary survive with the duplication removed.
  */
-function mergeOcrCandidates(candidates: OcrTextCandidate[], stats?: OcrMergeStats): OcrTextCandidate[] {
-  const merged: Array<OcrTextCandidate & { fingerprint: string }> = [];
+export function mergeOcrCandidates(
+  candidates: OcrTextCandidate[],
+  stats?: OcrMergeStats,
+  limit?: number
+): OcrTextCandidate[] {
+  const merged: Array<OcrTextCandidate & { fingerprint: string; order: number }> = [];
 
-  for (const candidate of candidates) {
+  candidates.forEach((candidate, index) => {
     const text = normalizeOcrText(candidate.text);
 
     if (text.length === 0) {
-      continue;
+      return;
     }
 
     const fingerprint = normalizeOcrComparisonText(text);
+    const candidateImageUrls = candidate.imageUrls ?? [candidate.imageUrl];
     let absorbed = false;
 
-    for (const [index, existing] of merged.entries()) {
+    for (const [position, existing] of merged.entries()) {
+      const unionImageUrls = unique([...(existing.imageUrls ?? [existing.imageUrl]), ...candidateImageUrls]);
       if (existing.fingerprint === fingerprint || existing.fingerprint.includes(fingerprint)) {
         existing.confidence = minDefinedConfidence(existing.confidence, candidate.confidence);
+        existing.imageUrls = unionImageUrls;
+        existing.sliceIndex = undefined;
+        existing.sliceCount = mergedSliceCount(existing, candidate);
         if (stats) {
           stats.duplicatesAbsorbed += 1;
         }
@@ -4621,10 +5504,13 @@ function mergeOcrCandidates(candidates: OcrTextCandidate[], stats?: OcrMergeStat
         break;
       }
       if (fingerprint.includes(existing.fingerprint)) {
-        merged[index] = {
-          imageUrl: existing.imageUrl,
+        merged[position] = {
+          ...existing,
           text,
           confidence: minDefinedConfidence(existing.confidence, candidate.confidence),
+          imageUrls: unionImageUrls,
+          sliceIndex: undefined,
+          sliceCount: mergedSliceCount(existing, candidate),
           fingerprint
         };
         if (stats) {
@@ -4635,12 +5521,19 @@ function mergeOcrCandidates(candidates: OcrTextCandidate[], stats?: OcrMergeStat
       }
 
       const joined = joinOverlappingOcrTexts(existing.text, text) ?? joinOverlappingOcrTexts(text, existing.text);
+      // (서로 다른 후보의 병합이므로 관용 매칭을 쓰지 않는다.)
       if (joined) {
-        merged[index] = {
-          imageUrl: existing.imageUrl,
-          text: joined,
+        merged[position] = {
+          ...existing,
+          text: joined.text,
           confidence: minDefinedConfidence(existing.confidence, candidate.confidence),
-          fingerprint: normalizeOcrComparisonText(joined)
+          imageUrls: unionImageUrls,
+          sliceIndex: undefined,
+          sliceCount: mergedSliceCount(existing, candidate),
+          fingerprint: normalizeOcrComparisonText(joined.text),
+          // 서로 다른 이미지(srcset 변형 등)의 텍스트를 이은 결과에는 어느 쪽
+          // 구조도 그대로 맞지 않는다. 구조를 버려 줄 파서로 되돌린다.
+          groups: undefined
         };
         if (stats) {
           stats.overlapJoins += 1;
@@ -4652,20 +5545,40 @@ function mergeOcrCandidates(candidates: OcrTextCandidate[], stats?: OcrMergeStat
 
     if (!absorbed) {
       merged.push({
-        imageUrl: candidate.imageUrl,
+        ...candidate,
         text,
-        confidence: candidate.confidence,
-        fingerprint
+        imageUrls: candidateImageUrls,
+        fingerprint,
+        order: index
       });
     }
-  }
+  });
 
-  return merged
+  // 점수는 근거 상한 선별에만 쓰고, 반환은 페이지 읽기 순서를 유지한다 —
+  // 분류 프롬프트가 이미지 간 문맥 연속성(헤딩→본문)을 보게 하기 위함.
+  const selected = [...merged]
     .sort((a, b) => scoreProductText(b.text, "") - scoreProductText(a.text, "") || b.text.length - a.text.length)
-    .map(({ fingerprint: _fingerprint, confidence, ...candidate }) => ({
+    .slice(0, limit ?? merged.length);
+
+  return selected
+    .sort((a, b) => (a.sourceOrder ?? a.order) - (b.sourceOrder ?? b.order))
+    .map(({ fingerprint: _fingerprint, order: _order, confidence, ...candidate }) => ({
       ...candidate,
       ...(confidence !== undefined ? { confidence } : {})
     }));
+}
+
+/**
+ * A merged/joined entry no longer describes a single tall-image slice, so its
+ * sliceIndex is always cleared by the caller. sliceCount (the total slice
+ * count) only stays meaningful when both sides came from the same source
+ * image; across different images it is cleared too.
+ */
+function mergedSliceCount(
+  existing: { imageUrl: string; sliceCount?: number },
+  candidate: { imageUrl: string; sliceCount?: number }
+): number | undefined {
+  return existing.imageUrl === candidate.imageUrl ? existing.sliceCount : undefined;
 }
 
 function minDefinedConfidence(left: number | undefined, right: number | undefined): number | undefined {
@@ -4678,29 +5591,130 @@ function minDefinedConfidence(left: number | undefined, right: number | undefine
   return Math.min(left, right);
 }
 
+/** 겹침 조인 결과. 이어붙였다면 뒤 판독에서 걷어낸 줄까지 함께 돌려준다. */
+type OcrOverlapJoin =
+  | { joined: true; text: string; consumedLines: string[] }
+  | { joined: false };
+
 /**
- * Joins two OCR texts when the trailing lines of the first repeat as the
- * leading lines of the second, which happens when one visual block is captured
- * by overlapping image slices. Requires a meaningful overlap (>= 20 normalized
- * characters) so short generic lines cannot chain unrelated blocks together.
+ * 앞 판독의 끝줄이 뒤 판독의 첫줄로 되풀이될 때 둘을 하나로 잇는다. 한 시각
+ * 블록이 겹치는 두 슬라이스에 걸쳐 잡힐 때 일어난다.
+ *
+ * 뒤 판독의 선두에서 걷어낸 줄도 함께 돌려준다. 그 줄들이 슬라이스 구조의
+ * 소유권 경계다 — 걷어낸 줄은 앞 슬라이스가 소유하므로, 뒤 슬라이스 구조에서
+ * 같은 줄을 다시 세면 그 항목이 두 번 발행된다.
+ *
+ * 겹침은 의미 있는 길이여야 한다. 문턱은 {@link distinctiveOverlapLength}가
+ * 문자 체계별로 정한다 — 한글은 음절 하나가 라틴 두세 글자만큼의 정보를 담으므로
+ * 같은 문턱을 쓰면 정상 겹침이 비교조차 되지 않는다.
  */
-function joinOverlappingOcrTexts(first: string, second: string): string | undefined {
+function joinOverlappingOcrTextsResult(
+  first: string,
+  second: string,
+  options: { tolerateDroppedTokens?: boolean } = {}
+): OcrOverlapJoin {
   const firstLines = first.split("\n");
   const secondLines = second.split("\n");
   const maxOverlapLines = Math.min(12, firstLines.length, secondLines.length);
 
   for (let overlap = maxOverlapLines; overlap >= 1; overlap -= 1) {
-    const tailFingerprint = normalizeOcrComparisonText(firstLines.slice(-overlap).join("\n"));
+    const tail = firstLines.slice(-overlap).join("\n");
+    const head = secondLines.slice(0, overlap).join("\n");
+    const tailFingerprint = normalizeOcrComparisonText(tail);
 
-    if (tailFingerprint.length < 20) {
+    if (tailFingerprint.length < distinctiveOverlapLength(tailFingerprint)) {
       continue;
     }
-    if (tailFingerprint === normalizeOcrComparisonText(secondLines.slice(0, overlap).join("\n"))) {
-      return [...firstLines, ...secondLines.slice(overlap)].join("\n");
+    // 토큰 손실을 감안한 매칭은 **같은 이미지의 인접 슬라이스**에서만 쓴다.
+    // 서로 다른 이미지(srcset 변형 등)에까지 허용하면 비슷한 문구를 가진 상세
+    // 이미지들이 한 후보로 합쳐진다 — 실제로 24장이 1장으로 붕괴했다.
+    const agrees = tailFingerprint === normalizeOcrComparisonText(head)
+      || (options.tolerateDroppedTokens === true
+        && overlapReadingsAgree(firstLines.slice(-overlap), secondLines.slice(0, overlap)));
+    if (agrees) {
+      return {
+        joined: true,
+        text: [...firstLines, ...secondLines.slice(overlap)].join("\n"),
+        consumedLines: secondLines.slice(0, overlap)
+      };
     }
   }
 
-  return undefined;
+  return { joined: false };
+}
+
+/** 텍스트만 필요한 호출부를 위한 래퍼. */
+/** 조인 성공만 알면 되는 호출부를 위한 형태. */
+function joinOverlappingOcrTexts(
+  first: string,
+  second: string
+): { text: string; consumedLines: string[] } | undefined {
+  const result = joinOverlappingOcrTextsResult(first, second);
+  return result.joined ? { text: result.text, consumedLines: result.consumedLines } : undefined;
+}
+
+/**
+ * 같은 구간이라고 볼 만한 겹침의 최소 길이. 문자 체계마다 다르다.
+ *
+ * 한글은 음절 하나가 라틴 두세 글자만큼의 정보를 담는다. 문자 수 문턱 하나로
+ * 재면 한국어 겹침이 부당하게 짧다고 판정된다 — 1027 실측에서 슬라이스 3의
+ * 겹침은 `• 부드럽게 뿌려져 피부 표면에 보습막을 형성` 한 줄(정규화 18자)이
+ * 었는데, 20자 문턱에 걸려 비교조차 되지 않았다. 그 결과 겹친 줄이 두 번 남고
+ * 구조 전체가 폐기됐다.
+ */
+function distinctiveOverlapLength(fingerprint: string): number {
+  const hangul = (fingerprint.match(/[가-힣]/gu) ?? []).length;
+  return hangul * 2 >= fingerprint.length ? 10 : 20;
+}
+
+/**
+ * 두 겹침 구간이 같은 이미지 행을 옮긴 것인지, 한쪽에서 토큰이 빠진 관계로 본다.
+ *
+ * 겹침 조인은 2회 판독 대조 뒤에 일어난다. 대조는 두 판독이 불일치한 토큰을
+ * 슬라이스마다 독립적으로 덜어내므로, 같은 행을 옮긴 두 겹침이 정확히 같지
+ * 않게 된다 — 1027 실측(7슬라이스)에서 경계 6개 중 4개가 그렇게 어긋나
+ * 이어지지 못했고, 겹친 행이 두 번 남고 구조 전체가 폐기됐다.
+ *
+ * 대조는 토큰을 덜어내기만 하므로 한쪽은 다른 쪽의 부분열이다. 그 관계로
+ * 맞춘다 — 서로 다른 구간이 우연히 부분열이 되는 것을 막기 위해, 짧은 쪽이
+ * 세 토큰 이상이고 그 대부분(4/5 이상)이 긴 쪽에 순서대로 나타날 때만 같은
+ * 구간으로 읽는다.
+ */
+function overlapReadingsAgree(tailLines: string[], headLines: string[]): boolean {
+  if (tailLines.length !== headLines.length || tailLines.length === 0) {
+    return false;
+  }
+  // 줄끼리 짝지어 맞춘다. 블록 전체를 한 덩어리로 비교하면 실제로는 한 줄만
+  // 겹치는 경계에서도 여러 줄이 우연히 부분열을 이뤄, 뒤 슬라이스의 줄을
+  // 과하게 소비한다.
+  const agreements = tailLines.map((line, index) => lineReadingsAgree(line, headLines[index] ?? ""));
+  return agreements.every((agreement) => agreement.agrees)
+    && agreements.some((agreement) => agreement.tokens >= 3);
+}
+
+function lineReadingsAgree(tail: string, head: string): { agrees: boolean; tokens: number } {
+  const tokenize = (value: string): string[] => value.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+  const tailTokens = tokenize(tail);
+  const headTokens = tokenize(head);
+  const [shorter, longer] = tailTokens.length <= headTokens.length
+    ? [tailTokens, headTokens]
+    : [headTokens, tailTokens];
+
+  if (shorter.length < 2) {
+    return { agrees: shorter.length === longer.length && shorter.every((token, index) => token === longer[index]), tokens: shorter.length };
+  }
+
+  let cursor = 0;
+  let matched = 0;
+  for (const token of shorter) {
+    const found = longer.indexOf(token, cursor);
+    if (found >= 0) {
+      cursor = found + 1;
+      matched += 1;
+    }
+  }
+
+  return { agrees: matched / shorter.length >= 0.8, tokens: shorter.length };
 }
 
 function imageUrlFromNode($: ReturnType<typeof load>, node: CheerioInput, source: string): string | undefined {
@@ -5322,10 +6336,15 @@ function createGeoProductRawData(
     ...ratingSummarySection(reviews)
   ]).slice(0, OCR_EVIDENCE_LIMIT);
   const ratingSummary = createRatingSummary(reviews);
-  const benefits = semanticFieldValues([...product.benefits, ...ocrSentenceSignals.benefits], "benefit", 12);
-  const effects = semanticFieldValues([...product.effects, ...ocrSentenceSignals.effects], "effect", 12);
-  const ingredients = semanticFieldValues([...product.ingredients, ...ocrSentenceSignals.ingredients], "ingredient", 16);
-  const usage = semanticFieldValues([...product.usage, ...ocrSentenceSignals.usage], "usage", 16);
+  const sectionDeclaredTexts = declaredSectionTexts(
+    productOcrEvidence.flatMap((item) => item.sentenceInsights)
+  );
+  const fieldValuesWithDeclaredRelations = (values: string[], category: ProductFieldRole, limit: number) =>
+    valuesWithDeclaredRelationsExempt(values, sectionDeclaredTexts, category, limit);
+  const benefits = fieldValuesWithDeclaredRelations([...product.benefits, ...ocrSentenceSignals.benefits], "benefit", 12);
+  const effects = fieldValuesWithDeclaredRelations([...product.effects, ...ocrSentenceSignals.effects], "effect", 12);
+  const ingredients = fieldValuesWithDeclaredRelations([...product.ingredients, ...ocrSentenceSignals.ingredients], "ingredient", 16);
+  const usage = fieldValuesWithDeclaredRelations([...product.usage, ...ocrSentenceSignals.usage], "usage", 16);
   const reviewKeywords = unique(
     customerReviewKeywords([
       ...reviews.keywords,
@@ -5386,7 +6405,9 @@ function createGeoProductRawData(
           .filter((item) => isImageOcrEvidence(item.imageUrl))
           .map((item) => ({
             imageUrl: item.imageUrl,
-            text: item.text
+            text: item.text,
+            ...(item.imageUrls ? { imageUrls: item.imageUrls } : {}),
+            confidence: item.confidence
           })),
         textBlocks: ocrTexts.slice(0, OCR_EVIDENCE_LIMIT),
         sentenceInsights: ocrSentenceInsights,
@@ -5485,7 +6506,7 @@ function isImageOcrEvidence(imageUrl: string): boolean {
 
 function semanticFieldValues(
   values: string[],
-  category: "benefit" | "effect" | "ingredient" | "usage",
+  category: ProductFieldRole,
   limit: number
 ): string[] {
   return unique(values.map(cleanText).filter((value) => isSemanticFieldValue(value, category))).slice(0, limit);
@@ -5789,7 +6810,7 @@ function keywordsFromText(text: string, category: ClassifiedKeyword["category"],
   const matchers: Partial<Record<ClassifiedKeyword["category"], RegExp>> = {
     product: /(serum|cream|essence|ampoule|toner|lotion|cleanser|mask|선크림|세럼|크림|에센스|앰플|토너|로션|마스크)/gi,
     price: /(?:\$|₩)\s*[\d,.]+|[\d,]+\s*원|price|sale|discount|가격|할인/gi,
-    ingredient: /(ginseng|retinol|niacinamide|peptide|hyaluronic|ceramide|collagen|panax|vitamin|성분|원료|식물 복합체|인삼|레티놀|나이아신아마이드|펩타이드|히알루론산|세라마이드|콜라겐|비타민)/gi,
+    ingredient: /(ginseng|retinol|niacinamide|peptide|hyaluronic|ceramide|collagen|panax|vitamin|성분|원료|보태니컴플렉스|인삼|레티놀|나이아신아마이드|펩타이드|히알루론산|세라마이드|콜라겐|비타민)/gi,
     benefit: /(보습|수분|진정|탄력|장벽|광채|영양|고밀도|자생력|hydration|moisture|moisturizing|soothing|brightening|firming|anti-aging|radiance|elasticity|resilience|plumpness)/gi,
     effect: /(효과|개선|완화|케어|주름|잔주름|피부결|리프팅|effect|improve|improved|improvement|care|reduce|diminish|diminished|fine lines|wrinkles|texture|even|elastic|firmer|lift|lifting|firmness)/gi,
     usage: /(use|apply|morning|night|ritual|pump|face|neck|사용|도포|아침|저녁|루틴|펌프|얼굴|목)/gi,

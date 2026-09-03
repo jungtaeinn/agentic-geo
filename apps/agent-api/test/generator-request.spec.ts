@@ -38,14 +38,14 @@ describe("brand identity hints (Brand.sameAs wiring)", () => {
       geoGenerationId: "22222222-2222-2222-2222-222222222222",
       locale: "ko-KR",
       product: { productName: "Hydra Barrier Cream" },
-      brandSameAs: ["https://www.exampleluxe.com/", "https://www.wikidata.org/wiki/Q12599012"],
+      brandSameAs: ["https://shop.example.com/", "https://www.wikidata.org/wiki/Q12599012"],
     });
 
     // Brand.sameAs is what links the product to a brand the engine already
     // knows; without it the graph is an island and the generator has no other
     // source for official identity URLs.
     expect(request.hints.brandSameAs).toEqual([
-      "https://www.exampleluxe.com/",
+      "https://shop.example.com/",
       "https://www.wikidata.org/wiki/Q12599012",
     ]);
   });
@@ -76,12 +76,12 @@ describe("brand identity transport (controller → queue → worker)", () => {
       geoGenerationId: "44444444-4444-4444-4444-444444444444",
       locale: "ko-KR",
       product: { productName: "Hydra Barrier Cream" },
-      brandSameAs: ["https://www.exampleluxe.com/"],
+      brandSameAs: ["https://shop.example.com/"],
     } as never);
 
     // The hint has to survive the queue hop: validating it at the edge and then
     // dropping it before the worker leaves the graph exactly as unlinked as
     // before, with no error to show for it.
-    expect(seen[0]?.brandSameAs).toEqual(["https://www.exampleluxe.com/"]);
+    expect(seen[0]?.brandSameAs).toEqual(["https://shop.example.com/"]);
   });
 });

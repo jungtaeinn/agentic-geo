@@ -162,7 +162,7 @@ const koreanMultiTimepointProduct = {
 };
 
 /**
- * Mirrors the live ExampleLuxe activating-serum run (2026-08-11): the claim label already
+ * Mirrors the live ExampleLuxe FCAS run (2026-08-11): the claim label already
  * carries a direction stem ("Visible improvement in fine lines") and the
  * timing is a capitalized clause ("After one bottle of daily use"). The old
  * realizer only stripped labels that BEGIN with "improvement in", so it

@@ -1,3 +1,4 @@
+import type { OcrLayoutGroup, OcrLayoutLineRole } from "./llm/types";
 import { z } from "zod";
 
 /** Supported source types for the product extractor agent. */
@@ -143,6 +144,14 @@ export interface ClassifiedSentenceInsight {
   confidence: number;
   source: "ocr" | "llm" | "mock";
   semanticFacts?: Partial<GeoSemanticFacts>;
+  evidenceIndex?: number;
+  imageUrls?: string[];
+  attribution?: "declared" | "fuzzy" | "local";
+  /**
+   * 역할이 원문의 절 제목에서 선언된 경우의 출처. 관계가 역할을 정했다는
+   * 뜻이므로, 뒤따르는 어휘 기반 재검증을 건너뛴다.
+   */
+  roleSource?: "section-heading";
 }
 
 /** Public sentence-level OCR insight retained without model confidence for downstream schema/content generation. */
@@ -152,6 +161,7 @@ export interface GeoSentenceInsight {
   category: KeywordCategory;
   keywords: string[];
   semanticFacts?: Partial<GeoSemanticFacts>;
+  imageUrls?: string[];
 }
 
 export interface GeoSemanticMetricClaim {
@@ -162,12 +172,23 @@ export interface GeoSemanticMetricClaim {
   metric?: string;
   direction?: string;
   timing?: string;
+  /**
+   * 견준 대상. 상대 수치("자사 알칼리 폼 대비 +84.3%")는 이 값이 없으면
+   * 무엇에 견준 값인지 알 수 없어 인용할 수 없다. 생성기는 이미 이 슬롯을
+   * 읽고 있었고, 추출기 쪽에만 자리가 없어 보고할 수 없었다.
+   */
+  comparator?: string;
+  /** 비교의 기준선(대조군·무도포 등)을 원문이 따로 밝힌 경우. */
+  baseline?: string;
   period?: string;
   sample?: string;
   method?: string;
   caveat?: string;
   sentence?: string;
   sourceText?: string;
+  /** 분류 배치 내 상대값(원시 선언 감사용). 이미지 추적에는 imageUrls를 사용할 것 — 멀티 배치 런에서 evidenceIndex는 배치마다 1부터 다시 매겨진다. */
+  evidenceIndex?: number;
+  imageUrls?: string[];
 }
 
 export interface GeoSemanticIngredientBenefitLink {
@@ -176,6 +197,9 @@ export interface GeoSemanticIngredientBenefitLink {
   effect?: string;
   sentence?: string;
   sourceText?: string;
+  /** 분류 배치 내 상대값(원시 선언 감사용). 이미지 추적에는 imageUrls를 사용할 것 — 멀티 배치 런에서 evidenceIndex는 배치마다 1부터 다시 매겨진다. */
+  evidenceIndex?: number;
+  imageUrls?: string[];
 }
 
 export interface GeoSemanticCitation {
@@ -187,6 +211,9 @@ export interface GeoSemanticCitation {
   url?: string;
   finding?: string;
   sourceText?: string;
+  /** 분류 배치 내 상대값(원시 선언 감사용). 이미지 추적에는 imageUrls를 사용할 것 — 멀티 배치 런에서 evidenceIndex는 배치마다 1부터 다시 매겨진다. */
+  evidenceIndex?: number;
+  imageUrls?: string[];
 }
 
 export interface GeoSemanticFacts {
@@ -243,6 +270,41 @@ export interface OcrTextEvidence {
   keywords: ClassifiedKeyword[];
   sentenceInsights: ClassifiedSentenceInsight[];
   confidence: number;
+  imageUrls?: string[];
+  /**
+   * 전사와 함께 보고된 레이아웃 관계(내부 감사·소비용). 프로바이더가 보고하지
+   * 않으면 없다. 공개 `geoProduct`로는 내보내지 않는다 — 관계의 결과는 문장
+   * 인사이트와 semanticFacts로 전달되고, 원시 구조를 소비하는 다운스트림은
+   * 아직 없다.
+   */
+  groups?: OcrLayoutGroup[];
+}
+
+/** 레이아웃 관계가 왜 폐기됐는지. */
+export type OcrLayoutDiscardReason =
+  /** 라인의 과반이 전사에 없어 이 전사의 구조가 아니라고 판정됐다. */
+  | "quorum"
+  /** 슬라이스 중 일부만 구조를 보고해 관계를 반만 세울 수 있었다. */
+  | "slice-partial"
+  /** 오버랩 지문 일치에 실패해 경계의 줄 소유권을 알 수 없었다. */
+  | "overlap-unmatched";
+
+export interface OcrLayoutDiagnostics {
+  /** 프로바이더가 보고한 그룹 수(검증 전). */
+  groupsReported: number;
+  /** 검증을 통과해 실제로 소비된 그룹 수. */
+  groupsKept: number;
+  /** 채택된 그룹의 라인 역할 분포. */
+  lineRoles: Record<OcrLayoutLineRole, number>;
+  /** 슬라이스 경계에서 이어 붙인 그룹 수. */
+  sliceStitches: number;
+  /** 구조를 폐기한 이미지와 그 사유. */
+  structureDiscarded: Array<{ imageUrl: string; reason: OcrLayoutDiscardReason }>;
+  /**
+   * 이어붙이지 못한 슬라이스 경계. 왜 어긋났는지는 그때의 두 판독을 봐야
+   * 알 수 있으므로(토큰이 빠졌는가, 줄이 다르게 끊겼는가) 경계 양쪽을 남긴다.
+   */
+  unmatchedBoundaries?: Array<{ imageUrl: string; sliceIndex: number; tailPreview: string; headPreview: string }>;
 }
 
 /** RAG chunk generated from extracted product, review, FAQ, OCR, or source evidence. */
@@ -349,6 +411,8 @@ export interface GeoProductRawData {
       imageTexts: Array<{
         imageUrl: string;
         text: string;
+        imageUrls?: string[];
+        confidence?: number;
       }>;
       textBlocks: string[];
       sentenceInsights: GeoSentenceInsight[];
@@ -391,6 +455,32 @@ export interface GeoProductRawData {
   rag: {
     chunks: GeoRagChunk[];
   };
+}
+
+/** 이미지 목록만으로 OCR+관계해석을 수행하는 공개 진입점의 요청. */
+export interface ImageOcrEvidenceRequest {
+  /** 라벨링·진단에 쓰는 소스 식별자(페이지 URL 등). */
+  source: string;
+  productName?: string;
+  /** OCR 대상 이미지 URL 목록(http/https만 허용, 그 외는 경고 후 제외). */
+  imageUrls: string[];
+}
+
+/** GeoProductRawData.sourceExtraction.ocr와 동일 형태의 관계 보존 OCR 블록. */
+export interface ImageOcrEvidenceResult {
+  ocr: {
+    imageTexts: Array<{ imageUrl: string; text: string; imageUrls?: string[]; confidence?: number }>;
+    textBlocks: string[];
+    sentenceInsights: GeoSentenceInsight[];
+    semanticFacts?: GeoSemanticFacts;
+  };
+  keywords: GeoKeywordGroups;
+  diagnostics: {
+    ocr?: OcrDiagnostics;
+    warnings: AgentWarning[];
+    runtimeUsage?: RuntimePipelineUsage;
+  };
+  generatedAt: string;
 }
 
 /** Stable pipeline stage ids shared by the package, REST adapter, and UI progress panel. */
@@ -484,6 +574,14 @@ export interface OcrDiagnostics {
     sentenceInsights: number;
     confidence: number;
   };
+  /**
+   * 전사와 함께 보고된 레이아웃 관계의 채택·폐기 기록. 프로바이더가 구조를
+   * 전혀 보고하지 않은 런에서는 없다.
+   *
+   * 프로바이더가 슬라이스마다 구조를 성실히 내는지, 경계 스티칭이 실제로
+   * 붙는지는 실측으로만 알 수 있다. 이 블록이 그 판단 근거다.
+   */
+  layout?: OcrLayoutDiagnostics;
   utilization: {
     /** OCR evidence texts that survived into the public geoProduct output. */
     textBlocksInResult: number;
@@ -496,6 +594,28 @@ export interface OcrDiagnostics {
   };
   /** Aggregated review points across all stages, ordered by severity. */
   issues: string[];
+  relations?: OcrRelationDiagnostics;
+}
+
+/** 문장 하나가 어떤 이미지에서 왔고 어떤 방식으로 귀속됐는지의 감사 레코드. */
+export interface OcrRelationSentenceDiagnostic {
+  text: string;
+  category: KeywordCategory;
+  imageUrls: string[];
+  /** declared: 모델이 evidenceIndex로 선언 / fuzzy: 텍스트 매칭 폴백 / local: 로컬 휴리스틱 */
+  attribution: "declared" | "fuzzy" | "local";
+}
+
+/** OCR 문장→이미지 관계 구성 결과의 감사 기록. attributionCounts와 semanticFactLinks는 전수 집계이고, sentences는 최대 120개 표본 목록이다(후보×인사이트 부착 단위로 집계). */
+export interface OcrRelationDiagnostics {
+  /** 표본 목록(최대 120개). 전수 수치는 attributionCounts를 볼 것. */
+  sentences: OcrRelationSentenceDiagnostic[];
+  attributionCounts: { declared: number; fuzzy: number; local: number };
+  semanticFactLinks: {
+    metricClaims: { total: number; withImage: number };
+    ingredientBenefitLinks: { total: number; withImage: number };
+    citations: { total: number; withImage: number };
+  };
 }
 
 /** Runtime diagnostics kept outside of the final product artifact. */

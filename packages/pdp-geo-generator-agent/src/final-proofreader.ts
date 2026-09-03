@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { validatePdpGeoArtifacts } from "./validate";
 import { createFinalProofreadingPrompt } from "./prompts/final-proofreading";
+import { KOREAN_COPULA_POLITE_PRESENT_ENDINGS } from "./normalize";
 import type {
   JsonObject,
   PdpGeoAtomicEvidence,
@@ -23,6 +24,7 @@ import type {
   PdpGeoTokenUsage,
   PdpProductSignal
 } from "./types";
+import { mergeTokenUsage } from "./token-usage";
 
 const FINAL_PROOFREADING_TIMEOUT_MS = 90_000;
 const DEFAULT_FINAL_PROOFREADING_MAX_OUTPUT_TOKENS = 6_000;
@@ -107,6 +109,12 @@ interface EditableBinding {
   kind: "product-description" | "webpage-description" | "faq-question" | "faq-answer" | "howto-step";
   faqIndex?: number;
   stepIndex?: number;
+  /**
+   * Sentences of this field that matched no ledger atom. The pass may rewrite
+   * the rest of the field around them, but these have nothing backing them, so
+   * they have to survive verbatim — an edit that reaches one is rejected.
+   */
+  protectedSentences: string[];
 }
 
 /**
@@ -121,6 +129,7 @@ export function createPdpGeoPublicCopyProvenance(input: {
 }): PdpGeoPublicCopyProvenance[] {
   const graph = readGraph(input.schemaMarkup.jsonLd);
   const validIds = new Set(input.evidenceLedger.map((item) => item.id));
+  const ledgerById = new Map(input.evidenceLedger.map((item) => [item.id, item]));
   const entries: PdpGeoPublicCopyProvenance[] = [];
   const add = (
     fieldPath: PdpGeoFinalProofreadingFieldPath,
@@ -131,9 +140,14 @@ export function createPdpGeoPublicCopyProvenance(input: {
   ) => {
     const ids = uniqueText(evidenceIds).filter((id) => validIds.has(id));
     if (!text.trim() || ids.length === 0) return;
+    // A sentence that matches no ledger atom leaves its own id list empty; it
+    // does not discard the field. Binding is per sentence, so one unmatched
+    // sentence only means that sentence may not be edited — dropping the whole
+    // entry here is what stopped the naturalisation pass from ever running on
+    // most published fields. The empty list is the marker the edit gate reads,
+    // so there is no second flag that could disagree with it.
     const sentenceIds = sentenceEvidenceIds?.map((sentenceIds) => uniqueText(sentenceIds).filter((id) => validIds.has(id)));
-    if (sentenceIds?.some((ids) => ids.length === 0)) return;
-    entries.push(createPublicCopyProvenanceEntry(fieldPath, text, ids, origin, sentenceIds));
+    entries.push(createPublicCopyProvenanceEntry(fieldPath, text, ids, origin, ledgerById, sentenceIds));
   };
 
   const product = graph.find((node) => isSchemaNodeOfType(node, "Product"));
@@ -403,25 +417,51 @@ function normalizeEvidenceText(value: string): string {
   return value.normalize("NFC").toLocaleLowerCase().replace(/[^\p{L}\p{N}%]+/gu, " ").replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Union of the resolved atoms' imageUrls for the given evidence IDs, in atom
+ * citation order and deduplicated. Empty when none of the cited atoms carry
+ * OCR-derived images.
+ */
+function unionImageUrls(evidenceIds: string[], ledgerById: Map<string, PdpGeoAtomicEvidence>): string[] {
+  const seen = new Set<string>();
+  const urls: string[] = [];
+  for (const id of evidenceIds) {
+    for (const url of ledgerById.get(id)?.imageUrls ?? []) {
+      if (seen.has(url)) continue;
+      seen.add(url);
+      urls.push(url);
+    }
+  }
+  return urls;
+}
+
 function createPublicCopyProvenanceEntry(
   fieldPath: PdpGeoFinalProofreadingFieldPath,
   text: string,
   evidenceIds: string[],
   origin: PdpGeoPublicCopyProvenance["origin"],
+  ledgerById: Map<string, PdpGeoAtomicEvidence>,
   sentenceEvidenceIds?: string[][]
 ): PdpGeoPublicCopyProvenance {
   const normalized = cleanProposedText(text);
+  const imageUrls = unionImageUrls(evidenceIds, ledgerById);
   return {
     fieldPath,
     text: normalized,
     sourceHash: stableTextHash(`${fieldPath}\n${normalized}`),
     origin,
     evidenceIds: [...evidenceIds],
-    sentences: splitSentences(normalized).map((sentence, index) => ({
-      text: sentence,
-      sourceHash: stableTextHash(`${fieldPath}#sentence[${index}]\n${sentence}`),
-      evidenceIds: [...(sentenceEvidenceIds?.[index] ?? evidenceIds)]
-    }))
+    ...(imageUrls.length > 0 ? { imageUrls } : {}),
+    sentences: splitSentences(normalized).map((sentence, index) => {
+      const ids = sentenceEvidenceIds?.[index] ?? evidenceIds;
+      const sentenceImageUrls = unionImageUrls(ids, ledgerById);
+      return {
+        text: sentence,
+        sourceHash: stableTextHash(`${fieldPath}#sentence[${index}]\n${sentence}`),
+        evidenceIds: [...ids],
+        ...(sentenceImageUrls.length > 0 ? { imageUrls: sentenceImageUrls } : {})
+      };
+    })
   };
 }
 
@@ -463,14 +503,57 @@ export async function finalProofreadPdpGeoArtifacts(
   };
 
   try {
-    const rawResult = await resolved.proofreader.proofread(request);
-    const result = normalizeProofreadingResult(rawResult);
-    const envelopeFailure = validateProofreadingEnvelope(request.fields, result.edits);
-    if (envelopeFailure) {
-      return rejectedApplication(base, result, envelopeFailure);
+    const proofreader = resolved.proofreader;
+    const runAttempt = async (attemptBindings: EditableBinding[]) => {
+      const attemptFields = attemptBindings.map((binding) => binding.field);
+      const attemptResult = normalizeProofreadingResult(await proofreader.proofread({ ...request, fields: attemptFields }));
+      const failure = validateProofreadingEnvelope(attemptFields, attemptResult.edits);
+      return {
+        result: attemptResult,
+        envelopeFailure: failure,
+        gated: failure ? undefined : gateProposedEdits(attemptBindings, attemptResult.edits, input)
+      };
+    };
+
+    const first = await runAttempt(bindings);
+    if (first.envelopeFailure || !first.gated) {
+      return rejectedApplication(base, first.result, first.envelopeFailure ?? "The proposal could not be gated.");
     }
 
-    const gated = gateProposedEdits(bindings, result.edits, input);
+    let gated = first.gated;
+    let usage = first.result.usage;
+    let modelWarnings = first.result.warnings ?? [];
+
+    // A rejected proposal used to end the field's chance: the original text was
+    // kept and the model never learned why it was refused, so a field the
+    // deterministic renderer left awkward stayed awkward. One retry carrying
+    // the reason back costs a single call and cannot make the output worse —
+    // a second failure keeps the original exactly as before. Only the rejected
+    // fields are re-sent, and only once.
+    const rejectionByPath = new Map(
+      gated.rejected.flatMap((item) => (item.fieldPath ? [[item.fieldPath, item.reason] as const] : []))
+    );
+    const retryBindings = bindings
+      .filter((binding) => rejectionByPath.has(binding.field.fieldPath))
+      .map((binding) => ({
+        ...binding,
+        field: { ...binding.field, priorRejection: rejectionByPath.get(binding.field.fieldPath) }
+      }));
+    if (retryBindings.length > 0) {
+      const second = await runAttempt(retryBindings);
+      usage = mergeTokenUsage(usage, second.result.usage);
+      modelWarnings = [...modelWarnings, ...(second.result.warnings ?? [])];
+      if (second.gated) {
+        const retriedPaths = new Set(retryBindings.map((binding) => binding.field.fieldPath));
+        gated = {
+          accepted: [...gated.accepted, ...second.gated.accepted],
+          rejected: [
+            ...gated.rejected.filter((item) => !item.fieldPath || !retriedPaths.has(item.fieldPath)),
+            ...second.gated.rejected
+          ]
+        };
+      }
+    }
     const applied = applyAcceptedEdits(input, bindings, gated.accepted);
     const introducedValidationIssues = gated.accepted.length > 0
       ? findIntroducedValidationIssues(input, applied)
@@ -479,7 +562,7 @@ export async function finalProofreadPdpGeoArtifacts(
       const reason = `All proposed edits were reverted because read-only validation found new issues: ${introducedValidationIssues.join(" / ")}`;
       return {
         ...base,
-        usage: result.usage,
+        usage,
         evidence: [{ field: "finalProofreading", source: "llm", value: reason }],
         diagnostics: {
           status: "rejected",
@@ -492,14 +575,14 @@ export async function finalProofreadPdpGeoArtifacts(
             ...gated.accepted.map((edit) => ({ fieldPath: edit.fieldPath, reason, proposedText: edit.revisedText }))
           ],
           skippedFields: extraction.skippedFields,
-          warnings: uniqueText([...base.diagnostics.warnings, ...(result.warnings ?? []), ...gated.rejected.map((item) => item.reason), reason]),
+          warnings: uniqueText([...base.diagnostics.warnings, ...modelWarnings, ...gated.rejected.map((item) => item.reason), reason]),
           finalPublicCopyProvenance: base.finalPublicCopyProvenance
         }
       };
     }
     const warnings = uniqueText([
       ...base.diagnostics.warnings,
-      ...(result.warnings ?? []),
+      ...modelWarnings,
       ...gated.rejected.map((item) => item.reason)
     ]);
     const acceptedFields = gated.accepted.map((item) => item.fieldPath);
@@ -535,7 +618,7 @@ export async function finalProofreadPdpGeoArtifacts(
           value: `Rejected: ${item.reason}`
         }))
       ],
-      usage: result.usage,
+      usage,
       diagnostics: {
         status: acceptedFields.length > 0 ? "applied" : gated.rejected.length > 0 ? "rejected" : "kept",
         called: true,
@@ -604,6 +687,18 @@ function findIntroducedValidationIssues(
   });
 }
 
+/**
+ * How two runs recognise the same finding.
+ *
+ * A finding about specific text carries that text in its identity, so a
+ * different duplicated word is a different finding. A finding about the shape
+ * of a field's prose does not — it stays the same finding however that prose is
+ * worded, and keying it by text made every edit to the field look like it had
+ * introduced the defect.
+ *
+ * The renderer-parity finding declares itself the older way, by field and
+ * wording; findings written since say so with `identity`.
+ */
 function validationFindingKey(finding: {
   field: string;
   source: string;
@@ -611,15 +706,17 @@ function validationFindingKey(finding: {
   before?: unknown;
   suggestedAfter?: unknown;
   evidence?: string[];
+  identity?: "text" | "field-shape";
 }): string {
   const isRendererParityFinding = finding.field === "content.html"
     && /Generated HTML was not trusted as final output/iu.test(finding.issue);
+  const identifiedByShape = finding.identity === "field-shape" || isRendererParityFinding;
   return JSON.stringify([
     finding.field,
     finding.source,
     finding.issue,
-    isRendererParityFinding ? undefined : finding.before,
-    isRendererParityFinding ? undefined : finding.suggestedAfter,
+    identifiedByShape ? undefined : finding.before,
+    identifiedByShape ? undefined : finding.suggestedAfter,
     finding.evidence ?? []
   ]);
 }
@@ -799,7 +896,9 @@ function validCurrentPublicCopyProvenance(
       && entry.sentences.every((sentence, index) => (
         cleanProposedText(sentence.text) === sentences[index]
         && sentence.sourceHash === stableTextHash(`${entry.fieldPath}#sentence[${index}]\n${sentences[index]}`)
-        && sentence.evidenceIds.length > 0
+        // An empty list is a valid state: it marks a sentence that matched no
+        // ledger atom and is therefore uneditable, not a broken binding. What
+        // must hold is that whatever ids it does carry are still in the ledger.
         && sentence.evidenceIds.every((id) => validIds.has(id))
       ));
     return Boolean(text)
@@ -820,6 +919,7 @@ function rebasePublicCopyProvenance(
   edits: PdpGeoFinalProofreadingEdit[]
 ): PdpGeoPublicCopyProvenance[] {
   const editsByPath = new Map(edits.map((edit) => [edit.fieldPath, cleanProposedText(edit.revisedText)]));
+  const ledgerById = new Map(input.evidenceLedger.map((item) => [item.id, item]));
   return validCurrentPublicCopyProvenance(input).map((entry) => {
     const revised = editsByPath.get(entry.fieldPath);
     return revised
@@ -828,6 +928,7 @@ function rebasePublicCopyProvenance(
           revised,
           entry.evidenceIds,
           entry.origin,
+          ledgerById,
           rebaseSentenceEvidenceIds(entry, revised)
         )
       : entry;
@@ -957,21 +1058,26 @@ function extractFinalProofreadingFields(input: PdpGeoFinalProofreadingApplicatio
         );
         return;
       }
-      const questionBinding: EditableBinding = {
-        ...createBinding(questionPath, question, "fluency-only", input, "faq-question", index, answer),
-        faqIndex: index
-      };
-      const answerBinding: EditableBinding = {
-        ...createBinding(answerPath, answer, "fluency-only", input, "faq-answer", index, question),
-        faqIndex: index
-      };
-      if (questionBinding.field.evidenceIds.length > 0 && answerBinding.field.evidenceIds.length > 0) {
-        bindings.push(questionBinding, answerBinding);
-      } else {
-        skippedFields.push(
-          { fieldPath: questionPath, reason: "FAQ question and answer require an exact provenance binding as one atomic pair" },
-          { fieldPath: answerPath, reason: "FAQ question and answer require an exact provenance binding as one atomic pair" }
-        );
+      // Each half carries its own binding, so each is judged on its own.
+      // Requiring both before either could be proofread let the weaker half
+      // decide for the pair, and in practice that meant answers stayed
+      // untouched because their question had matched no ledger atom. The edit
+      // gate holds substantive tokens, numbers, and speech acts fixed on
+      // whichever half is edited, so the two cannot drift apart in content —
+      // only in surface wording, which is what this pass is for.
+      const faqBindings: EditableBinding[] = [
+        { ...createBinding(questionPath, question, "fluency-only", input, "faq-question"), faqIndex: index },
+        { ...createBinding(answerPath, answer, "fluency-only", input, "faq-answer"), faqIndex: index }
+      ];
+      for (const binding of faqBindings) {
+        if (binding.field.evidenceIds.length > 0) {
+          bindings.push(binding);
+        } else {
+          skippedFields.push({
+            fieldPath: binding.field.fieldPath,
+            reason: "no exact final-text, sentence-hash, and evidence-ID provenance binding was available"
+          });
+        }
       }
     });
   }
@@ -1002,8 +1108,7 @@ function createBinding(
   constraint: PdpGeoFinalProofreadingField["constraint"],
   input: PdpGeoFinalProofreadingApplicationInput,
   kind: EditableBinding["kind"],
-  index?: number,
-  pairedText?: string
+  index?: number
 ): EditableBinding {
   const validEvidenceIds = new Set(input.evidenceLedger.map((item) => item.id));
   const normalizedText = cleanProposedText(text);
@@ -1015,6 +1120,9 @@ function createBinding(
   ));
   return {
     kind,
+    protectedSentences: (provenance?.sentences ?? [])
+      .filter((sentence) => sentence.evidenceIds.length === 0)
+      .map((sentence) => sentence.text),
     field: {
       fieldPath,
       sourceHash: expectedHash,
@@ -1126,6 +1234,11 @@ function proofreadingRejectionReason(
   const candidate = cleanProposedText(edit.revisedText);
   if (!candidate) return "The proposed text was empty.";
   if (binding.field.evidenceIds.length === 0) return "The finalized field no longer has an exact evidence-ID binding; the edit was rejected.";
+  for (const sentence of binding.protectedSentences) {
+    if (!normalizedIncludes(candidate, sentence)) {
+      return "A sentence with no evidence binding was edited; only evidence-backed sentences may be reworded.";
+    }
+  }
   if (!isTargetLocaleCompatible(original, candidate, locale)) return "The proposal changed or mixed the target locale.";
   if (candidate.length > original.length * 1.15 + 12) return "The proposal expanded the copy beyond fluency-only editing.";
   const minimumRatio = binding.kind === "faq-question" ? 0.55 : 0.35;
@@ -1399,7 +1512,7 @@ function isAllowedFaqAuxiliaryInversion(left: string[], right: string[], product
 }
 
 const koreanParticleGroups: Array<{ forms: string[]; group: string }> = [
-  { forms: ["이에요", "예요"], group: "copula-polite" },
+  { forms: [...KOREAN_COPULA_POLITE_PRESENT_ENDINGS], group: "copula-polite" },
   { forms: ["으로", "로"], group: "direction" },
   { forms: ["은", "는"], group: "topic" },
   { forms: ["이", "가"], group: "subject" },

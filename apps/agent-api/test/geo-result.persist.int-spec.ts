@@ -40,7 +40,7 @@ describe("GeoResultRepository.persistSuccess (transactional)", () => {
 
   async function seed(status: string): Promise<void> {
     await db.dataSource.query(
-      `insert into neo.geo_generation
+      `insert into agentic_geo.geo_generation
        (geo_generation_id, channel_id, dedup_key, locale, product, product_sn, status, version, created_at, updated_at)
        values ($1,$2,$3,'ko-KR','{}','SN-TEST',$4,0,now(),now())
        on conflict (geo_generation_id) do update set status=excluded.status`,
@@ -51,17 +51,17 @@ describe("GeoResultRepository.persistSuccess (transactional)", () => {
   it("writes result and flips status in one transaction", async () => {
     await seed("PROCESSING");
     expect(await repo.persistSuccess(id, artifact)).toBe(true);
-    const res = await db.dataSource.query("select count(*)::int c from neo.geo_result where geo_generation_id=$1", [id]);
-    const gen = await db.dataSource.query("select status from neo.geo_generation where geo_generation_id=$1", [id]);
+    const res = await db.dataSource.query("select count(*)::int c from agentic_geo.geo_result where geo_generation_id=$1", [id]);
+    const gen = await db.dataSource.query("select status from agentic_geo.geo_generation where geo_generation_id=$1", [id]);
     expect(res[0].c).toBe(1);
     expect(gen[0].status).toBe("SUCCEEDED");
   });
 
   it("rolls back result insert when status is not PROCESSING", async () => {
     await seed("FAILED");
-    await db.dataSource.query("delete from neo.geo_result where geo_generation_id=$1", [id]);
+    await db.dataSource.query("delete from agentic_geo.geo_result where geo_generation_id=$1", [id]);
     expect(await repo.persistSuccess(id, artifact)).toBe(false);
-    const res = await db.dataSource.query("select count(*)::int c from neo.geo_result where geo_generation_id=$1", [id]);
+    const res = await db.dataSource.query("select count(*)::int c from agentic_geo.geo_result where geo_generation_id=$1", [id]);
     expect(res[0].c).toBe(0);
   });
 });

@@ -20,6 +20,65 @@ const KEYWORD_CATEGORY_ENUM = [
   "unknown"
 ] as const;
 
+const OCR_LAYOUT_LINE_ROLE_ENUM = ["title", "body", "label", "value", "footnote"] as const;
+
+/**
+ * 레이아웃 관계 스키마. 중첩 대신 `parentId`로 평면을 유지하고, 선택 필드는
+ * nullable 합집합으로 표현한다 — strict 모드는 모든 속성을 `required`에 요구하므로
+ * "없음"을 표현할 다른 방법이 없다.
+ */
+const ocrLayoutGroupsSchema = {
+  type: "array",
+  description: "Layout relations visible in the image: groups of lines. No template is assumed.",
+  items: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      id: {
+        type: "string",
+        description: "Short id unique within this image, e.g. g1."
+      },
+      parentId: {
+        type: ["string", "null"],
+        description: "Id of the enclosing group, or null at top level."
+      },
+      title: {
+        type: ["string", "null"],
+        description: "The group's own heading text when the layout sets one apart, or null."
+      },
+      ordinal: {
+        type: ["integer", "null"],
+        description: "Number the layout actually printed for this group, or null. Never number groups yourself."
+      },
+      annotates: {
+        type: ["string", "null"],
+        description: "For a footnote, disclaimer, or test-condition group, the id of the group it qualifies. Otherwise null."
+      },
+      lines: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            text: { type: "string" },
+            role: {
+              type: "string",
+              enum: [...OCR_LAYOUT_LINE_ROLE_ENUM],
+              description: "Layout function of the line, not its meaning: title, body, label (axis tick, legend name, caption, package spec), value (a measured number or badge), footnote."
+            },
+            pairedLabel: {
+              type: ["string", "null"],
+              description: "For a value line, the label it is printed against (its bar's tick, its badge caption). null when the layout does not pair it."
+            }
+          },
+          required: ["text", "role", "pairedLabel"]
+        }
+      }
+    },
+    required: ["id", "parentId", "title", "ordinal", "annotates", "lines"]
+  }
+} as const;
+
 /** Strict schema for vision OCR transcription responses. */
 export const imageOcrJsonSchema = {
   type: "object",
@@ -46,9 +105,10 @@ export const imageOcrJsonSchema = {
           confidence: {
             type: "number",
             description: "0-1 legibility/completeness confidence for this transcription."
-          }
+          },
+          groups: ocrLayoutGroupsSchema
         },
-        required: ["index", "imageUrl", "text", "confidence"]
+        required: ["index", "imageUrl", "text", "confidence", "groups"]
       }
     }
   },
@@ -82,9 +142,13 @@ export const keywordClassificationJsonSchema = {
           text: { type: "string" },
           category: { type: "string", enum: [...KEYWORD_CATEGORY_ENUM] },
           keywords: { type: "array", items: { type: "string" } },
-          confidence: { type: "number" }
+          confidence: { type: "number" },
+          evidenceIndex: {
+            type: "integer",
+            description: "1-based Evidence number in this request that this insight was derived from. 0 when unknown."
+          }
         },
-        required: ["text", "category", "keywords", "confidence"]
+        required: ["text", "category", "keywords", "confidence", "evidenceIndex"]
       }
     },
     semanticFacts: {
@@ -112,9 +176,13 @@ export const keywordClassificationJsonSchema = {
               method: { type: "string" },
               caveat: { type: "string" },
               sentence: { type: "string" },
-              sourceText: { type: "string" }
+              sourceText: { type: "string" },
+              evidenceIndex: {
+                type: "integer",
+                description: "1-based Evidence number in this request that this claim was derived from. 0 when unknown."
+              }
             },
-            required: ["label", "subject", "value", "unit", "timing", "period", "sample", "method", "caveat", "sentence", "sourceText"]
+            required: ["label", "subject", "value", "unit", "timing", "period", "sample", "method", "caveat", "sentence", "sourceText", "evidenceIndex"]
           }
         },
         evidenceSentences: { type: "array", items: { type: "string" } },
@@ -128,9 +196,13 @@ export const keywordClassificationJsonSchema = {
               benefit: { type: "string" },
               effect: { type: "string" },
               sentence: { type: "string" },
-              sourceText: { type: "string" }
+              sourceText: { type: "string" },
+              evidenceIndex: {
+                type: "integer",
+                description: "1-based Evidence number in this request that this link was derived from. 0 when unknown."
+              }
             },
-            required: ["ingredient", "benefit", "effect", "sentence", "sourceText"]
+            required: ["ingredient", "benefit", "effect", "sentence", "sourceText", "evidenceIndex"]
           }
         },
         citations: {
@@ -146,9 +218,13 @@ export const keywordClassificationJsonSchema = {
               publishedAt: { type: "string" },
               url: { type: "string" },
               finding: { type: "string" },
-              sourceText: { type: "string" }
+              sourceText: { type: "string" },
+              evidenceIndex: {
+                type: "integer",
+                description: "1-based Evidence number in this request that this citation was derived from. 0 when unknown."
+              }
             },
-            required: ["type", "title", "publisher", "author", "publishedAt", "url", "finding", "sourceText"]
+            required: ["type", "title", "publisher", "author", "publishedAt", "url", "finding", "sourceText", "evidenceIndex"]
           }
         }
       },
@@ -219,6 +295,18 @@ function toGeminiSchema(schema: unknown): GeminiSchema {
     }
     if (key === "type" && typeof value === "string") {
       result.type = value.toUpperCase();
+      continue;
+    }
+    // Gemini OpenAPI 서브셋은 type 배열을 받지 않는다. strict 스키마가 "없음"을
+    // 표현하려고 쓴 nullable 합집합을 이 방언의 nullable 표기로 옮긴다.
+    if (key === "type" && Array.isArray(value)) {
+      const concrete = value.find((item): item is string => typeof item === "string" && item !== "null");
+      if (concrete) {
+        result.type = concrete.toUpperCase();
+      }
+      if (value.includes("null")) {
+        result.nullable = true;
+      }
       continue;
     }
     if (key === "properties" && typeof value === "object" && value !== null) {

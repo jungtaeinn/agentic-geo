@@ -1,7 +1,7 @@
 {
   "name": "@agentic-geo/pdp-extractor",
   "author": "jungtaeinn",
-  "license": "SEE LICENSE IN ../../LICENSE",
+  "license": "SEE LICENSE IN LICENSE",
   "description": "Next.js console for running the PDP extraction agent and reviewing GEO-ready product intelligence, evidence, OCR, review, and FAQ signals.",
   "keywords": [
     "agentic-geo",

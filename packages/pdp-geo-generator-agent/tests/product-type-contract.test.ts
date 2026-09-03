@@ -11,7 +11,7 @@ import { normalizePdpProduct } from "../src/normalize";
 describe("product type contract", () => {
   it("fills a missing category from the form the product name states", () => {
     const { product } = normalizePdpProduct({
-      name: "배리어케어365 크림 미스트",
+      name: "모이베리어 365 크림 미스트",
       brand: "EXAMPLEDERMA",
       description: "10,000ppm 함유된 고함량 세라마이드 미세분사로 피부장벽을 보호하는",
       benefits: ["수분 충전과 동시에 보습막을 형성"],
@@ -37,7 +37,7 @@ describe("product type contract", () => {
 
   it("never overrides a category the source states", () => {
     const { product } = normalizePdpProduct({
-      name: "배리어케어365 크림 미스트",
+      name: "모이베리어 365 크림 미스트",
       category: "보습 미스트",
       brand: "EXAMPLEDERMA",
       description: "세라마이드 함유 미스트입니다."
@@ -49,7 +49,7 @@ describe("product type contract", () => {
   it("leaves the published schema category unchanged", async () => {
     const run = await generatePdpGeo({
       product: {
-        name: "배리어케어365 크림 미스트",
+        name: "모이베리어 365 크림 미스트",
         brand: "EXAMPLEDERMA",
         description: "세라마이드 함유 미스트입니다.",
         benefits: ["수분 충전"],

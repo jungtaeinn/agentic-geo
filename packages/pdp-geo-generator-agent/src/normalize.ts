@@ -16,9 +16,28 @@ import type {
   PdpSemanticFacts,
   PdpSemanticCitation,
   PdpSemanticIngredientBenefitLink,
-  PdpSemanticMetricClaim
+  PdpSemanticMetricClaim,
+  PdpSourceTextMeta
 } from "./types";
+import { isPublishableImageUrl } from "./contracts/image-source-contract";
+import { annotatedFigureScopes, measurementFigures, statesOnlyFiguresOf } from "./contracts/metric-statement-contract";
 import { localizeProductTypeForLocale, productTypeFromName } from "./contracts/product-type-contract";
+import { isKoreanCompleteSentence } from "./contracts/sentence-form-contract";
+import {
+  hasConcreteKoreanUsageAction,
+  hasKoreanInstructionVerb,
+  isSafetyOrTestClaimUsage,
+  isStitchedMarketingPageDump
+} from "./contracts/usage-contract";
+// 계사 이형태는 문장 형태 계약이 소유한다. 기존 소비처(content-planner,
+// final-proofreader)가 계속 이 모듈에서 읽을 수 있도록 다시 내보낸다.
+export {
+  KOREAN_COPULA_ENDING_FORMS,
+  KOREAN_COPULA_POLITE_PRESENT_ENDINGS
+} from "./contracts/sentence-form-contract";
+import {
+  KOREAN_COPULA_ENDING_FORMS
+} from "./contracts/sentence-form-contract";
 import { filterCurrentProductUsageInstructions } from "./product-scope";
 import {
   normalizeAvailabilityToken,
@@ -32,6 +51,7 @@ import {
   sanitizeGtinValue,
   sanitizeSkuValue
 } from "./schema-values";
+
 
 interface NormalizationContext {
   hints?: PdpGeoGenerationHints;
@@ -47,7 +67,7 @@ const fieldCandidates: Record<keyof PdpGeoFieldMapping, string[]> = {
   price: ["geoProduct.price.raw", "geoProduct.price", "product.price", "price", "salePrice", "discountedPrice", "onlinePriceInfo.priceInfo.discountedPrice", "variants.0.price", "product.variants.0.price"],
   currency: ["geoProduct.price.currency", "currency", "priceCurrency", "product.currency", "offers.priceCurrency", "onlinePriceInfo.currencyInfo.currencyCode"],
   images: ["geoProduct.images", "product.images", "images", "image", "onlineImages", "media", "photos"],
-  // commerce contract 계약에서 variants는 자체 필드(variant 1건의 JSON 문자열 배열)가
+  // GEO-128 계약에서 variants는 자체 필드(variant 1건의 JSON 문자열 배열)가
   // 되었으므로 options 후보에서 제외한다 — JSON 원문이 옵션으로 새는 것을 막는다.
   options: ["geoProduct.options", "product.options", "options", "sizes"],
   benefits: ["geoProduct.benefits", "benefits", "product.benefits", "categorizedProductInfo.benefits", "sections.BENEFITS", "sections.benefits"],
@@ -87,7 +107,7 @@ export function normalizePdpProduct(
   const source = unwrapProductPayload(input);
   const evidence: PdpGeoEvidence[] = [];
   const mapped = createMappedReader(source, context.fieldMapping, evidence);
-  // commerce contract: sku/gtin/availability/variants는 아래에서 구조 보존 필드로
+  // GEO-128: sku/gtin/availability/variants는 아래에서 구조 보존 필드로
   // 수집되어 JSON-LD에 매핑된다. tags/seoTitle/seoDescription 및 metafields의
   // 구조 보존은 여전히 보류 상태다(metafields→sourceTexts 주입 유지).
   const contractVariants = parseContractVariants(source);
@@ -102,21 +122,36 @@ export function normalizePdpProduct(
   ]) ?? "Untitled product";
   const semanticFacts = normalizeSemanticFacts(source, ocrSentenceInsights, name);
   const looseFaq = faqFromLooseQuestionAnswerTexts(source);
-  const sourceTexts = unique([
-    ...ocrSentenceInsights.map((item) => item.text).filter(isUsefulSourceText),
-    ...textArray(getByPath(source, "sourceTexts")),
-    ...textArray(getByPath(source, "geoProduct.sourceTexts")),
+  const ocrImageConfidenceByUrl = buildOcrImageConfidenceMap(source);
+  const sourceTextEntries: SourceTextEntry[] = [
+    ...ocrSentenceInsights
+      .filter((item) => isUsefulSourceText(item.text))
+      .map((item) => ({ text: item.text, meta: ocrSourceTextMetaFromInsight(item, ocrImageConfidenceByUrl) })),
+    ...toSourceTextEntries(textArray(getByPath(source, "sourceTexts"))),
+    ...toSourceTextEntries(textArray(getByPath(source, "geoProduct.sourceTexts"))),
     // metafields는 key(namespace.key)가 의미의 절반이므로 값만 남기는 allStrings
-    // 재귀 수집 대신 "key: value" 문자열로 주입해 key를 보존한다(commerce contract).
-    ...metafieldSourceTexts,
-    ...textArray(getByPath(source, "sourceExtraction.ocr.textBlocks")),
-    ...allStrings(source).filter(isUsefulSourceText).slice(0, 80),
-    ...mapped.strings("description"),
-    ...mapped.strings("benefits"),
-    ...mapped.strings("effects"),
-    ...mapped.strings("ingredients"),
-    ...mapped.strings("usage")
-  ].map(cleanSourceSignalText).filter(isUsefulSourceText)).slice(0, 120);
+    // 재귀 수집 대신 "key: value" 문자열로 주입해 key를 보존한다(GEO-128).
+    ...toSourceTextEntries(metafieldSourceTexts),
+    ...toSourceTextEntries(textArray(getByPath(source, "sourceExtraction.ocr.textBlocks"))),
+    ...toSourceTextEntries(allStrings(source).filter(isUsefulSourceText).slice(0, 80)),
+    ...toSourceTextEntries(mapped.strings("description")),
+    ...toSourceTextEntries(mapped.strings("benefits")),
+    ...toSourceTextEntries(mapped.strings("effects")),
+    ...toSourceTextEntries(mapped.strings("ingredients")),
+    ...toSourceTextEntries(mapped.strings("usage"))
+  ];
+  const uniqueSourceTextEntriesResult = uniqueSourceTextEntries(sourceTextEntries
+    .map((entry) => ({ text: cleanSourceSignalText(entry.text), meta: entry.meta }))
+    .filter((entry) => isUsefulSourceText(entry.text))).slice(0, 120);
+  const sourceTexts = uniqueSourceTextEntriesResult.map((entry) => entry.text);
+  // 텍스트로 키잉한다. sourceTexts는 이미 텍스트 단위로 중복 제거되어 키가 유일하고,
+  // 뒤따르는 재필터(filterCurrentProductUsageInstructions 등)가 항목을 떨어뜨려도
+  // 남은 텍스트의 계보가 그대로 따라온다.
+  const sourceTextMeta = Object.fromEntries(
+    uniqueSourceTextEntriesResult
+      .filter((entry): entry is { text: string; meta: PdpSourceTextMeta } => entry.meta !== undefined)
+      .map((entry) => [entry.text, entry.meta])
+  );
 
   // An explicitly routed description is authoritative even when it is short.
   // Falling through to an arbitrary longer `body` used to let nested review
@@ -207,9 +242,15 @@ export function normalizePdpProduct(
   // appear later in the PDP source.
   const faq = uniqueFaq([...mapped.faq(), ...faqFromUnknown(source), ...looseFaq]).slice(0, 16);
   const reviews = normalizeReviews(source, mapped);
-  const images = unique(mapped.strings("images").flatMap((value) => splitPotentialList(value)).map((value) => absolutizeUrl(value, context.sourceUrl))).slice(0, 80);
+  // A URL the source itself cut short is dropped here rather than downstream:
+  // it is a source defect, and carrying it into the graph only to have schema
+  // validation repair it reports a generation problem the generator never had.
+  const images = unique(mapped.strings("images")
+    .flatMap((value) => splitPotentialList(value))
+    .map((value) => absolutizeUrl(value, context.sourceUrl))
+    .filter(isPublishableImageUrl)).slice(0, 80);
   // variant의 title/options를 내부 options로 파생 주입해 기존 옵션 기반
-  // 로직(variant 비교·라벨)이 계약 변경 후에도 계속 동작하게 한다(commerce contract).
+  // 로직(variant 비교·라벨)이 계약 변경 후에도 계속 동작하게 한다(GEO-128).
   const options = unique([
     ...mapped.strings("options").flatMap(splitPotentialList),
     ...contractVariants.flatMap((variant) => [
@@ -224,9 +265,19 @@ export function normalizePdpProduct(
     .flatMap((claim) => [claim.sentence, claim.sourceText])
     .filter((value): value is string => Boolean(value))
     .map((value) => cleanSourceSignalText(value).toLocaleLowerCase()));
+  // A measured claim may not be built out of a customer's own sentence, and the
+  // test for that is where the text came from, not how it is worded. A
+  // well-formed first-person review ("제가 4주 써보니 수분감은 2배로 늘었습니다")
+  // is a grammatically perfect measured statement — no structural predicate can
+  // separate it from a lab result, and separating it by vocabulary is the
+  // defect this whole predicate exists to remove. Provenance answers it
+  // outright, and the rule for what counts as review scope already has one home
+  // ({@link allStringsOutsideReview}, {@link isReviewProvenanceRecord}).
+  const reviewScopedSources = reviewScopedSourceTextKeys(source);
   const metrics = unique([
     ...semanticMetricTexts,
     ...sourceTexts
+      .filter((value) => !reviewScopedSources.has(sourceTextIdentityKey(value)))
       .filter(isAtomicMetricEvidenceText)
       .filter((value) => !representedMetricSources.has(cleanSourceSignalText(value).toLocaleLowerCase()))
   ]).slice(0, 20);
@@ -277,6 +328,7 @@ export function normalizePdpProduct(
     reviews,
     breadcrumbs,
     sourceTexts,
+    sourceTextMeta,
     semanticFacts
   });
 
@@ -355,7 +407,7 @@ function unwrapProductPayload(input: unknown): unknown {
 }
 
 /**
- * commerce contract 계약의 `variants`(원소가 variant 1건의 JSON 문자열, 모든 키 선택적)를
+ * GEO-128 계약의 `variants`(원소가 variant 1건의 JSON 문자열, 모든 키 선택적)를
  * 구조 보존 형태로 파싱한다. 파싱에 실패한 원소는 무시한다(원문은 기존 수집
  * 경로로 남는다). 상거래 값(sku/gtin/availability)은 공유 정규화기를 통과한
  * 값만 유지한다 — 잘못된 식별자/재고 표기는 없는 것보다 해롭기 때문이다.
@@ -464,7 +516,7 @@ function extractCommerceTrust(source: unknown): {
 
 /**
  * Collects the explicit product-level commerce identity from the input
- * contract (commerce contract): merchant SKU, GTIN, availability, and item condition.
+ * contract (GEO-128): merchant SKU, GTIN, availability, and item condition.
  * Explicit values take precedence over any downstream inference; each value
  * is accepted only after shared normalization (fail-closed).
  */
@@ -600,7 +652,7 @@ function parseJsonRecord(value: string): Record<string, unknown> | undefined {
 }
 
 /**
- * commerce contract 계약의 `metafields`(key는 namespace.key, 값은 사람이 읽는 문자열)를
+ * GEO-128 계약의 `metafields`(key는 namespace.key, 값은 사람이 읽는 문자열)를
  * "key: value" 문자열로 변환한다. allStrings 재귀 수집은 값만 남겨 key가
  * 소실되므로, key를 보존한 문자열을 sourceTexts에 주입하기 위한 것이다.
  */
@@ -1338,7 +1390,22 @@ function isCommerceQuantityOrOfferText(value: string): boolean {
     return true;
   }
   return /^(?:[$€£¥₩]\s*\d[\d,.]*|\d[\d,.]*\s*(?:원|usd|krw|jpy|eur|gbp))$/i.test(withoutLabel)
-    || /(?:add\s+to\s+(?:bag|cart)|buy\s+now|sale\s+price|regular\s+price|장바구니|구매하기|판매가|할인가|쿠폰|배송|교환|반품)/i.test(text);
+    // `할인가` widened to `할인`: an offer term is an offer term whether or not
+    // it is followed by 가. This list is the single source for commerce
+    // vocabulary and already runs as the metric gate's preamble, so a discount
+    // line drops here rather than needing the metric predicate to recognise a
+    // word — which is the enumeration this reconstruction removes.
+    //
+    // 적립·지급률·수수료·할부·취소 are here for the same reason. `4주 후 적립률은
+    // 10%입니다` passes the attribution test honestly — it really does name an
+    // elapsed timepoint — and is grammatically identical to `4주 후 개선율은
+    // 10%입니다`. What separates them is only what the rate is *of*, which is a
+    // commerce concept, so it is this list's job and not the predicate's.
+    //
+    // 포인트 is deliberately absent: in cosmetics it is 포인트 메이크업 before it
+    // is a loyalty point, and listing it would silently drop a real cleansing
+    // measurement — the exact failure this reconstruction exists to remove.
+    || /(?:add\s+to\s+(?:bag|cart)|buy\s+now|sale\s+price|regular\s+price|장바구니|구매하기|판매가|할인|쿠폰|배송|교환|반품|적립|지급률|수수료|할부|취소)/i.test(text);
 }
 
 /**
@@ -1376,6 +1443,308 @@ function isAudienceEvidence(value: string): boolean {
     || /(?:(?:고객|피부)에?게\s*(?:적합|추천)|(?:위한|고려한)\s*(?:제품|포뮬러|케어)|(?:민감|건조|건성|지성|복합성?|중성)\s*피부)/u.test(text);
 }
 
+/**
+ * The particles and endings that can attach to a Korean measure noun.
+ *
+ * Needed because a unit syllable is also an ordinary syllable: `4시간으로` is a
+ * duration, `3분자` is a molecule. A unit is a unit when a word boundary or one
+ * of these follows it, and the set is the closed grammatical class of Korean
+ * particles — no measurable thing and no product category appears in it.
+ */
+const koreanParticleAfterMeasureNoun = "은|는|이|가|을|를|의|에|에서|으로|로|와|과|도|만|까지|부터|보다|처럼|이며|며|이고|고|간|씩|째|여|당|짜리|이나|나";
+
+/**
+ * A measure noun ends where Hangul stops or where one of its particles begins.
+ *
+ * The copula is deliberately not a boundary here. Admitting it read `1년입니다`
+ * and `1등급입니다` as measurements, which is how a warranty term and a
+ * membership tier became measured results; the units in those are real units,
+ * so nothing downstream could tell them apart afterwards.
+ */
+const koreanMeasureNounBoundary = `(?:(?!\\p{sc=Hangul})|(?=(?:${koreanParticleAfterMeasureNoun})(?:\\P{sc=Hangul}|$)))`;
+
+/**
+ * A numeral naming a point in time rather than measuring an interval.
+ *
+ * A study period ("2025.07.21~2025.08.22", "2022년 12월 19일") is dense with
+ * digits and day units, and none of them is a measured result. Stripped before
+ * the magnitude is looked for, so a date can never be the only thing that makes
+ * a sentence look measured. This is a numeric shape, not a vocabulary.
+ */
+const calendarPointInTimePattern =
+  /\d{2,4}\s*[.\-/]\s*\d{1,2}\s*[.\-/]\s*\d{1,2}|\d{4}\s*년(?:\s*\d{1,2}\s*월)?(?:\s*\d{1,2}\s*일)?|\d{1,2}\s*월\s*\d{1,2}\s*일/gu;
+
+/**
+ * A measured magnitude: a number carrying a unit that puts it on a scale.
+ *
+ * The unit classes are closed, and closed for the reason that matters here —
+ * they are units, not subject matter. A new product category brings new things
+ * to measure (세정력, 자외선 차단 지속력, 밀착력), but never a new way of writing
+ * `97.1%`. That is what separates this pattern from the outcome-word list it
+ * replaces, which had to be extended for every category and silently dropped
+ * the figures of every category nobody had extended it for.
+ *
+ * Four scales: proportion and ratio, a physical or chemical scale, a graded
+ * score, and elapsed time — which is how a durability result is stated.
+ *
+ * The physical units are an explicit set rather than a shape, and that is a
+ * deliberate choice: a unit is a closed measurement system, so the set can be
+ * complete and stay complete, where an outcome-word list can only ever be
+ * behind. The price of the choice is that it must actually cover the domain —
+ * a dermatology endpoint left out fails exactly like a category left out of the
+ * old list — so the skin-measurement units are all here: length down to the
+ * corneocyte (`㎜`/`mm`/`㎛`/`μm`/`µm`/`cm`), concentration (`ppm`, `mg`), and
+ * transepidermal water loss, whose unit is a compound (`g/m²h` and the ways OCR
+ * writes it).
+ *
+ * Two scales name themselves before the number instead of after it (`pH 5.5`,
+ * `SPF 50`), so they are matched in that order — a digit-then-unit pattern
+ * alone never sees them. Korean puts a particle between the two (`pH는 5.5`),
+ * so the same closed particle class that bounds a measure noun is admitted
+ * between the scale name and its figure.
+ *
+ * The boundary after a unit is "no Latin letter or digit follows", not `\b`:
+ * `\b` needs a word character on one side, and both `㎜` and the Korean
+ * particle after it are non-word, so every symbol unit silently never matched.
+ *
+ * Cardinality counters (`3종`, `30명`, `2개`, `1회`) are deliberately absent:
+ * they count things rather than measure them, so `3종 성분을 함유합니다` is a
+ * composition statement and `30명 대상` is a sample size, neither of them a
+ * result. Trade quantities (`200ml`, `7.05 oz`, `200g`, `1kg`) are absent for
+ * the same reason — a package size is a specification, and
+ * {@link isCommerceQuantityOrOfferText} is the gate that reads those. The
+ * boundary rule is what keeps `200ml` from matching the `m` of a length unit.
+ */
+const latinUnitBoundary = "(?![A-Za-z0-9])";
+
+/**
+ * An area or a volume, in the three ways a page writes it: the superscript, the
+ * bare digit, and the precomposed symbol. `1.2mm2`, `1.2mm²` and `1.2㎟` are one
+ * measurement and are read as one — the bare digit has to be stated because the
+ * unit boundary refuses a following digit.
+ *
+ * The bare lengths these are built from (`mm`, `cm`, `m`) are deliberately not
+ * measures on their own: a bare length is how a package states its dimensions
+ * (`용기 지름은 45mm입니다`, `60mm x 60mm x 150mm`), and nothing in the sentence
+ * separates that from a measured one. An *area* is not a shape a package spec
+ * takes, so it carries no such ambiguity. Micro- and nanometre stay measures in
+ * both forms — no package is described in either.
+ */
+const areaOrVolumeUnitSource = "(?:(?:mm|cm|m|μm|µm|㎛|nm)(?:[²³]|[23])|㎟|㎠|㎡|㎥)";
+
+/** Transepidermal water loss, in the forms OCR produces for `g/m²h`. */
+const tewlUnitSource = "g\\s*/\\s*(?:m\\s*2|m²|㎡)\\s*[/·.]?\\s*h";
+
+const measuredMagnitudeSource = "(?:\\d[\\d,]*(?:\\.\\d+)?\\s*(?:"
+  + "[%％‰]"
+  + `|배${koreanMeasureNounBoundary}`
+  + "|[°˚]\\s*[CF]?|℃|℉"
+  + `|(?:도|점|등급|주일|시간|분|초|일|주|개월|년)${koreanMeasureNounBoundary}`
+  + `|${tewlUnitSource}`
+  + `|${areaOrVolumeUnitSource}${latinUnitBoundary}`
+  + `|(?:ppm|ppb|mg|㎎|㎛|μm|µm|㎚|nm|µg|μg|㎍|IU|kcal|Pa|pH)${latinUnitBoundary}`
+  + `|(?:percent|points?|times|fold|hours?|hrs?|minutes?|mins?|seconds?|secs?|days?|weeks?|months?|years?|degrees?)${latinUnitBoundary}`
+  + ")"
+  + `|(?:pH|SPF)\\s*(?:${koreanParticleAfterMeasureNoun})?\\s*(?:\\p{L}{1,6}\\s+){0,2}\\d[\\d,]*(?:\\.\\d+)?)`;
+
+const measuredMagnitudePattern = new RegExp(measuredMagnitudeSource, "iu");
+
+/**
+ * The same pattern with the copula admitted as a measure-noun boundary.
+ *
+ * `평점은 4.6점입니다` carries no magnitude under the ordinary boundary, because
+ * the copula attaches straight to the measure noun and is not a particle. That
+ * is deliberate — admitting it unconditionally read `보증 기간은 1년입니다` as a
+ * measurement. But a sentence that has already named a study and a sample is
+ * not a warranty term, so the copula is allowed to close a Hangul unit once the
+ * attribution test is satisfied. It is a condition on the existing boundary, not
+ * a second way of recognising a magnitude.
+ */
+const attributedMeasuredMagnitudePattern = new RegExp(
+  measuredMagnitudeSource.replaceAll(
+    koreanMeasureNounBoundary,
+    `(?:${koreanMeasureNounBoundary}|(?=(?:${KOREAN_COPULA_ENDING_FORMS.join("|")})))`
+  ),
+  "iu"
+);
+
+function hasMeasuredMagnitude(text: string, attributed = false): boolean {
+  const withoutCalendarDates = text.replace(calendarPointInTimePattern, " ");
+  return (attributed ? attributedMeasuredMagnitudePattern : measuredMagnitudePattern).test(withoutCalendarDates);
+}
+
+/**
+ * A Korean argument marked by a topic or subject particle.
+ *
+ * The particles are a closed grammatical class and they attach to the noun, so
+ * the test is morphological: a letter — or a figure, since a percentage can
+ * itself be the subject (`94%가 …`) — carrying one of them, with a word
+ * boundary after. Any letter, not only Hangul: a measurement scale is routinely
+ * written in Latin and takes the same particle (`pH는 5.5로 …`), and the
+ * particle is what the test is reading either way. The adnominal `-은/-는` is spelled the same and is
+ * admitted along with them; separating the two needs a parser, and this
+ * condition only has to establish that the sentence has an argument at all.
+ *
+ * `generate.ts`'s `koreanCaseMarkedMeasurementPattern` reads the same particle
+ * class but asks a narrower question — whether a *particular* numeral has a
+ * subject stated within two words in front of it — because it decides whether
+ * one refined sentence can be quoted standing alone. The two are not merged on
+ * purpose: the narrower reading would drop a measurement stated inside its
+ * subject ("24시간 보습 지속력이 확인되었습니다"), where the figure precedes the
+ * marker rather than following it.
+ */
+const koreanCaseMarkedArgumentPattern = /(?:\p{L}|[\d%％)\]])(?:은|는|이|가)(?=[\s,]|$)/u;
+
+/**
+ * An English finite predicate, read from closed-class function words and from
+ * inflection.
+ *
+ * The auxiliaries and copulas are a closed class, and the `-ed` suffix is
+ * inflectional morphology; neither is domain vocabulary, so an English study
+ * sentence is recognised without knowing what it measured.
+ */
+const englishFinitePredicateSource =
+  "(?:\\b(?:is|are|was|were|be|been|being|has|have|had|does|did|can|could|will|would|shall|should|may|might|must)\\b|\\b[a-z]{3,}ed\\b)";
+
+/**
+ * An English magnitude that a finite predicate governs.
+ *
+ * Proximity is the whole rule, and it is what a packshot caption cannot
+ * satisfy. `Ceramide 10,000 ppm Moisturizing & strengthening. skin's moisture
+ * barrier For dry & weakened skin` contains both a magnitude and an `-ed` form,
+ * but they belong to different fragments of a transcribed label — `weakened`
+ * modifies `skin`, it does not predicate the concentration. A reported result
+ * puts the two together: `93% reported …`, `Hydration improved 10%`.
+ *
+ * The words allowed between them are Latin-script only, so a run that switches
+ * script mid-way — an OCR panel setting an English badge beside Korean caption
+ * text — cannot borrow one language's verb to predicate the other's figure.
+ */
+const englishPredicatedMagnitudePattern = new RegExp(
+  `(?:${englishFinitePredicateSource}\\s+(?:[A-Za-z0-9%.,'’-]+\\s+){0,3}?${measuredMagnitudeSource}`
+  + `|${measuredMagnitudeSource}\\s+(?:[A-Za-z0-9%.,'’-]+\\s+){0,2}?${englishFinitePredicateSource})`,
+  "iu"
+);
+
+/**
+ * A bracketed aside at the end of a sentence, removed.
+ *
+ * Study context is routinely appended in brackets — `…지속됩니다 (35~55세 여성
+ * 33명 인체 적용 시험).` — which leaves a bracket where the closure test looks
+ * for a predicate, and reads a finished sentence as a fragment. The aside is
+ * delimited, so taking it off is bracket matching; nothing here reads what is
+ * inside it. Only a trailing aside is removed, because only a trailing one
+ * displaces the predicate.
+ */
+function withoutTrailingBracketedAside(text: string): string {
+  let result = text.trim();
+  for (let pass = 0; pass < 3; pass += 1) {
+    const trimmed = result.replace(/\s*[(\[（［【][^()\[\]（）［］【】]*[)\]）］】]\s*[.!?。！？]*\s*$/u, "").trim();
+    if (trimmed === result || !trimmed) {
+      break;
+    }
+    result = trimmed;
+  }
+  return result;
+}
+
+/**
+ * Whether the text names who measured, when, or on whom.
+ *
+ * This replaces a rule that read syntactic position, and it replaces it because
+ * position is evidence of syntax, never of measurement: refusing on
+ * copula-complement position lost genuine results, and accepting on the same
+ * position admitted `최대 할인 20%입니다`. The copula tells you how a clause is
+ * built and nothing about whether anyone measured anything.
+ *
+ * Attribution is what a measured result has and a commerce line does not. Four
+ * signals, none of them outcome vocabulary:
+ *
+ * - a study period, which is a date *range* — a single date is a manufacturing
+ *   stamp (`제조연월 2025년 3월`), so only the range counts;
+ * - an elapsed-time timepoint: a figure in a time unit standing next to one of
+ *   the closed relational nouns that make it a moment (`2주 후`,
+ *   `18시간 1회 도포후`). The figure is what makes it an interval someone
+ *   measured over; `무료 반품 기간 7일` has the figure and no such noun, and a
+ *   bare `사용 직후` has the noun and no figure;
+ * - a sample, which is a figure in the counter for people.
+ *
+ * A legal-entity designator used to be a fourth signal and is not one any more.
+ * Every 제조사 and 판매자 line carries one, so on its own it admitted any
+ * commerce percentage: a company name says who sells the thing, never that
+ * anyone measured it.
+ *
+ * All three are numerals or closed grammatical classes. None of them names a
+ * thing that was measured, so no product category can fall out of this the way
+ * it fell out of the outcome-word list.
+ */
+const measurementAttributionPatterns: RegExp[] = [
+  // A study period: a date *range*. A single stamped date is a manufacturing
+  // date, so only the range counts.
+  /\d{2,4}\s*[.\-/년]\s*\d{1,2}[^\n]{0,12}?\s*(?:~|-|–|—|부터)[^\n]{0,20}?\d{1,2}\s*[.\-/월일]/u,
+  // An elapsed-time timepoint: a figure in a time unit standing beside one of
+  // the closed relational nouns that make it a moment. The figure is required —
+  // a bare `사용 직후` names an occasion but measures no interval, and reading it
+  // as attribution let every `구매 직후 …%` line through.
+  /\d[\d,]*(?:\.\d+)?\s*(?:분|시간|일|주|주일|개월|년)[^\n]{0,8}?(?:직후|직전|후|뒤|전|동안|만에|차)/u,
+  // A sample: a figure in the counter for people.
+  /\d[\d,]*\s*명/u
+];
+
+function hasMeasurementAttribution(text: string): boolean {
+  return measurementAttributionPatterns.some((pattern) => pattern.test(text));
+}
+
+/**
+ * Whether the text states a measured result and attributes it to something.
+ *
+ * This is the question the old `outcome`/`evidenceFrame` word lists were
+ * standing in for, asked directly. A result that has been attributed is a
+ * clause: an argument, a magnitude, and a predicate that governs them. A page
+ * panel has the magnitude and neither of the other two — it ends on a noun,
+ * because it was never a sentence — which is why the reading is grammatical
+ * rather than lexical and why it does not care what was measured.
+ *
+ * Korean is read by its own morphology ({@link isKoreanCompleteSentence} for
+ * the predicate) after any bracketed study aside is taken off the end, and the
+ * figure has to belong to somebody: either a case-marked argument is present
+ * ({@link koreanCaseMarkedArgumentPattern}), or — Korean drops topics freely —
+ * the sentence names who measured, when, or on whom
+ * ({@link hasMeasurementAttribution}).
+ *
+ * English is read by its finite-verb morphology. A transcribed layout is
+ * excluded up front by the marketing-chrome predicate, which also carries the
+ * context-free figure run — a badge strip has no predicate between its
+ * numbers, and that is what tells it apart from a sentence that quotes two.
+ */
+export function isAttributedMeasurementStatement(text: string): boolean {
+  if (isStitchedMarketingPageDump(text)) {
+    return false;
+  }
+  const body = withoutTrailingBracketedAside(text);
+  const koreanArgument = koreanCaseMarkedArgumentPattern.test(body) || hasMeasurementAttribution(body);
+  const korean = isKoreanCompleteSentence(body) && koreanArgument;
+  return korean || englishPredicatedMagnitudePattern.test(body);
+}
+
+/**
+ * One atomic measured claim, fit to be quoted as it stands.
+ *
+ * Two conditions, and both are structural: the text carries a magnitude on a
+ * measurement scale, and it predicates that magnitude of something. The
+ * preamble keeps the noise this gate has always had to stop — questions,
+ * commerce quantities, bare figures, and the compressed OCR block that packs a
+ * whole study panel into one string.
+ *
+ * Review-derived wording is deliberately not among them. A survey result is a
+ * measurement whoever the subjects were: `재구매 의사는 92%로 나타났습니다` and
+ * `평점은 4.6점으로 확인되었습니다` state the same facts as `구매 의향` and
+ * `점수`, and a gate that keeps one pair and drops the other is deciding by
+ * noun again — the exact defect this predicate exists to remove. Actual review
+ * chatter fails on structure without any help: it carries no magnitude
+ * (`재구매 의사 있어요`), or no argument for the figure to be predicated of
+ * (`촉촉하고 좋아요 별점 5점 만점에 5점 주고 싶어요`).
+ */
 function isAtomicMetricEvidenceText(value: string): boolean {
   const text = cleanSourceSignalText(value);
   if (!text || text.length < 12 || text.length > 700 || isQuestionLikeSourceText(text) || isCommerceQuantityOrOfferText(text)) {
@@ -1391,15 +1760,8 @@ function isAtomicMetricEvidenceText(value: string): boolean {
     || /^\d+(?:\.\d+)?\s*(?:%|배|weeks?|days?|hours?|주|일|시간)\.?$/i.test(text)) {
     return false;
   }
-  const quantifiedResult = /\d+(?:\.\d+)?\s*(?:%|배|times?|points?|점|층|layers?|시간|hours?|°\s*[CF]|degrees?\s+(?:Celsius|Fahrenheit))(?:\*|\s|$|[.,;:])/i.test(text)
-    || /(?:increased?|decreased?|improved?|reduced?|higher|lower|boosted?|rose|fell|증가|감소|개선|완화|높|낮)[^.!?。！？]{0,32}\d+(?:\.\d+)?\s*(?:%|배|점)?/i.test(text);
-  const outcome = /(?:firm|elastic|wrinkle|fine\s*line|hydration|moisture|barrier|texture|radiance|plump|smooth|density|retention|soothing|cooling|temperature|탄력|주름|수분|보습|장벽|피부결|광채|밀도|잔존|진정|쿨링|시원|온도|개선|효과)/i.test(text);
-  const evidenceFrame = /(?:study|clinical|instrumental|assessment|evaluation|test(?:ed)?|participants?|subjects?|women|men|users?|agreed|reported|result|versus|\bvs\.?\b|시험|실험|평가|측정|대상|참여자|사용자|결과|대비)/i.test(text)
-    || /(?:after|over|in)\s+\d+(?:\.\d+)?\s*(?:weeks?|days?|hours?)\b/i.test(text)
-    || /\d+(?:\.\d+)?\s*(?:주|일|시간)\s*(?:후|동안)/u.test(text)
-    || /(?:사용\s*직후|단\s*\d+(?:\.\d+)?\s*분\s*만에|한\s*번만?\s*발라도|1\s*회\s*사용)/u.test(text);
-  const durationOutcome = /\d+(?:\.\d+)?\s*시간[^.!?。！？]{0,40}(?:보습|수분)[^.!?。！？]{0,24}지속|(?:보습|수분)[^.!?。！？]{0,40}\d+(?:\.\d+)?\s*시간[^.!?。！？]{0,24}지속/u.test(text);
-  return (quantifiedResult || durationOutcome) && outcome && evidenceFrame;
+  const attributed = hasMeasurementAttribution(text);
+  return hasMeasuredMagnitude(text, attributed) && isAttributedMeasurementStatement(text);
 }
 
 /**
@@ -1409,7 +1771,7 @@ function isAtomicMetricEvidenceText(value: string): boolean {
  * The gate is based on linguistic structure, never on a product name or a
  * known product-specific number.
  */
-function isCompressedMultiClaimMetricBlock(value: string): boolean {
+export function isCompressedMultiClaimMetricBlock(value: string): boolean {
   const text = cleanSourceSignalText(value);
   if (/(?:사용|도포|적용|세정)\s*전\s*(?:사용|도포|적용|세정)\s*후/u.test(text)) {
     return true;
@@ -1433,8 +1795,74 @@ function isBrokenSourceFragment(value: string): boolean {
     || /리뉴얼\s*전\s*제품에서\s*고객님들이\s*만족|고객님들이\s*만족하셨던\s*속성|속성\s*\(/.test(text);
 }
 
+/**
+ * Collects payload strings for loose FAQ harvesting while skipping
+ * review-scoped subtrees. A question mark inside customer review copy is the
+ * customer's own rhetoric, not a product Q/A — promoting it fabricates an FAQ
+ * item out of experience text (FAQ Contract). Review scope is decided
+ * structurally, never by content words: the container key matches the
+ * review-container pattern, or the record declares the review class through
+ * {@link isReviewProvenanceRecord}.
+ *
+ * That predicate is called rather than restated. This function used to inline a
+ * `category`/`kind` test of its own, which read two of the seven fields the real
+ * predicate reads — so a record shaped `{type: "review"}` or
+ * `{sourceType: "testimonial"}` walked straight through, and the review
+ * sentences this scope exists to hold back were held back only when the
+ * container happened to be named `reviews`.
+ */
+/** One text's identity, for comparing the same string across two collectors. */
+function sourceTextIdentityKey(value: string): string {
+  return cleanSourceSignalText(value).toLocaleLowerCase();
+}
+
+/**
+ * The source text that only ever appeared inside a review container.
+ *
+ * Computed as the complement: everything the generic collector reaches, minus
+ * everything the review-skipping collector reaches. Taking the difference — as
+ * opposed to re-implementing the skip — means the definition of review scope
+ * stays in the one place that already owns it, and a text that occurs both
+ * inside and outside a review is treated as product content, because it is.
+ */
+function reviewScopedSourceTextKeys(value: unknown): Set<string> {
+  const outsideReview = new Set(allStringsOutsideReview(value).map(sourceTextIdentityKey));
+  return new Set(allStrings(value)
+    .map(sourceTextIdentityKey)
+    .filter((key) => key.length > 0 && !outsideReview.has(key)));
+}
+
+function allStringsOutsideReview(value: unknown): string[] {
+  const results: string[] = [];
+  const collect = (node: unknown, key?: string, depth = 0) => {
+    if (depth > 8) {
+      return;
+    }
+    if (key && categoryKeywords.review.test(key)) {
+      return;
+    }
+    if (isRecord(node) && isReviewProvenanceRecord(node)) {
+      return;
+    }
+    if (typeof node === "string") {
+      const text = cleanText(htmlToText(node));
+      if (text.length > 0) {
+        results.push(text);
+      }
+      return;
+    }
+    if (Array.isArray(node)) {
+      node.forEach((item, index) => collect(item, String(index), depth + 1));
+    } else if (isRecord(node)) {
+      Object.entries(node).forEach(([childKey, childValue]) => collect(childValue, childKey, depth + 1));
+    }
+  };
+  collect(value);
+  return results;
+}
+
 function faqFromLooseQuestionAnswerTexts(source: unknown): PdpGeoFaqItem[] {
-  const texts = allStrings(source)
+  const texts = allStringsOutsideReview(source)
     .map(cleanSourceSignalText)
     .filter(isUsefulSourceText)
     .filter((text) => text.length <= 500);
@@ -1471,6 +1899,8 @@ const fullIngredientListTextLimit = 2400;
 interface OcrSentenceInsightInput {
   text: string;
   imageUrl?: string;
+  /** All images this sentence was transcribed from, when the source reports more than one. */
+  imageUrls?: string[];
   category: OcrSentenceCategory;
   keywords: string[];
   semanticFacts?: Partial<PdpSemanticFacts>;
@@ -1499,6 +1929,7 @@ function readSentenceInsights(value: unknown): OcrSentenceInsightInput[] {
     const text = stringValue(item.text);
     const category = stringValue(item.category);
     const imageUrl = ocrImageUrlFromRecord(item);
+    const imageUrls = imageUrlsFromRecord(item);
     const keywords = flattenTextValues(item.keywords).slice(0, 10);
 
     if (!text) {
@@ -1508,6 +1939,7 @@ function readSentenceInsights(value: unknown): OcrSentenceInsightInput[] {
     return inferOcrSentenceCategories(text, keywords, category).map((inferredCategory) => ({
       text,
       imageUrl,
+      imageUrls,
       category: inferredCategory,
       keywords,
       semanticFacts: isRecord(item.semanticFacts) ? normalizeSemanticFactsObject(item.semanticFacts) : undefined
@@ -1549,11 +1981,13 @@ function normalizeSemanticFacts(source: unknown, insights: OcrSentenceInsightInp
         skinTypes: [],
         usageSteps: insight.category === "usage" ? [insight.text] : [],
         safetyTests: inferPdpEvidenceRoles(insight.text).roles.includes("safety") ? [insight.text] : [],
-        metricClaims: insight.category === "metric" ? [{ sentence: insight.text, sourceText: insight.text }] : [],
+        metricClaims: insight.category === "metric"
+          ? [{ sentence: insight.text, sourceText: insight.text, imageUrls: insight.imageUrls ?? (insight.imageUrl ? [insight.imageUrl] : undefined) }]
+          : [],
         evidenceSentences: [insight.text],
         citations: [],
         ingredientBenefitLinks: insight.category === "ingredient" && hasOutcomeLanguage(insight.text)
-          ? [{ sentence: insight.text, sourceText: insight.text }]
+          ? [{ sentence: insight.text, sourceText: insight.text, imageUrls: insight.imageUrls ?? (insight.imageUrl ? [insight.imageUrl] : undefined) }]
           : [],
         ...insight.semanticFacts
       }))
@@ -1606,8 +2040,10 @@ export function sanitizePdpSemanticFacts(value: Partial<PdpSemanticFacts>): PdpS
     .filter((item) => inferPdpEvidenceRoles(item).roles.includes("safety")))
     .slice(0, 24);
   const skinTypes = normalizeTypedSkinTypeSignals(value.skinTypes ?? []).slice(0, 16);
-  const metricClaims = uniqueSemanticMetricClaims((value.metricClaims ?? [])
-    .filter(isCoherentSemanticMetricClaim))
+  const rawMetricClaims = value.metricClaims ?? [];
+  const metricClaims = uniqueSemanticMetricClaims(rawMetricClaims
+    .filter(isCoherentSemanticMetricClaim)
+    .map((claim) => withStudyScopeFromAnnotatingPanel(claim, rawMetricClaims)))
     .slice(0, 24);
   const ingredientBenefitLinks = uniqueSemanticIngredientBenefitLinks((value.ingredientBenefitLinks ?? [])
     .filter(isCoherentIngredientBenefitLink))
@@ -1630,6 +2066,60 @@ export function sanitizePdpSemanticFacts(value: Partial<PdpSemanticFacts>): PdpS
       .slice(0, 32),
     ingredientBenefitLinks,
     citations
+  };
+}
+
+/**
+ * Restores the study scope the source states for this claim's own figures.
+ *
+ * The extractor hands the same measurement twice: once inside the unsegmented
+ * panel that also carries the footnote annotating it (`… 30명 대상 / 시험기간 …
+ * / 개인차 있음`), and once as a refined sentence with the footnote gone. Only
+ * the refined one survives {@link isCoherentSemanticMetricClaim}, so the scope
+ * was discarded along with the panel — and the Evidence Routing Contract
+ * forbids publishing a measured result without its sample, period, and caveat.
+ *
+ * A panel's footnote is matched to this claim through the figures it annotates:
+ * the claim inherits a footnote only when every figure the claim states is one
+ * the footnote explains. A panel holding two studies therefore hands each
+ * claim its own footnote instead of the first one it finds.
+ *
+ * Only empty fields are filled. A claim the extractor already scoped keeps what
+ * it was given.
+ */
+function withStudyScopeFromAnnotatingPanel(
+  claim: PdpSemanticMetricClaim,
+  claims: PdpSemanticMetricClaim[]
+): PdpSemanticMetricClaim {
+  if (cleanSourceSignalText(claim.sample ?? "") && cleanSourceSignalText(claim.period ?? "")) {
+    return claim;
+  }
+  const figures = measurementFigures(cleanSourceSignalText(claim.sentence ?? claim.sourceText ?? ""));
+  if (figures.size === 0) {
+    return claim;
+  }
+  const annotating = claims
+    .filter((other) => other !== claim)
+    .map((other) => cleanSourceSignalText(other.sourceText ?? other.sentence ?? ""))
+    .filter((text) => isCompressedMultiClaimMetricBlock(text))
+    .flatMap(annotatedFigureScopes)
+    .filter((panel) => statesOnlyFiguresOf(figures, panel.figures));
+  // More than one footnote explaining the same figures means the reading is
+  // ambiguous, and a figure as ordinary as `2배` appears in two studies of one
+  // panel. Taking the first match handed a 30명 study's claim the 22명 footnote.
+  // Nothing is filled rather than something wrong.
+  if (annotating.length !== 1) {
+    return claim;
+  }
+  const [scoped] = annotating;
+  if (!scoped) {
+    return claim;
+  }
+  return {
+    ...claim,
+    sample: cleanSourceSignalText(claim.sample ?? "") || scoped.scope.sample,
+    period: cleanSourceSignalText(claim.period ?? "") || scoped.scope.period,
+    caveat: cleanSourceSignalText(claim.caveat ?? "") || scoped.scope.caveat
   };
 }
 
@@ -1788,6 +2278,16 @@ function joinAtomicMetricValueWithUnit(value: string | undefined, unit: string |
   return `${cleanedValue}${cleanedUnit}`;
 }
 
+/**
+ * A claim the extractor already resolved into fields — a value, what it
+ * measures, and the conditions it was measured under.
+ *
+ * The conditions are established by the fields being present, not by their
+ * wording: `timing: "사용 직후"` is a measurement condition whether or not the
+ * phrase happens to contain a word some list knows. Re-deriving that from the
+ * joined text is what used to drop a fully structured claim whose only context
+ * field was a timing.
+ */
 function isStructuredAtomicMetricClaim(claim: PdpSemanticMetricClaim): boolean {
   const value = joinAtomicMetricValueWithUnit(claim.value, claim.unit);
   const outcome = cleanSourceSignalText(claim.metric ?? claim.label ?? claim.subject ?? "");
@@ -1808,9 +2308,7 @@ function isStructuredAtomicMetricClaim(claim: PdpSemanticMetricClaim): boolean {
   if (/\b1\s+(?:weeks|days|hours)\b/i.test(`${context} ${publicText}`) || /["']\s*$/.test(publicText)) {
     return false;
   }
-  const quantified = /\d+(?:\.\d+)?\s*(?:%|배|times?|points?|점|층|layers?|시간|hours?|°\s*[CF]|degrees?\s+(?:Celsius|Fahrenheit))(?:\s|$|[.,;:])/i.test(value);
-  const contextualized = /\d|study|test|assessment|evaluation|participant|subject|user|week|day|hour|baseline|compar|시험|실험|평가|측정|대상|참여|대비|비교|주|일|시간/i.test(context);
-  return quantified && contextualized && /[\p{L}]/u.test(outcome);
+  return hasMeasuredMagnitude(value) && /[\p{L}]/u.test(outcome);
 }
 
 function formatStructuredAtomicMetricClaim(claim: PdpSemanticMetricClaim): string | undefined {
@@ -1871,7 +2369,8 @@ function readSemanticMetricClaims(value: unknown): PdpSemanticMetricClaim[] {
       evidenceGroup: stringValue(item.evidenceGroup),
       caveat: stringValue(item.caveat),
       sentence: stringValue(item.sentence),
-      sourceText: stringValue(item.sourceText)
+      sourceText: stringValue(item.sourceText),
+      imageUrls: imageUrlsFromRecord(item)
     }];
   });
 }
@@ -1887,7 +2386,8 @@ function readSemanticIngredientBenefitLinks(value: unknown): PdpSemanticIngredie
       benefit: stringValue(item.benefit),
       effect: stringValue(item.effect),
       sentence: stringValue(item.sentence),
-      sourceText: stringValue(item.sourceText)
+      sourceText: stringValue(item.sourceText),
+      imageUrls: imageUrlsFromRecord(item)
     }];
   });
 }
@@ -1905,7 +2405,8 @@ function readSemanticCitations(value: unknown): PdpSemanticCitation[] {
       publishedAt: stringValue(item.publishedAt),
       url: stringValue(item.url),
       finding: stringValue(item.finding),
-      sourceText: stringValue(item.sourceText)
+      sourceText: stringValue(item.sourceText),
+      imageUrls: imageUrlsFromRecord(item)
     }];
   });
 }
@@ -2102,7 +2603,15 @@ function readOcrTextsFromNode(value: unknown): OcrTextCandidateInput[] {
       return;
     }
     const scopedImageUrl = isRecord(node) ? ocrImageUrlFromRecord(node) ?? imageUrl : imageUrl;
-    if (Array.isArray(node) && key && /lines?|blocks?|paragraphs?|sentences?|textBlocks?/i.test(key)) {
+    // 한 전사의 줄 목록은 이어붙여야 한다 — 줄바꿈은 시각적 줄바꿈일 뿐이다.
+    // 그러나 문장의 **목록**은 다르다. `evidenceSentences`는 서로 다른 이미지에서
+    // 온 독립 문장을 모아 둔 것이므로, 줄처럼 이어붙이면 없는 인접이 생긴다 —
+    // 1027 실측에서 패키지 라벨과 성분 설명 문장이 그렇게 한 문장으로 붙어
+    // `Product.description`에 실렸고, 그 라벨의 수치는 제품컷의 오독이었다.
+    const joinsLinesOfOneTranscription = key !== undefined
+      && /lines?|blocks?|paragraphs?|textBlocks?/i.test(key)
+      && !/sentences?/i.test(key);
+    if (Array.isArray(node) && joinsLinesOfOneTranscription) {
       const joined = flattenTextValues(node)
         .filter((text) => !isUrlLikeText(text))
         .join("\n");
@@ -2161,6 +2670,29 @@ function ocrImageUrlFromRecord(value: Record<string, unknown>): string | undefin
   ].map(stringValue).find((candidate): candidate is string =>
     Boolean(candidate && !candidate.startsWith("data:") && (/^https?:\/\//i.test(candidate) || candidate.includes("#")))
   );
+}
+
+function isValidOcrImageUrl(candidate: string | undefined): candidate is string {
+  return Boolean(candidate && !candidate.startsWith("data:") && (/^https?:\/\//i.test(candidate) || candidate.includes("#")));
+}
+
+/**
+ * A sentence can now be transcribed from more than one image (e.g. a claim
+ * split across a hero shot and a detail crop). Prefers the plural
+ * `imageUrls` list when it validates; a source that only ever emitted the
+ * singular `imageUrl`/`src`/... fields still promotes to a one-element list.
+ */
+function imageUrlsFromRecord(value: Record<string, unknown>): string[] | undefined {
+  if (Array.isArray(value.imageUrls)) {
+    const urls = value.imageUrls
+      .map((entry) => (typeof entry === "string" ? entry : stringValue(entry)))
+      .filter(isValidOcrImageUrl);
+    if (urls.length > 0) {
+      return urls;
+    }
+  }
+  const single = ocrImageUrlFromRecord(value);
+  return single ? [single] : undefined;
 }
 
 function cleanOcrRawText(value: string): string {
@@ -2261,7 +2793,25 @@ function isOcrBlockHeadingAt(lines: string[], index: number): boolean {
   if (!isOcrHeadingCandidate(line) || !next) {
     return false;
   }
+  // 앞 줄이 이어짐을 요구하면 이 줄은 그 절의 끝이다. 줄 스스로는 이어짐 표지를
+  // 갖지 않는 경우가 흔하다 — "…수분 충전으로 / 탁월한 수분 지속 효과"에서 뒤
+  // 줄은 명사로 끝나므로 제 형태만 보면 제목처럼 보이지만, 앞 줄의 조사가 그
+  // 줄을 자기 문장 안으로 부른다. 앞 줄을 보지 않으면 이 관계를 알 수 없어,
+  // 예전에는 그 자리에 오는 내용 낱말(효과·컨트롤·보습…)을 목록으로 나열해
+  // 메우고 있었다.
+  if (demandsFollowingLine(lines[index - 1])) {
+    return false;
+  }
   return isOcrBodyContinuationLine(next) || Boolean(lines[index + 2] && isOcrBodyContinuationLine(lines[index + 2] ?? ""));
+}
+
+/** 이 줄이 다음 줄을 자기 절 안으로 부르는지(조사·연결어미·관형형으로 끝나는지). */
+function demandsFollowingLine(value: string | undefined): boolean {
+  const text = cleanText(value ?? "");
+  if (!text || /[.!?。！？]$/.test(text)) {
+    return false;
+  }
+  return /[가-힣]/.test(text) ? continuesKoreanClause(text) : /\b(?:and|or|with|of|for|to|that|which|by|from|into|using|including)$/i.test(text);
 }
 
 function isOcrHeadingCandidate(value: string): boolean {
@@ -2287,10 +2837,42 @@ function isOcrBodyContinuationLine(value: string): boolean {
     return true;
   }
   if (/[가-힣]/.test(text)) {
-    return /(?:기술로|징크로|세라마이드로|성분으로|구조의|캡슐로|길이가|롱체인|연결고리|조여|보완|채워|맞추|효과|컨트롤|보습|개선|충전|흡수|피지|과잉|민감피부|부족한|피부의|피부\s|수분|장벽)/.test(text);
+    return continuesKoreanClause(text);
   }
   return /\b(?:is|are|was|were|helps?|supports?|combines?|enhances?|absorbs?|controls?|provides?|delivers?|working|for|by|that|and|of|to|from|with)\b/i.test(text)
     || /\b(?:patented|fast|rapid|skin|moisture|barrier|sebum|control|hydration|lasting|formula|technology)\b/i.test(text);
+}
+
+/**
+ * 이 한국어 줄이 다음 줄로 이어지는지 — 문법으로 판정한다.
+ *
+ * OCR은 한 문장을 화면 폭에 맞춰 끊어 보내고, 그 줄바꿈은 시각적 줄바꿈일 뿐이다.
+ * 이어짐을 내용 어휘 목록(`세라마이드로|성분으로|보습|장벽`…)으로 판정하던 탓에,
+ * 목록에 없는 낱말로 끝난 줄이 제목으로 읽혔다. 1027 실측에서 `연약하고 건조해진`이
+ * 제목으로 오판되어 뒤 줄과 마침표로 이어붙었고, `연약하고 건조해진. 피부 부위에
+ * 미세 분사를 합니다.`라는 깨진 문장이 HowTo 1단계로 발행됐다(2단계는 사라졌다).
+ *
+ * 한국어는 절의 계속을 문법으로 표시한다 — 조사, 연결어미, 관형형. 어떤 상품이
+ * 와도 같은 규칙이 서므로 어휘 목록을 유지할 필요가 없다.
+ */
+function continuesKoreanClause(value: string): boolean {
+  const tail = cleanText(value).split(/\s+/).at(-1) ?? "";
+  if (!tail) {
+    return false;
+  }
+  // 여러 음절 조사·연결어미는 명사의 끝음절과 겹치지 않아 그대로 읽는다.
+  if (/(?:으로|로서|로써|에서|에게|또는|이나|까지|부터|보다|처럼|같이|하여|면서|지만|이며|이고|과의|와의)$/u.test(tail)) {
+    return true;
+  }
+  // 관형형 어미. "건조해진", "부족한", "채우는", "묶인"처럼 뒤 명사를 수식하며 이어진다.
+  if (tail.length >= 3 && /(?:[은는을를]|[가-힣]ㄴ|진|한|던|는|운|워진|해진|되는|하는|있는|없는)$/u.test(tail)) {
+    return true;
+  }
+  // 한 음절 조사는 명사의 끝음절과 형태가 같으므로("평가"의 "가") 어절이 세 음절
+  // 이상일 때만 조사로 읽는다. `로`는 "징크로"·"캡슐로"·"기술로"처럼 도구·수단을
+  // 표시하며 다음 절을 부르는데, 앞선 어휘 목록이 그 낱말들을 하나씩 나열해
+  // 메우고 있던 자리다.
+  return tail.length >= 3 && /(?:이|가|의|에|도|만|와|과|나|며|고|로)$/u.test(tail);
 }
 
 function looksLikeEnglishTitleLine(value: string): boolean {
@@ -2506,14 +3088,109 @@ function uniqueCategories(values: OcrSentenceCategory[]): OcrSentenceCategory[] 
   return Array.from(new Set(values));
 }
 
+/**
+ * A key like `ingredient`/`benefit` can name two very different things: a
+ * structural content section (prose the page actually wrote, e.g.
+ * `sections.INGREDIENTS`) or a bucket inside a classifier's/retriever's own
+ * output (`ocr.keywords.ingredient`, `aiAnalysis.keywords.ingredient`,
+ * `rag.chunks`). The bucket form carries no sentence context of its own — a
+ * term lands in it purely because a classifier judged the word
+ * ingredient-shaped, even when the word's only real occurrence on the page
+ * was inside a customer review about a different product. Bare values
+ * harvested from such a bucket are only trustworthy when the same term is
+ * independently attested by page prose that lives outside both review
+ * containers and other derived buckets; candidates matched inside a
+ * structural section keep their existing trust. Shared by the deterministic
+ * bootstrap (below) and the model-routed product-fact corpus
+ * (product-normalizer.ts) so both recognise the same buckets as derived.
+ */
+export function isDerivedKeywordOrChunkKey(key: string): boolean {
+  const normalized = key.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  return /(?:keyword|chunk|키워드|청크)/iu.test(normalized);
+}
+
+/**
+ * A section/chunk/review record tags its own scope with a sibling field
+ * (category/kind/type/…) rather than a distinctive key name — the record's
+ * own keys are generic ("text", "bullets"), so only the tag value marks it as
+ * customer review content. Excluding it by key name alone would miss it.
+ * Shared by the deterministic bootstrap (below) and the model-routed
+ * product-fact corpus (product-normalizer.ts).
+ */
+export function isReviewProvenanceRecord(record: Record<string, unknown>): boolean {
+  return Object.entries(record).some(([key, value]) =>
+    /^(?:category|kind|role|sectionType|source|sourceType|type)$/i.test(key)
+    && typeof value === "string"
+    && (categoryKeywords.review.test(value)
+      || /(?:customer\s*(?:experience|feedback)|testimonial|口コミ)/iu.test(value)));
+}
+
 function sectionTexts(source: unknown, pattern: RegExp): string[] {
-  const results: string[] = [];
-  visit(source, (value, key) => {
-    if (!key || !pattern.test(key)) {
+  const direct: string[] = [];
+  const derived: string[] = [];
+  const visitSection = (value: unknown, path: string[], key: string | undefined, depth: number) => {
+    if (depth > 8) {
       return;
     }
-    results.push(...flattenTextValues(value));
+    if (key && pattern.test(key)) {
+      const bucket = path.some(isDerivedKeywordOrChunkKey) ? derived : direct;
+      bucket.push(...flattenTextValues(value));
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => visitSection(item, path, String(index), depth + 1));
+    } else if (isRecord(value)) {
+      Object.entries(value).forEach(([childKey, childValue]) =>
+        visitSection(childValue, [...path, childKey], childKey, depth + 1));
+    }
+  };
+  visitSection(source, [], undefined, 0);
+
+  const cleanedDirect = unique(direct.map(cleanText).filter((value) => value.length > 0));
+  const cleanedDerived = unique(derived.map(cleanText).filter((value) => value.length > 0));
+  if (cleanedDerived.length === 0) {
+    return cleanedDirect;
+  }
+  const proseCorpus = nonReviewNonDerivedProseTexts(source).map(normalizeEvidenceEntityText);
+  const corroboratedDerived = cleanedDerived.filter((value) => {
+    const normalized = normalizeEvidenceEntityText(value);
+    return normalized.length > 0 && proseCorpus.some((prose) => prose.includes(normalized));
   });
+  return unique([...cleanedDirect, ...corroboratedDerived]);
+}
+
+/**
+ * Prose corpus used to corroborate derived-bucket keywords: every string leaf
+ * of the source except those inside a review container (customer language,
+ * not product fact) or a derived keyword/chunk bucket (classifier output,
+ * not a quotation — corroborating one derived bucket with another would be
+ * circular). Whole subtrees are pruned rather than filtered so nothing
+ * beneath an excluded key ever contributes text.
+ */
+function nonReviewNonDerivedProseTexts(source: unknown): string[] {
+  const results: string[] = [];
+  const visitProse = (value: unknown, depth: number) => {
+    if (depth > 8) {
+      return;
+    }
+    if (typeof value === "string") {
+      results.push(value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item) => visitProse(item, depth + 1));
+      return;
+    }
+    if (!isRecord(value) || isReviewProvenanceRecord(value)) {
+      return;
+    }
+    for (const [key, childValue] of Object.entries(value)) {
+      if (categoryKeywords.review.test(key) || isDerivedKeywordOrChunkKey(key)) {
+        continue;
+      }
+      visitProse(childValue, depth + 1);
+    }
+  };
+  visitProse(source, 0);
   return unique(results.map(cleanText).filter((value) => value.length > 0));
 }
 
@@ -2582,13 +3259,34 @@ function textCandidatesByKeyInsideReview(source: unknown, pattern: RegExp): stri
   return unique(results.map(cleanText).filter((value) => value.length > 0));
 }
 
+/**
+ * 근거 후보로 쓸 수 있는 모든 문자열. 파생 산출물은 지나친다.
+ *
+ * RAG 청크와 키워드 묶음은 상품 필드에서 **만들어진** 것이므로 그 자체가
+ * 근거가 될 수 없다. 이 원칙은 이미 세워져 있었으나(`isDerivedKeywordOrChunkKey`,
+ * 섹션 수집에만 적용) 이 수집 경로에는 빠져 있었고, 그 구멍이 발행물을 망쳤다 —
+ * 청크는 서로 다른 사실을 줄바꿈으로 묶어 두는데, 인접한 무관한 줄이 한 문장으로
+ * 이어붙어 `Ceramide 1000 ppm Moisturizing & strengthening for dry & sensitive
+ * skin 세라마이드는 … 성분입니다.`가 만들어지고 그대로 `Product.description`에
+ * 실렸다(1027 실측). 앞 절은 패키지 라벨이고 그 안의 수치는 제품컷의 오독이다.
+ */
 function allStrings(value: unknown): string[] {
   const results: string[] = [];
-  visit(value, (node) => {
+  const collect = (node: unknown, key?: string, depth = 0) => {
+    if (depth > 8 || (key !== undefined && isDerivedKeywordOrChunkKey(key))) {
+      return;
+    }
     if (typeof node === "string") {
       results.push(cleanText(htmlToText(node)));
+      return;
     }
-  });
+    if (Array.isArray(node)) {
+      node.forEach((item, index) => collect(item, String(index), depth + 1));
+    } else if (isRecord(node)) {
+      Object.entries(node).forEach(([childKey, childValue]) => collect(childValue, childKey, depth + 1));
+    }
+  };
+  collect(value);
   return results.filter((text) => text.length > 0);
 }
 
@@ -2697,9 +3395,52 @@ function absolutizeUrl(value: string, base?: string): string {
   }
 }
 
+/**
+ * A clause the review excludes from what it recommends.
+ *
+ * `탄력개선이 필요한 연령대 제외 모두 만족할 제품이` recommends the product to
+ * everyone but one group, and the attribute named inside that exclusion is the
+ * reason the group is left out — not something the review says the product does.
+ *
+ * The markers are scope-exclusion function words, a closed class. No product or
+ * benefit vocabulary appears here, so no category can fall out of the rule, and
+ * a complaint cue cancelled by a negation (`당김이 없고`) is a separate judgement
+ * that {@link ../review-sentiment} already owns.
+ */
+const reviewScopeExclusionPattern = /(?:제외|빼고|말고|외에는)(?![가-힣])|\bexcept\b|\bother\s+than\b|\baside\s+from\b/iu;
+
+/**
+ * A clause with the noun phrase its exclusion marker governs removed.
+ *
+ * The marker scopes what precedes it — `탄력개선이 필요한 연령대 제외 모두 만족할
+ * 제품이` excludes the group that needs elasticity improvement, and names the
+ * attribute only to say who the recommendation is not for. What follows the
+ * marker is the recommendation itself and stays.
+ *
+ * Dropping the whole clause was too broad: `가격 말고는 다 만족합니다 보습 탄력
+ * 피부결 다 좋아요` lost every keyword it states.
+ */
+function withoutExcludedNounPhrase(clause: string): string[] {
+  const marker = clause.match(reviewScopeExclusionPattern);
+  if (!marker || marker.index === undefined) {
+    return [clause];
+  }
+  return [clause.slice(marker.index + marker[0].length)];
+}
+
 function extractReviewKeywords(text: string): string[] {
   return unique(text
-    .split(/[\s,./|·()[\]{}<>:;!?]+/)
+    // Read each clause with its own scope. Splitting the whole body into
+    // whitespace tokens separated a token from the clause that excluded it,
+    // and `탄력` was then published as a use-feel the reviews mention.
+    //
+    // The split does not require whitespace after the punctuation: Korean
+    // reviews routinely run sentences together (`좋아요.촉촉하고`), and
+    // requiring it joined them into one clause whose every keyword the
+    // exclusion then dropped.
+    .split(/(?<=[.!?。！？])\s*|[,，]/u)
+    .flatMap(withoutExcludedNounPhrase)
+    .flatMap((clause) => clause.split(/[\s./|·()[\]{}<>:;!?]+/))
     .map(cleanText)
     .filter((term) => term.length >= 2)
     .filter((term) => /보습|흡수|탄력|피부결|순한|만족|촉촉|texture|hydration|moisture|firm|lightweight|rich|absorbs|うるおい|保湿|ハリ|なじみ|満足/i.test(term)))
@@ -2767,6 +3508,83 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function unique(values: string[]): string[] {
   return Array.from(new Set(values.map(cleanText).filter(Boolean)));
+}
+
+/** A sourceTexts candidate paired with its OCR provenance, before dedupe/cap. */
+interface SourceTextEntry {
+  text: string;
+  meta?: PdpSourceTextMeta;
+}
+
+function toSourceTextEntries(texts: string[]): SourceTextEntry[] {
+  return texts.map((text) => ({ text }));
+}
+
+/**
+ * Mirrors `unique()`'s Set-based, first-occurrence dedupe on the cleaned text,
+ * but keeps each surviving entry's meta alongside it (the first entry to
+ * claim a given text wins its meta).
+ */
+function uniqueSourceTextEntries(entries: SourceTextEntry[]): SourceTextEntry[] {
+  const seen = new Set<string>();
+  const result: SourceTextEntry[] = [];
+  for (const entry of entries) {
+    const text = cleanText(entry.text);
+    if (!text || seen.has(text)) {
+      continue;
+    }
+    seen.add(text);
+    result.push({ text, meta: entry.meta });
+  }
+  return result;
+}
+
+/** Confidence of the OCR transcription that produced each image, keyed by image URL. */
+function buildOcrImageConfidenceMap(source: unknown): Map<string, number> {
+  const map = new Map<string, number>();
+  const imageTexts = getByPath(source, "sourceExtraction.ocr.imageTexts");
+  if (!Array.isArray(imageTexts)) {
+    return map;
+  }
+  for (const item of imageTexts) {
+    if (!isRecord(item)) {
+      continue;
+    }
+    const confidence = numberValue(item.confidence);
+    if (typeof confidence !== "number") {
+      continue;
+    }
+    for (const url of imageUrlsFromRecord(item) ?? []) {
+      map.set(url, confidence);
+    }
+  }
+  return map;
+}
+
+function minOcrConfidenceForImageUrls(
+  imageUrls: string[] | undefined,
+  confidenceByImageUrl: Map<string, number>
+): number | undefined {
+  let min: number | undefined;
+  for (const url of imageUrls ?? []) {
+    const confidence = confidenceByImageUrl.get(url);
+    if (typeof confidence !== "number") {
+      continue;
+    }
+    min = min === undefined ? confidence : Math.min(min, confidence);
+  }
+  return min;
+}
+
+function ocrSourceTextMetaFromInsight(
+  insight: OcrSentenceInsightInput,
+  confidenceByImageUrl: Map<string, number>
+): PdpSourceTextMeta {
+  const imageUrls = insight.imageUrls ?? (insight.imageUrl ? [insight.imageUrl] : undefined);
+  return {
+    imageUrls,
+    ocrConfidence: minOcrConfidenceForImageUrls(imageUrls, confidenceByImageUrl)
+  };
 }
 
 function uniqueFaq(values: PdpGeoFaqItem[]): PdpGeoFaqItem[] {
@@ -2851,7 +3669,7 @@ function isSensoryOnlyUsageInstruction(value: string): boolean {
 
 function isEvidenceOnlyUsageCandidate(value: string): boolean {
   const normalized = cleanSourceSignalText(value);
-  if (isSafetyOrTestClaimUsageCandidate(normalized)) {
+  if (isSafetyOrTestClaimUsage(normalized)) {
     return true;
   }
   if (/^(?:after|before|during)\s+\d+(?:\.\d+)?\s*(?:weeks?|days?|hours?)\b/i.test(normalized)) {
@@ -2867,7 +3685,7 @@ function isEvidenceOnlyUsageCandidate(value: string): boolean {
 
 function isNonInstructionUsageText(value: string): boolean {
   return isReviewLikeUsageCandidate(value)
-    || isSafetyOrTestClaimUsageCandidate(value)
+    || isSafetyOrTestClaimUsage(value)
     || isSuitabilityOrComparisonUsageCandidate(value);
 }
 
@@ -2900,16 +3718,6 @@ function isKoreanCustomerReviewNarrativeUsageLeak(value: string): boolean {
     || /(?:구매했|구매\s*했|구매했어요|필요해서\s*구매|배송|포장|도착했|득템|저렴한\s*가격|쓰기\s*전부터|쓰기도\s*전부터|기분이\s*정말\s*좋)/u.test(text)
     || /(?:초등학생|딸|아들|남편|어머니|엄마|가족)[^.!?。！？]{0,80}(?:구매|필요|사용|쓰|선크림)/u.test(text)
     || /(?:느낌이네요|느낌입니다|좋습니다|좋네요|좋아요|같아요|같습니다)\s*$/u.test(text) && !hasKoreanInstructionVerb(text);
-}
-
-function isSafetyOrTestClaimUsageCandidate(value: string): boolean {
-  const text = cleanSourceSignalText(value);
-  return /(?:테스트|시험)\s*완료|사용성\s*테스트|피부\s*자극\s*테스트|피부\s*테스트|안자극|하이포알러지|논코메도제닉|민감\s*피부\s*대상|소아와?\s*피부\s*테스트|소아\s*피부\s*테스트/i.test(text)
-    || /(?:patch\s*test|patch\s*testing|dermatologist[-\s]?tested|hypoallergenic|non[-\s]?comedogenic|safety\s+test|sensitive\s+skin\s+(?:users?\s+)?should|test\s+on\s+a\s+small\s+area)/i.test(text);
-}
-
-function hasConcreteKoreanUsageAction(value: string): boolean {
-  return hasKoreanInstructionVerb(value);
 }
 
 function normalizeSourceUsageInstruction(value: string): string {
@@ -2975,11 +3783,6 @@ function hasExplicitUsageAction(value: string): boolean {
     || /^\s*use\b/i.test(value)
     || /(?:^|[.;,]\s*)then\s+use\b/i.test(value)
     || /\buse\s+(?:morning|night|daily|twice|once|after|before|as|with|on|to)\b/i.test(value);
-}
-
-function hasKoreanInstructionVerb(value: string): boolean {
-  const text = cleanSourceSignalText(value);
-  return /(?:적당량|손에|물과\s*함께|거품\s*내|거품내|얼굴에|문지르|미온수|헹구|화장솜|덜어|펴\s*바르|펴\s*바릅|펴\s*발라|바르(?:고|며|듯|세요|십시오|기|면|는|도록)|바릅|바른\s*후|발라(?:주|주세요|줍니다|서|가며)|마사지(?:하듯|하[고여]|한\s*후|해|하세요|하며)|흡수(?:시켜|시키|될\s*때까지|되도록|해\s*주세요|시킵)|마무리(?:해|하세요|합니다|하십시오)|도포(?:해|하세요|합니다|하십시오|한\s*(?:뒤|후))|분사(?:를)?\s*(?:합니다|하세요|하십시오|해\s*주|하고|한\s*후)|뿌려\s*주|뿌려줍|뿌리세요|뿌리십시오|스프레이(?:를)?\s*(?:합니다|하세요|해)|사용\s*(?:해|하세요|합니다|십시오|한다|하시|할\s*때)|(?:샤워|세안|토너|스킨케어|아침|저녁|매일|데일리)[^.!?。！？\n]{0,40}사용(?:합니다|하세요|해\s*주세요|해|$))/.test(text);
 }
 
 function isReviewKeyword(value: string): boolean {

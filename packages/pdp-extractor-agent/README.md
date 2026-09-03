@@ -163,7 +163,7 @@ const run = await extractProductFromHtml(html, "https://example.com/products/ser
 
 ### Optional Product Profile Normalization
 
-기본 추출은 DOM/meta/JSON-LD/API key 후보를 보수적으로 사용해 `ProductProfile`을 부트스트랩합니다. 브랜드몰이나 사내 API마다 key 이름이 달라져 스크립트 후보를 계속 늘려야 하는 경우, `productNormalization.enabled` 또는 `customProductNormalizer`를 사용해 raw HTML/API payload, bootstrap product, typed RAG index, RAG 정책 문서를 함께 보고 field routing을 추론하게 할 수 있습니다.
+기본 추출은 DOM/meta/JSON-LD/API key 후보를 보수적으로 사용해 `ProductProfile`을 부트스트랩합니다. 브랜드몰이나 사용자 지정 API마다 key 이름이 달라져 스크립트 후보를 계속 늘려야 하는 경우, `productNormalization.enabled` 또는 `customProductNormalizer`를 사용해 raw HTML/API payload, bootstrap product, typed RAG index, RAG 정책 문서를 함께 보고 field routing을 추론하게 할 수 있습니다.
 
 모델/커스텀 agent가 제안한 값은 원본 소스 또는 bootstrap product에 근거가 있는 경우에만 `geoProduct`로 반영됩니다. 적용/거절 근거는 `diagnostics.evidence`, 경고는 `diagnostics.warnings`, 토큰 사용량은 `diagnostics.runtimeUsage.steps`에 남습니다.
 
@@ -180,7 +180,7 @@ const run = await extractProductFromHtml(html, sourceUrl, {
 });
 ```
 
-사내 catalog normalization agent가 있으면 provider adapter 대신 `customProductNormalizer`를 주입할 수 있습니다.
+사용자 지정 catalog normalization agent가 있으면 provider adapter 대신 `customProductNormalizer`를 주입할 수 있습니다.
 
 ### `createProductExtractorRestHandler`
 

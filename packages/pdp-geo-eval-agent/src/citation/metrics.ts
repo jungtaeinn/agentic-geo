@@ -22,6 +22,12 @@
  * Deviation from AutoGEO: word counting keeps any token containing Hangul/CJK
  * characters (Korean words are routinely 1-2 syllables, so AutoGEO's
  * "length > 2" latin heuristic would drop most Korean content words).
+ *
+ * Deviation from AutoGEO: a citation group that follows terminal punctuation
+ * stays with the sentence it cites. The answer prompt asks for the citation to
+ * immediately follow each sentence, and engines write it after the period, so
+ * splitting on punctuation alone would strand the marker as a wordless
+ * sentence and leave the claim itself uncited.
  */
 
 export interface CitationSentence {
@@ -62,7 +68,36 @@ export interface CitationVisibilityScore {
   shares: ImpressionShares;
 }
 
-const citationGroupPattern = /\[\s*(\d+(?:\s*[,;]\s*\d+)*)\s*\]/g;
+/**
+ * The `[n]` / `[1, 2]` citation grammar. The sentence splitter and the citation
+ * extractor both derive from these sources, so a future grammar change (a range
+ * form, say) cannot leave the two disagreeing — a disagreement would orphan
+ * markers from their sentences again.
+ */
+/** The index list inside a group: `0`, `1, 2`, `1; 2`. */
+const CITATION_INDEX_LIST_SOURCE = "\\d+(?:\\s*[,;]\\s*\\d+)*";
+const CITATION_GROUP_SOURCE = `\\[\\s*(?:${CITATION_INDEX_LIST_SOURCE})\\s*\\]`;
+/** A run of groups one sentence may carry: `[0][1]` and `[0] [1]` alike. */
+const CITATION_GROUP_RUN_SOURCE = `(?:${CITATION_GROUP_SOURCE})(?:\\s*${CITATION_GROUP_SOURCE})*`;
+const TERMINAL_PUNCTUATION_CLASS = "[.!?…。？！]";
+
+/** Same grammar, capturing the index list for extraction. */
+const citationGroupPattern = new RegExp(`\\[\\s*(${CITATION_INDEX_LIST_SOURCE})\\s*\\]`, "g");
+
+/**
+ * Breaks after terminal punctuation, except where a citation group follows —
+ * that marker belongs to the sentence it cites, so the break moves past it.
+ *
+ * Both alternatives decide before `\s+` consumes anything: a lookahead placed
+ * after `\s+` is defeated by greedy backtracking (the engine gives one space
+ * back, the next character is a space rather than `[`, and the guard passes),
+ * which is exactly how the original defect survives two or more spaces.
+ */
+const SENTENCE_BOUNDARY_PATTERN = new RegExp(
+  `(?<=${TERMINAL_PUNCTUATION_CLASS})(?!\\s*${CITATION_GROUP_SOURCE})\\s+`
+    + `|(?<=${TERMINAL_PUNCTUATION_CLASS}\\s*${CITATION_GROUP_RUN_SOURCE})(?!\\s*${CITATION_GROUP_SOURCE})\\s+`,
+  "u"
+);
 
 /** Splits an answer into ordered sentences with their `[n]` citations. */
 export function extractCitationSentences(answer: string): CitationSentence[] {
@@ -317,9 +352,11 @@ export function zNormalizeScores(values: number[]): number[] {
 
 function splitSentences(line: string): string[] {
   // Deterministic splitter: break after terminal punctuation (latin + CJK)
-  // followed by whitespace. Avoids splitting decimals ("4.9점") because a
-  // digit boundary requires whitespace after the period.
-  return line.split(/(?<=[.!?…。？！])\s+/u);
+  // followed by whitespace, keeping any citation group that follows with the
+  // sentence it cites (see SENTENCE_BOUNDARY_PATTERN). Avoids splitting
+  // decimals ("4.9점") because a digit boundary requires whitespace after the
+  // period.
+  return line.split(SENTENCE_BOUNDARY_PATTERN);
 }
 
 function extractCitationIndices(sentence: string): number[] {

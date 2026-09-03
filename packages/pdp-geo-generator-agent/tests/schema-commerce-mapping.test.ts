@@ -9,7 +9,7 @@ import {
   sanitizeSkuValue
 } from "../src/schema-values";
 
-describe("schema-values (commerce contract shared commerce normalization)", () => {
+describe("schema-values (GEO-128 shared commerce normalization)", () => {
   it("maps canonical, URL, cased, and merchant-phrase availability values to the official enum", () => {
     expect(normalizeAvailabilityToken("InStock")).toBe("InStock");
     expect(normalizeAvailabilityToken("IN_STOCK")).toBe("InStock");
@@ -63,7 +63,7 @@ describe("schema-values (commerce contract shared commerce normalization)", () =
   });
 });
 
-describe("generatePdpGeo commerce mapping (commerce contract)", () => {
+describe("generatePdpGeo commerce mapping (GEO-128)", () => {
   const baseProduct = {
     name: "Barrier Hydro Soothing Cream",
     description: "Hydrating cream for dry skin and skin barrier care.",

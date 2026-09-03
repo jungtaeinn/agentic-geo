@@ -39,6 +39,30 @@ export function cleanUsageText(value: string): string {
 }
 
 /**
+ * The wash/rinse action family, stated once for every predicate that needs it.
+ *
+ * `씻다` is the ordinary Korean verb for rinsing a cleanser off. It was in
+ * {@link isConcreteUsageAction} and missing from the three cue predicates
+ * beside it, so the cleanser's own second step (`…미온수로 깨끗이 씻어냅니다`)
+ * was published by the renderer and then rejected by the validator. The cost
+ * was not only the warning: a rejected HowTo step reverts the whole
+ * proofreading pass, so the FAQ edits in that pass died with it.
+ *
+ * This is the second family to sit in one vocabulary and be absent from its
+ * neighbours — the spray/mist family was the first. So the family is written
+ * here and the four predicates below OR it in, rather than each growing a
+ * fifth copy that can drift again.
+ *
+ * Only inflected verb forms are listed. The bare nouns `세안` and `클렌징` are
+ * deliberately absent: in `세안 후에도 피부가 편안합니다` the noun is an
+ * adverbial inside a use-feel sentence, and reading it as an action would turn
+ * customer impressions into usage steps.
+ */
+export function hasWashActionCue(value: string): boolean {
+  return /(?:씻어(?:내|낸|주|줍|냅|서|요)|씻습니다|씻으(?:세요|십시오)|씻고|씻은\s*(?:뒤|후)|세안(?:하고|하며|해|하세요|하십시오|합니다|한\s*(?:뒤|후))|닦아(?:\s*내|\s*주|서)|wash\s+(?:off|away|with|your|the)|洗い流)/i.test(value);
+}
+
+/**
  * Sentence function: names a concrete application action the customer
  * performs with the product (dispense, spread, pat, rinse, SPRAY/MIST, …).
  * Union of all previous per-file cue sets plus the spray/mist verb family
@@ -46,7 +70,8 @@ export function cleanUsageText(value: string): string {
  * use as their primary application verb.
  */
 export function hasProcedureActionCue(value: string): boolean {
-  return /(?:덜어|적셔|올려두|펴\s*바르|펴\s*바릅|펴\s*발라|바르(?:고|며|듯|세요|십시오|기|면|는|도록)|바릅|바른\s*후|발라(?:주|주세요|줍니다|서|가며)|두드려|흡수(?!감)|마사지|문지르|헹구|헹굽|거품|도포(?!감)|분사(?!력)|뿌려|뿌리(?:세요|십시오|고)|스프레이|마무리(?:해|하세요|합니다|하십시오)|사용(?:해|하세요|합니다|하십시오|할\s*수\s*있)|apply|dispense|spread|smooth|pat|press|absorb|massage|lather|rinse|pump|take|spray|spritz|use\s+as|なじませ|塗布|すすぎ|マッサージ|吹きかけ|噴射)/i.test(value);
+  return hasWashActionCue(value)
+    || /(?:덜어|적셔|올려두|펴\s*바르|펴\s*바릅|펴\s*발라|바르(?:고|며|듯|세요|십시오|기|면|는|도록)|바릅|바른\s*후|발라(?:주|주세요|줍니다|서|가며)|두드려|흡수(?!감)|마사지|문지르|헹구|헹굽|거품|도포(?!감)|분사(?!력)|뿌려|뿌리(?:세요|십시오|고)|스프레이|마무리(?:해|하세요|합니다|하십시오)|사용(?:해|하세요|합니다|하십시오|할\s*수\s*있)|apply|dispense|spread|smooth|pat|press|absorb|massage|lather|rinse|pump|take|spray|spritz|use\s+as|なじませ|塗布|すすぎ|マッサージ|吹きかけ|噴射)/i.test(value);
 }
 
 /**
@@ -136,7 +161,8 @@ export function isProceduralUsageInstruction(value: string): boolean {
  */
 export function hasActionableApplicationVerb(value: string): boolean {
   const text = cleanUsageText(value);
-  return /\b(?:apply|dispense|massage|lather|rinse|pat|press|spread|smooth|warm|pump|spray|spritz)\b|なじませ|塗布|吹きかけ/i.test(text)
+  return hasWashActionCue(text)
+    || /\b(?:apply|dispense|massage|lather|rinse|pat|press|spread|smooth|warm|pump|spray|spritz)\b|なじませ|塗布|吹きかけ/i.test(text)
     || /(?:적당량|손에|물과\s*함께|거품\s*내|거품내|얼굴에|문지르|미온수|헹구|화장솜|덜어|펴\s*바르|펴\s*바릅|펴\s*발라|바르(?:고|며|듯|세요|십시오|기|면|는|도록)|바릅|바른\s*후|발라(?:주|주세요|줍니다|서|가며)|마사지(?:하듯|하[고여]|한\s*후|해|하세요|하며)|흡수(?:시켜|시키|될\s*때까지|되도록|해\s*주세요|시킵)|마무리(?:해|하세요|합니다|하십시오)|도포(?:해|하세요|합니다|하십시오|한\s*(?:뒤|후))|분사(?:를)?\s*(?:합니다|하세요|하십시오|해\s*주|한\s*후)|뿌려\s*주|뿌려줍|뿌리세요|뿌리십시오|스프레이(?:를)?\s*(?:합니다|하세요|해))/.test(text);
 }
 
@@ -147,7 +173,8 @@ export function hasActionableApplicationVerb(value: string): boolean {
  */
 export function hasActionableApplicationVerbWithoutGenericApply(value: string): boolean {
   const text = cleanUsageText(value);
-  return /\b(?:apply|dispense|massage|lather|rinse|pat|press|spread|smooth|warm|pump|spray|spritz)\b|なじませ|塗布|吹きかけ/i.test(text)
+  return hasWashActionCue(text)
+    || /\b(?:apply|dispense|massage|lather|rinse|pat|press|spread|smooth|warm|pump|spray|spritz)\b|なじませ|塗布|吹きかけ/i.test(text)
     || /(?:적당량|손에|물과\s*함께|거품\s*내|거품내|얼굴에|문지르|미온수|헹구|화장솜|덜어|펴\s*바르|펴\s*바릅|펴\s*발라|발라(?:주|주세요|줍니다|서|가며)|마사지(?:하듯|하[고여]|한\s*후|해|하세요|하며)|흡수(?:시켜|시키|될\s*때까지|되도록|해\s*주세요|시킵)|마무리(?:해|하세요|합니다|하십시오)|도포(?:해|하세요|합니다|하십시오|한\s*(?:뒤|후))|분사(?:를)?\s*(?:합니다|하세요|하십시오|해\s*주|한\s*후)|뿌려\s*주|뿌려줍|뿌리세요|뿌리십시오|스프레이(?:를)?\s*(?:합니다|하세요|해))/.test(text);
 }
 
@@ -157,11 +184,28 @@ export function hasActionableApplicationVerbWithoutGenericApply(value: string): 
  */
 export function hasKoreanInstructionVerb(value: string): boolean {
   const text = cleanUsageText(value);
-  return /(?:적당량|손에|물과\s*함께|거품\s*내|거품내|얼굴에|문지르|미온수|헹구|화장솜|덜어|펴\s*바르|펴\s*바릅|펴\s*발라|바르(?:고|며|듯|세요|십시오|기|면|는|도록)|바릅|바른\s*후|발라(?:주|주세요|줍니다|서|가며)|마사지(?:하듯|하[고여]|한\s*후|해|하세요|하며)|흡수(?:시켜|시키|될\s*때까지|되도록|해\s*주세요|시킵)|마무리(?:해|하세요|합니다|하십시오)|도포(?:해|하세요|합니다|하십시오|한\s*(?:뒤|후))|분사(?:를)?\s*(?:합니다|하세요|하십시오|해\s*주|한\s*후)|뿌려\s*주|뿌려줍|뿌리세요|뿌리십시오|스프레이(?:를)?\s*(?:합니다|하세요|해)|사용\s*(?:해|하세요|합니다|하십시오|한다|하시)|(?:샤워|세안|토너|스킨케어|아침|저녁|매일|데일리)[^.!?。！？\n]{0,40}사용(?:합니다|하세요|해\s*주세요|해|$))/.test(text);
+  return hasWashActionCue(text)
+    || /(?:적당량|손에|물과\s*함께|거품\s*내|거품내|얼굴에|문지르|미온수|헹구|화장솜|덜어|펴\s*바르|펴\s*바릅|펴\s*발라|바르(?:고|며|듯|세요|십시오|기|면|는|도록)|바릅|바른\s*후|발라(?:주|주세요|줍니다|서|가며)|마사지(?:하듯|하[고여]|한\s*후|해|하세요|하며)|흡수(?:시켜|시키|될\s*때까지|되도록|해\s*주세요|시킵)|마무리(?:해|하세요|합니다|하십시오)|도포(?:해|하세요|합니다|하십시오|한\s*(?:뒤|후))|분사(?:를)?\s*(?:합니다|하세요|하십시오|해\s*주|하고|한\s*후)|뿌려\s*주|뿌려줍|뿌리세요|뿌리십시오|스프레이(?:를)?\s*(?:합니다|하세요|해)|사용\s*(?:해|하세요|합니다|하십시오|한다|하시|할\s*때)|(?:샤워|세안|토너|스킨케어|아침|저녁|매일|데일리)[^.!?。！？\n]{0,40}사용(?:합니다|하세요|해\s*주세요|해|$))/.test(text);
 }
 
 export function hasConcreteKoreanUsageAction(value: string): boolean {
   return hasKoreanInstructionVerb(value);
+}
+
+/**
+ * Sentence function: the text states that the product was tested or is safe for
+ * a group — not a direction the customer follows.
+ *
+ * Three copies of this lived in the generator, the normalizer and the
+ * validator, and the validator's copy had **no English clause at all**. So an
+ * English safety sentence was classified as a safety claim on the way out and
+ * not on the way back: the renderer published it and the validator judged it a
+ * usage step. That publish/validate disagreement is why this module exists.
+ */
+export function isSafetyOrTestClaimUsage(value: string): boolean {
+  const text = cleanUsageText(value);
+  return /(?:테스트|시험)\s*완료|사용성\s*테스트|피부\s*자극\s*테스트|피부\s*테스트|안자극|하이포알러지|논코메도제닉|민감\s*피부\s*대상|소아와?\s*피부\s*테스트|소아\s*피부\s*테스트/iu.test(text)
+    || /(?:patch\s*test|patch\s*testing|dermatologist[-\s]?tested|hypoallergenic|non[-\s]?comedogenic|safety\s+test|sensitive\s+skin\s+(?:users?\s+)?should|test\s+on\s+a\s+small\s+area)/iu.test(text);
 }
 
 /**
@@ -207,7 +251,24 @@ export function isStitchedMarketingPageDump(value: string): boolean {
   const uppercaseRuns = text.match(/\b[\p{Lu}][\p{Lu}\p{M}'’-]{3,}\b/gu) ?? [];
   if (uppercaseRuns.length >= 6) return true;
   if ((text.match(/(?:\bStep|단계)\s*\d/giu) ?? []).length >= 3) return true;
-  return /\d+(?:\.\d+)?\s*[%％]\s+\d+(?:\.\d+)?\s*[%％]\s+\d+(?:\.\d+)?\s*[%％]/u.test(text);
+  return hasContextFreeFigureRun(text);
+}
+
+/**
+ * Three percentages in a row with nothing between them but whitespace and, at
+ * most, the sign or footnote marker a badge is printed with.
+ *
+ * This is what an unpredicated figure looks like. Prose cannot produce it: a
+ * sentence has to put a subject or a predicate between two of its measurements,
+ * so consecutive bare percentages only occur where a layout — a badge strip, a
+ * before/after panel — was transcribed in reading order. The tolerance for a
+ * sign or marker is the whole point of stating it here rather than inline: the
+ * run this was written for is printed as `+63.6% +84.3% +84.3%`, and a rule
+ * that demanded plain whitespace between the badges missed it.
+ */
+export function hasContextFreeFigureRun(value: string): boolean {
+  return /\d+(?:\.\d+)?\s*[%％]\s*[+\-−±*＊※·•]?\s*\d+(?:\.\d+)?\s*[%％]\s*[+\-−±*＊※·•]?\s*\d+(?:\.\d+)?\s*[%％]/u
+    .test(cleanUsageText(value));
 }
 
 export function isRawPageTextBlock(value: string): boolean {

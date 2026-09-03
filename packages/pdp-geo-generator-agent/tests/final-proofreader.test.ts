@@ -463,7 +463,7 @@ describe("finalProofreadPdpGeoArtifacts", () => {
       ]));
   });
 
-  it("excludes an FAQ pair from the model request when either side lacks exact provenance", async () => {
+  it("excludes only the FAQ half that lacks exact provenance, and still sends the bound half", async () => {
     const input = applicationInput();
     input.publicCopyProvenance = input.publicCopyProvenance?.filter((item) => !item.fieldPath.endsWith("acceptedAnswer.text"));
     let requestedPaths: string[] = [];
@@ -476,9 +476,14 @@ describe("finalProofreadPdpGeoArtifacts", () => {
       }
     });
 
-    expect(requestedPaths.some((path) => path.startsWith("FAQPage."))).toBe(false);
-    expect(result.diagnostics.skippedFields.filter((item) => item.fieldPath.startsWith("FAQPage."))).toHaveLength(2);
-    expect(result.diagnostics.warnings.some((item) => item.includes("FAQPage.mainEntity[0]"))).toBe(true);
+    // The unbound half is still never sent — that part of the contract is what
+    // keeps an unsupported sentence from being rewritten. What changed is that
+    // it no longer takes its partner down with it.
+    expect(requestedPaths).not.toContain("FAQPage.mainEntity[0].acceptedAnswer.text");
+    expect(requestedPaths).toContain("FAQPage.mainEntity[0].name");
+    expect(result.diagnostics.skippedFields.map((item) => item.fieldPath))
+      .toContain("FAQPage.mainEntity[0].acceptedAnswer.text");
+    expect(result.diagnostics.warnings.some((item) => item.includes("FAQPage.mainEntity[0].acceptedAnswer.text"))).toBe(true);
   });
 
   it("does not create provenance from an unrelated keyword or a partial model-plan citation", async () => {

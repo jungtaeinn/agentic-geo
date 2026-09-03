@@ -18,7 +18,7 @@ describe("GeoGenerationRepository guarded transitions", () => {
 
   async function seed(status: string): Promise<void> {
     await db.dataSource.query(
-      `insert into neo.geo_generation
+      `insert into agentic_geo.geo_generation
        (geo_generation_id, channel_id, dedup_key, locale, product, product_sn, status, version, claimed_at, claimed_by, created_at, updated_at)
        values ($1,$2,$3,'ko-KR','{}','SN-TEST',$4,0,now(),'batch-1',now(),now())
        on conflict (geo_generation_id) do update set status=excluded.status, version=0, claimed_by='batch-1', claimed_at=now()`,
@@ -34,7 +34,7 @@ describe("GeoGenerationRepository guarded transitions", () => {
     expect(await repo.transitionToSucceeded(id)).toBe(false);
 
     const row = await db.dataSource.query(
-      "select version, claimed_at, claimed_by from neo.geo_generation where geo_generation_id=$1",
+      "select version, claimed_at, claimed_by from agentic_geo.geo_generation where geo_generation_id=$1",
       [id],
     );
     expect(Number(row[0].version)).toBe(1);
@@ -46,7 +46,7 @@ describe("GeoGenerationRepository guarded transitions", () => {
     await seed("PROCESSING");
     expect(await repo.transitionToFailed(id, "GEN_ERROR", "boom")).toBe(true);
     const row = await db.dataSource.query(
-      "select status, error_phase, error_code, error_detail from neo.geo_generation where geo_generation_id=$1",
+      "select status, error_phase, error_code, error_detail from agentic_geo.geo_generation where geo_generation_id=$1",
       [id],
     );
     expect(row[0].status).toBe("FAILED");

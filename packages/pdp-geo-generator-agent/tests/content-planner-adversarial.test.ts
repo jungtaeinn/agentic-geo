@@ -145,8 +145,8 @@ describe("adversarial evidence-bound content planning", () => {
 
   it("retains audited Korean product FAQs despite natural inflection and separated numeric question context", async () => {
     const source = product({
-      name: "배리어케어365 크림",
-      description: "배리어케어365 크림은 건조하고 민감한 피부 고객을 위한 장벽 보습 크림입니다.",
+      name: "모이베리어365 크림",
+      description: "모이베리어365 크림은 건조하고 민감한 피부 고객을 위한 장벽 보습 크림입니다.",
       category: "크림",
       benefits: ["피부 장벽 보습"],
       ingredients: ["고밀도 세라마이드 캡슐"],
@@ -172,8 +172,8 @@ describe("adversarial evidence-bound content planning", () => {
       faq: [
         {
           include: true,
-          question: "배리어케어365 크림은 건조하고 민감한 피부 고객에게 적합한가요?",
-          answer: "배리어케어365 크림은 건조하고 민감한 피부 고객이 장벽 보습을 고려할 때 적합한 크림입니다.",
+          question: "모이베리어365 크림은 건조하고 민감한 피부 고객에게 적합한가요?",
+          answer: "모이베리어365 크림은 건조하고 민감한 피부 고객이 장벽 보습을 고려할 때 적합한 크림입니다.",
           intent: "target-customer-suitability",
           cep: "건조하고 민감한 피부의 장벽 보습",
           evidenceIds: ids("identity", "description", "audience", "benefit"),
@@ -182,7 +182,7 @@ describe("adversarial evidence-bound content planning", () => {
         },
         {
           include: true,
-          question: "배리어케어365 크림의 보습 개선 근거는 무엇인가요?",
+          question: "모이베리어365 크림의 보습 개선 근거는 무엇인가요?",
           answer: "인체적용시험에서 사용 직후 보습량은 사용 전보다 2배 증가했습니다.",
           intent: "official-measurement",
           cep: "공식 보습 측정 결과 확인",
@@ -192,7 +192,7 @@ describe("adversarial evidence-bound content planning", () => {
         },
         {
           include: true,
-          question: "배리어케어365 크림은 언제, 어떻게 바르나요?",
+          question: "모이베리어365 크림은 언제, 어떻게 바르나요?",
           answer: "아침과 저녁 세안 후 적당량을 피부에 골고루 펴 바릅니다.",
           intent: "usage-order",
           cep: "아침과 저녁 세안 후 사용",
@@ -202,7 +202,7 @@ describe("adversarial evidence-bound content planning", () => {
         },
         {
           include: true,
-          question: "배리어케어365 크림에는 어떤 피부 안전성 테스트 완료 표기가 있나요?",
+          question: "모이베리어365 크림에는 어떤 피부 안전성 테스트 완료 표기가 있나요?",
           answer: "민감 피부 자극 테스트와 피부과 테스트 완료가 표기되어 있습니다.",
           intent: "completed-safety-tests",
           cep: "민감 피부 테스트 완료 항목 확인",
@@ -238,8 +238,8 @@ describe("adversarial evidence-bound content planning", () => {
 
   it("retains audited rich-product FAQ answers when cited metric atoms contain extra sample and study numbers", async () => {
     const source = product({
-      name: "배리어케어365 크림",
-      description: "배리어케어365 크림은 건조하고 민감한 피부 고객을 위한 장벽 보습 크림입니다.",
+      name: "모이베리어365 크림",
+      description: "모이베리어365 크림은 건조하고 민감한 피부 고객을 위한 장벽 보습 크림입니다.",
       category: "크림",
       benefits: ["피부 장벽 관리", "수분 케어"],
       ingredients: ["고밀도 세라마이드 캡슐", "롱체인 세라마이드", "링커 세라마이드"],
@@ -272,8 +272,8 @@ describe("adversarial evidence-bound content planning", () => {
       faq: [
         {
           include: true,
-          question: "건조하고 민감한 피부 고객에게 배리어케어365 크림은 적합한가요?",
-          answer: "배리어케어365 크림은 건조하고 민감한 피부 고객이 피부 장벽 관리와 수분 케어를 고려할 때 선택할 수 있는 크림입니다.",
+          question: "건조하고 민감한 피부 고객에게 모이베리어365 크림은 적합한가요?",
+          answer: "모이베리어365 크림은 건조하고 민감한 피부 고객이 피부 장벽 관리와 수분 케어를 고려할 때 선택할 수 있는 크림입니다.",
           intent: "target-customer-suitability",
           cep: "건조하고 민감한 피부의 장벽 보습",
           evidenceIds: ids("identity", "description", "audience", "benefit"),
@@ -282,8 +282,8 @@ describe("adversarial evidence-bound content planning", () => {
         },
         {
           include: true,
-          question: "배리어케어365 크림의 보습량 증가 수치는 어떤 시험에서 나온 결과인가요?",
-          answer: "배리어케어365 크림은 여성 32명을 대상으로 진행한 완제품 인체적용시험에서 사용 직후 보습량이 사용 전 대비 2배 증가했습니다.",
+          question: "모이베리어365 크림의 보습량 증가 수치는 어떤 시험에서 나온 결과인가요?",
+          answer: "모이베리어365 크림은 여성 32명을 대상으로 진행한 완제품 인체적용시험에서 사용 직후 보습량이 사용 전 대비 2배 증가했습니다.",
           intent: "official-measurement",
           cep: "완제품 보습 시험 결과 확인",
           evidenceIds: ids("identity", "metric"),
@@ -292,8 +292,8 @@ describe("adversarial evidence-bound content planning", () => {
         },
         {
           include: true,
-          question: "배리어케어365 크림의 주요 성분과 기술은 무엇인가요?",
-          answer: "배리어케어365 크림에는 고밀도 세라마이드 캡슐, 롱체인 세라마이드, 링커 세라마이드가 포함되어 있습니다.",
+          question: "모이베리어365 크림의 주요 성분과 기술은 무엇인가요?",
+          answer: "모이베리어365 크림에는 고밀도 세라마이드 캡슐, 롱체인 세라마이드, 링커 세라마이드가 포함되어 있습니다.",
           intent: "ingredient-technology",
           cep: "세라마이드 캡슐 구성 확인",
           evidenceIds: ids("identity", "ingredient"),
@@ -302,7 +302,7 @@ describe("adversarial evidence-bound content planning", () => {
         },
         {
           include: true,
-          question: "배리어케어365 크림은 아침과 저녁 루틴에서 언제 바르나요?",
+          question: "모이베리어365 크림은 아침과 저녁 루틴에서 언제 바르나요?",
           answer: "아침과 저녁 세안 후 토너와 세럼 다음 단계에 피부에 골고루 펴 바릅니다.",
           intent: "usage-order",
           cep: "아침과 저녁 사용 순서",
@@ -312,7 +312,7 @@ describe("adversarial evidence-bound content planning", () => {
         },
         {
           include: true,
-          question: "배리어케어365 크림을 바를 때 알갱이가 느껴져도 사용할 수 있나요?",
+          question: "모이베리어365 크림을 바를 때 알갱이가 느껴져도 사용할 수 있나요?",
           answer: "크림에 함유된 캡슐은 바를 때 부드럽게 녹으며, 지속 사용에 불편감이 있으면 고객서비스센터로 연락하도록 안내합니다.",
           intent: "capsule-use-feel",
           cep: "캡슐 사용감 확인",
@@ -322,7 +322,7 @@ describe("adversarial evidence-bound content planning", () => {
         },
         {
           include: true,
-          question: "배리어케어365 크림은 어떤 피부 안전성 테스트를 완료했나요?",
+          question: "모이베리어365 크림은 어떤 피부 안전성 테스트를 완료했나요?",
           answer: "민감 피부 자극 테스트와 피부과 테스트 완료가 표기되어 있습니다.",
           intent: "completed-safety-tests",
           cep: "민감 피부 테스트 완료 항목 확인",

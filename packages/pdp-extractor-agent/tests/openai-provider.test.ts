@@ -112,7 +112,7 @@ describe("OpenAIKeywordClassifier image OCR", () => {
             images: [
               {
                 imageUrl: "https://cdn.example.com/detail.jpg",
-                text: "보태니컬 리뉴얼 크림\n인삼 안티에이징"
+                text: "보태니컬크림\n인삼 안티에이징"
               }
             ]
           })
@@ -147,7 +147,7 @@ describe("OpenAIKeywordClassifier image OCR", () => {
     expect(finalImagePart.image_url).toMatch(/^data:image\/jpeg;base64,/);
     expect(result.images[0]).toEqual({
       imageUrl: "https://cdn.example.com/detail.jpg",
-      text: "보태니컬 리뉴얼 크림\n인삼 안티에이징"
+      text: "보태니컬크림\n인삼 안티에이징"
     });
   });
 

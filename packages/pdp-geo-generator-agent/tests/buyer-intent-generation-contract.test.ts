@@ -173,7 +173,7 @@ describe("buyer-intent generation contracts", () => {
   it("recovers the first step of a numbered procedure whose leading marker was stripped", async () => {
     const run = await generatePdpGeo({
       product: {
-        name: "배리어케어 365 크림 미스트",
+        name: "모이베리어 365 크림 미스트",
         brand: "EXAMPLEDERMA",
         description: "세라마이드를 함유한 미세 분사 보습 미스트입니다.",
         category: "미스트",
@@ -388,17 +388,17 @@ describe("buyer-intent generation contracts", () => {
   it("keeps rich WebPage descriptions page-scoped while naming concrete supported information", async () => {
     const run = await generatePdpGeo({
       product: {
-        name: "배리어케어365 크림",
+        name: "모이베리어365 크림",
         brand: "EXAMPLEDERMA",
         category: "크림",
         description: "건조하고 민감한 피부 고객을 위한 장벽 보습 크림입니다.",
         benefits: ["피부 장벽 보습", "보습 지속"],
-        ingredients: ["고밀도 세라마이드 캡슐", "배리어 캡슐 기술"],
+        ingredients: ["고밀도 세라마이드 캡슐", "보타온 기술"],
         usage: ["아침과 저녁 세안 후 적당량을 피부에 골고루 펴 바릅니다."],
         options: ["80 mL"],
         metrics: ["인체적용시험에서 사용 직후 보습량은 사용 전 대비 2배 증가했습니다."],
         faq: [{
-          question: "배리어케어365 크림은 어떤 피부에 적합한가요?",
+          question: "모이베리어365 크림은 어떤 피부에 적합한가요?",
           answer: "건조하고 민감한 피부 고객을 위한 장벽 보습 크림입니다."
         }],
         reviews: {
@@ -406,7 +406,7 @@ describe("buyer-intent generation contracts", () => {
           keywords: ["촉촉한 사용감", "편안한 마무리"]
         },
         semanticFacts: {
-          ingredients: ["고밀도 세라마이드 캡슐", "배리어 캡슐 기술"],
+          ingredients: ["고밀도 세라마이드 캡슐", "보타온 기술"],
           benefits: ["피부 장벽 보습", "보습 지속"],
           effects: [],
           skinTypes: ["건조 피부", "민감 피부"],
@@ -441,23 +441,26 @@ describe("buyer-intent generation contracts", () => {
     const reverseSuitabilityFaq = faqItems.find((item) => /고객에게[^?？]*적합한가요/u.test(String(item.name)))!;
     const reverseSuitabilityAnswer = String((reverseSuitabilityFaq.acceptedAnswer as Record<string, JsonValue>).text);
 
-    expect(webPageDescription).toContain("배리어케어365 크림 상품 페이지는 EXAMPLEDERMA가 선보이는");
-    expect(webPageDescription).toMatch(/배리어케어365 크림은[^.]*건조하고 민감한 피부 고객을 위한 제품/u);
-    expect(webPageDescription).toMatch(/고밀도 세라마이드 캡슐, (?:배리어 캡슐|BarrierCapsule®) 기술을 주요 성분·기술로 포함하고/u);
+    expect(webPageDescription).toContain("모이베리어365 크림 상품 페이지는 EXAMPLEDERMA가 선보이는");
+    expect(webPageDescription).toMatch(/모이베리어365 크림은[^.]*건조하고 민감한 피부 고객을 위한 제품/u);
+    expect(webPageDescription).toMatch(/고밀도 세라마이드 캡슐, (?:보타온|BotanON®) 기술을 주요 성분·기술로 포함하고/u);
     expect(webPageDescription).toMatch(/테스트기관이[^.]*여성\s*32명을\s*대상으로\s*진행한\s*인체적용시험에서\s*사용\s*직후\s*보습량은\s*사용\s*전\s*대비\s*2배\s*증가했습니다/u);
     expect(webPageDescription).toContain("또한 민감 피부 자극 테스트와 피부과 테스트 등을 완료해 민감 피부를 고려한 안전성을 입증했습니다");
-    expect(webPageDescription).toContain("배리어케어365 크림은 80 mL 옵션으로 구성되어 있습니다");
+    expect(webPageDescription).toContain("모이베리어365 크림은 80 mL 옵션으로 구성되어 있습니다");
     expect(webPageDescription).not.toMatch(/페이지 본문에서는|페이지에서 확인할 수 있는|페이지에 공개된/u);
     expect(webPageDescription).not.toContain("구매 판단에 필요한");
     expect(webPageDescription).not.toContain("상품별 FAQ");
     expect(webPageDescription).not.toBe(productDescription);
-    expect(String(reverseSuitabilityFaq.name)).toMatch(/속건조와\s*피부\s*장벽\s*관리가\s*고민인\s*고객에게.*배리어케어365\s*크림은\s*적합한가요/u);
+    expect(String(reverseSuitabilityFaq.name)).toMatch(/속건조와\s*피부\s*장벽\s*관리가\s*고민인\s*고객에게.*모이베리어365\s*크림은\s*적합한가요/u);
     expect(reverseSuitabilityAnswer).toMatch(/건조하고\s*민감한\s*피부\s*고객을\s*위한\s*크림/u);
-    expect(reverseSuitabilityAnswer).toMatch(/배리어케어365\s*크림은[^.]*피부\s*장벽\s*관리[^.]*수분\s*케어를\s*돕습니다/u);
+    expect(reverseSuitabilityAnswer).toMatch(/모이베리어365\s*크림은[^.]*피부\s*장벽\s*관리[^.]*수분\s*케어를\s*돕습니다/u);
     expect(reverseSuitabilityAnswer).toMatch(/인체적용시험[^.]*사용\s*직후[^.]*2배\s*증가/u);
     expect(reverseSuitabilityAnswer).toMatch(/고밀도\s*세라마이드\s*캡슐[^.]*포함/u);
     expect(reverseSuitabilityAnswer).not.toMatch(/특정\s*성분이[^.]*단독|설명됩니다|안내됩니다/u);
-    expect(reverseSuitabilityAnswer).toMatch(/따라서[^.]*고려할\s*수\s*있습니다/u);
+    // Task 3: the closing "따라서 ... 고려할 수 있습니다" recap restated the
+    // opening target+benefit facts with no new information, so it is now
+    // excluded from the arc rather than rendered as a filler sentence.
+    expect(reverseSuitabilityAnswer).not.toMatch(/따라서[^.]*고려할\s*수\s*있습니다/u);
     expect(reverseSuitabilityAnswer).toContain("개인에 따라 사용 결과는 달라질 수 있습니다");
   });
 
@@ -639,8 +642,15 @@ describe("buyer-intent generation contracts", () => {
       .map((item) => `${String(item.name)} ${String((item.acceptedAnswer as Record<string, JsonValue>).text)}`)
       .join("\n");
 
-    expect(faqText).toContain("촉촉한 사용감과 흡수감이 특징입니다");
+    // The contract is the attribution and the joining, not which entry carries
+    // them. This product states no texture of its own — every sensory term
+    // here comes from a review — so the review question is the only one that
+    // publishes them, and it names them as customer wording rather than as a
+    // product characteristic. A product whose own copy describes its texture
+    // still publishes a separate factual texture answer.
+    expect(faqText).toMatch(/고객\s*리뷰에서는[^"]*촉촉한 사용감과 흡수감이 언급/u);
     expect(faqText).not.toContain("흡수감 사용감");
+    expect(faqText).not.toMatch(/제형이나\s*사용감은 어떤가요/u);
     expect(`${String(product.description)}\n${faqText}`).not.toMatch(/리뷰[^\n.!?。！？]{0,80}반복/u);
   });
 
@@ -723,7 +733,11 @@ describe("buyer-intent generation contracts", () => {
       .map((item) => String(item.name));
 
     expect(questions).toContain("하이드라 세럼의 구성 성분과 효능·효과는 무엇인가요?");
-    expect(questions).toContain("하이드라 세럼의 주요 효능·효과는 무엇이며, 공개된 인체적용시험 결과는 어떻게 나타났나요?");
+    // The audit phrasing is gone: a PDP-reported study is not "공개된", and a
+    // shopper asks whether the effect holds up rather than what a published
+    // trial reported. The question still names the product and still signals
+    // that a result exists.
+    expect(questions).toContain("하이드라 세럼은 어떤 효능이 있고, 시험 결과로도 확인되나요?");
   });
 
   it("drops a model-planned plain benefit question that the composition FAQ already answers", () => {

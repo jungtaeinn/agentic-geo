@@ -1,4 +1,4 @@
-# GEO-004 — 예시더마 배리어케어365 크림 미스트 (ko-KR)
+# GEO-004 — 예시더마 모이베리어365 크림 미스트 (ko-KR)
 #
 # 원본은 packages/pdp-geo-generator-agent/tests/fixtures/pdp-extractor-live-products.ts 의
 # 동결 픽스처(실제 PDP 수집본, 2026-07-31)이며 agentApiSubmitPayloads 계약을 따른다.
@@ -7,7 +7,7 @@
 # 원본 PDP와 달라지는 순간 비교 기준이 무너진다.
 
 id: GEO-004
-name: "예시더마 배리어케어365 크림 미스트 (ko-KR)"
+name: "예시더마 모이베리어365 크림 미스트 (ko-KR)"
 tags: ["examplederma","ko-KR","mist"]
 
 # agent-api 요청 본문 그대로. YAML은 JSON의 상위집합이라 API에 보내는 JSON을
@@ -15,17 +15,17 @@ tags: ["examplederma","ko-KR","mist"]
 request: {
     "locale": "ko-KR",
     "product": {
-      "canonicalUrl": "https://www.examplederma.com/web/product/view.do?prdSeq=1027",
-      "offerUrl": "https://www.examplederma.com/web/product/view.do?prdSeq=1027",
+      "canonicalUrl": "https://shop.example.com/web/product/view.do?prdSeq=1027",
+      "offerUrl": "https://shop.example.com/web/product/view.do?prdSeq=1027",
       "geoProduct": {
-        "name": "배리어케어 365 크림 미스트",
+        "name": "모이베리어 365 크림 미스트",
         "brand": "EXAMPLEDERMA",
         "description": "10,000ppm 함유된 고함량 세라마이드 미세분사로 피부장벽을 보호하는 세라마이드 보습 크림 미스트.",
         "images": [
-          "https://image.examplederma.com/upload/product/1027_217_DSPIMG_S.png",
-          "https://image.examplederma.com/upload/product/1027_885_DSPIMG_S.png",
-          "https://image.examplederma.com/upload/product/1027_886_DSPIMG_S.png",
-          "https://image.examplederma.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png"
+          "https://cdn.example.com/upload/product/1027_217_DSPIMG_S.png",
+          "https://cdn.example.com/upload/product/1027_885_DSPIMG_S.png",
+          "https://cdn.example.com/upload/product/1027_886_DSPIMG_S.png",
+          "https://cdn.example.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png"
         ],
         "options": [
           "120ml"
@@ -58,16 +58,16 @@ request: {
         ],
         "faq": [
           {
-            "question": "배리어케어 제품 중 동물유래성분이 들어있는 제품이 있나요?",
+            "question": "모이베리어 제품 중 동물유래성분이 들어있는 제품이 있나요?",
             "answer": "외부 기관을 통한 비건 인증을 받은 것은 아니지만, 동물성 원료는 들어있지 않으며, 동물실험도 하지 않았습니다. 예시 기업은 전제품 동물실험을 하지 않고 있습니다."
           },
           {
             "question": "건성 피부라 피부가 따가운 상태인데 사용해도 될까요?",
-            "answer": "배리어케어 라인은 민감하고 건조한 피부에 특화된 보습 솔루션을 제공하고 있습니다. 다만 피부가 따가운 상태를 정확히 알기 어려워 국소부위에 제품을 사용해보시고 사용해주시기를 권장 드립니다."
+            "answer": "모이베리어 라인은 민감하고 건조한 피부에 특화된 보습 솔루션을 제공하고 있습니다. 다만 피부가 따가운 상태를 정확히 알기 어려워 국소부위에 제품을 사용해보시고 사용해주시기를 권장 드립니다."
           },
           {
             "question": "피부 장벽의 기능이 무엇인가요?",
-            "answer": "피부장벽은 외부의 유해요소를 막고 내부의 수분 손실을 방지하는 '벽' 역할을 합니다. 장벽 지질은 세라마이드, 콜레스테롤, 지방산으로 이루어져 있으며, 배리어케어 라인은 피부 지질과 유사한 구조로 만든 특허 받은 캡슐을 통해 피부장벽을 견고하게 강화시켜 줍니다."
+            "answer": "피부장벽은 외부의 유해요소를 막고 내부의 수분 손실을 방지하는 '벽' 역할을 합니다. 장벽 지질은 세라마이드, 콜레스테롤, 지방산으로 이루어져 있으며, 모이베리어 라인은 피부 지질과 유사한 구조로 만든 특허 받은 캡슐을 통해 피부장벽을 견고하게 강화시켜 줍니다."
           },
           {
             "question": "크림 미스트를 평상시 루틴으로 사용하는 경우 사용 순서는 어떻게 되나요?",
@@ -79,7 +79,7 @@ request: {
           "reviewCount": 1482,
           "items": [
             {
-              "body": "예시더마 배리어케어365 크림미스트는 분사력이 고르고 미세해서 얼굴에 고르게 뿌려졌어요. 크림이 들어간 미스트라 그런지 일반 미스트보다 보습감이 오래 유지되는 편이었고, 건조할 때 수시로 사용하기 좋았습니다.",
+              "body": "예시더마 모이베리어365 크림미스트는 분사력이 고르고 미세해서 얼굴에 고르게 뿌려졌어요. 크림이 들어간 미스트라 그런지 일반 미스트보다 보습감이 오래 유지되는 편이었고, 건조할 때 수시로 사용하기 좋았습니다.",
               "rating": 5,
               "datePublished": "2026-07-23"
             },
@@ -137,16 +137,16 @@ request: {
             ],
             "faq": [
               {
-                "question": "배리어케어 제품 중 동물유래성분이 들어있는 제품이 있나요?",
+                "question": "모이베리어 제품 중 동물유래성분이 들어있는 제품이 있나요?",
                 "answer": "외부 기관을 통한 비건 인증을 받은 것은 아니지만, 동물성 원료는 들어있지 않으며, 동물실험도 하지 않았습니다. 예시 기업은 전제품 동물실험을 하지 않고 있습니다."
               },
               {
                 "question": "건성 피부라 피부가 따가운 상태인데 사용해도 될까요?",
-                "answer": "배리어케어 라인은 민감하고 건조한 피부에 특화된 보습 솔루션을 제공하고 있습니다. 다만 피부가 따가운 상태를 정확히 알기 어려워 국소부위에 제품을 사용해보시고 사용해주시기를 권장 드립니다."
+                "answer": "모이베리어 라인은 민감하고 건조한 피부에 특화된 보습 솔루션을 제공하고 있습니다. 다만 피부가 따가운 상태를 정확히 알기 어려워 국소부위에 제품을 사용해보시고 사용해주시기를 권장 드립니다."
               },
               {
                 "question": "피부 장벽의 기능이 무엇인가요?",
-                "answer": "피부장벽은 외부의 유해요소를 막고 내부의 수분 손실을 방지하는 '벽' 역할을 합니다. 장벽 지질은 세라마이드, 콜레스테롤, 지방산으로 이루어져 있으며, 배리어케어 라인은 피부 지질과 유사한 구조로 만든 특허 받은 캡슐을 통해 피부장벽을 견고하게 강화시켜 줍니다."
+                "answer": "피부장벽은 외부의 유해요소를 막고 내부의 수분 손실을 방지하는 '벽' 역할을 합니다. 장벽 지질은 세라마이드, 콜레스테롤, 지방산으로 이루어져 있으며, 모이베리어 라인은 피부 지질과 유사한 구조로 만든 특허 받은 캡슐을 통해 피부장벽을 견고하게 강화시켜 줍니다."
               },
               {
                 "question": "크림 미스트를 평상시 루틴으로 사용하는 경우 사용 순서는 어떻게 되나요?",
@@ -157,28 +157,28 @@ request: {
           "ocr": {
             "imageTexts": [
               {
-                "imageUrl": "https://image.examplederma.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png",
-                "text": "배리어케어365 크림미스트. 잠시뿐인 촉촉함은 No! 날아감 없는 든든한 보습 미스트. EXAMPLEDERMA BARRIERCARE365 CREAM MIST. Ceramide 10,000 ppm. Moisturizing & strengthening skin's moisture barrier. For dry & weakened skin. 4.05 fl.oz. / 120 mL."
+                "imageUrl": "https://cdn.example.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png",
+                "text": "모이베리어365 크림미스트. 잠시뿐인 촉촉함은 No! 날아감 없는 든든한 보습 미스트. EXAMPLEDERMA BARRIERCARE365 CREAM MIST. Ceramide 10,000 ppm. Moisturizing & strengthening skin's moisture barrier. For dry & weakened skin. 4.05 fl.oz. / 120 mL."
               },
               {
-                "imageUrl": "https://image.examplederma.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png",
+                "imageUrl": "https://cdn.example.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png",
                 "text": "세라마이드: 피부 장벽을 강화하고 피부 내 수분을 유지하는 데 도움을 주는 피부 장벽 성분."
               },
               {
-                "imageUrl": "https://image.examplederma.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png",
+                "imageUrl": "https://cdn.example.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png",
                 "text": "흔들 필요 없는 특수 에멀징 공법. 작게 쪼개진 세라마이드와 수분이 묶여있어 흔들 필요 없이 사용하는 터치리스 착붙보습. 10,000ppm 세라마이드로 가득 채운 미세촘촘 안개미스트. 부드럽게 뿌려져 피부 표면에 보습막을 형성. 효능: 수분 충전과 동시에 보습막을 형성. 주요 성분: 세라마이드 10,000ppm. 추천 피부 타입: 건조 피부 및 모든 피부."
               },
               {
-                "imageUrl": "https://image.examplederma.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png",
+                "imageUrl": "https://cdn.example.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png",
                 "text": "사용법: 1. 연약하고 건조해진 피부 부위에 미세 분사를 합니다. 2. 피부에 건조함이 느껴질 때 수시로 뿌려줍니다."
               },
               {
-                "imageUrl": "https://image.examplederma.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png",
+                "imageUrl": "https://cdn.example.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png",
                 "text": "철저히 검증한 피부 안전성 테스트. 피부과 테스트: 대학병원 피부과에서 48시간 패치를 활용한 자극여부 확인 (22.12.19-22.12.22, 32명 대상). 하이포알러제닉 테스트 완료: 여러번 피부에 첩포하여 일어나는 화장품, 성분에 대한 과민 반응(감작성)을 확인 (2018.04.13-2018.06.01, 53명 대상, ㈜더마프로)."
               }
             ],
             "textBlocks": [
-              "배리어케어365 크림미스트. 잠시뿐인 촉촉함은 No! 날아감 없는 든든한 보습 미스트. EXAMPLEDERMA BARRIERCARE365 CREAM MIST. Ceramide 10,000 ppm. Moisturizing & strengthening skin's moisture barrier. For dry & weakened skin. 4.05 fl.oz. / 120 mL.",
+              "모이베리어365 크림미스트. 잠시뿐인 촉촉함은 No! 날아감 없는 든든한 보습 미스트. EXAMPLEDERMA BARRIERCARE365 CREAM MIST. Ceramide 10,000 ppm. Moisturizing & strengthening skin's moisture barrier. For dry & weakened skin. 4.05 fl.oz. / 120 mL.",
               "세라마이드: 피부 장벽을 강화하고 피부 내 수분을 유지하는 데 도움을 주는 피부 장벽 성분.",
               "흔들 필요 없는 특수 에멀징 공법. 작게 쪼개진 세라마이드와 수분이 묶여있어 흔들 필요 없이 사용하는 터치리스 착붙보습. 10,000ppm 세라마이드로 가득 채운 미세촘촘 안개미스트. 부드럽게 뿌려져 피부 표면에 보습막을 형성. 효능: 수분 충전과 동시에 보습막을 형성. 주요 성분: 세라마이드 10,000ppm. 추천 피부 타입: 건조 피부 및 모든 피부.",
               "사용법: 1. 연약하고 건조해진 피부 부위에 미세 분사를 합니다. 2. 피부에 건조함이 느껴질 때 수시로 뿌려줍니다.",
@@ -186,7 +186,7 @@ request: {
             ],
             "sentenceInsights": [
               {
-                "imageUrl": "https://image.examplederma.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png",
+                "imageUrl": "https://cdn.example.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png",
                 "text": "10,000ppm 세라마이드로 가득 채운 미세촘촘 안개미스트.",
                 "category": "ingredient",
                 "keywords": [
@@ -196,7 +196,7 @@ request: {
                 ]
               },
               {
-                "imageUrl": "https://image.examplederma.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png",
+                "imageUrl": "https://cdn.example.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png",
                 "text": "작게 쪼개진 세라마이드와 수분이 묶여있어 흔들 필요 없이 사용하는 터치리스 착붙보습.",
                 "category": "effect",
                 "keywords": [
@@ -206,7 +206,7 @@ request: {
                 ]
               },
               {
-                "imageUrl": "https://image.examplederma.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png",
+                "imageUrl": "https://cdn.example.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png",
                 "text": "대학병원 피부과에서 48시간 패치를 활용한 자극여부 확인 (32명 대상).",
                 "category": "metric",
                 "keywords": [
@@ -292,7 +292,7 @@ request: {
         "aiAnalysis": {
           "keywords": {
             "product": [
-              "배리어케어 365 크림 미스트",
+              "모이베리어 365 크림 미스트",
               "EXAMPLEDERMA",
               "크림 미스트"
             ],
@@ -534,16 +534,16 @@ request: {
           ],
           "faq": [
             {
-              "question": "배리어케어 제품 중 동물유래성분이 들어있는 제품이 있나요?",
+              "question": "모이베리어 제품 중 동물유래성분이 들어있는 제품이 있나요?",
               "answer": "외부 기관을 통한 비건 인증을 받은 것은 아니지만, 동물성 원료는 들어있지 않으며, 동물실험도 하지 않았습니다. 예시 기업은 전제품 동물실험을 하지 않고 있습니다."
             },
             {
               "question": "건성 피부라 피부가 따가운 상태인데 사용해도 될까요?",
-              "answer": "배리어케어 라인은 민감하고 건조한 피부에 특화된 보습 솔루션을 제공하고 있습니다. 다만 피부가 따가운 상태를 정확히 알기 어려워 국소부위에 제품을 사용해보시고 사용해주시기를 권장 드립니다."
+              "answer": "모이베리어 라인은 민감하고 건조한 피부에 특화된 보습 솔루션을 제공하고 있습니다. 다만 피부가 따가운 상태를 정확히 알기 어려워 국소부위에 제품을 사용해보시고 사용해주시기를 권장 드립니다."
             },
             {
               "question": "피부 장벽의 기능이 무엇인가요?",
-              "answer": "피부장벽은 외부의 유해요소를 막고 내부의 수분 손실을 방지하는 '벽' 역할을 합니다. 장벽 지질은 세라마이드, 콜레스테롤, 지방산으로 이루어져 있으며, 배리어케어 라인은 피부 지질과 유사한 구조로 만든 특허 받은 캡슐을 통해 피부장벽을 견고하게 강화시켜 줍니다."
+              "answer": "피부장벽은 외부의 유해요소를 막고 내부의 수분 손실을 방지하는 '벽' 역할을 합니다. 장벽 지질은 세라마이드, 콜레스테롤, 지방산으로 이루어져 있으며, 모이베리어 라인은 피부 지질과 유사한 구조로 만든 특허 받은 캡슐을 통해 피부장벽을 견고하게 강화시켜 줍니다."
             },
             {
               "question": "크림 미스트를 평상시 루틴으로 사용하는 경우 사용 순서는 어떻게 되나요?",
@@ -556,7 +556,7 @@ request: {
           "reviewCount": 1482,
           "items": [
             {
-              "body": "예시더마 배리어케어365 크림미스트는 분사력이 고르고 미세해서 얼굴에 고르게 뿌려졌어요. 크림이 들어간 미스트라 그런지 일반 미스트보다 보습감이 오래 유지되는 편이었고, 건조할 때 수시로 사용하기 좋았습니다.",
+              "body": "예시더마 모이베리어365 크림미스트는 분사력이 고르고 미세해서 얼굴에 고르게 뿌려졌어요. 크림이 들어간 미스트라 그런지 일반 미스트보다 보습감이 오래 유지되는 편이었고, 건조할 때 수시로 사용하기 좋았습니다.",
               "rating": 5,
               "datePublished": "2026-07-23"
             },
@@ -639,7 +639,7 @@ request: {
         },
         "ocr": {
           "textBlocks": [
-            "배리어케어365 크림미스트. 잠시뿐인 촉촉함은 No! 날아감 없는 든든한 보습 미스트. EXAMPLEDERMA BARRIERCARE365 CREAM MIST. Ceramide 10,000 ppm. Moisturizing & strengthening skin's moisture barrier. For dry & weakened skin. 4.05 fl.oz. / 120 mL.",
+            "모이베리어365 크림미스트. 잠시뿐인 촉촉함은 No! 날아감 없는 든든한 보습 미스트. EXAMPLEDERMA BARRIERCARE365 CREAM MIST. Ceramide 10,000 ppm. Moisturizing & strengthening skin's moisture barrier. For dry & weakened skin. 4.05 fl.oz. / 120 mL.",
             "세라마이드: 피부 장벽을 강화하고 피부 내 수분을 유지하는 데 도움을 주는 피부 장벽 성분.",
             "흔들 필요 없는 특수 에멀징 공법. 작게 쪼개진 세라마이드와 수분이 묶여있어 흔들 필요 없이 사용하는 터치리스 착붙보습. 10,000ppm 세라마이드로 가득 채운 미세촘촘 안개미스트. 부드럽게 뿌려져 피부 표면에 보습막을 형성. 효능: 수분 충전과 동시에 보습막을 형성. 주요 성분: 세라마이드 10,000ppm. 추천 피부 타입: 건조 피부 및 모든 피부.",
             "사용법: 1. 연약하고 건조해진 피부 부위에 미세 분사를 합니다. 2. 피부에 건조함이 느껴질 때 수시로 뿌려줍니다.",
@@ -647,7 +647,7 @@ request: {
           ],
           "keywords": {
             "product": [
-              "배리어케어 365 크림 미스트",
+              "모이베리어 365 크림 미스트",
               "EXAMPLEDERMA",
               "크림 미스트"
             ],
@@ -695,7 +695,7 @@ request: {
           },
           "sentenceInsights": [
             {
-              "imageUrl": "https://image.examplederma.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png",
+              "imageUrl": "https://cdn.example.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png",
               "text": "10,000ppm 세라마이드로 가득 채운 미세촘촘 안개미스트.",
               "category": "ingredient",
               "keywords": [
@@ -705,7 +705,7 @@ request: {
               ]
             },
             {
-              "imageUrl": "https://image.examplederma.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png",
+              "imageUrl": "https://cdn.example.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png",
               "text": "작게 쪼개진 세라마이드와 수분이 묶여있어 흔들 필요 없이 사용하는 터치리스 착붙보습.",
               "category": "effect",
               "keywords": [
@@ -715,7 +715,7 @@ request: {
               ]
             },
             {
-              "imageUrl": "https://image.examplederma.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png",
+              "imageUrl": "https://cdn.example.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png",
               "text": "대학병원 피부과에서 48시간 패치를 활용한 자극여부 확인 (32명 대상).",
               "category": "metric",
               "keywords": [
@@ -731,22 +731,22 @@ request: {
             {
               "id": "examplederma-cream-mist-product-1",
               "kind": "product",
-              "text": "배리어케어 365 크림 미스트\n10,000ppm 함유된 고함량 세라마이드 미세분사로 피부장벽을 보호하는 세라마이드 보습 크림 미스트.\n고보습\n피부장벽 보호\n속건조 완화\n미세분사로 즉각적인 보습\n오래 유지되는 촉촉함\n피부 표면 보습막 형성"
+              "text": "모이베리어 365 크림 미스트\n10,000ppm 함유된 고함량 세라마이드 미세분사로 피부장벽을 보호하는 세라마이드 보습 크림 미스트.\n고보습\n피부장벽 보호\n속건조 완화\n미세분사로 즉각적인 보습\n오래 유지되는 촉촉함\n피부 표면 보습막 형성"
             },
             {
               "id": "examplederma-cream-mist-faq-1",
               "kind": "faq",
-              "text": "Q. 배리어케어 제품 중 동물유래성분이 들어있는 제품이 있나요?\nA. 외부 기관을 통한 비건 인증을 받은 것은 아니지만, 동물성 원료는 들어있지 않으며, 동물실험도 하지 않았습니다. 예시 기업은 전제품 동물실험을 하지 않고 있습니다."
+              "text": "Q. 모이베리어 제품 중 동물유래성분이 들어있는 제품이 있나요?\nA. 외부 기관을 통한 비건 인증을 받은 것은 아니지만, 동물성 원료는 들어있지 않으며, 동물실험도 하지 않았습니다. 예시 기업은 전제품 동물실험을 하지 않고 있습니다."
             },
             {
               "id": "examplederma-cream-mist-faq-2",
               "kind": "faq",
-              "text": "Q. 건성 피부라 피부가 따가운 상태인데 사용해도 될까요?\nA. 배리어케어 라인은 민감하고 건조한 피부에 특화된 보습 솔루션을 제공하고 있습니다. 다만 피부가 따가운 상태를 정확히 알기 어려워 국소부위에 제품을 사용해보시고 사용해주시기를 권장 드립니다."
+              "text": "Q. 건성 피부라 피부가 따가운 상태인데 사용해도 될까요?\nA. 모이베리어 라인은 민감하고 건조한 피부에 특화된 보습 솔루션을 제공하고 있습니다. 다만 피부가 따가운 상태를 정확히 알기 어려워 국소부위에 제품을 사용해보시고 사용해주시기를 권장 드립니다."
             },
             {
               "id": "examplederma-cream-mist-faq-3",
               "kind": "faq",
-              "text": "Q. 피부 장벽의 기능이 무엇인가요?\nA. 피부장벽은 외부의 유해요소를 막고 내부의 수분 손실을 방지하는 '벽' 역할을 합니다. 장벽 지질은 세라마이드, 콜레스테롤, 지방산으로 이루어져 있으며, 배리어케어 라인은 피부 지질과 유사한 구조로 만든 특허 받은 캡슐을 통해 피부장벽을 견고하게 강화시켜 줍니다."
+              "text": "Q. 피부 장벽의 기능이 무엇인가요?\nA. 피부장벽은 외부의 유해요소를 막고 내부의 수분 손실을 방지하는 '벽' 역할을 합니다. 장벽 지질은 세라마이드, 콜레스테롤, 지방산으로 이루어져 있으며, 모이베리어 라인은 피부 지질과 유사한 구조로 만든 특허 받은 캡슐을 통해 피부장벽을 견고하게 강화시켜 줍니다."
             },
             {
               "id": "examplederma-cream-mist-faq-4",
@@ -756,7 +756,7 @@ request: {
             {
               "id": "examplederma-cream-mist-review-1",
               "kind": "review",
-              "text": "예시더마 배리어케어365 크림미스트는 분사력이 고르고 미세해서 얼굴에 고르게 뿌려졌어요. 크림이 들어간 미스트라 그런지 일반 미스트보다 보습감이 오래 유지되는 편이었고, 건조할 때 수시로 사용하기 좋았습니다."
+              "text": "예시더마 모이베리어365 크림미스트는 분사력이 고르고 미세해서 얼굴에 고르게 뿌려졌어요. 크림이 들어간 미스트라 그런지 일반 미스트보다 보습감이 오래 유지되는 편이었고, 건조할 때 수시로 사용하기 좋았습니다."
             },
             {
               "id": "examplederma-cream-mist-review-2",
@@ -776,7 +776,7 @@ request: {
             {
               "id": "examplederma-cream-mist-ocr-1",
               "kind": "ocr",
-              "text": "배리어케어365 크림미스트. 잠시뿐인 촉촉함은 No! 날아감 없는 든든한 보습 미스트. EXAMPLEDERMA BARRIERCARE365 CREAM MIST. Ceramide 10,000 ppm. Moisturizing & strengthening skin's moisture barrier. For dry & weakened skin. 4.05 fl.oz. / 120 mL."
+              "text": "모이베리어365 크림미스트. 잠시뿐인 촉촉함은 No! 날아감 없는 든든한 보습 미스트. EXAMPLEDERMA BARRIERCARE365 CREAM MIST. Ceramide 10,000 ppm. Moisturizing & strengthening skin's moisture barrier. For dry & weakened skin. 4.05 fl.oz. / 120 mL."
             },
             {
               "id": "examplederma-cream-mist-ocr-2",

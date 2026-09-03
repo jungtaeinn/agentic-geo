@@ -1,14 +1,14 @@
 /**
- * upstream API가 넘긴 product 트리에서 GEO 근거가 될 수 없는 마크업 노이즈를 걷어낸다(GEO-228).
+ * upstream-api가 넘긴 product 트리에서 GEO 근거가 될 수 없는 마크업 노이즈를 걷어낸다(GEO-228).
  *
  * <p>목적은 바이트 절감이 아니다. LLM에 닿는 경로는 이미 전부 길이를 자른다 —
  * planning 프롬프트는 `truncate(item.text, 900)`, copy-refiner 근거는 520자,
  * `sourceTexts`는 700자 초과를 아예 버린다. 문제는 그 창에 무엇이 담기느냐다.
- * 실측한 채널 PDP의 description은 `<style>` 블록이 앞쪽 18,769자(예시럭셔리)·55,900자(에센셜 케어)를
+ * 실측한 채널 PDP의 description은 `<style>` 블록이 앞쪽 18,769자(예시럭셔리)·55,900자(에센셜)를
  * 차지해, 근거 우선순위 2위(role `description`, 98점)로 항상 선택되는 그 원자의
  * 900자 창이 100% CSS로 채워졌다. 상품 설명이 한 글자도 도달하지 못하는 상태였다.
  *
- * <p>원본은 손대지 않는다. upstream API의 `geo_interface.raw_payload`(불변 감사)와
+ * <p>원본은 손대지 않는다. upstream-api의 `geo_interface.raw_payload`(불변 감사)와
  * `geo_generation.product`가 원문을 그대로 보존하고 `dedup_key`도 원문 기준이라,
  * 이 정제는 재생성이나 중복 판정에 영향을 주지 않는다.
  *

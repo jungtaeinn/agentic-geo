@@ -33,7 +33,7 @@ const REAL_DESCRIPTION = [
   '<div class="ap-pdp__inner">',
   "<h2>Essential Activating Serum</h2>",
   "<p>HYDRATED, YOUTHFUL-LOOKING SKIN IN EVERY DROP</p>",
-  '<p><img src="https://cdn.shopify.com/s/files/1/0622/5579/2294/files/270320591_whiteBG.jpg?v=1733884648" alt="Essential Activating Serum"></p>',
+  '<p><img src="https://cdn.example.com/products/sample-fbfd56977110.jpg" alt="Essential Activating Serum"></p>',
   "</div>",
   "</article>",
   "</div>",

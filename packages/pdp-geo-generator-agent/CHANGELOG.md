@@ -32,7 +32,7 @@
 
   Derivation is gated: the host must carry the brand name. The same PDP shape arrives from marketplaces, and without that check a retailer's domain would be published as the brand's identity — a false claim of exactly the kind the rest of this pipeline refuses to emit. A brand token shorter than three characters, or one sharing no ASCII token with any host (a Korean-only brand name), yields nothing rather than a guess. An explicit `hints.brandSameAs` always wins over the derived origin.
 
-  Verified against the four live-contract fixtures: `ExampleLuxe` → `https://us.exampleluxe.com/`, `EXAMPLEDERMA` → `https://www.examplederma.com/`, with a marketplace host yielding no `sameAs` at all. Retrieval metrics are unchanged (claim recall 0.917).
+  Verified against the four live-contract fixtures: `ExampleLuxe` → `https://shop.example.com/`, `EXAMPLEDERMA` → `https://shop.example.com/`, with a marketplace host yielding no `sameAs` at all. Retrieval metrics are unchanged (claim recall 0.917).
 
 - feat(agent-api): let brand identity URLs through the submission path. `SubmitGenerationDto` accepts an optional `brandSameAs` (absolute http(s) URLs, max 10) and carries it across the queue hop to the worker, and the local sync test endpoint takes the same field. The DTO validates the URLs rather than leaving the generator to drop malformed values silently — an unverifiable identity URL should fail at the boundary where the caller can see it, not disappear inside the graph builder. Callers that send nothing get a byte-identical request to before, since the hint is omitted rather than sent empty. With the derivation above, this path is now for the identifiers an origin cannot supply — Wikidata entries, verified social profiles.
 

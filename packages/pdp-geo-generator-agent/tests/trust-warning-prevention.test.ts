@@ -115,10 +115,10 @@ describe("ingredient alias normalization (trust warning prevention)", () => {
   it("does not flag a source-backed ingredient whose alias marker was normalized", () => {
     const normalized = normalizePdpProduct({
       name: "Ginseng Firming Serum",
-      description: "A firming serum with Botanical Actives (AKA Botanical Complex™).",
+      description: "A firming serum with Korean Ginseng Actives (AKA BotanicalComplex™).",
       category: "Serum",
       benefits: ["firmness"],
-      ingredients: ["Botanical Actives (AKA Botanical Complex™)", "Ginseng Peptide™"]
+      ingredients: ["Korean Ginseng Actives (AKA BotanicalComplex™)", "Ginseng Peptide™"]
     }, { hints: { locale: "en-US" } }).product;
 
     const readOnly = validatePdpGeoArtifacts({
@@ -135,7 +135,7 @@ describe("ingredient alias normalization (trust warning prevention)", () => {
                 {
                   "@type": "PropertyValue",
                   name: "Key ingredients",
-                  value: "Botanical Actives (Botanical Complex), Ginseng Peptide"
+                  value: "Korean Ginseng Actives (BotanicalComplex), Ginseng Peptide"
                 }
               ]
             }
@@ -149,7 +149,7 @@ describe("ingredient alias normalization (trust warning prevention)", () => {
           description: "A firming serum.",
           quickFacts: "",
           benefits: "firmness",
-          ingredients: "Botanical Actives (AKA Botanical Complex™)",
+          ingredients: "Korean Ginseng Actives (AKA BotanicalComplex™)",
           howToUse: "",
           faq: ""
         },
@@ -303,5 +303,155 @@ describe("price cents normalization consistency", () => {
     });
 
     expect(result.diagnostics.normalizedProduct.price?.amount).toBe(32000);
+  });
+});
+
+describe("source-defect intake (trust warning prevention)", () => {
+  // 실측(2026-09-02, 예시더마 1145)에서 남은 경고 2건. 둘 다 스키마 검증 단계가
+  // 뒤늦게 수리해 경고를 남기지만, 원인은 그보다 앞 단계에 있다 — 잘린 URL은
+  // 소스가 준 결함이고, 없는 성분명은 정본화가 만들어낸 것이다. 경고를 지우는
+  // 것이 아니라 그 조건을 만들지 않는 것이 이 계약이다.
+
+  it("does not carry a truncated source image URL into the normalized product", () => {
+    const { product } = normalizePdpProduct({
+      name: "모이베리어365 클렌징폼",
+      description: "약산성 클렌저입니다.",
+      category: "클렌징폼",
+      images: [
+        "https://image.example.com/upload/product/1145_L.",
+        "https://image.example.com/upload/product/1145_1058_DSPIMG_L.png"
+      ]
+    }, { hints: { locale: "ko-KR" } });
+
+    expect(product.images).toEqual(["https://image.example.com/upload/product/1145_1058_DSPIMG_L.png"]);
+  });
+
+  it("does not publish an ingredient surface the source never wrote", () => {
+    const normalized = normalizePdpProduct({
+      name: "모이베리어365 클렌징폼",
+      description: "건조하고 민감한 피부를 위한 약산성 클렌저입니다.",
+      category: "클렌징폼",
+      ingredients: ["보타온", "판테놀", "베타인"],
+      sourceTexts: ["3종 장벽보호 성분 함유. 보타온, 판테놀, 베타인."]
+    }, { hints: { locale: "ko-KR" } }).product;
+
+    const artifacts = generatePdpGeoArtifacts({
+      product: normalized,
+      locale: "ko-KR",
+      market: "KR",
+      ragChunks: [],
+      ragDocuments: []
+    });
+
+    const product = graphOf(artifacts)
+      .find((node) => node["@type"] === "Product") as Record<string, any>;
+    const keyIngredients = String((product.additionalProperty as Array<Record<string, any>> | undefined)
+      ?.find((item) => String(item.name) === "Key ingredients")?.value ?? "");
+
+    expect(keyIngredients).toContain("보타온");
+    expect(keyIngredients).not.toContain("BotanON");
+  });
+});
+
+describe("review punctuation no-op (trust warning prevention)", () => {
+  /**
+   * 실측(1027 크림 미스트)에서 6회 실행 전부에 남은 경고 하나. 고객이 쓴
+   * `좋네요..`의 마침표를 하나로 줄인 것뿐인데 신뢰 필드 결함으로 보고되고,
+   * 해소되지 않은 경고 1건은 GEO에서 3점이다. 이 상품의 GEO가 89~92를
+   * 오가던 원인이며, 이번 작업 이전에도 같았다.
+   *
+   * 구두점은 고객이 타이핑한 방식이지 리뷰 근거의 결함이 아니다. `Usage`가
+   * 이미 같은 계약을 갖고 있다(마침표만 바뀌면 수리로 보고하지 않는다).
+   */
+  function repairedReviewWarnings(body: string): { warnings: string[]; published: string | undefined } {
+    const repaired = validateAndRepairPdpGeoArtifacts({
+      locale: "ko-KR",
+      fallbackProductName: "모이베리어 365 크림 미스트",
+      fallbackDescription: "미스트입니다.",
+      schemaMarkup: {
+        jsonLd: {
+          "@context": "https://schema.org",
+          "@graph": [
+            {
+              "@type": "Product",
+              "@id": "https://example.com/products/mist#product",
+              name: "모이베리어 365 크림 미스트",
+              description: "미스트입니다.",
+              review: [{ "@type": "Review", reviewBody: body }]
+            }
+          ]
+        },
+        scriptTag: ""
+      },
+      content: {
+        sections: {
+          productName: "모이베리어 365 크림 미스트",
+          description: "미스트입니다.",
+          quickFacts: "",
+          benefits: "",
+          ingredients: "",
+          howToUse: "",
+          faq: ""
+        },
+        html: ""
+      }
+    });
+    const product = (repaired.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>)
+      .find((node) => node["@type"] === "Product") as Record<string, any>;
+    return {
+      warnings: repaired.validationWarnings.filter((warning) => /Product\.review/.test(warning)),
+      published: (product.review as Array<Record<string, any>> | undefined)?.[0]?.reviewBody
+    };
+  }
+
+  it("does not report a Product.review repair when only punctuation changed", () => {
+    const { warnings, published } = repairedReviewWarnings("세안후 바로 뿌리니 피부건조할새없이 촉촉하니 좋네요..");
+
+    expect(warnings).toEqual([]);
+    expect(published).toBe("세안후 바로 뿌리니 피부건조할새없이 촉촉하니 좋네요.");
+  });
+
+  it("still reports a repair that removes a review body", () => {
+    // 상품명만 반복한 본문은 리뷰 근거가 아니다 — 지워지고, 그것은 보고돼야 한다.
+    const { warnings, published } = repairedReviewWarnings("모이베리어 365 크림 미스트");
+
+    expect(warnings.length).toBeGreaterThan(0);
+    expect(published).toBeUndefined();
+  });
+});
+
+describe("alias surface collapse (trust warning prevention)", () => {
+  /**
+   * 원본이 한 성분을 두 표기로 적으면(`BotanON 보타온`) 별칭 하나만 발행돼야
+   * 한다. 이전 코드는 둘을 `BotanON® 기술`이라는 없는 표기로 조작해 합쳤고,
+   * 그 조작을 없애자 표기 두 개가 목록에 나란히 실렸다 — 실측 1145의
+   * `Key ingredients`가 `보타온, …, BotanON`이었다.
+   *
+   * 별칭 그룹은 원본이 먼저 쓴 표기 하나로 좁힌다. 원문 표기를 지어내지 않고,
+   * 같은 성분을 두 번 세지도 않는다.
+   */
+  it("publishes one surface when the source states two for the same ingredient", () => {
+    const normalized = normalizePdpProduct({
+      name: "모이베리어365 클렌징폼",
+      description: "약산성 클렌저입니다.",
+      category: "클렌징폼",
+      ingredients: ["보타온", "판테놀"],
+      sourceTexts: ["3종 장벽보호 성분 함유. BotanON 보타온 판테놀 베타인."]
+    }, { hints: { locale: "ko-KR" } }).product;
+
+    const artifacts = generatePdpGeoArtifacts({
+      product: normalized,
+      locale: "ko-KR",
+      market: "KR",
+      ragChunks: [],
+      ragDocuments: []
+    });
+
+    const product = graphOf(artifacts).find((node) => node["@type"] === "Product") as Record<string, any>;
+    const keyIngredients = String((product.additionalProperty as Array<Record<string, any>> | undefined)
+      ?.find((item) => String(item.name) === "Key ingredients")?.value ?? "");
+
+    expect(keyIngredients).toContain("보타온");
+    expect(keyIngredients).not.toContain("BotanON");
   });
 });

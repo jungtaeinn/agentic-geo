@@ -23,7 +23,7 @@ describe("collectMetricIntegrityIssues claim-modality lints", () => {
 });
 
 describe("collectMetricIntegrityIssues realization-defect lints", () => {
-  // Live ExampleLuxe activating-serum defect (2026-08-11): the realizer nested the label's
+  // Live ExampleLuxe FCAS defect (2026-08-11): the realizer nested the label's
   // own direction stem and spliced the timing clause with its capital intact.
   const nestedStemSentence = "In an instrumental assessment of 30 subjects, 100% of participants showed improvement in Visible improvement in fine lines After one bottle of daily use.";
   const repairedSentence = "In an instrumental assessment of 30 subjects, 100% of participants showed visible improvement in fine lines after one bottle of daily use.";

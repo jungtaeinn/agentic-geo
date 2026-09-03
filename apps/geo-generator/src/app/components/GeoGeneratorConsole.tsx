@@ -39,6 +39,7 @@ import {
   buildProbeSafetyNotes,
   evaluateGeoQuality,
   formatGeoQualityEvaluationText,
+  formatImageSectionId,
   formatPctDelta,
   formatProbeLlmPrompt,
   formatQualityLlmPrompt,
@@ -3289,9 +3290,12 @@ function EvaluationSuitePanel({
           onClick={() => onOpenDetail(createPanelDetail(suite.citationDetailLabel, `CITATION ${formatPctDelta(probe.mean.delta.wordpos)}`, suite.probeSubline(probe.queries.length, probe.engineId), {
             summary: probeHeadline,
             safety: buildProbeSafetyNotes(probe, suite),
-            queries: probe.queries.map((query) => `${suite.outcomeLabels[probeQueryOutcome(query.delta.wordpos)]} · "${query.query}" · ${suite.queryShare(shareToPct(query.vanilla.wordpos), shareToPct(query.generated.wordpos))}${query.sectionAttribution && query.sectionAttribution.length > 0 ? ` · ${suite.attributionLabel}: ${formatSectionAttribution(query.sectionAttribution, suite)}` : ""}`),
+            queries: probe.queries.map((query) => `${suite.outcomeLabels[probeQueryOutcome(query.delta.wordpos)]} · "${query.query}" · ${suite.queryShare(shareToPct(query.vanilla.wordpos), shareToPct(query.generated.wordpos))}${query.sectionAttribution && query.sectionAttribution.length > 0 ? ` · ${suite.attributionLabel}: ${formatSectionAttribution(query.sectionAttribution, suite)}` : ""}${query.imageAttribution && query.imageAttribution.length > 0 ? ` · ${suite.imageAttributionLabel}: ${formatSectionAttribution(query.imageAttribution, suite, (id) => formatImageSectionId(id, suite))}` : ""}`),
             contribution: probe.sectionAttribution && probe.sectionAttribution.length > 0
               ? `${suite.overallAttributionLabel}: ${formatSectionAttribution(probe.sectionAttribution, suite)}`
+              : undefined,
+            imageContribution: probe.imageAttribution && probe.imageAttribution.length > 0
+              ? `${suite.overallImageAttributionLabel}: ${formatSectionAttribution(probe.imageAttribution, suite, (id) => formatImageSectionId(id, suite))}`
               : undefined,
             warnings: probe.warnings,
             note: suite.interpretation
@@ -3461,6 +3465,11 @@ function EvaluationSuitePanel({
                   {suite.overallAttributionLabel}: {formatSectionAttribution(probe.sectionAttribution, suite)}
                 </p>
               )}
+              {probe.imageAttribution && probe.imageAttribution.length > 0 && (
+                <p className="probeSublineText">
+                  {suite.overallImageAttributionLabel}: {formatSectionAttribution(probe.imageAttribution, suite, (id) => formatImageSectionId(id, suite))}
+                </p>
+              )}
               <div className={`probeSafety ${probe.gate.pass ? "pass" : "fail"}`}>
                 {probe.gate.pass ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
                 <div>
@@ -3496,6 +3505,25 @@ function EvaluationSuitePanel({
                             .map((item) => (
                               <p className="probeQueryMeta probeAttributionQuote" key={item.sectionId}>
                                 {suite.sectionLabels[item.sectionId] ?? item.sectionId}
+                                {" — "}
+                                “{truncateQuote(item.sentences?.[0] ?? "")}”
+                                {(item.sentences?.length ?? 0) > 1 ? suite.moreSentences((item.sentences?.length ?? 1) - 1) : ""}
+                              </p>
+                            ))}
+                        </>
+                      )}
+                      {query.imageAttribution && query.imageAttribution.length > 0 && (
+                        <>
+                          <p className="probeQueryMeta probeQueryAttribution">
+                            {suite.imageAttributionLabel}: {formatSectionAttribution(query.imageAttribution, suite, (id) => formatImageSectionId(id, suite))}
+                          </p>
+                          {query.imageAttribution
+                            // Older persisted results predate the `sentences` field; guard for them.
+                            .filter((item) => item.share >= 0.05 && (item.sentences?.length ?? 0) > 0)
+                            .slice(0, 3)
+                            .map((item) => (
+                              <p className="probeQueryMeta probeAttributionQuote" key={item.sectionId}>
+                                {formatImageSectionId(item.sectionId, suite)}
                                 {" — "}
                                 “{truncateQuote(item.sentences?.[0] ?? "")}”
                                 {(item.sentences?.length ?? 0) > 1 ? suite.moreSentences((item.sentences?.length ?? 1) - 1) : ""}

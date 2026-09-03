@@ -4,10 +4,10 @@ import type { PdpGeoGenerationInput, PdpGeoLocale } from "../../src/types";
  * pdp-extractor-agent 결과물 형태(GeoProductRawData)로 구성한 라이브 PDP 목업 픽스처.
  *
  * 원본 PDP (2026-07-31 수집):
- * - https://example.com/products/botanical-renewal-serum?variant=example-variant-1
- * - https://example.com/products/essential-activating-serum?variant=example-variant-2
- * - https://example.com/web/product/view.do?prdSeq=1149
- * - https://example.com/web/product/view.do?prdSeq=1027
+ * - https://shop.example.com/products/botanical-ginseng-rejuvenating-serum?variant=43202379841581
+ * - https://shop.example.com/products/essential-activating-serum?variant=41665230798893
+ * - https://shop.example.com/web/product/view.do?prdSeq=1149
+ * - https://shop.example.com/web/product/view.do?prdSeq=1027
  *
  * 데이터 출처:
  * - ExampleLuxe: Shopify product JSON(`/products/<handle>.js`) + 상세 인포그래픽 이미지 OCR
@@ -18,8 +18,8 @@ import type { PdpGeoGenerationInput, PdpGeoLocale } from "../../src/types";
  * 구조 계약:
  * - `geoProduct`는 packages/pdp-extractor-agent/src/types.ts 의 `GeoProductRawData`를
  *   구조적으로 미러링한다(이 패키지는 extractor에 의존하지 않으므로 타입을 복제).
- * - `sku`/`gtin`/`availability`/`variants`/`canonicalUrl`/`offerUrl`은 commerce contract
- *   확장 GEO 입력 계약 필드로, agent-api(external dispatcher) 경로에서 함께 전달된다.
+ * - `sku`/`gtin`/`availability`/`variants`/`canonicalUrl`/`offerUrl`은 GEO-128
+ *   확장 GEO 입력 계약 필드로, agent-api(dispatcher) 경로에서 함께 전달된다.
  * - `agentApiSubmitPayloads`는 apps/agent-api `SubmitGenerationDto`
  *   (`{ geoGenerationId, locale, product }`) 계약을 그대로 따른다.
  *   `product.canonicalUrl`은 agent-api `extractSourceUrl()`이 JSON-LD @id 앵커로 사용한다.
@@ -138,7 +138,7 @@ export interface ExtractorRagChunk {
   text: string;
 }
 
-/** GeoProductRawData 미러 + commerce contract 확장 필드(sku/gtin/availability/variants). */
+/** GeoProductRawData 미러 + GEO-128 확장 필드(sku/gtin/availability/variants). */
 export interface ExtractorGeoProductRawData {
   name: string;
   brand?: string;
@@ -214,7 +214,7 @@ export interface ExtractorGeoProductRawData {
   rag: {
     chunks: ExtractorRagChunk[];
   };
-  /** commerce contract 확장 GEO 입력 계약 필드 (extractor 자체 산출물엔 없고 커머스 원천에서 병합됨). */
+  /** GEO-128 확장 GEO 입력 계약 필드 (extractor 자체 산출물엔 없고 커머스 원천에서 병합됨). */
   sku?: string;
   gtin?: string;
   availability?: string;
@@ -406,16 +406,16 @@ function buildExtractorGeoProduct(def: ExtractorProductDefinition): ExtractorGeo
 }
 
 // ---------------------------------------------------------------------------
-// 1) ExampleLuxe — Botanical Renewal Serum (en-US)
+// 1) ExampleLuxe — Botanical Ginseng Rejuvenating Serum (en-US)
 // ---------------------------------------------------------------------------
 
 const CGR_URL =
-  "https://example.com/products/botanical-renewal-serum?variant=example-variant-1";
+  "https://shop.example.com/products/botanical-ginseng-rejuvenating-serum?variant=43202379841581";
 
 const CGR_INGREDIENT_INFOGRAPHIC_IMAGE =
-  "https://cdn.example.com/products/BRAND.COM_1080x1080_NewCGRSerum_05.IngredientInfographic_4f97acea-b35d-4f31-906a-568f186a978f.jpg";
+  "https://cdn.example.com/products/sample-7a6018c6069a.jpg";
 const CGR_CLINICAL_INFOGRAPHIC_IMAGE =
-  "https://cdn.example.com/products/CGR_Serum_02._Clinical_Infographic_Brand.com__1080px_1_1_ratio.jpg";
+  "https://cdn.example.com/products/sample-7a92bbbc71e1.jpg";
 
 const CGR_OCR_INGREDIENT_TEXT =
   "GINSENG ACTIVES. Help rejuvenate and strengthen for healthy, youthful-looking skin. " +
@@ -427,19 +427,19 @@ const CGR_OCR_CLINICAL_TEXT =
   "AFTER 6 WEEKS OF USE, 100% SHOWED IMPROVEMENT IN FINE LINES, WRINKLES, ELASTICITY, FIRMNESS. " +
   "*Instrumental result, 32 women, with daily use.";
 
-export const exampleluxeRenewalSerumGeoProduct = buildExtractorGeoProduct({
-  slug: "exampleluxe-renewal-serum",
-  name: "Botanical Renewal Serum",
+export const exampleluxeCgrSerumGeoProduct = buildExtractorGeoProduct({
+  slug: "exampleluxe-cgr-serum",
+  name: "Botanical Ginseng Rejuvenating Serum",
   brand: "ExampleLuxe",
   description:
-    "Unlock your skin's youthful radiance with our Botanical Renewal Serum. " +
+    "Unlock your skin's youthful radiance with our Botanical Ginseng Rejuvenating Serum. " +
     "This powerful formula is enhanced with our advanced capsule technology for optimal absorption. " +
     "Retinol-infused capsules melt into skin on contact to visibly reduce fine lines and improve firmness. " +
     "This advanced system improves moisturization, rejuvenates, and refines the look of skin texture.",
   price: { raw: "$215.00", amount: 215, currency: "USD" },
   images: [
-    "https://cdn.example.com/products/BRAND.COM_1080x1080_NewCGRSerum_01.Packshot_50ml.jpg",
-    "https://cdn.example.com/products/CGR_Serum_01._Texture_Brand.com_1080px_1_1_ratio.jpg",
+    "https://cdn.example.com/products/sample-77d130b7c425.jpg",
+    "https://cdn.example.com/products/sample-a2c13717cdbc.jpg",
     CGR_INGREDIENT_INFOGRAPHIC_IMAGE,
     CGR_CLINICAL_INFOGRAPHIC_IMAGE
   ],
@@ -452,7 +452,7 @@ export const exampleluxeRenewalSerumGeoProduct = buildExtractorGeoProduct({
     "improved moisturization"
   ],
   ingredients: [
-    "Botanical Actives",
+    "Korean Ginseng Actives",
     "Ginseng Peptide",
     "Ginseng Capsules with Retinol",
     "Niacinamide"
@@ -467,8 +467,8 @@ export const exampleluxeRenewalSerumGeoProduct = buildExtractorGeoProduct({
     {
       title: "Key ingredients",
       category: "ingredient",
-      text: "KEY INGREDIENTS: Botanical Actives, Ginseng Peptide, Ginseng Capsules with Retinol, Niacinamide.",
-      bullets: ["Botanical Actives", "Ginseng Peptide", "Ginseng Capsules with Retinol", "Niacinamide"]
+      text: "KEY INGREDIENTS: Korean Ginseng Actives, Ginseng Peptide, Ginseng Capsules with Retinol, Niacinamide.",
+      bullets: ["Korean Ginseng Actives", "Ginseng Peptide", "Ginseng Capsules with Retinol", "Niacinamide"]
     },
     {
       title: "Solution for",
@@ -508,11 +508,11 @@ export const exampleluxeRenewalSerumGeoProduct = buildExtractorGeoProduct({
     }
   ],
   keywords: {
-    product: ["Botanical Renewal Serum", "ExampleLuxe", "serum"],
+    product: ["Botanical Ginseng Rejuvenating Serum", "ExampleLuxe", "serum"],
     price: ["$215.00"],
     benefit: ["anti-aging", "firming", "moisturizing"],
     effect: ["visibly reduced fine lines", "improved firmness and elasticity", "refined skin texture"],
-    ingredient: ["Botanical Actives", "Ginseng Peptide", "Ginseng Capsules with Retinol", "Niacinamide"],
+    ingredient: ["Korean Ginseng Actives", "Ginseng Peptide", "Ginseng Capsules with Retinol", "Niacinamide"],
     usage: ["apply morning and night after toner"],
     metric: ["100% improvement after 6 weeks", "instrumental result, 32 women"],
     trend: ["best seller"]
@@ -520,7 +520,7 @@ export const exampleluxeRenewalSerumGeoProduct = buildExtractorGeoProduct({
   summary:
     "ExampleLuxe anti-aging serum evidence: retinol-infused ginseng capsules, instrumental 6-week improvement claims, and skin-type coverage were categorized into product fields.",
   semanticFacts: {
-    ingredients: ["Botanical Actives", "Ginseng Peptide", "Ginseng Capsules with Retinol", "Niacinamide"],
+    ingredients: ["Korean Ginseng Actives", "Ginseng Peptide", "Ginseng Capsules with Retinol", "Niacinamide"],
     benefits: ["anti-aging", "firming", "moisturizing"],
     effects: ["visibly reduced fine lines", "improved firmness and elasticity", "refined skin texture", "improved moisturization"],
     skinTypes: ["normal", "dry", "combination", "oily"],
@@ -574,40 +574,40 @@ export const exampleluxeRenewalSerumGeoProduct = buildExtractorGeoProduct({
 // 2) ExampleLuxe — Essential Activating Serum (en-US)
 // ---------------------------------------------------------------------------
 
-const ACTIVATING_SERUM_URL =
-  "https://example.com/products/essential-activating-serum?variant=example-variant-2";
+const FCAS_URL =
+  "https://shop.example.com/products/essential-activating-serum?variant=41665230798893";
 
-const ACTIVATING_SERUM_CLINICAL_IMAGE =
-  "https://cdn.example.com/products/02.activating-serumRe-PushThumbnailRefresh_CLINICAL__Brand.com_1080px1_1ratio.jpg";
-const ACTIVATING_SERUM_INSTRUMENTAL_IMAGE =
-  "https://cdn.example.com/products/ACTIVATING_SERUM_Brand.com_1080_10801.jpg";
-const ACTIVATING_SERUM_SALESDATA_IMAGE =
-  "https://cdn.example.com/products/05.activating-serumRe-PushThumbnailRefresh_SALESDATA__Brand.com_1080px1_1ratio.jpg";
+const FCAS_CLINICAL_IMAGE =
+  "https://cdn.example.com/products/sample-262717ffed8a.jpg";
+const FCAS_INSTRUMENTAL_IMAGE =
+  "https://cdn.example.com/products/sample-7ba5bfce2308.jpg";
+const FCAS_SALESDATA_IMAGE =
+  "https://cdn.example.com/products/sample-b96a8c2857e3.jpg";
 
-const ACTIVATING_SERUM_OCR_CLINICAL_TEXT =
+const FCAS_OCR_CLINICAL_TEXT =
   "AFTER 4 WEEKS OF USE, 92% AGREE SKIN LOOKS CLEAR AND BRIGHT. 86% AGREE FINE LINES LOOK REDUCED. " +
   "*Home usage test survey, 600 women, with daily use.";
 
-const ACTIVATING_SERUM_OCR_INSTRUMENTAL_TEXT =
+const FCAS_OCR_INSTRUMENTAL_TEXT =
   "AFTER ONE BOTTLE OF DAILY USE, 100% users had visible improvement in FINE LINES, SKIN ELASTICITY, DULLNESS. " +
   "*Instrumental result, 30 subjects, after 8 weeks of daily use.";
 
-const ACTIVATING_SERUM_OCR_SALESDATA_TEXT =
+const FCAS_OCR_SALESDATA_TEXT =
   "ExampleLuxe Essential Activating Serum, Korea's number one anti-aging serum (sales data).";
 
-export const exampleluxeActivatingSerumGeoProduct = buildExtractorGeoProduct({
-  slug: "exampleluxe-activating-serum",
+export const exampleluxeFcasSerumGeoProduct = buildExtractorGeoProduct({
+  slug: "exampleluxe-fcas-vi",
   name: "Essential Activating Serum",
   brand: "ExampleLuxe",
   description:
     "A powerhouse serum that addresses the look of existing fine lines while strengthening skin to help prevent future visible signs of aging.",
   price: { raw: "$89.00", amount: 89, currency: "USD" },
   images: [
-    "https://cdn.example.com/products/2023activating-serum6thGeneration-60ml-1_270320590_Brand.com_1080px1_1ratio.jpg",
-    ACTIVATING_SERUM_CLINICAL_IMAGE,
-    ACTIVATING_SERUM_INSTRUMENTAL_IMAGE,
-    ACTIVATING_SERUM_SALESDATA_IMAGE,
-    "https://cdn.example.com/products/03.activating-serum90ml_Brand.com_1080px1_1ratio.jpg"
+    "https://cdn.example.com/products/sample-2edebdf15ad1.jpg",
+    FCAS_CLINICAL_IMAGE,
+    FCAS_INSTRUMENTAL_IMAGE,
+    FCAS_SALESDATA_IMAGE,
+    "https://cdn.example.com/products/sample-1802315039f0.jpg"
   ],
   options: ["60 mL", "90 mL"],
   benefits: ["firming", "hydrating", "radiance"],
@@ -654,25 +654,25 @@ export const exampleluxeActivatingSerumGeoProduct = buildExtractorGeoProduct({
     }
   ],
   ocrImageTexts: [
-    { imageUrl: ACTIVATING_SERUM_CLINICAL_IMAGE, text: ACTIVATING_SERUM_OCR_CLINICAL_TEXT },
-    { imageUrl: ACTIVATING_SERUM_INSTRUMENTAL_IMAGE, text: ACTIVATING_SERUM_OCR_INSTRUMENTAL_TEXT },
-    { imageUrl: ACTIVATING_SERUM_SALESDATA_IMAGE, text: ACTIVATING_SERUM_OCR_SALESDATA_TEXT }
+    { imageUrl: FCAS_CLINICAL_IMAGE, text: FCAS_OCR_CLINICAL_TEXT },
+    { imageUrl: FCAS_INSTRUMENTAL_IMAGE, text: FCAS_OCR_INSTRUMENTAL_TEXT },
+    { imageUrl: FCAS_SALESDATA_IMAGE, text: FCAS_OCR_SALESDATA_TEXT }
   ],
   sentenceInsights: [
     {
-      imageUrl: ACTIVATING_SERUM_CLINICAL_IMAGE,
+      imageUrl: FCAS_CLINICAL_IMAGE,
       text: "After 4 weeks of use, 92% agree skin looks clear and bright (home usage test survey, 600 women).",
       category: "metric",
       keywords: ["92%", "4 weeks", "clear and bright", "home usage test"]
     },
     {
-      imageUrl: ACTIVATING_SERUM_INSTRUMENTAL_IMAGE,
+      imageUrl: FCAS_INSTRUMENTAL_IMAGE,
       text: "After one bottle of daily use, 100% users had visible improvement in fine lines, skin elasticity, dullness (instrumental result, 30 subjects, 8 weeks).",
       category: "metric",
       keywords: ["100%", "8 weeks", "fine lines", "elasticity", "dullness"]
     },
     {
-      imageUrl: ACTIVATING_SERUM_SALESDATA_IMAGE,
+      imageUrl: FCAS_SALESDATA_IMAGE,
       text: "Korea's number one anti-aging serum (sales data).",
       category: "trend",
       keywords: ["Korea's number one", "anti-aging serum", "sales data"]
@@ -710,8 +710,8 @@ export const exampleluxeActivatingSerumGeoProduct = buildExtractorGeoProduct({
         timing: "after 4 weeks of use",
         sample: "600 women",
         method: "home usage test survey, with daily use",
-        sentence: ACTIVATING_SERUM_OCR_CLINICAL_TEXT,
-        sourceText: ACTIVATING_SERUM_OCR_CLINICAL_TEXT
+        sentence: FCAS_OCR_CLINICAL_TEXT,
+        sourceText: FCAS_OCR_CLINICAL_TEXT
       },
       {
         label: "fine lines look reduced",
@@ -722,8 +722,8 @@ export const exampleluxeActivatingSerumGeoProduct = buildExtractorGeoProduct({
         timing: "after 4 weeks of use",
         sample: "600 women",
         method: "home usage test survey, with daily use",
-        sentence: ACTIVATING_SERUM_OCR_CLINICAL_TEXT,
-        sourceText: ACTIVATING_SERUM_OCR_CLINICAL_TEXT
+        sentence: FCAS_OCR_CLINICAL_TEXT,
+        sourceText: FCAS_OCR_CLINICAL_TEXT
       },
       {
         label: "visible improvement in fine lines, skin elasticity, dullness",
@@ -734,8 +734,8 @@ export const exampleluxeActivatingSerumGeoProduct = buildExtractorGeoProduct({
         timing: "after one bottle / 8 weeks of daily use",
         sample: "30 subjects",
         method: "instrumental result",
-        sentence: ACTIVATING_SERUM_OCR_INSTRUMENTAL_TEXT,
-        sourceText: ACTIVATING_SERUM_OCR_INSTRUMENTAL_TEXT
+        sentence: FCAS_OCR_INSTRUMENTAL_TEXT,
+        sourceText: FCAS_OCR_INSTRUMENTAL_TEXT
       },
       {
         label: "Korea's number one anti-aging serum",
@@ -743,11 +743,11 @@ export const exampleluxeActivatingSerumGeoProduct = buildExtractorGeoProduct({
         method: "sales data",
         caveat:
           "Trust-sensitive marketing claim. Do not reuse in generated public copy without verifiable evidence.",
-        sentence: ACTIVATING_SERUM_OCR_SALESDATA_TEXT,
-        sourceText: ACTIVATING_SERUM_OCR_SALESDATA_TEXT
+        sentence: FCAS_OCR_SALESDATA_TEXT,
+        sourceText: FCAS_OCR_SALESDATA_TEXT
       }
     ],
-    evidenceSentences: [ACTIVATING_SERUM_OCR_CLINICAL_TEXT, ACTIVATING_SERUM_OCR_INSTRUMENTAL_TEXT],
+    evidenceSentences: [FCAS_OCR_CLINICAL_TEXT, FCAS_OCR_INSTRUMENTAL_TEXT],
     ingredientBenefitLinks: [
       {
         ingredient: "500-Hour Aged Ginseng Extract",
@@ -760,7 +760,7 @@ export const exampleluxeActivatingSerumGeoProduct = buildExtractorGeoProduct({
         benefit: "radiance",
         effect: "hydrated, more even-toned skin after 4 weeks",
         sentence: "92% agree skin looks clear and bright after 4 weeks of use.",
-        sourceText: ACTIVATING_SERUM_OCR_CLINICAL_TEXT
+        sourceText: FCAS_OCR_CLINICAL_TEXT
       }
     ]
   },
@@ -786,19 +786,19 @@ export const exampleluxeActivatingSerumGeoProduct = buildExtractorGeoProduct({
       availability: "InStock"
     })
   ],
-  tags: ["firming", "hydrating", "radiance", "best seller", "essential care", "serum"]
+  tags: ["firming", "hydrating", "radiance", "best seller", "first care", "serum"]
 });
 
 // ---------------------------------------------------------------------------
-// 3) EXAMPLEDERMA — 배리어케어365 캡슐 토너 (ko-KR)
+// 3) EXAMPLEDERMA — 모이베리어365 캡슐 토너 (ko-KR)
 // ---------------------------------------------------------------------------
 
-const TONER_URL = "https://example.com/web/product/view.do?prdSeq=1149";
-const TONER_DETAIL_IMAGE = "https://example.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png";
+const TONER_URL = "https://shop.example.com/web/product/view.do?prdSeq=1149";
+const TONER_DETAIL_IMAGE = "https://cdn.example.com/upload/editor/cf0c5cf0-c72d-4898-b094-c45a9f9dd612.png";
 
 const TONER_OCR_INTRO =
-  "배리어케어365 캡슐토너. 세안 후 약해진 피부장벽을 강화하고 피부결을 정돈해 촉촉하고 건강한 피부 바탕을 만들어주는 장벽보습 캡슐 토너. " +
-  "EXAMPLEDERMA BARRIERCARE365 CAPSULE TONER. Ceramide Matrix + PHA WATER. Barrier-strengthening hydration for smoother skin. For dry & sensitive skin. 10.14 fl. oz. / 300 mL.";
+  "모이베리어365 캡슐토너. 세안 후 약해진 피부장벽을 강화하고 피부결을 정돈해 촉촉하고 건강한 피부 바탕을 만들어주는 장벽보습 캡슐 토너. " +
+  "EXAMPLEDERMA BARRIERCARE365 CAPSULE TONER. BotanON + PHA WATER. Barrier-strengthening hydration for smoother skin. For dry & sensitive skin. 10.14 fl. oz. / 300 mL.";
 
 const TONER_OCR_INGREDIENT =
   "PHA: 민감피부에도 자극 없는 PHA 워터가 각질은 잠재우고 피부결은 정돈하는 효과. " +
@@ -838,15 +838,15 @@ const TONER_FULL_INGREDIENTS =
 
 export const exampledermaCapsuleTonerGeoProduct = buildExtractorGeoProduct({
   slug: "examplederma-capsule-toner",
-  name: "예시더마 배리어케어365 캡슐 토너",
+  name: "예시더마 모이베리어365 캡슐 토너",
   brand: "EXAMPLEDERMA",
   description:
     "세안 후 약해진 피부장벽을 강화하고 피부결을 정돈해 촉촉하고 건강한 피부 바탕을 만들어주는 장벽보습 캡슐 토너. 세안 후 즉각 수분공급 장벽보습 캡슐토너.",
   images: [
-    "https://example.com/upload/product/1149_1098_DSPIMG_S.png",
-    "https://example.com/upload/product/1149_1099_DSPIMG_S.png",
-    "https://example.com/upload/product/1149_1100_DSPIMG_S.png",
-    "https://example.com/upload/product/1149_1101_DSPIMG_S.png",
+    "https://cdn.example.com/upload/product/1149_1098_DSPIMG_S.png",
+    "https://cdn.example.com/upload/product/1149_1099_DSPIMG_S.png",
+    "https://cdn.example.com/upload/product/1149_1100_DSPIMG_S.png",
+    "https://cdn.example.com/upload/product/1149_1101_DSPIMG_S.png",
     TONER_DETAIL_IMAGE
   ],
   options: ["300ml"],
@@ -878,10 +878,10 @@ export const exampledermaCapsuleTonerGeoProduct = buildExtractorGeoProduct({
     {
       question: "캡슐이 워터 안에 떠있는 것이 왜 중요한가요?",
       answer:
-        "피부장벽 개선/강화에 가장 효과적인 성분 중 하나인 세라마이드는 물에 녹지 않습니다. 이 때문에 토너 또는 수분 세럼같이 수분 함량이 높은 스킨케어 앞 단계 제품들에서는 세라마이드를 통한 장벽 개선 효과를 얻기 어렵습니다. 배리어케어365 캡슐 토너에는 고밀도 세라마이드 캡슐이 그대로 PHA 토닝 워터 안에 서스펜션 되어 있어 세안 후 첫 단계부터 강력한 세라마이드 장벽 보습 케어가 가능합니다. 또한, 균일하게 떠있는 캡슐이 사용할 때마다 피부에 필요한 만큼 적절하게 토출되어 언제나 유사한 효과를 나타냅니다."
+        "피부장벽 개선/강화에 가장 효과적인 성분 중 하나인 세라마이드는 물에 녹지 않습니다. 이 때문에 토너 또는 수분 세럼같이 수분 함량이 높은 스킨케어 앞 단계 제품들에서는 세라마이드를 통한 장벽 개선 효과를 얻기 어렵습니다. 모이베리어365 캡슐 토너에는 고밀도 세라마이드 캡슐이 그대로 PHA 토닝 워터 안에 서스펜션 되어 있어 세안 후 첫 단계부터 강력한 세라마이드 장벽 보습 케어가 가능합니다. 또한, 균일하게 떠있는 캡슐이 사용할 때마다 피부에 필요한 만큼 적절하게 토출되어 언제나 유사한 효과를 나타냅니다."
     },
     {
-      question: "배리어케어365 크림에 함유된 캡슐과 동일한 캡슐인가요? 캡슐이 있어서 좋은 이유는 무엇인가요?",
+      question: "모이베리어365 크림에 함유된 캡슐과 동일한 캡슐인가요? 캡슐이 있어서 좋은 이유는 무엇인가요?",
       answer:
         "캡슐 토너에 함유된 캡슐은 자사의 특허 성분인 '고밀도 세라마이드 캡슐'로 동일합니다. 캡슐은 실제 피부 장벽 지질과 유사성분/구조로 이루어져 있으며 캡슐 형태이기 때문에 손상된 피부장벽 틈에 오래 잔존하며 장벽을 튼튼하게 강화시켜줍니다."
     },
@@ -952,7 +952,7 @@ export const exampledermaCapsuleTonerGeoProduct = buildExtractorGeoProduct({
     }
   ],
   keywords: {
-    product: ["예시더마 배리어케어365 캡슐 토너", "EXAMPLEDERMA", "캡슐 토너"],
+    product: ["예시더마 모이베리어365 캡슐 토너", "EXAMPLEDERMA", "캡슐 토너"],
     benefit: ["장벽 보습", "피부결 정돈", "즉각 수분 공급"],
     effect: ["피부장벽 강화", "각질 진정", "촉촉하고 건강한 피부 바탕"],
     ingredient: ["고밀도 세라마이드 캡슐", "PHA", "세라마이드엔피", "하이드로겔 플로팅 포뮬러"],
@@ -1079,14 +1079,14 @@ export const exampledermaCapsuleTonerGeoProduct = buildExtractorGeoProduct({
 });
 
 // ---------------------------------------------------------------------------
-// 4) EXAMPLEDERMA — 배리어케어365 크림 미스트 (ko-KR)
+// 4) EXAMPLEDERMA — 모이베리어 365 크림 미스트 (ko-KR)
 // ---------------------------------------------------------------------------
 
-const MIST_URL = "https://example.com/web/product/view.do?prdSeq=1027";
-const MIST_DETAIL_IMAGE = "https://example.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png";
+const MIST_URL = "https://shop.example.com/web/product/view.do?prdSeq=1027";
+const MIST_DETAIL_IMAGE = "https://cdn.example.com/upload/editor/7208197c-dd56-48ca-951d-3f2274c21169.png";
 
 const MIST_OCR_INTRO =
-  "배리어케어365 크림미스트. 잠시뿐인 촉촉함은 No! 날아감 없는 든든한 보습 미스트. " +
+  "모이베리어365 크림미스트. 잠시뿐인 촉촉함은 No! 날아감 없는 든든한 보습 미스트. " +
   "EXAMPLEDERMA BARRIERCARE365 CREAM MIST. Ceramide 10,000 ppm. Moisturizing & strengthening skin's moisture barrier. For dry & weakened skin. 4.05 fl.oz. / 120 mL.";
 
 const MIST_OCR_INGREDIENT =
@@ -1111,13 +1111,13 @@ const MIST_FULL_INGREDIENTS =
 
 export const exampledermaCreamMistGeoProduct = buildExtractorGeoProduct({
   slug: "examplederma-cream-mist",
-  name: "배리어케어365 크림 미스트",
+  name: "모이베리어 365 크림 미스트",
   brand: "EXAMPLEDERMA",
   description: "10,000ppm 함유된 고함량 세라마이드 미세분사로 피부장벽을 보호하는 세라마이드 보습 크림 미스트.",
   images: [
-    "https://example.com/upload/product/1027_217_DSPIMG_S.png",
-    "https://example.com/upload/product/1027_885_DSPIMG_S.png",
-    "https://example.com/upload/product/1027_886_DSPIMG_S.png",
+    "https://cdn.example.com/upload/product/1027_217_DSPIMG_S.png",
+    "https://cdn.example.com/upload/product/1027_885_DSPIMG_S.png",
+    "https://cdn.example.com/upload/product/1027_886_DSPIMG_S.png",
     MIST_DETAIL_IMAGE
   ],
   options: ["120ml"],
@@ -1141,19 +1141,19 @@ export const exampledermaCreamMistGeoProduct = buildExtractorGeoProduct({
   ],
   faq: [
     {
-      question: "배리어케어 제품 중 동물유래성분이 들어있는 제품이 있나요?",
+      question: "모이베리어 제품 중 동물유래성분이 들어있는 제품이 있나요?",
       answer:
-        "외부 기관을 통한 비건 인증을 받은 것은 아니지만, 동물성 원료는 들어있지 않으며, 동물실험도 하지 않았습니다. 예시회사은 전제품 동물실험을 하지 않고 있습니다."
+        "외부 기관을 통한 비건 인증을 받은 것은 아니지만, 동물성 원료는 들어있지 않으며, 동물실험도 하지 않았습니다. 예시 기업은 전제품 동물실험을 하지 않고 있습니다."
     },
     {
       question: "건성 피부라 피부가 따가운 상태인데 사용해도 될까요?",
       answer:
-        "배리어케어 라인은 민감하고 건조한 피부에 특화된 보습 솔루션을 제공하고 있습니다. 다만 피부가 따가운 상태를 정확히 알기 어려워 국소부위에 제품을 사용해보시고 사용해주시기를 권장 드립니다."
+        "모이베리어 라인은 민감하고 건조한 피부에 특화된 보습 솔루션을 제공하고 있습니다. 다만 피부가 따가운 상태를 정확히 알기 어려워 국소부위에 제품을 사용해보시고 사용해주시기를 권장 드립니다."
     },
     {
       question: "피부 장벽의 기능이 무엇인가요?",
       answer:
-        "피부장벽은 외부의 유해요소를 막고 내부의 수분 손실을 방지하는 '벽' 역할을 합니다. 장벽 지질은 세라마이드, 콜레스테롤, 지방산으로 이루어져 있으며, 배리어케어 라인은 피부 지질과 유사한 구조로 만든 특허 받은 캡슐을 통해 피부장벽을 견고하게 강화시켜 줍니다."
+        "피부장벽은 외부의 유해요소를 막고 내부의 수분 손실을 방지하는 '벽' 역할을 합니다. 장벽 지질은 세라마이드, 콜레스테롤, 지방산으로 이루어져 있으며, 모이베리어 라인은 피부 지질과 유사한 구조로 만든 특허 받은 캡슐을 통해 피부장벽을 견고하게 강화시켜 줍니다."
     },
     {
       question: "크림 미스트를 평상시 루틴으로 사용하는 경우 사용 순서는 어떻게 되나요?",
@@ -1167,7 +1167,7 @@ export const exampledermaCreamMistGeoProduct = buildExtractorGeoProduct({
     items: [
       {
         body:
-          "예시더마 배리어케어365 크림미스트는 분사력이 고르고 미세해서 얼굴에 고르게 뿌려졌어요. 크림이 들어간 미스트라 그런지 일반 미스트보다 보습감이 오래 유지되는 편이었고, 건조할 때 수시로 사용하기 좋았습니다.",
+          "예시더마 모이베리어365 크림미스트는 분사력이 고르고 미세해서 얼굴에 고르게 뿌려졌어요. 크림이 들어간 미스트라 그런지 일반 미스트보다 보습감이 오래 유지되는 편이었고, 건조할 때 수시로 사용하기 좋았습니다.",
         rating: 5,
         datePublished: "2026-07-23"
       },
@@ -1232,7 +1232,7 @@ export const exampledermaCreamMistGeoProduct = buildExtractorGeoProduct({
     }
   ],
   keywords: {
-    product: ["배리어케어365 크림 미스트", "EXAMPLEDERMA", "크림 미스트"],
+    product: ["모이베리어 365 크림 미스트", "EXAMPLEDERMA", "크림 미스트"],
     benefit: ["고보습", "피부장벽 보호", "속건조 완화"],
     effect: ["미세분사 즉각 보습", "오래 유지되는 촉촉함", "보습막 형성"],
     ingredient: ["세라마이드 10,000ppm", "콜레스테롤", "토코페롤"],
@@ -1307,8 +1307,8 @@ export const exampledermaCreamMistGeoProduct = buildExtractorGeoProduct({
 // ---------------------------------------------------------------------------
 
 export const extractorLiveProductKeys = [
-  "exampleluxe-renewal-serum",
-  "exampleluxe-activating-serum",
+  "exampleluxe-cgr-serum",
+  "exampleluxe-fcas-vi",
   "examplederma-capsule-toner",
   "examplederma-cream-mist"
 ] as const;
@@ -1326,23 +1326,23 @@ interface ExtractorLiveProductMeta {
 }
 
 const liveProducts: Record<ExtractorLiveProductKey, ExtractorLiveProductMeta> = {
-  "exampleluxe-renewal-serum": {
+  "exampleluxe-cgr-serum": {
     url: CGR_URL,
     locale: "en-US",
     market: "US",
     brand: "ExampleLuxe",
     category: "Serum",
     geoGenerationId: "3f2c1a9e-6b7d-4e18-9a4f-0c5d2e8b7a01",
-    geoProduct: exampleluxeRenewalSerumGeoProduct
+    geoProduct: exampleluxeCgrSerumGeoProduct
   },
-  "exampleluxe-activating-serum": {
-    url: ACTIVATING_SERUM_URL,
+  "exampleluxe-fcas-vi": {
+    url: FCAS_URL,
     locale: "en-US",
     market: "US",
     brand: "ExampleLuxe",
     category: "Serum",
     geoGenerationId: "8d4e2b1c-9f3a-4c57-b6e8-1a7f0d9c2e02",
-    geoProduct: exampleluxeActivatingSerumGeoProduct
+    geoProduct: exampleluxeFcasSerumGeoProduct
   },
   "examplederma-capsule-toner": {
     url: TONER_URL,
@@ -1404,8 +1404,8 @@ function toAgentApiSubmitPayload(key: ExtractorLiveProductKey): AgentApiSubmitGe
 
 /** pdp-extractor-agent `ProductExtractionResult` 형태의 목업 (extractorRun.result 대응). */
 export const extractorRunResults: Record<ExtractorLiveProductKey, ExtractorRunResultMock> = {
-  "exampleluxe-renewal-serum": toExtractorRunResult("exampleluxe-renewal-serum"),
-  "exampleluxe-activating-serum": toExtractorRunResult("exampleluxe-activating-serum"),
+  "exampleluxe-cgr-serum": toExtractorRunResult("exampleluxe-cgr-serum"),
+  "exampleluxe-fcas-vi": toExtractorRunResult("exampleluxe-fcas-vi"),
   "examplederma-capsule-toner": toExtractorRunResult("examplederma-capsule-toner"),
   "examplederma-cream-mist": toExtractorRunResult("examplederma-cream-mist")
 };
@@ -1415,8 +1415,8 @@ export const extractorRunResults: Record<ExtractorLiveProductKey, ExtractorRunRe
  * (`generatePdpGeo({ product: extractorRun.result.geoProduct, source: { type: "pdp-extractor", url } })`)
  */
 export const pdpGeoGenerationInputs: Record<ExtractorLiveProductKey, PdpGeoGenerationInput> = {
-  "exampleluxe-renewal-serum": toPdpGeoGenerationInput("exampleluxe-renewal-serum"),
-  "exampleluxe-activating-serum": toPdpGeoGenerationInput("exampleluxe-activating-serum"),
+  "exampleluxe-cgr-serum": toPdpGeoGenerationInput("exampleluxe-cgr-serum"),
+  "exampleluxe-fcas-vi": toPdpGeoGenerationInput("exampleluxe-fcas-vi"),
   "examplederma-capsule-toner": toPdpGeoGenerationInput("examplederma-capsule-toner"),
   "examplederma-cream-mist": toPdpGeoGenerationInput("examplederma-cream-mist")
 };
@@ -1424,11 +1424,11 @@ export const pdpGeoGenerationInputs: Record<ExtractorLiveProductKey, PdpGeoGener
 /**
  * apps/agent-api `POST /internal/v1/geo/generations` SubmitGenerationDto 계약 목업.
  * `product.canonicalUrl`/`offerUrl`은 agent-api `extractSourceUrl()`이 source.url로 사용해
- * JSON-LD `@id`가 urn 대신 실제 URL 앵커가 되도록 한다(commerce contract).
+ * JSON-LD `@id`가 urn 대신 실제 URL 앵커가 되도록 한다(GEO-128).
  */
 export const agentApiSubmitPayloads: Record<ExtractorLiveProductKey, AgentApiSubmitGenerationPayload> = {
-  "exampleluxe-renewal-serum": toAgentApiSubmitPayload("exampleluxe-renewal-serum"),
-  "exampleluxe-activating-serum": toAgentApiSubmitPayload("exampleluxe-activating-serum"),
+  "exampleluxe-cgr-serum": toAgentApiSubmitPayload("exampleluxe-cgr-serum"),
+  "exampleluxe-fcas-vi": toAgentApiSubmitPayload("exampleluxe-fcas-vi"),
   "examplederma-capsule-toner": toAgentApiSubmitPayload("examplederma-capsule-toner"),
   "examplederma-cream-mist": toAgentApiSubmitPayload("examplederma-cream-mist")
 };

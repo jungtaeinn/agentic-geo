@@ -21,7 +21,7 @@ export interface GeoQueueOptions {
  * 대기열·동시성 상한·dedup·백오프 재시도만 담당하며 작업 내용은 알지 못한다.
  *
  * 내구성은 없다 — 재시작 시 대기·진행 중 작업은 유실되고, 해당 row는
- * `geo_generation.status='PROCESSING'`으로 남아 neo-batch stale sweep(15분)이 회수한다.
+ * `geo_generation.status='PROCESSING'`으로 남아 dispatcher stale sweep(15분)이 회수한다.
  */
 @Injectable()
 export class GeoQueue implements OnApplicationShutdown {
@@ -93,7 +93,7 @@ export class GeoQueue implements OnApplicationShutdown {
       this.logger.warn({
         event: "queue.discarded_on_shutdown",
         discarded,
-        note: "neo-batch stale sweep will reclaim them",
+        note: "dispatcher stale sweep will reclaim them",
       });
     }
   }

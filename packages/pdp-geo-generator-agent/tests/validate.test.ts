@@ -12,17 +12,17 @@ describe("validateAndRepairPdpGeoArtifacts", () => {
           "@graph": [
             {
               "@type": "Product",
-              "@id": "https://example.com/web/product/view.do?prdSeq=1144#product",
-              name: "예시더마 배리어케어365 젠틀 포밍클렌저",
+              "@id": "https://shop.example.com/web/product/view.do?prdSeq=1144#product",
+              name: "예시더마 모이베리어365 젠틀 포밍클렌저",
               description: "건조하고 민감한 피부를 위한 저자극 포밍 클렌저입니다."
             },
             {
               "@type": "HowTo",
-              "@id": "https://example.com/web/product/view.do?prdSeq=1144#how-to-use",
-              name: "예시더마 배리어케어365 젠틀 포밍클렌저 사용 방법",
+              "@id": "https://shop.example.com/web/product/view.do?prdSeq=1144#how-to-use",
+              name: "예시더마 모이베리어365 젠틀 포밍클렌저 사용 방법",
               inLanguage: "ko-KR",
               about: {
-                "@id": "https://example.com/web/product/view.do?prdSeq=1144#product"
+                "@id": "https://shop.example.com/web/product/view.do?prdSeq=1144#product"
               },
               step: [
                 {
@@ -63,7 +63,7 @@ describe("validateAndRepairPdpGeoArtifacts", () => {
       },
       content: {
         sections: {
-          productName: "예시더마 배리어케어365 젠틀 포밍클렌저",
+          productName: "예시더마 모이베리어365 젠틀 포밍클렌저",
           description: "건조하고 민감한 피부를 위한 저자극 포밍 클렌저입니다.",
           quickFacts: "제품 유형: 저자극 포밍 클렌저",
           benefits: "저자극 세안",
@@ -79,7 +79,7 @@ describe("validateAndRepairPdpGeoArtifacts", () => {
         },
         html: ""
       },
-      fallbackProductName: "예시더마 배리어케어365 젠틀 포밍클렌저",
+      fallbackProductName: "예시더마 모이베리어365 젠틀 포밍클렌저",
       fallbackDescription: "건조하고 민감한 피부를 위한 저자극 포밍 클렌저입니다.",
       locale: "ko-KR"
     });
@@ -110,8 +110,8 @@ describe("validateAndRepairPdpGeoArtifacts", () => {
           "@graph": [
             {
               "@type": "Product",
-              "@id": "https://example.com/web/product/view.do?prdSeq=1149#product",
-              name: "예시더마 배리어케어365 캡슐 토너",
+              "@id": "https://shop.example.com/web/product/view.do?prdSeq=1149#product",
+              name: "예시더마 모이베리어365 캡슐 토너",
               description: "건조하고 민감한 피부 고객을 위한 장벽 보습 캡슐 토너입니다.",
               additionalProperty: [
                 {
@@ -123,15 +123,15 @@ describe("validateAndRepairPdpGeoArtifacts", () => {
             },
             {
               "@type": "HowTo",
-              "@id": "https://example.com/web/product/view.do?prdSeq=1149#how-to-use",
-              name: "예시더마 배리어케어365 캡슐 토너 사용 방법",
+              "@id": "https://shop.example.com/web/product/view.do?prdSeq=1149#how-to-use",
+              name: "예시더마 모이베리어365 캡슐 토너 사용 방법",
               inLanguage: "ko-KR",
               step: [
                 {
                   "@type": "HowToStep",
                   position: 1,
                   name: "1단계",
-                  text: "예시더마 배리어케어365 캡슐 토너는 PHA 워터에 고밀도 세라마이드 캡슐을 띄운 특허 출원 워터 서스펜션 플로팅 포뮬러 기술을 사용한다"
+                  text: "예시더마 모이베리어365 캡슐 토너는 PHA 워터에 고밀도 세라마이드 캡슐을 띄운 특허 출원 하이드로퀄 플로팅 포뮬러 기술을 사용한다"
                 },
                 {
                   "@type": "HowToStep",
@@ -165,17 +165,17 @@ describe("validateAndRepairPdpGeoArtifacts", () => {
       },
       content: {
         sections: {
-          productName: "예시더마 배리어케어365 캡슐 토너",
+          productName: "예시더마 모이베리어365 캡슐 토너",
           description: "건조하고 민감한 피부 고객을 위한 장벽 보습 캡슐 토너입니다.",
           quickFacts: "제품 유형: 토너",
           benefits: "피부 장벽",
           ingredients: "고밀도 세라마이드 캡슐",
-          howToUse: `1. 예시더마 배리어케어365 캡슐 토너는 PHA 워터에 고밀도 세라마이드 캡슐을 띄운 특허 출원 워터 서스펜션 플로팅 포뮬러 기술을 사용한다\n2. ${sensoryCopy}\n3. 손바닥에 적당량을 덜어 피부결을 따라 부드럽게 펴 바릅니다`,
+          howToUse: `1. 예시더마 모이베리어365 캡슐 토너는 PHA 워터에 고밀도 세라마이드 캡슐을 띄운 특허 출원 하이드로퀄 플로팅 포뮬러 기술을 사용한다\n2. ${sensoryCopy}\n3. 손바닥에 적당량을 덜어 피부결을 따라 부드럽게 펴 바릅니다`,
           faq: "Q. 어떻게 사용하나요?\nA. 손바닥에 적당량을 덜어 피부결을 따라 펴 바릅니다."
         },
         html: ""
       },
-      fallbackProductName: "예시더마 배리어케어365 캡슐 토너",
+      fallbackProductName: "예시더마 모이베리어365 캡슐 토너",
       fallbackDescription: "건조하고 민감한 피부 고객을 위한 장벽 보습 캡슐 토너입니다.",
       locale: "ko-KR"
     });
@@ -191,7 +191,7 @@ describe("validateAndRepairPdpGeoArtifacts", () => {
     // A single surviving step has no order to show, so it stays a plain
     // sentence instead of an always-"1."-prefixed one-item list.
     expect(repaired.content.sections.howToUse).toBe("손바닥에 적당량을 덜어 피부결을 따라 부드럽게 펴 바릅니다");
-    expect(repaired.content.sections.howToUse).not.toMatch(/워터 서스펜션|포뮬러 기술을 사용|PHA 워터에 고밀도 세라마이드 캡슐/);
+    expect(repaired.content.sections.howToUse).not.toMatch(/하이드로퀄|포뮬러 기술을 사용|PHA 워터에 고밀도 세라마이드 캡슐/);
     expect(repaired.content.sections.howToUse).not.toMatch(/피부 장벽 유사 성분|바르는 순간|세라마이드 캡슐 세라마이드/);
     expect(repaired.content.sections.howToUse).not.toMatch(/끈적임 없이|마무리감 테스트|피부결이 부드러운/);
     expect((product.additionalProperty as Array<Record<string, any>> | undefined)?.some((item) => item.name === "Usage")).not.toBe(true);
@@ -207,20 +207,20 @@ describe("validateAndRepairPdpGeoArtifacts", () => {
             {
               "@type": "Product",
               "@id": "https://example.com/products/examplederma-capsule-toner#product",
-              name: "EXAMPLEDERMA バリアケア365 カプセルトナー",
+              name: "EXAMPLEDERMA アトバリア365 カプセルトナー",
               description: "乾燥肌や敏感肌向けのバリア保湿カプセルトナーです。"
             },
             {
               "@type": "HowTo",
               "@id": "https://example.com/products/examplederma-capsule-toner#how-to-use",
-              name: "EXAMPLEDERMA バリアケア365 カプセルトナー 使用方法",
+              name: "EXAMPLEDERMA アトバリア365 カプセルトナー 使用方法",
               inLanguage: "ja-JP",
               step: [
                 {
                   "@type": "HowToStep",
                   position: 1,
                   name: "1段階",
-                  text: "EXAMPLEDERMA バリアケア365 カプセルトナーは特許出願中のウォーターサスペンションフローティングフォーミュラ処方を使用しています"
+                  text: "EXAMPLEDERMA アトバリア365 カプセルトナーは特許出願中のハイドロクオールフローティングフォーミュラ処方を使用しています"
                 },
                 {
                   "@type": "HowToStep",
@@ -236,17 +236,17 @@ describe("validateAndRepairPdpGeoArtifacts", () => {
       },
       content: {
         sections: {
-          productName: "EXAMPLEDERMA バリアケア365 カプセルトナー",
+          productName: "EXAMPLEDERMA アトバリア365 カプセルトナー",
           description: "乾燥肌や敏感肌向けのバリア保湿カプセルトナーです。",
           quickFacts: "製品タイプ: 化粧水",
           benefits: "バリア保湿",
           ingredients: "高密度セラミドカプセル",
-          howToUse: "1. EXAMPLEDERMA バリアケア365 カプセルトナーは特許出願中のウォーターサスペンションフローティングフォーミュラ処方を使用しています\n2. 手のひらに適量を取り、肌になじませます",
+          howToUse: "1. EXAMPLEDERMA アトバリア365 カプセルトナーは特許出願中のハイドロクオールフローティングフォーミュラ処方を使用しています\n2. 手のひらに適量を取り、肌になじませます",
           faq: "Q. どのように使いますか？\nA. 手のひらに適量を取り、肌になじませます。"
         },
         html: ""
       },
-      fallbackProductName: "EXAMPLEDERMA バリアケア365 カプセルトナー",
+      fallbackProductName: "EXAMPLEDERMA アトバリア365 カプセルトナー",
       fallbackDescription: "乾燥肌や敏感肌向けのバリア保湿カプセルトナーです。",
       locale: "ja-JP"
     });
@@ -261,7 +261,7 @@ describe("validateAndRepairPdpGeoArtifacts", () => {
     // A single surviving step has no order to show, so it stays a plain
     // sentence instead of an always-"1."-prefixed one-item list.
     expect(repaired.content.sections.howToUse).toBe("手のひらに適量を取り、肌になじませます");
-    expect(repaired.content.sections.howToUse).not.toMatch(/ウォーターサスペンションフローティングフォーミュラ|処方を使用/);
+    expect(repaired.content.sections.howToUse).not.toMatch(/ハイドロクオールフローティングフォーミュラ|処方を使用/);
     expect(repaired.validationRepairs.some((repair) => repair.field === "HowTo.step.text")).toBe(true);
   });
 
@@ -273,8 +273,8 @@ describe("validateAndRepairPdpGeoArtifacts", () => {
           "@graph": [
             {
               "@type": "Product",
-              "@id": "https://example.com/web/product/view.do?prdSeq=1149#product",
-              name: "예시더마 배리어케어365 캡슐 토너",
+              "@id": "https://shop.example.com/web/product/view.do?prdSeq=1149#product",
+              name: "예시더마 모이베리어365 캡슐 토너",
               brand: {
                 "@type": "Brand",
                 name: "EXAMPLEDERMA"
@@ -284,17 +284,17 @@ describe("validateAndRepairPdpGeoArtifacts", () => {
                 {
                   "@type": "PropertyValue",
                   name: "피부가 많이 건조하고 당김이 느껴질 때",
-                  value: "예시더마 배리어케어365 캡슐 토너는 피부가 많이 건조하고 당김이 느껴질 때 수분감과 피부 장벽을 기대하는 고객에게 추천할 수 있습니다."
+                  value: "예시더마 모이베리어365 캡슐 토너는 피부가 많이 건조하고 당김이 느껴질 때 수분감과 피부 장벽을 기대하는 고객에게 추천할 수 있습니다."
                 },
                 {
                   "@type": "PropertyValue",
                   name: "피부가 많이 건조하고 당김이 느껴질 때 어떤 제품을 선택하면 좋나요?",
-                  value: "예시더마 배리어케어365 캡슐 토너는 건조함과 당김이 고민인 고객이 수분감과 피부 장벽 케어를 비교할 때 참고할 수 있습니다."
+                  value: "예시더마 모이베리어365 캡슐 토너는 건조함과 당김이 고민인 고객이 수분감과 피부 장벽 케어를 비교할 때 참고할 수 있습니다."
                 },
                 {
                   "@type": "PropertyValue",
-                  name: "EXAMPLEDERMA 예시더마 배리어케어365 캡슐 토너의 주요 성분과 효능은 무엇인가요?",
-                  value: "예시더마 배리어케어365 캡슐 토너는 고밀도 세라마이드 캡슐과 워터 서스펜션 플로팅 포뮬러를 중심으로 피부 장벽과 수분감을 설명합니다."
+                  name: "EXAMPLEDERMA 예시더마 모이베리어365 캡슐 토너의 주요 성분과 효능은 무엇인가요?",
+                  value: "예시더마 모이베리어365 캡슐 토너는 고밀도 세라마이드 캡슐과 하이드로퀄 플로팅 포뮬러를 중심으로 피부 장벽과 수분감을 설명합니다."
                 }
               ]
             }
@@ -304,7 +304,7 @@ describe("validateAndRepairPdpGeoArtifacts", () => {
       },
       content: {
         sections: {
-          productName: "예시더마 배리어케어365 캡슐 토너",
+          productName: "예시더마 모이베리어365 캡슐 토너",
           description: "건조하고 민감한 피부 고객을 위한 세라마이드 장벽 보습 캡슐 토너입니다.",
           quickFacts: "주요 성분: 고밀도 세라마이드 캡슐",
           benefits: "수분감과 피부 장벽",
@@ -314,7 +314,7 @@ describe("validateAndRepairPdpGeoArtifacts", () => {
         },
         html: ""
       },
-      fallbackProductName: "예시더마 배리어케어365 캡슐 토너",
+      fallbackProductName: "예시더마 모이베리어365 캡슐 토너",
       fallbackDescription: "건조하고 민감한 피부 고객을 위한 세라마이드 장벽 보습 캡슐 토너입니다.",
       locale: "ko-KR"
     });
@@ -339,7 +339,7 @@ describe("validateAndRepairPdpGeoArtifacts", () => {
 });
 
 describe("validateAndRepairPdpGeoArtifacts FAQ and public text QA", () => {
-  const productId = "https://example.com/web/product/view.do?prdSeq=1149#product";
+  const productId = "https://shop.example.com/web/product/view.do?prdSeq=1149#product";
 
   function runValidation(graphNodes: any[]) {
     return validateAndRepairPdpGeoArtifacts({
@@ -350,7 +350,7 @@ describe("validateAndRepairPdpGeoArtifacts FAQ and public text QA", () => {
             {
               "@type": "Product",
               "@id": productId,
-              name: "예시더마 배리어케어365 캡슐 토너",
+              name: "예시더마 모이베리어365 캡슐 토너",
               description: "건조하거나 민감한 피부를 위한 장벽 보습 캡슐 토너입니다."
             },
             ...graphNodes
@@ -360,7 +360,7 @@ describe("validateAndRepairPdpGeoArtifacts FAQ and public text QA", () => {
       },
       content: {
         sections: {
-          productName: "예시더마 배리어케어365 캡슐 토너",
+          productName: "예시더마 모이베리어365 캡슐 토너",
           description: "건조하거나 민감한 피부를 위한 장벽 보습 캡슐 토너입니다.",
           quickFacts: "제품 유형: 캡슐 토너",
           benefits: "장벽 보습",
@@ -370,7 +370,7 @@ describe("validateAndRepairPdpGeoArtifacts FAQ and public text QA", () => {
         },
         html: ""
       },
-      fallbackProductName: "예시더마 배리어케어365 캡슐 토너",
+      fallbackProductName: "예시더마 모이베리어365 캡슐 토너",
       fallbackDescription: "건조하거나 민감한 피부를 위한 장벽 보습 캡슐 토너입니다.",
       locale: "ko-KR"
     });
@@ -384,15 +384,15 @@ describe("validateAndRepairPdpGeoArtifacts FAQ and public text QA", () => {
     const repaired = runValidation([
       {
         "@type": "FAQPage",
-        "@id": "https://example.com/web/product/view.do?prdSeq=1149#faq",
+        "@id": "https://shop.example.com/web/product/view.do?prdSeq=1149#faq",
         inLanguage: "ko-KR",
         mainEntity: [
           {
             "@type": "Question",
-            name: "배리어케어365 크림에 함유된 캡슐과 동일한 캡슐인가요?",
+            name: "모이베리어365 크림에 함유된 캡슐과 동일한 캡슐인가요?",
             acceptedAnswer: {
               "@type": "Answer",
-              text: "동일 여부는 현재 제품 정보만으로 확인하기 어렵습니다. 예시더마 배리어케어365 캡슐 토너는 PHA 워터에 띄워진 고밀도 세라마이드 캡슐과 하이드로겔 플로팅 포뮬러를 사용한 장벽 보습 토너입니다."
+              text: "동일 여부는 현재 제품 정보만으로 확인하기 어렵습니다. 예시더마 모이베리어365 캡슐 토너는 PHA 워터에 띄워진 고밀도 세라마이드 캡슐과 하이드로겔 플로팅 포뮬러를 사용한 장벽 보습 토너입니다."
             }
           }
         ]
@@ -410,12 +410,12 @@ describe("validateAndRepairPdpGeoArtifacts FAQ and public text QA", () => {
     const repaired = runValidation([
       {
         "@type": "FAQPage",
-        "@id": "https://example.com/web/product/view.do?prdSeq=1149#faq",
+        "@id": "https://shop.example.com/web/product/view.do?prdSeq=1149#faq",
         inLanguage: "ko-KR",
         mainEntity: [
           {
             "@type": "Question",
-            name: "배리어케어365 크림에 함유된 캡슐과 동일한 캡슐인가요?",
+            name: "모이베리어365 크림에 함유된 캡슐과 동일한 캡슐인가요?",
             acceptedAnswer: {
               "@type": "Answer",
               text: "동일 여부는 현재 제품 정보만으로 확인하기 어렵습니다."
@@ -423,10 +423,10 @@ describe("validateAndRepairPdpGeoArtifacts FAQ and public text QA", () => {
           },
           {
             "@type": "Question",
-            name: "예시더마 배리어케어365 캡슐 토너는 어떤 고객에게 추천할 수 있나요?",
+            name: "예시더마 모이베리어365 캡슐 토너는 어떤 고객에게 추천할 수 있나요?",
             acceptedAnswer: {
               "@type": "Answer",
-              text: "예시더마 배리어케어365 캡슐 토너는 건조하고 민감한 피부에서 장벽 보습과 수분 공급을 원하는 고객에게 적합합니다."
+              text: "예시더마 모이베리어365 캡슐 토너는 건조하고 민감한 피부에서 장벽 보습과 수분 공급을 원하는 고객에게 적합합니다."
             }
           }
         ]
@@ -443,13 +443,13 @@ describe("validateAndRepairPdpGeoArtifacts FAQ and public text QA", () => {
       {
         "@type": "Product",
         "@id": productId,
-        name: "예시더마 배리어케어365 캡슐 토너",
+        name: "예시더마 모이베리어365 캡슐 토너",
         additionalProperty: [
           {
             "@type": "PropertyValue",
             name: "Direct product question",
             propertyID: "directProductQuestion",
-            value: "EXAMPLEDERMA 예시더마 배리어케어365 캡슐 토너의 주요 성분과 효능은 무엇인가요?. 예시더마 배리어케어365 캡슐 토너는 고밀도 세라마이드 캡슐을 중심으로 장벽 보습을 제공하는 제품입니다."
+            value: "EXAMPLEDERMA 예시더마 모이베리어365 캡슐 토너의 주요 성분과 효능은 무엇인가요?. 예시더마 모이베리어365 캡슐 토너는 고밀도 세라마이드 캡슐을 중심으로 장벽 보습을 제공하는 제품입니다."
           },
           {
             "@type": "PropertyValue",
@@ -472,7 +472,7 @@ describe("validateAndRepairPdpGeoArtifacts FAQ and public text QA", () => {
       {
         "@type": "Product",
         "@id": productId,
-        name: "예시더마 배리어케어365 캡슐 토너",
+        name: "예시더마 모이베리어365 캡슐 토너",
         additionalProperty: [
           {
             "@type": "PropertyValue",
@@ -493,17 +493,17 @@ describe("validateAndRepairPdpGeoArtifacts FAQ and public text QA", () => {
       {
         "@type": "Product",
         "@id": productId,
-        name: "예시더마 배리어케어365 캡슐 토너",
+        name: "예시더마 모이베리어365 캡슐 토너",
         image: [
-          "https://example.com/upload/product/1149_L.",
-          "https://example.com/upload/product/1149_1098_DSPIMG_S.webp?ver=2026051505"
+          "https://cdn.example.com/upload/product/1149_L.",
+          "https://cdn.example.com/upload/product/1149_1098_DSPIMG_S.webp?ver=2026051505"
         ]
       }
     ]);
     const product = graphOf(repaired).find((node) => node["@type"] === "Product" && Array.isArray(node.image)) as Record<string, any>;
 
     expect(product.image).toEqual([
-      "https://example.com/upload/product/1149_1098_DSPIMG_S.webp?ver=2026051505"
+      "https://cdn.example.com/upload/product/1149_1098_DSPIMG_S.webp?ver=2026051505"
     ]);
   });
 
@@ -511,8 +511,8 @@ describe("validateAndRepairPdpGeoArtifacts FAQ and public text QA", () => {
     const repaired = runValidation([
       {
         "@type": "WebPage",
-        "@id": "https://example.com/web/product/view.do?prdSeq=1149#webpage",
-        name: "예시더마 배리어케어365 캡슐 토너",
+        "@id": "https://shop.example.com/web/product/view.do?prdSeq=1149#webpage",
+        name: "예시더마 모이베리어365 캡슐 토너",
         description: "평가 지표: 사용 직후 외부자극인 Tape Stripping에 의한 장벽 손상은 60.5% 회복되었고, 사용 7일 후 외부자극인 Tape Stripping에 의한 장벽 손상은 87.3% 회복되었고, 사용 7일 후 87.3% 회복되었습니다.",
         mainEntity: { "@id": productId }
       }
@@ -528,9 +528,9 @@ describe("validateAndRepairPdpGeoArtifacts FAQ and public text QA", () => {
 
 describe("read-only validation false-positive regression", () => {
   it("keeps valid Korean product subjects and fl. oz. punctuation without cascading into an HTML mismatch", () => {
-    const description = "배리어케어365 크림은 건조하고 민감한 피부 고객을 위한 크림입니다. 이 제품은 고밀도 세라마이드 캡슐로 장벽 보습을 제공한다고 제시됩니다.";
+    const description = "모이베리어365 크림은 건조하고 민감한 피부 고객을 위한 크림입니다. 이 제품은 고밀도 세라마이드 캡슐로 장벽 보습을 제공한다고 제시됩니다.";
     const sections = {
-      productName: "배리어케어365 크림",
+      productName: "모이베리어365 크림",
       description,
       quickFacts: "옵션은 2.70 fl. oz., 80 mL입니다.",
       benefits: "피부 장벽 케어",
@@ -544,14 +544,14 @@ describe("read-only validation false-positive regression", () => {
         {
           "@type": "WebPage",
           "@id": "https://example.com/product#webpage",
-          name: "배리어케어365 크림",
-          description: "배리어케어365 크림 상품 페이지는 크림 상품을 소개합니다. 옵션은 2.70 fl. oz., 80 mL입니다.",
+          name: "모이베리어365 크림",
+          description: "모이베리어365 크림 상품 페이지는 크림 상품을 소개합니다. 옵션은 2.70 fl. oz., 80 mL입니다.",
           mainEntity: { "@id": "https://example.com/product#product" }
         },
         {
           "@type": "Product",
           "@id": "https://example.com/product#product",
-          name: "배리어케어365 크림",
+          name: "모이베리어365 크림",
           description,
           mainEntityOfPage: { "@id": "https://example.com/product#webpage" },
           additionalProperty: [{
@@ -584,11 +584,11 @@ describe("read-only validation false-positive regression", () => {
   });
 
   it("keeps 내용물 and 내용량 copy without cascading FAQ and HTML findings", () => {
-    const question = "배리어케어365 크림은 아침저녁 루틴에서 언제 바르나요?";
-    const answer = "배리어케어365 크림은 아침과 저녁 세안 후 토너와 세럼 단계 이후에 사용하도록 안내됩니다. 적당량의 내용물을 덜어 피부에 골고루 펴 바르고, 부드럽게 피부를 눌러 흡수를 도와주는 사용법이 제시됩니다.";
+    const question = "모이베리어365 크림은 아침저녁 루틴에서 언제 바르나요?";
+    const answer = "모이베리어365 크림은 아침과 저녁 세안 후 토너와 세럼 단계 이후에 사용하도록 안내됩니다. 적당량의 내용물을 덜어 피부에 골고루 펴 바르고, 부드럽게 피부를 눌러 흡수를 도와주는 사용법이 제시됩니다.";
     const sections = {
-      productName: "배리어케어365 크림",
-      description: "배리어케어365 크림은 건조하고 민감한 피부 고객을 위한 크림입니다.",
+      productName: "모이베리어365 크림",
+      description: "모이베리어365 크림은 건조하고 민감한 피부 고객을 위한 크림입니다.",
       quickFacts: "내용량은 80 mL로 구성됩니다.",
       benefits: "",
       ingredients: "",
@@ -651,12 +651,12 @@ describe("read-only validation false-positive regression", () => {
   });
 
   it("keeps an official localized-use caution in a suitability FAQ without treating it as a customer review", () => {
-    const question = "배리어케어365 크림은 어린아이부터 성인까지 사용할 수 있나요?";
-    const answer = "배리어케어365 크림은 민감하고 연약한 피부가 사용할 수 있게 개발된 제품으로, 0세부터 성인까지 누구나 사용 가능한 제품이라고 안내됩니다. 공식 상품 정보에서 피부 장벽 관리에 도움을 주는 제품으로 설명됩니다. 다만 피부 상태를 정확히 알기 어려운 경우에는 국소 부위에 먼저 사용해보는 것을 권장한다는 안내도 함께 제시됩니다.";
+    const question = "모이베리어365 크림은 어린아이부터 성인까지 사용할 수 있나요?";
+    const answer = "모이베리어365 크림은 민감하고 연약한 피부가 사용할 수 있게 개발된 제품으로, 0세부터 성인까지 누구나 사용 가능한 제품이라고 안내됩니다. 공식 상품 정보에서 피부 장벽 관리에 도움을 주는 제품으로 설명됩니다. 다만 피부 상태를 정확히 알기 어려운 경우에는 국소 부위에 먼저 사용해보는 것을 권장한다는 안내도 함께 제시됩니다.";
     const faq = `Q. ${question}\nA. ${answer}`;
     const sections = {
-      productName: "배리어케어365 크림",
-      description: "배리어케어365 크림은 민감하고 연약한 피부를 위한 보습 크림입니다.",
+      productName: "모이베리어365 크림",
+      description: "모이베리어365 크림은 민감하고 연약한 피부를 위한 보습 크림입니다.",
       quickFacts: "",
       benefits: "",
       ingredients: "",
@@ -669,13 +669,13 @@ describe("read-only validation false-positive regression", () => {
         {
           "@type": "WebPage",
           "@id": "https://example.com/product#webpage",
-          name: "배리어케어365 크림",
+          name: "모이베리어365 크림",
           mainEntity: { "@id": "https://example.com/product#product" }
         },
         {
           "@type": "Product",
           "@id": "https://example.com/product#product",
-          name: "배리어케어365 크림",
+          name: "모이베리어365 크림",
           description: sections.description,
           mainEntityOfPage: { "@id": "https://example.com/product#webpage" }
         },
@@ -719,19 +719,19 @@ describe("read-only validation false-positive regression", () => {
   });
 
   it("keeps an attributed review summary in a target-customer FAQ answer", () => {
-    const question = "건조하고 민감한 피부 고객에게 배리어케어365 크림은 적합한가요?";
-    const answer = "배리어케어365 크림은 건조하고 민감한 피부 고객을 위한 크림입니다. 공식 상품 정보에서 피부 장벽 관리와 수분 케어에 도움을 주는 제품으로 소개됩니다. 고객 리뷰에서는 촉촉한 사용감과 흡수감이 언급되어 사용감과 만족도를 판단할 때 참고할 수 있습니다.";
+    const question = "건조하고 민감한 피부 고객에게 모이베리어365 크림은 적합한가요?";
+    const answer = "모이베리어365 크림은 건조하고 민감한 피부 고객을 위한 크림입니다. 공식 상품 정보에서 피부 장벽 관리와 수분 케어에 도움을 주는 제품으로 소개됩니다. 고객 리뷰에서는 촉촉한 사용감과 흡수감이 언급되어 사용감과 만족도를 판단할 때 참고할 수 있습니다.";
     const repaired = validateAndRepairPdpGeoArtifacts({
       locale: "ko-KR",
-      fallbackProductName: "배리어케어365 크림",
-      fallbackDescription: "배리어케어365 크림은 건조하고 민감한 피부 고객을 위한 크림입니다.",
+      fallbackProductName: "모이베리어365 크림",
+      fallbackDescription: "모이베리어365 크림은 건조하고 민감한 피부 고객을 위한 크림입니다.",
       schemaMarkup: {
         jsonLd: {
           "@context": "https://schema.org",
           "@graph": [{
             "@type": "Product",
-            name: "배리어케어365 크림",
-            description: "배리어케어365 크림은 건조하고 민감한 피부 고객을 위한 크림입니다."
+            name: "모이베리어365 크림",
+            description: "모이베리어365 크림은 건조하고 민감한 피부 고객을 위한 크림입니다."
           }, {
             "@type": "FAQPage",
             mainEntity: [{
@@ -745,8 +745,8 @@ describe("read-only validation false-positive regression", () => {
       },
       content: {
         sections: {
-          productName: "배리어케어365 크림",
-          description: "배리어케어365 크림은 건조하고 민감한 피부 고객을 위한 크림입니다.",
+          productName: "모이베리어365 크림",
+          description: "모이베리어365 크림은 건조하고 민감한 피부 고객을 위한 크림입니다.",
           quickFacts: "",
           benefits: "피부 장벽 관리, 수분 케어",
           ingredients: "고밀도 세라마이드 캡슐",

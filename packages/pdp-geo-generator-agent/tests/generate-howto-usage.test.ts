@@ -14,7 +14,7 @@ describe("generatePdpGeo", () => {
     const { result } = await generatePdpGeo({
       product: {
         geoProduct: {
-          name: "예시더마 배리어케어365 캡슐 토너",
+          name: "예시더마 모이베리어365 캡슐 토너",
           description: "민감하고 건조한 피부를 위한 장벽 보습 캡슐 토너입니다.",
           brand: "EXAMPLEDERMA",
           category: "토너",
@@ -30,7 +30,7 @@ describe("generatePdpGeo", () => {
       },
       source: {
         type: "pdp-extractor",
-        url: "https://example.com/web/product/view.do?prdSeq=1149"
+        url: "https://shop.example.com/web/product/view.do?prdSeq=1149"
       },
       hints: {
         locale: "ko-KR",
@@ -56,7 +56,7 @@ describe("generatePdpGeo", () => {
     const { result } = await generatePdpGeo({
       product: {
         geoProduct: {
-          name: "예시더마 배리어케어365 캡슐 토너",
+          name: "예시더마 모이베리어365 캡슐 토너",
           description: "민감하고 건조한 피부를 위한 장벽 보습 캡슐 토너입니다.",
           brand: "EXAMPLEDERMA",
           category: "토너",
@@ -76,7 +76,7 @@ describe("generatePdpGeo", () => {
       },
       source: {
         type: "pdp-extractor",
-        url: "https://example.com/web/product/view.do?prdSeq=1149"
+        url: "https://shop.example.com/web/product/view.do?prdSeq=1149"
       },
       hints: {
         locale: "ko-KR",
@@ -101,7 +101,7 @@ describe("generatePdpGeo", () => {
     const { result } = await generatePdpGeo({
       product: {
         geoProduct: {
-          name: "예시더마 배리어케어365 캡슐 토너",
+          name: "예시더마 모이베리어365 캡슐 토너",
           description: "민감하고 건조한 피부를 위한 장벽 보습 캡슐 토너입니다.",
           brand: "EXAMPLEDERMA",
           category: "토너",
@@ -114,7 +114,7 @@ describe("generatePdpGeo", () => {
       },
       source: {
         type: "pdp-extractor",
-        url: "https://example.com/web/product/view.do?prdSeq=1149"
+        url: "https://shop.example.com/web/product/view.do?prdSeq=1149"
       },
       hints: {
         locale: "ko-KR",
@@ -190,7 +190,7 @@ describe("generatePdpGeo", () => {
     ];
     const noisyUsage = [
       ...actualUsage,
-      "배리어케어® 바디로션 건조로 민감해진 피부장벽 강화에 도움을 주는 고밀착 바디로션 POINT · 부드럽고 빠른 흡수성 · 끈적임 없는 산뜻한 사용감 · 보습·탄력 케어 초미세세라마이드™",
+      "모이베리어® 바디로션 건조로 민감해진 피부장벽 강화에 도움을 주는 고밀착 바디로션 POINT · 부드럽고 빠른 흡수성 · 끈적임 없는 산뜻한 사용감 · 보습·탄력 케어 초미세세라마이드™",
       "발림성이 가볍고 피부에 빠르게 흡수되는 밀크 타입의 바디 로션",
       "눈으로 확인하는 촉촉하고 꽉 찬 수분의 힘 사용 전"
     ];
@@ -198,7 +198,7 @@ describe("generatePdpGeo", () => {
     const { result } = await generatePdpGeo({
       product: {
         geoProduct: {
-          name: "예시더마 배리어케어365 바디로션",
+          name: "예시더마 모이베리어365 바디로션",
           description: "건조로 민감해진 피부장벽을 강화하여 하루종일 촉촉함을 유지시켜주는 고보습 바디로션",
           category: "바디로션",
           benefits: ["피부 장벽", "보습", "탄력"],
@@ -215,7 +215,7 @@ describe("generatePdpGeo", () => {
       },
       source: {
         type: "pdp-extractor",
-        url: "https://example.com/web/product/view.do?prdSeq=1086"
+        url: "https://shop.example.com/web/product/view.do?prdSeq=1086"
       },
       hints: {
         locale: "ko-KR",
@@ -246,7 +246,7 @@ describe("generatePdpGeo", () => {
     const { result } = await generatePdpGeo({
       product: {
         geoProduct: {
-          name: "예시더마 배리어케어365 바디로션",
+          name: "예시더마 모이베리어365 바디로션",
           description: "건조 피부를 위한 고보습 바디로션입니다.",
           category: "바디로션",
           benefits: ["보습 케어"],
@@ -441,20 +441,20 @@ describe("generatePdpGeo", () => {
 				  it("repairs Korean HowTo steps with leading particles and duplicate surface variants", () => {
 			    const repaired = validateAndRepairPdpGeoArtifacts({
 	      locale: "ko-KR",
-	      fallbackProductName: "예시더마 배리어케어365 캡슐 토너",
-	      fallbackDescription: "예시더마 배리어케어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다.",
+	      fallbackProductName: "예시더마 모이베리어365 캡슐 토너",
+	      fallbackDescription: "예시더마 모이베리어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다.",
 	      schemaMarkup: {
 	        jsonLd: {
 	          "@context": "https://schema.org",
 	          "@graph": [
 	            {
 	              "@type": "Product",
-	              name: "예시더마 배리어케어365 캡슐 토너",
-	              description: "예시더마 배리어케어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다."
+	              name: "예시더마 모이베리어365 캡슐 토너",
+	              description: "예시더마 모이베리어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다."
 	            },
 	            {
 	              "@type": "HowTo",
-	              name: "예시더마 배리어케어365 캡슐 토너 사용법",
+	              name: "예시더마 모이베리어365 캡슐 토너 사용법",
 	              step: [
 	                {
 	                  "@type": "HowToStep",
@@ -488,8 +488,8 @@ describe("generatePdpGeo", () => {
 	      },
 	      content: {
 	        sections: {
-	          productName: "예시더마 배리어케어365 캡슐 토너",
-	          description: "예시더마 배리어케어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다.",
+	          productName: "예시더마 모이베리어365 캡슐 토너",
+	          description: "예시더마 모이베리어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다.",
 	          quickFacts: "핵심 정보",
 	          benefits: "보습",
 	          ingredients: "고밀도 세라마이드 캡슐",
@@ -514,20 +514,20 @@ describe("generatePdpGeo", () => {
 		  it("removes overlapping Korean toner HowTo compound steps covered by following steps", () => {
 		    const repaired = validateAndRepairPdpGeoArtifacts({
 		      locale: "ko-KR",
-		      fallbackProductName: "예시더마 배리어케어365 캡슐 토너",
-		      fallbackDescription: "예시더마 배리어케어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다.",
+		      fallbackProductName: "예시더마 모이베리어365 캡슐 토너",
+		      fallbackDescription: "예시더마 모이베리어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다.",
 		      schemaMarkup: {
 		        jsonLd: {
 		          "@context": "https://schema.org",
 		          "@graph": [
 		            {
 		              "@type": "Product",
-		              name: "예시더마 배리어케어365 캡슐 토너",
-		              description: "예시더마 배리어케어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다."
+		              name: "예시더마 모이베리어365 캡슐 토너",
+		              description: "예시더마 모이베리어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다."
 		            },
 		            {
 		              "@type": "HowTo",
-		              name: "예시더마 배리어케어365 캡슐 토너 사용 방법",
+		              name: "예시더마 모이베리어365 캡슐 토너 사용 방법",
 		              step: [
 		                {
 		                  "@type": "HowToStep",
@@ -561,8 +561,8 @@ describe("generatePdpGeo", () => {
 		      },
 		      content: {
 		        sections: {
-		          productName: "예시더마 배리어케어365 캡슐 토너",
-		          description: "예시더마 배리어케어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다.",
+		          productName: "예시더마 모이베리어365 캡슐 토너",
+		          description: "예시더마 모이베리어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다.",
 		          quickFacts: "핵심 정보",
 		          benefits: "보습",
 		          ingredients: "고밀도 세라마이드 캡슐",
@@ -591,20 +591,20 @@ describe("generatePdpGeo", () => {
 		  it("preserves Korean cleanser HowTo source steps without synthesizing substeps", () => {
 			    const repaired = validateAndRepairPdpGeoArtifacts({
 		      locale: "ko-KR",
-		      fallbackProductName: "예시더마 배리어케어365 클렌징폼",
-		      fallbackDescription: "예시더마 배리어케어365 클렌징폼은 민감 피부를 위한 폼 클렌저입니다.",
+		      fallbackProductName: "예시더마 모이베리어365 클렌징폼",
+		      fallbackDescription: "예시더마 모이베리어365 클렌징폼은 민감 피부를 위한 폼 클렌저입니다.",
 		      schemaMarkup: {
 		        jsonLd: {
 		          "@context": "https://schema.org",
 		          "@graph": [
 		            {
 		              "@type": "Product",
-		              name: "예시더마 배리어케어365 클렌징폼",
-		              description: "예시더마 배리어케어365 클렌징폼은 민감 피부를 위한 폼 클렌저입니다."
+		              name: "예시더마 모이베리어365 클렌징폼",
+		              description: "예시더마 모이베리어365 클렌징폼은 민감 피부를 위한 폼 클렌저입니다."
 		            },
 		            {
 		              "@type": "HowTo",
-		              name: "예시더마 배리어케어365 클렌징폼 사용법",
+		              name: "예시더마 모이베리어365 클렌징폼 사용법",
 		              step: [
 		                {
 		                  "@type": "HowToStep",
@@ -638,8 +638,8 @@ describe("generatePdpGeo", () => {
 		      },
 		      content: {
 		        sections: {
-		          productName: "예시더마 배리어케어365 클렌징폼",
-		          description: "예시더마 배리어케어365 클렌징폼은 민감 피부를 위한 폼 클렌저입니다.",
+		          productName: "예시더마 모이베리어365 클렌징폼",
+		          description: "예시더마 모이베리어365 클렌징폼은 민감 피부를 위한 폼 클렌저입니다.",
 		          quickFacts: "핵심 정보",
 		          benefits: "장벽보호",
 		          ingredients: "Barrier Protective Formula",
@@ -670,20 +670,20 @@ describe("generatePdpGeo", () => {
 		  it("removes Korean customer review text from HowTo steps", () => {
 		    const repaired = validateAndRepairPdpGeoArtifacts({
 		      locale: "ko-KR",
-		      fallbackProductName: "예시더마 배리어케어365 젠틀 포밍클렌저",
-		      fallbackDescription: "예시더마 배리어케어365 젠틀 포밍클렌저는 민감 피부를 위한 폼 클렌저입니다.",
+		      fallbackProductName: "예시더마 모이베리어365 젠틀 포밍클렌저",
+		      fallbackDescription: "예시더마 모이베리어365 젠틀 포밍클렌저는 민감 피부를 위한 폼 클렌저입니다.",
 		      schemaMarkup: {
 		        jsonLd: {
 		          "@context": "https://schema.org",
 		          "@graph": [
 		            {
 		              "@type": "Product",
-		              name: "예시더마 배리어케어365 젠틀 포밍클렌저",
-		              description: "예시더마 배리어케어365 젠틀 포밍클렌저는 민감 피부를 위한 폼 클렌저입니다."
+		              name: "예시더마 모이베리어365 젠틀 포밍클렌저",
+		              description: "예시더마 모이베리어365 젠틀 포밍클렌저는 민감 피부를 위한 폼 클렌저입니다."
 		            },
 		            {
 		              "@type": "HowTo",
-		              name: "예시더마 배리어케어365 젠틀 포밍클렌저 사용 방법",
+		              name: "예시더마 모이베리어365 젠틀 포밍클렌저 사용 방법",
 		              step: [
 		                {
 		                  "@type": "HowToStep",
@@ -723,8 +723,8 @@ describe("generatePdpGeo", () => {
 		      },
 		      content: {
 		        sections: {
-		          productName: "예시더마 배리어케어365 젠틀 포밍클렌저",
-		          description: "예시더마 배리어케어365 젠틀 포밍클렌저는 민감 피부를 위한 폼 클렌저입니다.",
+		          productName: "예시더마 모이베리어365 젠틀 포밍클렌저",
+		          description: "예시더마 모이베리어365 젠틀 포밍클렌저는 민감 피부를 위한 폼 클렌저입니다.",
 		          quickFacts: "핵심 정보",
 		          benefits: "장벽보호",
 		          ingredients: "Barrier Protective Formula",
@@ -748,16 +748,16 @@ describe("generatePdpGeo", () => {
 		  it("repairs repeated Korean HowTo variants and raw certification fragments", () => {
 	    const repaired = validateAndRepairPdpGeoArtifacts({
 	      locale: "ko-KR",
-	      fallbackProductName: "예시더마 배리어케어365 캡슐 토너",
-	      fallbackDescription: "예시더마 배리어케어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다.",
+	      fallbackProductName: "예시더마 모이베리어365 캡슐 토너",
+	      fallbackDescription: "예시더마 모이베리어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다.",
 	      schemaMarkup: {
 	        jsonLd: {
 	          "@context": "https://schema.org",
 	          "@graph": [
 	            {
 	              "@type": "Product",
-	              name: "예시더마 배리어케어365 캡슐 토너",
-	              description: "예시더마 배리어케어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다.",
+	              name: "예시더마 모이베리어365 캡슐 토너",
+	              description: "예시더마 모이베리어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다.",
 	              additionalProperty: [
 	                {
 	                  "@type": "PropertyValue",
@@ -768,7 +768,7 @@ describe("generatePdpGeo", () => {
 	            },
 	            {
 	              "@type": "HowTo",
-	              name: "예시더마 배리어케어365 캡슐 토너 사용 방법",
+	              name: "예시더마 모이베리어365 캡슐 토너 사용 방법",
 	              step: [
 	                {
 	                  "@type": "HowToStep",
@@ -802,8 +802,8 @@ describe("generatePdpGeo", () => {
 	      },
 	      content: {
 	        sections: {
-	          productName: "예시더마 배리어케어365 캡슐 토너",
-	          description: "예시더마 배리어케어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다.",
+	          productName: "예시더마 모이베리어365 캡슐 토너",
+	          description: "예시더마 모이베리어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다.",
 	          quickFacts: "핵심 정보",
 	          benefits: "보습",
 	          ingredients: "고밀도 세라마이드 캡슐",
@@ -828,16 +828,16 @@ describe("generatePdpGeo", () => {
 	  it("removes concrete usage directions from Product description while keeping metric evidence", () => {
     const repaired = validateAndRepairPdpGeoArtifacts({
       locale: "ko-KR",
-      fallbackProductName: "예시더마 배리어케어365 캡슐 토너",
-      fallbackDescription: "예시더마 배리어케어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다.",
+      fallbackProductName: "예시더마 모이베리어365 캡슐 토너",
+      fallbackDescription: "예시더마 모이베리어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다.",
       schemaMarkup: {
         jsonLd: {
           "@context": "https://schema.org",
           "@graph": [
             {
               "@type": "Product",
-              name: "예시더마 배리어케어365 캡슐 토너",
-              description: "예시더마 배리어케어365 캡슐 토너는 PHA 워터에 띄워진 고밀도 세라마이드 캡슐을 담은 장벽 보습 캡슐 토너입니다. 외부자극인 Tape Stripping에 의한 장벽 손상은 사용 직후 60.5%, 사용 7일 후 87.3% 회복된 결과가 제시되며, 사용 시 화장솜에 적당량을 덜어 피부결을 따라 부드럽게 닦아냅니다."
+              name: "예시더마 모이베리어365 캡슐 토너",
+              description: "예시더마 모이베리어365 캡슐 토너는 PHA 워터에 띄워진 고밀도 세라마이드 캡슐을 담은 장벽 보습 캡슐 토너입니다. 외부자극인 Tape Stripping에 의한 장벽 손상은 사용 직후 60.5%, 사용 7일 후 87.3% 회복된 결과가 제시되며, 사용 시 화장솜에 적당량을 덜어 피부결을 따라 부드럽게 닦아냅니다."
             },
             {
               "@type": "HowTo",
@@ -854,8 +854,8 @@ describe("generatePdpGeo", () => {
       },
       content: {
         sections: {
-          productName: "예시더마 배리어케어365 캡슐 토너",
-          description: "예시더마 배리어케어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다.",
+          productName: "예시더마 모이베리어365 캡슐 토너",
+          description: "예시더마 모이베리어365 캡슐 토너는 민감 피부를 위한 보습 토너입니다.",
           quickFacts: "핵심 정보",
           benefits: "보습",
           ingredients: "고밀도 세라마이드 캡슐",
@@ -877,5 +877,104 @@ describe("generatePdpGeo", () => {
     expect(description).not.toMatch(/사용 시|화장솜에 적당량|피부결을 따라|닦아냅니다/);
     expect(JSON.stringify(howTo?.step ?? repaired.content.sections.howToUse)).toContain("화장솜에 적당량");
     expect(repaired.validationRepairs.some((repair) => repair.source === "field-contract-validator" && repair.field === "Product.description")).toBe(true);
+  });
+});
+
+describe("generatePdpGeo HowTo step boundaries", () => {
+  it("never reads a number inside the product name as the next step marker", async () => {
+    const { result } = await generatePdpGeo({
+      product: {
+        geoProduct: {
+          name: "예시더마 모이베리어365 클렌징폼",
+          description: "건조하고 민감한 피부를 위한 약산성 클렌징 폼입니다.",
+          brand: "EXAMPLEDERMA",
+          category: "클렌징폼",
+          benefits: ["피부 장벽"],
+          ingredients: ["판테놀"],
+          usage: [],
+          // 패키지 라벨의 "BARRIERCARE 365"가 단계 사이에 전사된 실제 OCR 블록 형태.
+          sourceTexts: [
+            "사용법 1 클렌징 단계에서 젖은 손에 적당량을 덜어 충분히 거품을 내주세요. EXAMPLEDERMA BARRIERCARE 365 CLEANSING FOAM 2 얼굴에 부드럽게 롤링하여 노폐물을 녹여낸 후 미온수로 깨끗이 씻어줍니다."
+          ]
+        }
+      },
+      source: {
+        type: "pdp-extractor",
+        url: "https://shop.example.com/web/product/view.do?prdSeq=1145"
+      },
+      hints: { locale: "ko-KR", market: "KR" }
+    });
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any> | undefined;
+    const stepTexts = ((howTo?.step ?? []) as Array<Record<string, any>>).map((step) => String(step.text));
+
+    expect(stepTexts.length).toBeGreaterThanOrEqual(1);
+    expect(stepTexts.some((text) => /EXAMPLEDERMA|BARRIERCARE|CLEANSING FOAM/.test(text))).toBe(false);
+  });
+});
+
+describe("generatePdpGeo HowTo with duplicated step wordings", () => {
+  it("keeps the numbered procedure when one step arrives in two wordings", async () => {
+    // 1027 실측(2026-09-03)의 정규화된 usage 그대로다. 분류 모델이 다시 쓴 문장과
+    // 원문 어투가 각각 번호를 달고 들어와 서수가 1,1,2,2가 된다. 연속성 검사가
+    // 실패해 절차가 한 단계로 뭉치고, 그 한 단계에 세 문장이 이어붙었다.
+    const { result } = await generatePdpGeo({
+      product: {
+        geoProduct: {
+          name: "모이베리어 365 크림 미스트",
+          description: "건조하고 민감한 피부를 위한 크림 미스트입니다.",
+          brand: "EXAMPLEDERMA",
+          category: "미스트",
+          benefits: ["보습"],
+          ingredients: ["세라마이드"],
+          usage: [
+            "1. 연약하고 건조해진 피부 부위에 미세 분사합니다.",
+            "2. 피부에 건조함이 느껴질 때 수시로 뿌려줍니다.",
+            "1 연약하고 건조해진 피부 부위에 미세 분사를 합니다.",
+            "2 피부에 건조함이 느껴질 때 수시로 뿌려줍니다."
+          ]
+        }
+      },
+      source: { type: "pdp-extractor", url: "https://shop.example.com/web/product/view.do?prdSeq=1027" },
+      hints: { locale: "ko-KR", market: "KR" }
+    });
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any> | undefined;
+    const stepTexts = ((howTo?.step ?? []) as Array<Record<string, any>>).map((step) => String(step.text));
+
+    expect(stepTexts).toHaveLength(2);
+    expect(stepTexts[0]).toMatch(/^연약하고 건조해진 피부 부위에 미세 분사/);
+    expect(stepTexts[1]).toMatch(/^피부에 건조함이 느껴질 때 수시로 뿌려/);
+  });
+
+  it("does not invent an order when two different actions share one number", async () => {
+    // 같은 번호에 서로 다른 동작이 실려 있으면 원문의 순서를 알 수 없다.
+    const { result } = await generatePdpGeo({
+      product: {
+        geoProduct: {
+          name: "모이베리어 365 크림 미스트",
+          description: "건조하고 민감한 피부를 위한 크림 미스트입니다.",
+          brand: "EXAMPLEDERMA",
+          category: "미스트",
+          benefits: ["보습"],
+          ingredients: ["세라마이드"],
+          usage: [
+            "1. 연약하고 건조해진 피부 부위에 미세 분사합니다.",
+            "1. 화장솜에 충분히 적셔 피부결을 따라 닦아줍니다.",
+            "2. 피부에 건조함이 느껴질 때 수시로 뿌려줍니다."
+          ]
+        }
+      },
+      source: { type: "pdp-extractor", url: "https://shop.example.com/web/product/view.do?prdSeq=1027" },
+      hints: { locale: "ko-KR", market: "KR" }
+    });
+
+    const graph = result.schemaMarkup.jsonLd["@graph"] as Array<Record<string, any>>;
+    const howTo = graph.find((node) => node["@type"] === "HowTo") as Record<string, any> | undefined;
+    const stepTexts = ((howTo?.step ?? []) as Array<Record<string, any>>).map((step) => String(step.text));
+
+    expect(stepTexts).toHaveLength(1);
   });
 });

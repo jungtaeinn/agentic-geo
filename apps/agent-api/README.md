@@ -1,8 +1,8 @@
 # agent-api
 
-`apps/agent-api`는 Agentic GEO GEO 파이프라인에서 **실제 GEO(schema.org JSON-LD) 생성을 수행하는 비동기 Node/NestJS 서비스**입니다. neo-batch dispatch Job으로부터 생성 요청을 HTTP로 접수(즉시 202 ACK)하고, 내부 인프로세스 큐에서 최대 8분간 GEO를 생성한 뒤, 공유 Aurora PostgreSQL의 `neo.geo_result`에 산출물을 기록하고 `neo.geo_generation` 상태를 가드 전이(`PROCESSING → GENERATED`/`FAILED`)합니다.
+`apps/agent-api`는 Agentic GEO GEO 파이프라인에서 **실제 GEO(schema.org JSON-LD) 생성을 수행하는 비동기 Node/NestJS 서비스**입니다. dispatcher dispatch Job으로부터 생성 요청을 HTTP로 접수(즉시 202 ACK)하고, 내부 인프로세스 큐에서 최대 8분간 GEO를 생성한 뒤, 공유 Aurora PostgreSQL의 `agentic_geo.geo_result`에 산출물을 기록하고 `agentic_geo.geo_generation` 상태를 가드 전이(`PROCESSING → GENERATED`/`FAILED`)합니다.
 
-설계 배경과 상세 계약은 설계 문서를 참고하세요: [`docs/superpowers/specs/2026-07-22-agent-api-design.md`](../../docs/superpowers/specs/2026-07-22-agent-api-design.md).
+요청·응답 계약과 실행 설정은 이 문서 및 `src/geo/dto`의 타입 정의를 참고하세요.
 
 ## 실행
 
@@ -24,7 +24,7 @@ pnpm --filter @agentic-geo/agent-api test        # 단위 + e2e (Docker 불필�
 pnpm --filter @agentic-geo/agent-api test:int    # 통합 (Docker 필요)
 ```
 
-로컬 기본 포트는 `3000`이며, neo-batch의 기본 `AGENT_API_BASE_URL=http://localhost:3000`과 정렬됩니다.
+로컬 기본 포트는 `3000`이며, dispatcher의 기본 `AGENT_API_BASE_URL=http://localhost:3000`과 정렬됩니다.
 
 통합 테스트(`*.int-spec.ts`)는 Testcontainers로 실제 PostgreSQL 컨테이너를 기동하므로 Docker 데몬이 필요합니다.
 그래서 기본 `pnpm test`에서 분리해 `pnpm test:int`로 따로 돌립니다 — Docker가 없는 환경에서 커밋 경로가 통째로
@@ -39,7 +39,7 @@ export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 이유: Testcontainers는 컨테이너를 정리하는 Ryuk 컨테이너에 호스트의 docker 소켓을 마운트하는데, 마운트할 경로를
 `docker info`의 OS 이름으로 판별합니다(`remote-container-runtime-socket-path.js`). Docker Desktop이면
 `/var/run/docker.sock`을 쓰지만, colima는 OS를 `Ubuntu ...`로 보고하므로 `docker.host` URI를 그대로 씁니다 —
-즉 **macOS 호스트 경로**(`/Users/<id>/.colima/default/docker.sock`)를 VM 안 컨테이너에 마운트합니다. 그 경로는
+즉 **macOS 호스트 경로**(`/home/developer/.colima/default/docker.sock`)를 VM 안 컨테이너에 마운트합니다. 그 경로는
 VM 안에 없으니 Ryuk이 `Cannot connect to the Docker daemon`으로 즉시 죽고, 모든 int-spec이 다음 에러로 실패합니다.
 
 ```
@@ -94,9 +94,10 @@ docker run -p 3000:3000 --env-file apps/agent-api/.env agent-api
 | `AGENT_API_KEY` | 기대하는 `x-api-key` 값(단일 공유 시크릿). 비어있으면 무인증 허용 |
 | `GEO_WORKER_CONCURRENCY` | 인프로세스 큐 동시 처리 수(기본 4) |
 | `GEO_QUEUE_MAX_WAITING` | 큐 대기 상한(초과 시 접수 429, 기본 100). 대기 job은 Redis가 아니라 Node 힙에 상주하므로 429 임계값이자 메모리 상한이기도 함(아래 참고) |
-| `DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_USERNAME`/`DB_PASSWORD`/`DB_SCHEMA` | 공유 Aurora PostgreSQL(`neo` 스키마) 접속 정보 |
+| `DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_USERNAME`/`DB_PASSWORD`/`DB_SCHEMA` | 사용자 PostgreSQL(`agentic_geo` 스키마) 접속 정보 |
 | `AGENTIC_GEO_PROVIDER` | GEO 생성 provider(`mock`/`openai`/`gemini`/`azure-openai`/`aistudio`, 기본 `mock`) |
 | `AGENTIC_GEO_PRODUCT_NORMALIZATION` | 상품 신호 정규화(semanticFacts 원자화) LLM 호출. non-mock provider + API 키면 **기본 활성**이며 `false`로만 끔. 끄면 산문/메타필드 소스에서 성분·사용법·임상 지표 원자가 비어 FAQ/HowTo 품질이 낮아짐(토큰 비용 절감용 스위치) |
+| `AGENTIC_GEO_OCR_IMAGE_ALLOWED_HOSTS` | OCR 대상 이미지(`ocrImages`) 호스트 허용목록(콤마 구분 호스트 접미, 예: `cdn.example.com`). **미설정**: http(s) 프로토콜 강제 및 사설/루프백/링크로컬 주소 차단만 적용, 그 외 호스트는 통과. **값 있음**: 그 접미와 일치하는 호스트만 통과, 나머지는 제외. **빈 값(콤마·공백만)**: fail-closed로 전량 거부 |
 | `OPENAI_*`/`AZURE_OPENAI_*` | 선택한 provider별 API 키/엔드포인트/모델/배포명(형제 앱과 동일 규칙 재사용) |
 | `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`/`LANGFUSE_BASE_URL` | **로컬 전용** Langfuse 트레이싱 키/주소. 미설정 시 트레이싱 완전 no-op(배포 환경 기본) |
 | `GEO_TEST_SYNC_ENDPOINT` | `true`일 때만 동기 테스트 엔드포인트 활성화(기본 비활성 → 404) |
@@ -151,17 +152,17 @@ docker compose -f docker-compose.langfuse.yml down      # 종료(트레이스 �
 docker compose -f docker-compose.langfuse.yml down -v   # 초기화(데이터 전체 삭제)
 ```
 
-- UI: **http://localhost:3100** — 로그인 `langfuse@local.test` / `langfuse-local`
+- UI: **http://localhost:3100** — 이메일은 compose의 `LANGFUSE_INIT_USER_EMAIL`, 비밀번호는 비공개 `.env`의 `LANGFUSE_INIT_USER_PASSWORD`를 사용합니다.
 - 첫 부팅 시 `LANGFUSE_INIT_*`로 조직/프로젝트/API 키가 자동 생성되므로 가입 절차가 없습니다.
 - 포트 배치: web `:3100`(agent-api가 `:3000`), minio `:9090`. 내부 캐시/DB/분석 스토어는 호스트에 포트를 노출하지 않습니다.
 
 ### 2. .env 설정
 
-compose의 `LANGFUSE_INIT_*` 키와 일치해야 합니다(`.env`에 이미 반영됨):
+`.env.example`을 비공개 `.env`로 복사하고 compose가 요구하는 `LANGFUSE_*` 비밀값을 직접 설정하세요. 아래 두 키는 각각 `LANGFUSE_INIT_PROJECT_PUBLIC_KEY`, `LANGFUSE_INIT_PROJECT_SECRET_KEY`와 같아야 합니다. 저장소에는 실제 키가 포함되어 있지 않습니다.
 
 ```bash
-LANGFUSE_PUBLIC_KEY=pk-lf-agent-api-local
-LANGFUSE_SECRET_KEY=sk-lf-agent-api-local
+LANGFUSE_PUBLIC_KEY=
+LANGFUSE_SECRET_KEY=
 LANGFUSE_BASE_URL=http://localhost:3100
 GEO_TEST_SYNC_ENDPOINT=true
 ```
@@ -178,9 +179,9 @@ curl -X POST http://localhost:3000/internal/v1/geo/test-generations \
     "locale": "ko-KR",
     "product": {
       "title": "그린티 씨드 히알루론산 세럼",
-      "brand": "예시브랜드",
+      "brand": "예시그린",
       "body": "제주 그린티 추출물과 히알루론산이 피부 속 수분을 채워주는 데일리 보습 세럼.",
-      "canonicalUrl": "https://shop.example.com/products/example-serum",
+      "canonicalUrl": "https://shop.example.com/kr/ko/products/green-tea-seed-serum",
       "price": 28000,
       "currency": "KRW"
     }
@@ -204,16 +205,16 @@ UI(http://localhost:3100)에서 `geo-test-generation` 트레이스를 열면 입
 ## 아키텍처 요약
 
 - **프레임워크**: NestJS(상시 기동 Node 서버). 8분짜리 백그라운드 생성 + Postgres write가 있어 서버리스형이 아닌 상시 컨테이너로 배포합니다.
-- **큐**: 인프로세스 큐(단일 인스턴스). 접수(`POST`)는 큐에 등록만 하고 즉시 202를 반환합니다(`geoGenerationId` 기준 dedup으로 동일 ID 재등록은 무시). 워커(`GeoProcessor`, `GEO_WORKER_CONCURRENCY` 동시성)가 실제 생성을 수행합니다. 파드 재시작 시 진행 중이던 작업은 유실될 수 있으며, `geo_generation.status='PROCESSING'`으로 남은 행은 neo-batch stale sweep(15분)이 회수합니다.
+- **큐**: 인프로세스 큐(단일 인스턴스). 접수(`POST`)는 큐에 등록만 하고 즉시 202를 반환합니다(`geoGenerationId` 기준 dedup으로 동일 ID 재등록은 무시). 워커(`GeoProcessor`, `GEO_WORKER_CONCURRENCY` 동시성)가 실제 생성을 수행합니다. 파드 재시작 시 진행 중이던 작업은 유실될 수 있으며, `geo_generation.status='PROCESSING'`으로 남은 행은 dispatcher stale sweep(15분)이 회수합니다.
 - **가드(guard) 전이**: `geo_generation` 상태는 `PROCESSING → GENERATED`(성공) 또는 `PROCESSING → FAILED`(영구 오류, `error_phase=GENERATION`)로만 전이하며, 모든 UPDATE는 `WHERE status='PROCESSING'` 가드 조건과 `version+1` 낙관적 락으로 원자적·멱등하게 수행됩니다(`GeoGenerationRepository.transitionToGenerated/transitionToFailed`).
-- **생성**: `@agentic-geo/pdp-geo-generator-agent`의 `generatePdpGeo`를 그대로 재사용합니다(다른 sub-agent 패키지는 사용하지 않음). 결과는 `deriveSchemaTypes`/`computeResultHash`로 가공해 `neo.geo_result`(json_ld/script_tag/schema_types/result_status/result_hash/rag_profile/diagnostics)에 기록합니다.
-- **DB**: TypeORM, `synchronize:false`/`migrationsRun:false` — 스키마 소유권은 upstream API(Flyway)에 있으며 agent-api는 마이그레이션을 절대 실행하지 않습니다.
+- **생성**: `@agentic-geo/pdp-geo-generator-agent`의 `generatePdpGeo`를 그대로 재사용합니다(다른 sub-agent 패키지는 사용하지 않음). 결과는 `deriveSchemaTypes`/`computeResultHash`로 가공해 `agentic_geo.geo_result`(json_ld/script_tag/schema_types/result_status/result_hash/rag_profile/diagnostics)에 기록합니다.
+- **DB**: TypeORM, `synchronize:false`/`migrationsRun:false` — 스키마 소유권은 upstream-api(Flyway)에 있으며 agent-api는 마이그레이션을 절대 실행하지 않습니다.
 - **무상태(stateless)**: 워커는 `job.data`와 DB에서만 필요한 정보를 읽으며 파드-로컬 메모리 상태에 의존하지 않습니다. 큐가 인프로세스가 된 뒤에도 이 원칙은 유지합니다 — 이후 멀티 인스턴스 큐로 되돌릴 때 처리 로직을 손대지 않기 위해서입니다.
-- **재시도**: 큐 자체의 attempts는 최소로 설정하고(일시 오류만 소폭 backoff 재시도), 소진 시 무한 재시도 없이 즉시 `FAILED` 처리합니다. 프로세스 재시작으로 인한 유실은 neo-batch stale sweep(15분)이 단일 계층으로 회수합니다.
+- **재시도**: 큐 자체의 attempts는 최소로 설정하고(일시 오류만 소폭 backoff 재시도), 소진 시 무한 재시도 없이 즉시 `FAILED` 처리합니다. 프로세스 재시작으로 인한 유실은 dispatcher stale sweep(15분)이 단일 계층으로 회수합니다.
 
 ## 테스트 구성
 
 - `*.spec.ts`: 순수 단위 테스트(상태 전이 판정, `deriveSchemaTypes`, 스키마 유틸 등, 인프라 불필요).
 - `*.e2e-spec.ts`: NestJS 테스트 모듈 기반 HTTP 계약 테스트(가드/컨트롤러, DI mock 사용, 인프라 불필요).
 - `test/regression/*.reg-spec.ts`: **GEO 생성 회귀**(케이스 YAML 기반 생성+평가). 기본 `pnpm test`에는 포함되지 않으며 `pnpm test:regression`으로 따로 돌립니다 — LLM 비용·시간이 들기 때문입니다. 실행법과 평가 기준은 [`test/regression/README.md`](./test/regression/README.md) 참고.
-- `*.int-spec.ts`: Testcontainers(PostgreSQL 16)로 실제 인프라를 띄우는 통합 테스트. 기본 `pnpm test`에 포함되지 않으며 `pnpm test:int`로 따로 돌립니다(Docker 필요). 스키마는 엔티티 자동생성이 아니라 `test/fixtures/geo-schema.sql`로 만드는데, 이 파일은 upstream API의 `V1__create_geo.sql`을 그대로 미러링하므로 엔티티와 운영 스키마가 어긋나면 여기서 깨집니다 — 이 스위트의 존재 이유입니다. `test/app-boot.int-spec.ts`는 `AppModule` 전체를 실제 DB 연결로 부팅해 `GET /health`가 200을 반환하는지 검증합니다(TypeOrmModule.forRoot의 readiness를 앱 부팅 수준에서 증명).
+- `*.int-spec.ts`: Testcontainers(PostgreSQL 16)로 실제 인프라를 띄우는 통합 테스트. 기본 `pnpm test`에 포함되지 않으며 `pnpm test:int`로 따로 돌립니다(Docker 필요). 스키마는 엔티티 자동생성이 아니라 `test/fixtures/geo-schema.sql`로 만드는데, 이 파일은 upstream-api의 `V1__create_geo.sql`을 그대로 미러링하므로 엔티티와 운영 스키마가 어긋나면 여기서 깨집니다 — 이 스위트의 존재 이유입니다. `test/app-boot.int-spec.ts`는 `AppModule` 전체를 실제 DB 연결로 부팅해 `GET /health`가 200을 반환하는지 검증합니다(TypeOrmModule.forRoot의 readiness를 앱 부팅 수준에서 증명).

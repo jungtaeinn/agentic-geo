@@ -63,7 +63,7 @@ describe("readPdpGeoGeneratorRagProfile", () => {
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.bestPractice)?.content)
       .toContain("Field Evidence Routing Pattern");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.bestPractice)?.content)
-      .not.toContain("Reference Output From ExampleShop/ExampleLuxe Example (Verbatim)");
+      .not.toContain("Reference Output From Examplemall/ExampleLuxe Example (Verbatim)");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.bestPractice)?.content)
       .toContain("Cross-Product Benchmarking Guidance");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.documents.bestPractice)?.content)
@@ -97,7 +97,9 @@ describe("readPdpGeoGeneratorRagProfile", () => {
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandBestPractices.examplederma)?.content)
       .toContain("EXAMPLEDERMA Best Practice v2");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandBestPractices.exampleluxe)?.content)
-      .toContain("What are the main benefits of [Product name], and what do the reported clinical study results show?");
+      // The brand docs now state the question's properties instead of a phrase
+      // to copy — a supplied wording was being emitted verbatim on every page.
+      .toContain("Give the question these properties rather than a wording to copy");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandBestPractices.exampleluxe)?.content)
       .toContain("ExampleLuxe US output is `en-US`");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandBestPractices.exampleluxe)?.content)
@@ -105,7 +107,7 @@ describe("readPdpGeoGeneratorRagProfile", () => {
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandBestPractices.exampleluxe)?.content)
       .not.toContain("Cross-Product Benchmarking Guidance");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandBestPractices.examplederma)?.content)
-      .toContain("공개된 인체적용시험 결과는 어떻게 나타났나요?");
+      .toContain("Give the question these properties rather than a wording to copy");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandBestPractices.examplederma)?.content)
       .toContain("정확한 상품명");
     expect(profile.documents.find((document) => document.name === pdpGeoGeneratorRagManifest.brandBestPractices.examplederma)?.content)
@@ -133,7 +135,7 @@ describe("readPdpGeoGeneratorRagProfile", () => {
   it("loads nested brand RAG documents as retrievable managed chunks", async () => {
     const profile = await readPdpGeoGeneratorRagProfile();
     const product = {
-      name: "Botanical Renewal Serum",
+      name: "Botanical Ginseng Rejuvenating Serum",
       brand: "ExampleLuxe",
       category: "Skincare Serum",
       benefits: ["firmness", "radiance"],
@@ -264,12 +266,12 @@ describe("readPdpGeoGeneratorRagProfile", () => {
 
   it("builds retrieval queries for review-intent FAQ and public wording constraints", () => {
     const query = createPdpGeoRagQuery({
-      name: "Botanical Renewal Serum",
+      name: "Botanical Ginseng Rejuvenating Serum",
       brand: "ExampleLuxe",
       category: "Skincare Serum",
       benefits: ["fine lines", "elasticity", "firmness"],
       effects: [],
-      ingredients: ["Botanical Actives", "Retinol"],
+      ingredients: ["Korean Ginseng Actives", "Retinol"],
       usage: ["Apply after toner"],
       metrics: [],
       faq: [],

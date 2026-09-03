@@ -37,7 +37,7 @@ const html = `
       </section>
       <section class="pdp-ingredient">
         <h2>Key Ingredients</h2>
-        <p>Botanical Actives, Retinol, Peptide, and Niacinamide help support radiant skin texture.</p>
+        <p>Korean Ginseng Actives, Retinol, Peptide, and Niacinamide help support radiant skin texture.</p>
       </section>
       <div class="product-accordion">
         <button aria-controls="benefits-panel">BENEFITS</button>
@@ -46,7 +46,7 @@ const html = `
         </div>
         <button aria-controls="ingredients-panel">INGREDIENTS</button>
         <div id="ingredients-panel" hidden>
-          <p>BOTANICAL ACTIVES - patented ingredient that amplifies anti-aging compounds found in Ginseng.</p>
+          <p>KOREAN GINSENG ACTIVES - patented ingredient that amplifies anti-aging compounds found in Ginseng.</p>
           <p>INGREDIENTS: WATER / AQUA / EAU, BUTYLENE GLYCOL, GLYCERIN, NIACINAMIDE, RETINOL, PANAX GINSENG ROOT EXTRACT.</p>
         </div>
         <button aria-controls="how-to-use-panel">HOW TO USE</button>
@@ -114,11 +114,14 @@ describe("extractProductFromHtml", () => {
     expect(result.geoProduct.ocr.textBlocks.some((text) => text.includes("After 6 weeks"))).toBe(false);
     expect(result.geoProduct.metrics.some((metric) => metric.includes("6 weeks"))).toBe(true);
     expect(result.geoProduct.benefits.some((text) => text.includes("rejuvenating abilities"))).toBe(true);
-    expect(result.geoProduct.ingredients.some((text) => text.includes("BOTANICAL ACTIVES"))).toBe(true);
+    expect(result.geoProduct.ingredients.some((text) => text.includes("KOREAN GINSENG ACTIVES"))).toBe(true);
     expect(result.geoProduct.ingredients.some((text) => text.includes("PANAX GINSENG ROOT EXTRACT"))).toBe(true);
     expect(result.geoProduct.usage.some((text) => text.includes("Apply two pumps"))).toBe(true);
-    expect(result.geoProduct.rag.chunks.some((chunk) => chunk.kind === "source" && chunk.text.includes("Botanical Actives"))).toBe(true);
-    expect(JSON.stringify(result)).not.toContain("confidence");
+    expect(result.geoProduct.rag.chunks.some((chunk) => chunk.kind === "source" && chunk.text.includes("Korean Ginseng"))).toBe(true);
+    // confidence is exposed in imageTexts but not in sentenceInsights
+    for (const insight of result.geoProduct.ocr.sentenceInsights) {
+      expect(insight).not.toHaveProperty("confidence");
+    }
     expect(result.geoProduct.sourceExtraction.ocr.imageTexts.some((item) => item.imageUrl.includes("detail.jpg"))).toBe(true);
     expect(result.geoProduct.aiAnalysis.keywords.ingredient.some((keyword) => keyword.toLowerCase() === "ginseng")).toBe(true);
     expect(result.geoProduct.categorizedProductInfo.ingredients.some((text) => text.includes("PANAX GINSENG ROOT EXTRACT"))).toBe(true);
@@ -287,7 +290,7 @@ describe("extractProductFromHtml", () => {
     ].join(", ");
     const koreanAccordionHtml = `
       <main>
-        <h1>예시더마 배리어케어365 바디로션</h1>
+        <h1>예시더마 모이베리어365 바디로션</h1>
         <p>건조로 민감해진 피부장벽을 강화하여 하루종일 촉촉함을 유지시켜주는 고보습 바디로션</p>
         <div class="product-accordion">
           <button aria-controls="full-ingredients-panel">전성분</button>
@@ -361,8 +364,8 @@ describe("extractProductFromHtml", () => {
       JSON.stringify({
         product: {
           id: 8084091011117,
-          title: "Botanical Renewal Serum",
-          body_html: "<p>Unlock your skin's youthful radiance with Botanical Actives, Retinol, and Peptide. After 6 weeks, users showed improvement in fine lines and firmness.</p>",
+          title: "Botanical Ginseng Rejuvenating Serum",
+          body_html: "<p>Unlock your skin's youthful radiance with Korean Ginseng Actives, Retinol, and Peptide. After 6 weeks, users showed improvement in fine lines and firmness.</p>",
           images: [{ src: "/serum.jpg" }],
           variants: [{ price: "215.00", title: "1.69 fl. oz. / 50 mL" }],
           options: [{ name: "Size", values: ["1.69 fl. oz. / 50 mL"] }]
@@ -372,9 +375,9 @@ describe("extractProductFromHtml", () => {
     );
 
     expect(result.sourceType).toBe("url");
-    expect(result.geoProduct.name).toBe("Botanical Renewal Serum");
+    expect(result.geoProduct.name).toBe("Botanical Ginseng Rejuvenating Serum");
     expect(result.geoProduct.price?.raw).toBe("215.00");
-    expect(result.geoProduct.description).toContain("Botanical Actives");
+    expect(result.geoProduct.description).toContain("Korean Ginseng");
     expect(result.geoProduct.images[0]).toBe("https://example.com/serum.jpg");
     expect(result.geoProduct.ocr.textBlocks.length).toBeGreaterThan(0);
     expect(result.geoProduct.metrics.some((metric) => metric.includes("6 weeks"))).toBe(true);
@@ -386,9 +389,9 @@ describe("extractProductFromHtml", () => {
     const staleStateHtml = `
       <html>
         <head>
-          <title>Botanical Renewal Serum | Korean Skincare | ExampleLuxe</title>
-          <meta property="og:title" content="Botanical Renewal Serum" />
-          <meta name="description" content="A botanical renewal serum that supports visibly firmer, resilient skin." />
+          <title>Botanical Ginseng Rejuvenating Serum | Korean Skincare | ExampleLuxe</title>
+          <meta property="og:title" content="Botanical Ginseng Rejuvenating Serum" />
+          <meta name="description" content="A concentrated ginseng serum that supports visibly firmer, resilient skin." />
           <script type="application/ld+json">
             {
               "@context": "https://schema.org",
@@ -408,14 +411,14 @@ describe("extractProductFromHtml", () => {
                         handle: "essential-activating-serum-vi",
                         productName: "Essential Activating Serum",
                         linePromoDesc: "Essential Activating Serum is a first-step hydration serum.",
-                        images: [{ src: "/first-care.jpg" }]
+                        images: [{ src: "/essential-care.jpg" }]
                       },
                       currentProduct: {
-                        handle: "botanical-renewal-serum",
-                        productName: "Botanical Renewal Serum",
-                        linePromoDesc: "Korean Ginseng serum with retinol capsules helps skin look firmer, smoother, and more resilient.",
+                        handle: "botanical-ginseng-rejuvenating-serum",
+                        productName: "Botanical Ginseng Rejuvenating Serum",
+                        linePromoDesc: "Botanical Ginseng Rejuvenating Serum is a ginseng serum with retinol capsules that helps skin look firmer and more resilient.",
                         priceInfo: { price: "215.00" },
-                        images: [{ src: "/botanical-renewal-serum.jpg" }]
+                        images: [{ src: "/botanical-ginseng-serum.jpg" }]
                       }
                     }
                   })
@@ -426,7 +429,7 @@ describe("extractProductFromHtml", () => {
         </head>
         <body>
           <main>
-            <h1>Botanical Renewal Serum</h1>
+            <h1>Botanical Ginseng Rejuvenating Serum</h1>
             <section>
               <h2>Benefits</h2>
               <p>After 6 weeks, fine lines, wrinkles, elasticity, and firmness visibly improve.</p>
@@ -438,14 +441,14 @@ describe("extractProductFromHtml", () => {
 
     const { result } = await extractProductFromHtml(
       staleStateHtml,
-      "https://example.com/products/botanical-renewal-serum?variant=example-variant-1"
+      "https://shop.example.com/products/botanical-ginseng-rejuvenating-serum?variant=43202379841581"
     );
 
-    expect(result.geoProduct.name).toBe("Botanical Renewal Serum");
-    expect(result.geoProduct.description).toContain("botanical renewal serum");
+    expect(result.geoProduct.name).toBe("Botanical Ginseng Rejuvenating Serum");
+    expect(result.geoProduct.description).toContain("ginseng serum");
     expect(result.geoProduct.description).not.toContain("Essential Care");
     expect(result.geoProduct.price?.raw).toBe("215.00");
-    expect(result.geoProduct.images).toContain("https://example.com/botanical-renewal-serum.jpg");
+    expect(result.geoProduct.images).toContain("https://shop.example.com/botanical-ginseng-serum.jpg");
     expect(JSON.stringify(result.geoProduct)).not.toContain("Essential Activating Serum");
   });
 
@@ -476,7 +479,7 @@ describe("extractProductFromHtml", () => {
 
     const { result, diagnostics } = await extractProductFromHtml(
       mixedNameHtml,
-      "https://example.com/products/gentle-cleansing-foam?variant=41663478792237"
+      "https://shop.example.com/products/gentle-cleansing-foam?variant=41663478792237"
     );
 
     expect(result.geoProduct.name).toBe("Gentle Cleansing Foam");
@@ -491,11 +494,11 @@ describe("extractProductFromHtml", () => {
     const { result } = await extractProductFromHtml(
       JSON.stringify({
         product: {
-          title: "Botanical Renewal Serum",
+          title: "Botanical Ginseng Rejuvenating Serum",
           price: "215.00",
           sections: {
             BENEFITS: "Formulated with advanced capsule technology to improve plumpness, skin resilience, and fine lines. After 6 weeks, 100% of users showed improvement in elasticity and firmness.",
-            INGREDIENTS: "BOTANICAL ACTIVES - strengthens the skin's rejuvenating abilities. INGREDIENTS: WATER / AQUA / EAU, GLYCERIN, NIACINAMIDE, PANAX GINSENG ROOT EXTRACT, RETINOL.",
+            INGREDIENTS: "KOREAN GINSENG ACTIVES - strengthens the skin's rejuvenating abilities. INGREDIENTS: WATER / AQUA / EAU, GLYCERIN, NIACINAMIDE, PANAX GINSENG ROOT EXTRACT, RETINOL.",
             "HOW TO USE": "Use morning and night after applying toner. Warm three pumps between fingers and apply to face and neck with upward motions."
           }
         }
@@ -516,15 +519,15 @@ describe("extractProductFromHtml", () => {
     const initialState = {
       productDetail: {
         productInfo: {
-          onlineProdName: "보태니컬 리뉴얼 크림 리치 단품세트 50ml",
-          linePromoDesc: "예시럭셔리 인삼 과학의 정수가 담긴 보태니컬 리뉴얼 라인 제품으로 구성된 세트입니다. 피부 본연의 자생력으로 차오른 고밀도 피부를 선사합니다.",
+          onlineProdName: "보태니컬크림 리치 단품세트 50ml",
+          linePromoDesc: "예시럭셔리 인삼 과학의 정수가 담긴 보태니컬 라인 제품으로 구성된 세트입니다. 피부 본연의 자생력으로 차오른 고밀도 피부를 선사합니다.",
           detailDesc: "<div><img src=\"/detail-rich-cream.jpg\" /></div>",
           onlineImages: [{ imgUrl: "/rich-cream-01.jpg" }],
           onlinePriceInfo: {
             currencyInfo: { isWon: true },
             priceInfo: { discountedPrice: 243000, beforeSalePrice: 270000 }
           },
-          products: [{ prodName: "보태니컬 리뉴얼 크림 리치 단품세트" }],
+          products: [{ prodName: "보태니컬크림 리치 단품세트" }],
           disclosures: [
             {
               disclosureItemName: "사용방법",
@@ -557,7 +560,7 @@ describe("extractProductFromHtml", () => {
 
     const { result, diagnostics } = await extractProductFromHtml(nextDataHtml, "https://example.com/products/rich-cream");
 
-    expect(result.geoProduct.name).toBe("보태니컬 리뉴얼 크림 리치 단품세트 50ml");
+    expect(result.geoProduct.name).toBe("보태니컬크림 리치 단품세트 50ml");
     expect(result.geoProduct.price?.raw).toBe("243000");
     expect(result.geoProduct.price?.currency).toBe("KRW");
     expect(result.geoProduct.images).toEqual(expect.arrayContaining([
@@ -577,7 +580,7 @@ describe("extractProductFromHtml", () => {
   it("preserves OCR clinical result text and classifies metrics and effects", async () => {
     const clinicalOcrHtml = `
       <main>
-        <h1>Botanical Renewal Serum</h1>
+        <h1>Botanical Ginseng Rejuvenating Serum</h1>
         <img
           src="/clinical.jpg"
           data-ocr-text="AFTER 6 WEEKS OF USE
@@ -601,11 +604,11 @@ AGREED FINE LINES AND WRINKLES FEEL DIMINISHED 93%"
   it("reconstructs OCR visual copy into sentence-level ingredient and effect evidence", async () => {
     const peptideOcrHtml = `
       <main>
-        <h1>Botanical Renewal Serum</h1>
+        <h1>Botanical Ginseng Rejuvenating Serum</h1>
         <img
           src="/ginseng-peptide.jpg"
           data-ocr-text="Maximizing Effects with Ginseng Peptide™
-Ginseng Peptide™ is a 6-peptide blend that combines a potent ginseng-extracted peptide with 5 other peptides. This advanced formula, working synergistically with Botanical Actives, enhances skin firmness, elasticity, and resilience, helping to diminish visible signs of aging.
+Ginseng Peptide™ is a 6-peptide blend that combines a potent ginseng-extracted peptide with 5 other peptides. This advanced formula, working synergistically with Korean Ginseng Actives, enhances skin firmness, elasticity, and resilience, helping to diminish visible signs of aging.
 INGREDIENTS: WATER / AQUA / EAU, GLYCERIN, NIACINAMIDE, PANAX GINSENG ROOT EXTRACT, GINSENG PEPTIDE, RETINOL."
         />
       </main>
@@ -618,20 +621,23 @@ INGREDIENTS: WATER / AQUA / EAU, GLYCERIN, NIACINAMIDE, PANAX GINSENG ROOT EXTRA
     expect(result.geoProduct.ingredients.some((text) => text.includes("6-peptide blend"))).toBe(true);
     expect(result.geoProduct.effects.some((text) => text.includes("enhances skin firmness"))).toBe(true);
     expect(result.geoProduct.ingredients.some((text) => text.includes("INGREDIENTS: WATER / AQUA"))).toBe(true);
-    expect(JSON.stringify(result)).not.toContain("confidence");
+    // confidence is exposed in imageTexts but not in sentenceInsights
+    for (const insight of result.geoProduct.ocr.sentenceInsights) {
+      expect(insight).not.toHaveProperty("confidence");
+    }
   });
 
   it("joins wrapped OCR lines into semantic sentence insights when punctuation is missing", async () => {
     const wrappedOcrHtml = `
       <main>
-        <h1>Botanical Renewal Serum</h1>
+        <h1>Botanical Ginseng Rejuvenating Serum</h1>
         <img
           src="/wrapped-ginseng-peptide.jpg"
           data-ocr-text="Maximizing Effects with
 Ginseng Peptide™
 Ginseng Peptide™ is a 6-peptide blend that combines a potent
 ginseng-extracted peptide with 5 other peptides This advanced formula
-working synergistically with Botanical Actives enhances skin firmness
+working synergistically with Korean Ginseng Actives enhances skin firmness
 elasticity and resilience helping to diminish visible signs of aging"
         />
       </main>
@@ -662,7 +668,7 @@ elasticity and resilience helping to diminish visible signs of aging"
             <source data-srcset="${detailImages.slice(8, 13).map((src, index) => `${src} ${index + 1}x`).join(", ")}" />
           </picture>
         </section>
-        <img src="https://example.com/fileupload/reviews/2026/06/18/review.jpg?format=webp" />
+        <img src="https://cdn.example.com/fileupload/reviews/2026/06/18/review.jpg?format=webp" />
       </main>
       <script>
         window.__PRODUCT__ = {
@@ -1112,7 +1118,7 @@ elasticity and resilience helping to diminish visible signs of aging"
     vi.stubGlobal("fetch", fetchMock);
 
     const { result } = await extractProductFromHtml(
-      `<main><h1>배리어케어365 하이드로 수딩크림</h1><section class="product-detail"><img src="${usageImage}" /><img src="${clinicalImage}" /></section></main>`,
+      `<main><h1>모이베리어365 하이드로 수딩크림</h1><section class="product-detail"><img src="${usageImage}" /><img src="${clinicalImage}" /></section></main>`,
       "https://brand.example.com/products/hydro-soothing-cream",
       { provider: "openai", apiKey: "test-key", model: "gpt-5.4-mini" }
     );
@@ -1276,23 +1282,23 @@ elasticity and resilience helping to diminish visible signs of aging"
   it("preserves Shopify theme product metadata sections from embedded scripts", async () => {
     const shopifyThemeHtml = `
       <main>
-        <h1>Botanical Renewal Serum</h1>
-        <p>Unlock your skin's youthful radiance with our Botanical Renewal Serum.</p>
+        <h1>Botanical Ginseng Rejuvenating Serum</h1>
+        <p>Unlock your skin's youthful radiance with our Botanical Ginseng Rejuvenating Serum.</p>
       </main>
       <script>
         theme.products.update({
           id: 111,
-          title: "Botanical Renewal Cream",
-          handle: "botanical-renewal-cream",
+          title: "Botanical Ginseng Rejuvenating Cream",
+          handle: "botanical-ginseng-rejuvenating-cream",
           benefits: "Cream-only 24-hour hydration benefit should not be selected.",
           ingredients: "CREAM INGREDIENTS: WATER, GLYCERIN"
         });
         theme.products.update({
           id: 8084091011117,
-          title: "Botanical Renewal Serum",
-          handle: "botanical-renewal-serum",
-          benefits: "Formulated with our advanced capsule technology, enriched with Botanical Actives and Retinol. This powerhouse serum melts into skin on contact improving the look of plumpness, skin resilience, and fine lines and wrinkles. <br><br><b>After 6 weeks of use</b><br>100% of users showed improvement in Fine Lines & Wrinkles, Elasticity, and Firmness.",
-          ingredients: "BOTANICAL ACTIVES - patented ingredient that amplifies anti-aging compounds found in Ginseng.<br>GINSENG CAPSULES WITH RETINOL - helps improve moisturization, firmness, and rejuvenating abilities.<br><br>INGREDIENTS: WATER / AQUA / EAU, BUTYLENE GLYCOL, GLYCERIN, NIACINAMIDE, PANAX GINSENG ROOT EXTRACT, RETINOL.",
+          title: "Botanical Ginseng Rejuvenating Serum",
+          handle: "botanical-ginseng-rejuvenating-serum",
+          benefits: "Formulated with our advanced capsule technology, enriched with Korean Ginseng Actives and Retinol. This powerhouse serum melts into skin on contact improving the look of plumpness, skin resilience, and fine lines and wrinkles. <br><br><b>After 6 weeks of use</b><br>100% of users showed improvement in Fine Lines & Wrinkles, Elasticity, and Firmness.",
+          ingredients: "KOREAN GINSENG ACTIVES - patented ingredient that amplifies anti-aging compounds found in Ginseng.<br>GINSENG CAPSULES WITH RETINOL - helps improve moisturization, firmness, and rejuvenating abilities.<br><br>INGREDIENTS: WATER / AQUA / EAU, BUTYLENE GLYCOL, GLYCERIN, NIACINAMIDE, PANAX GINSENG ROOT EXTRACT, RETINOL.",
           howToUse: "<p>Apply two pumps morning and night after cleansing and toning, then follow with moisturizer.</p>"
         });
       </script>
@@ -1300,7 +1306,7 @@ elasticity and resilience helping to diminish visible signs of aging"
 
     const { result, diagnostics } = await extractProductFromHtml(
       shopifyThemeHtml,
-      "https://example.com/products/botanical-renewal-serum?variant=example-variant-1"
+      "https://shop.example.com/products/botanical-ginseng-rejuvenating-serum?variant=43202379841581"
     );
     const productText = [
       ...result.geoProduct.benefits,
@@ -1323,14 +1329,14 @@ elasticity and resilience helping to diminish visible signs of aging"
   it("extracts FAQ accordion answers and uses apply-related answers as usage fallback", async () => {
     const faqAccordionHtml = `
       <main>
-        <h1>Botanical Renewal Serum</h1>
+        <h1>Botanical Ginseng Rejuvenating Serum</h1>
         <p>Retinol-infused capsules visibly improve firmness and texture.</p>
         <div class="accordion">
           <button class="accordion__trigger" aria-controls="accordion-panel-usage">
             <span class="accordion__title">Should I apply it before or after moisturizers?</span>
           </button>
           <div class="accordion__content" id="accordion-panel-usage">
-            <p>Botanical Renewal Serum should be applied after cleansing and toning, and before moisturizing. Apply moisturizer as the final step of your skincare ritual.</p>
+            <p>Botanical Ginseng Rejuvenating Serum should be applied after cleansing and toning, and before moisturizing. Apply moisturizer as the final step of your skincare ritual.</p>
           </div>
         </div>
       </main>
@@ -1347,14 +1353,14 @@ elasticity and resilience helping to diminish visible signs of aging"
   it("does not classify purchase, benefit-layer, delivery, or return policy UI as product fields", async () => {
     const commerceHeavyHtml = `
       <main>
-        <h1>보태니컬 리뉴얼 크림 리치 단품세트</h1>
+        <h1>보태니컬크림 리치 단품세트</h1>
         <meta property="product:price:amount" content="270000" />
-        <p class="summary">예시럭셔리 인삼 과학의 정수가 담긴 보태니컬 리뉴얼 라인 제품입니다. 피부 본연의 자생력으로 차오른 고밀도 피부를 선사합니다.</p>
+        <p class="summary">예시럭셔리 인삼 과학의 정수가 담긴 보태니컬 라인 제품입니다. 피부 본연의 자생력으로 차오른 고밀도 피부를 선사합니다.</p>
         <select>
-          <option>보태니컬 리뉴얼 크림 리치 단품세트</option>
+          <option>보태니컬크림 리치 단품세트</option>
         </select>
         <div class="option-layer">
-          레이어 끌기 버튼 보태니컬 리뉴얼 크림 리치 단품세트 제품 수량 감소 01 제품 수량 증가 10% 243,000원 총 상품가 243,000원 혜택 적용가 243,000원 장바구니 구매하기
+          레이어 끌기 버튼 보태니컬크림 리치 단품세트 제품 수량 감소 01 제품 수량 증가 10% 243,000원 총 상품가 243,000원 혜택 적용가 243,000원 장바구니 구매하기
         </div>
         <section>
           <h2>효능</h2>
@@ -1362,7 +1368,7 @@ elasticity and resilience helping to diminish visible signs of aging"
         </section>
         <section>
           <h2>주요 성분</h2>
-          <p>식물 복합체와 인삼 펩타이드가 피부 탄력과 영양 케어를 돕습니다.</p>
+          <p>보태니컴플렉스와 인삼 펩타이드가 피부 탄력과 영양 케어를 돕습니다.</p>
         </section>
         <section>
           <h2>사용법</h2>
@@ -1389,7 +1395,7 @@ elasticity and resilience helping to diminish visible signs of aging"
       ...result.geoProduct.ocr.textBlocks
     ].join(" ");
 
-    expect(result.geoProduct.options).toEqual(["보태니컬 리뉴얼 크림 리치 단품세트"]);
+    expect(result.geoProduct.options).toEqual(["보태니컬크림 리치 단품세트"]);
     expect(result.geoProduct.benefits.some((text) => text.includes("고밀도 피부"))).toBe(true);
     expect(result.geoProduct.ingredients.some((text) => text.includes("인삼 펩타이드"))).toBe(true);
     expect(result.geoProduct.usage.some((text) => text.includes("스킨케어 마지막 단계"))).toBe(true);

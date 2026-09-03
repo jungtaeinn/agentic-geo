@@ -1,4 +1,4 @@
-export { extractProduct, extractProductFromHtml, type ProductExtractorOptions } from "./agent";
+export { extractImageOcrEvidence, extractProduct, extractProductFromHtml, type ProductExtractorOptions } from "./agent";
 export { ModelBackedProductProfileNormalizer, normalizeExtractorProductProfileWithAgent } from "./product-normalizer";
 export {
   refineGeoProductResult,
@@ -36,6 +36,8 @@ export type {
   GeoKeywordGroups,
   GeoProductRawData,
   GeoRagChunk,
+  ImageOcrEvidenceRequest,
+  ImageOcrEvidenceResult,
   KeywordCategory,
   OcrExtraction,
   OcrTextEvidence,

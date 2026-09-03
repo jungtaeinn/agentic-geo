@@ -9,6 +9,7 @@ import type {
 import { generatePdpGeo } from "@agentic-geo/pdp-geo-generator-agent";
 import {
   buildGeneratedSourceText,
+  buildImageAttributableSections,
   buildVanillaSourceText,
   runCitationProbe,
   type CitationProbeResult,
@@ -778,7 +779,10 @@ async function executeCitationProbe(
         benefits: normalized.benefits,
         contentPlan: generatorRun.diagnostics.contentPlan,
         evidenceLedger: generatorRun.diagnostics.evidenceLedger,
-        generatedSections: buildAttributableSections(sections, generatorRun.result.schemaMarkup.jsonLd)
+        generatedSections: buildAttributableSections(sections, generatorRun.result.schemaMarkup.jsonLd),
+        imageSections: buildImageAttributableSections(
+          generatorRun.diagnostics.finalPublicCopyProvenance ?? []
+        )
       },
       {
         engine,

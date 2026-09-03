@@ -7,7 +7,7 @@ import type {
 } from "./types";
 
 /**
- * Shared schema.org commerce value normalization (commerce contract).
+ * Shared schema.org commerce value normalization (GEO-128).
  *
  * Single implementation used by normalization (input contract) and JSON-LD
  * rendering so generated values always match the official schema.org

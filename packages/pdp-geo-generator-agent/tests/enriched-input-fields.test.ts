@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { generatePdpGeo } from "../src";
 
-// commerce contract: agent-api가 전달하는 GEO 입력 계약 확장 필드(variants/metafields 등)를
+// GEO-128: agent-api가 전달하는 GEO 입력 계약 확장 필드(variants/metafields 등)를
 // signal 구조 변경 없이 기존 options/price/sourceTexts로 파생 반영하는지 검증한다.
 // (PdpProductSignal 구조 확장 및 JSON-LD gtin/Offer.availability 반영은
-//  TODO(commerce contract)로 보류 — 사용자 결정)
+//  TODO(GEO-128)로 보류 — 사용자 결정)
 
 const variantInStock = JSON.stringify({
   sku: "GT-50",
@@ -24,7 +24,7 @@ const variantOutOfStock = JSON.stringify({
   availability: "OutOfStock"
 });
 
-describe("enriched GEO input contract fields (commerce contract)", () => {
+describe("enriched GEO input contract fields (GEO-128)", () => {
   it("derives variant titles/options into internal options and backfills price from the first variant", async () => {
     const { result } = await generatePdpGeo({
       product: {

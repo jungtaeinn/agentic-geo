@@ -38,6 +38,7 @@ export function createFinalProofreadingPrompt(request: PdpGeoFinalProofreadingRe
       "HowTo fields are punctuation-only: do not change words, actions, amounts, timing, body area, count, or order.",
       "Do not edit reviewBody, names, offers, URLs, identifiers, or schema structure; those fields are intentionally absent.",
       "Write in the existing target locale only. Evidence IDs and immutable tokens are read-only constraints, not material for adding facts.",
+      "A field carrying priorRejection is a second attempt: your previous proposal for it was refused for that stated reason. Propose a different correction that does not repeat it, or use action=keep when no correction remains that would satisfy it.",
       "Return only the strict structured JSON requested by the response schema."
     ].join("\n"),
     user: JSON.stringify({

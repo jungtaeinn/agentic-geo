@@ -97,7 +97,7 @@ describe("quality gate helpers", () => {
 describe("quality gate pipeline integration", () => {
   const product = {
     geoProduct: {
-      name: "배리어케어 미스트",
+      name: "모이베리어 미스트",
       description: "세라마이드를 담은 보습 미스트입니다.",
       brand: "EXAMPLEDERMA",
       category: "미스트",

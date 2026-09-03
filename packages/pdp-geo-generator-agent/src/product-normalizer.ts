@@ -15,7 +15,13 @@ import type {
 import { z } from "zod";
 import { temperatureBody } from "./copy-refiner";
 import { filterCurrentProductUsageInstructions } from "./product-scope";
-import { dedupePdpUsageInstructions, inferPdpEvidenceRoles, sanitizePdpSemanticFacts } from "./normalize";
+import {
+  dedupePdpUsageInstructions,
+  inferPdpEvidenceRoles,
+  isDerivedKeywordOrChunkKey,
+  isReviewProvenanceRecord,
+  sanitizePdpSemanticFacts
+} from "./normalize";
 import { createProductNormalizationPrompt } from "./prompts/product-normalization";
 
 interface ProductNormalizationApplication {
@@ -1088,7 +1094,10 @@ function createSourceCorpus(rawProduct: unknown, bootstrapProduct: PdpProductSig
  * Corpus for model-routed product facts. Review evidence remains available to
  * review/FAQ normalization through createSourceCorpus, but it cannot be
  * promoted into ingredient or outcome fields merely because the same words
- * occur in a review branch.
+ * occur in a review branch. Derived keyword/chunk collections (classifier or
+ * retriever output, not source prose) are likewise excluded here — see
+ * isDerivedKeywordOrChunkKey — because they can carry a term whose only real
+ * provenance is a review aside, laundering it into product-fact evidence.
  */
 function createProductFactCorpus(rawProduct: unknown, bootstrapProduct: PdpProductSignal): string {
   const reviewTexts = unique([
@@ -1143,7 +1152,7 @@ function flattenNonReviewTextValues(value: unknown, depth = 0): string[] {
     return [];
   }
   return Object.entries(record).flatMap(([key, item]) =>
-    isReviewProvenanceKey(key) ? [] : flattenNonReviewTextValues(item, depth + 1));
+    (isReviewProvenanceKey(key) || isDerivedKeywordOrChunkKey(key)) ? [] : flattenNonReviewTextValues(item, depth + 1));
 }
 
 function flattenReviewProvenanceTextValues(value: unknown, reviewScope = false, depth = 0): string[] {
@@ -1173,13 +1182,6 @@ function flattenReviewProvenanceTextValues(value: unknown, reviewScope = false, 
 function isReviewProvenanceKey(key: string): boolean {
   const normalized = key.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
   return /(?:review|reviewer|customerfeedback|testimonial|rating|feedback|리뷰|후기|평점|レビュー|口コミ|評価)/iu.test(normalized);
-}
-
-function isReviewProvenanceRecord(record: Record<string, unknown>): boolean {
-  return Object.entries(record).some(([key, value]) =>
-    /^(?:category|kind|role|sectionType|source|sourceType|type)$/i.test(key)
-    && typeof value === "string"
-    && /(?:review|customer\s*(?:experience|feedback)|testimonial|리뷰|후기|レビュー|口コミ)/iu.test(value));
 }
 
 function isReviewBackedSourceUnit(value: string, normalizedReviewTexts: string[]): boolean {

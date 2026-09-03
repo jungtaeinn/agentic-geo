@@ -3,7 +3,7 @@
  * 로컬 Docker가 필요하므로 기본 `pnpm test`(커밋/CI 경로)에서 분리했다. 실행은 `pnpm test:int`.
  *
  * 스키마는 엔티티 자동생성(synchronize)이 아니라 test/fixtures/geo-schema.sql로 만든다.
- * 그 파일은 upstream API의 V1__create_geo.sql을 그대로 미러링하므로, 엔티티와 운영 스키마가
+ * 그 파일은 upstream-api의 V1__create_geo.sql을 그대로 미러링하므로, 엔티티와 운영 스키마가
  * 어긋나면 여기서 깨진다 — 이 스위트의 존재 이유다.
  *
  * colima/Lima 사용자 주의: Testcontainers가 Ryuk 컨테이너에 macOS 호스트 소켓 경로를

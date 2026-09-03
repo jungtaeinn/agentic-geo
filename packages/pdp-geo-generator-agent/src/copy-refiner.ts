@@ -8,6 +8,9 @@ import {
   usageDescriptionSignalScore,
   usageProcedureSignalScore,
 } from "./contracts/usage-contract";
+import { hasAnalysisLabelArtifact } from "./contracts/analysis-label-contract";
+import { restatesTypedFieldAsRawTranscription } from "./contracts/certification-contract";
+import { isKoreanCompleteSentence, isSeparatorJoinedList, koreanPhraseHeadToken } from "./contracts/sentence-form-contract";
 import { formatPolicyChecklistPayload, formatPolicyComplianceRecap } from "./rag/policy-compiler";
 import { createCopyRefinementSystemPrompt } from "./prompts/copy-refinement";
 import type {
@@ -24,6 +27,7 @@ import type {
   PdpGeoSchemaMarkup,
   PdpGeoTokenUsage
 } from "./types";
+import { mergeTokenUsage } from "./token-usage";
 
 interface CopyRefinementApplication {
   schemaMarkup: PdpGeoSchemaMarkup;
@@ -774,7 +778,7 @@ function evidenceTextScore(value: string): number {
   if (/(?:임상|인체\s*적용|자가\s*평가|시험|테스트|결과|개선|지속|만족|clinical|study|self[-\s]?assessment|instrumental|result|improvement|agreed)/i.test(value)) {
     score += 6;
   }
-  if (/(?:성분|기술|포뮬러|식물 복합체|펩타이드|비타민|콜라겐|레티놀|ingredient|technology|formula|peptide|vitamin|collagen|retinol|ginseng)/i.test(value)) {
+  if (/(?:성분|기술|포뮬러|보태니컴플렉스|펩타이드|비타민|콜라겐|레티놀|ingredient|technology|formula|peptide|vitamin|collagen|retinol|ginseng)/i.test(value)) {
     score += 5;
   }
   if (/(?:보습|수분|탄력|주름|피부결|장벽|진정|리프팅|밀도|hydration|firming|wrinkle|texture|barrier|soothing|lifting|density)/i.test(value)) {
@@ -822,25 +826,6 @@ function collectRetryTargets(
     seen.add(item.field);
     return true;
   });
-}
-
-function mergeTokenUsage(
-  first: PdpGeoTokenUsage | undefined,
-  second: PdpGeoTokenUsage | undefined
-): PdpGeoTokenUsage | undefined {
-  if (!first) {
-    return second;
-  }
-  if (!second) {
-    return first;
-  }
-  const sum = (a?: number, b?: number): number | undefined =>
-    a === undefined && b === undefined ? undefined : (a ?? 0) + (b ?? 0);
-  return {
-    inputTokens: sum(first.inputTokens, second.inputTokens),
-    outputTokens: sum(first.outputTokens, second.outputTokens),
-    totalTokens: sum(first.totalTokens, second.totalTokens)
-  };
 }
 
 function applyCopyRefinement(
@@ -1021,10 +1006,23 @@ interface AcceptRefinedTextOptions {
   };
 }
 
-const analysisLabelArtifactPattern = /(?:평가\s*지표|측정\/평가\s*결과|측정\s*결과|확인\s*지표|확인\s*근거|reported\s+results?|consumer\s+assessment|試験結果|確認指標)\s*[:：]/iu;
-
+/**
+ * An internal analysis label used as the sentence's own subject.
+ *
+ * The label can be attached two ways and both are the same dump. A colon
+ * introduces it as a field (`평가 지표: …`); a Korean topic or subject particle
+ * makes it the grammatical subject (`측정/평가 결과는 … 입니다`), which is the
+ * shell Task 2 removed from the generator. Only the colon form was rejected
+ * here, so the 2026-09-02 EXAMPLEDERMA 1145 run had the refiner put the particle
+ * form back into `Reported details` after the generator had stopped producing
+ * it. The particles are a closed grammatical class.
+ *
+ * Both the shapes and the label vocabulary now come from the contract module —
+ * this file used to keep its own list, and it was missing two of the labels the
+ * generator strips.
+ */
 function containsAnalysisLabelArtifact(text: string): boolean {
-  return analysisLabelArtifactPattern.test(text);
+  return hasAnalysisLabelArtifact(text);
 }
 
 const rawVolumeFragmentPattern = /\d+(?:\.\d+)?\s*fl\.?\s*oz\.?|\/\s*\d+(?:\.\d+)?\s*m[lL]\b|\d+(?:\.\d+)?\s*m[lL]\s*용량/i;
@@ -1083,6 +1081,41 @@ function containsRepeatedDescriptionSentence(value: string): boolean {
     seen.add(key);
     return false;
   });
+}
+
+/**
+ * True when a phrase says the same thing twice in a row.
+ *
+ * Refinement produced "건조함이 느껴지는 건조 피부 고객" from "건조 피부 고객": it
+ * expanded the audience with a concern already named by the audience itself.
+ * The repetition is visible in the text without knowing what 건조 means — the
+ * modifier and the head it modifies start from the same stem — so it is read
+ * off the copy rather than matched against a list of concepts, and a product
+ * whose stutter is about something else is caught by the same check.
+ *
+ * Only near-adjacent tokens count. A term legitimately recurring later in a
+ * sentence is cohesion, not a stutter, and identity terms are exempt because a
+ * product named after its own category repeats it by construction.
+ */
+function repeatsAdjacentConceptStem(text: string, identityTerms: string[]): boolean {
+  const tokens = cleanText(text).split(/\s+/u).map((token) => token.replace(/[^\p{L}\p{N}]/gu, ""));
+  const stems = tokens.map((token) => (/[가-힣]/u.test(token) ? token.slice(0, 2) : ""));
+  const identity = new Set(identityTerms
+    .flatMap((term) => cleanText(term).split(/\s+/u))
+    .map((token) => token.replace(/[^\p{L}\p{N}]/gu, "").slice(0, 2))
+    .filter((token) => token.length === 2));
+  // An adnominal ending marks the token as modifying the noun that follows it.
+  // That is what separates "건조함이 [느껴지는] 건조 피부", where the modifier
+  // restates its own head, from "고객 [리뷰에서] 고객들은", where the two simply
+  // recur in one clause.
+  const isAdnominal = (token: string) => /(?:는|은|ㄴ|한|된|인|일)$/u.test(token);
+  for (let index = 0; index < stems.length; index += 1) {
+    const stem = stems[index];
+    if (!stem || stem.length < 2 || identity.has(stem)) continue;
+    if (stems[index + 1] === stem) return true;
+    if (stems[index + 2] === stem && isAdnominal(tokens[index + 1] ?? "")) return true;
+  }
+  return false;
 }
 
 function acceptRefinedText(
@@ -1163,6 +1196,20 @@ function acceptRefinedText(
   if ((field === "Product.description" || field === "content.sections.description") && containsMisroutedProductDescriptionTail(text)) {
     return reject("it ends with FAQ, purchase, patent-identifier, or field-navigation content instead of product-facing context.");
   }
+  // Defence in depth for the transcription-hallucination path: the selectors
+  // that build evidence already drop an unverified institution, but the
+  // refiner also reads product evidence directly and could reintroduce one.
+  if (options.contract && restatesTypedFieldAsRawTranscription(text, options.contract.request.product.semanticFacts?.safetyTests ?? [])) {
+    return reject("it republishes a raw transcription of a fact the extractor already committed as a typed field.");
+  }
+  if (options.contract && repeatsAdjacentConceptStem(text, [
+    options.contract.request.product.name,
+    options.contract.request.product.originalName ?? "",
+    options.contract.request.product.brand ?? "",
+    options.contract.request.product.category ?? ""
+  ])) {
+    return reject("it repeats the same concept in adjacent modifier and head positions.");
+  }
   if (isDescriptionField(field) && containsAnalysisLabelArtifact(text)) {
     return reject("it exposes an internal analysis label such as 평가 지표: instead of a natural product sentence.");
   }
@@ -1180,6 +1227,9 @@ function acceptRefinedText(
   }
   if (options.requireSupportedClaimTokens && hasUnsupportedClaimTokens(text, options.evidenceCorpus ?? "")) {
     return reject("it introduced unsupported numeric or study claim details.");
+  }
+  if (refinementDropsPublishedMeasurement(field, text, fallbackValue ?? "")) {
+    return reject("it drops a measured figure the composed description had published.");
   }
   const contractRejection = refinedCopyContractRejection(text, fallbackValue, options.contract);
   if (contractRejection) {
@@ -1341,6 +1391,48 @@ function webPageDescriptionContractRejection(
   return undefined;
 }
 
+/**
+ * True when a rewrite kept nothing of what the base answer actually said.
+ *
+ * Refinement turned the answer to "제형과 사용감은 어떤가요?" from "끈적임이 적은
+ * 마무리가 특징입니다" into a description of the emulsion process. Both
+ * sentences are true and both are about the product, so every existing check
+ * passed — but the question asked what the product feels like and the
+ * published answer no longer says.
+ *
+ * The base answer was built to answer this question, so the words it used are
+ * the evidence that it did. A rewrite may reword all of them away only by
+ * changing subject, which is what happened here. Identity terms are excluded
+ * because repeating the product name is not answering anything.
+ */
+function abandonsAnsweredTopic(text: string, base: string, request: PdpGeoCopyRefinementRequest): boolean {
+  const identity = meaningfulAnswerTokens([
+    request.product.name,
+    request.product.originalName ?? "",
+    request.product.brand ?? "",
+    request.product.category ?? ""
+  ].join(" "));
+  // Korean attaches particles to the noun, so the product name appears as
+  // "미스트는" where the identity list holds "미스트". Comparing whole tokens let
+  // the product's own name count as topic overlap and the check never fired.
+  const sharesStem = (left: string, right: string) =>
+    left.length >= 2 && right.length >= 2 && (left.startsWith(right) || right.startsWith(left));
+  const baseTopic = meaningfulAnswerTokens(base)
+    .filter((token) => !identity.some((entity) => sharesStem(token, entity)));
+  if (baseTopic.length === 0) {
+    return false;
+  }
+  const refined = meaningfulAnswerTokens(text);
+  return !baseTopic.some((token) => refined.some((candidate) => sharesStem(token, candidate)));
+}
+
+function meaningfulAnswerTokens(value: string): string[] {
+  return cleanText(value)
+    .split(/[\s,./·:;()[\]"']+/u)
+    .map((token) => token.replace(/[^\p{L}\p{N}]/gu, ""))
+    .filter((token) => token.length >= 2);
+}
+
 function faqAnswerContractRejection(
   text: string,
   base: string,
@@ -1375,6 +1467,9 @@ function faqAnswerContractRejection(
     if (findFactPositionAfter(base, facts, -1) >= 0 && findFactPositionAfter(text, facts, -1) < 0) {
       return `the answer dropped the source-backed ${role} needed for its matched FAQ intent.`;
     }
+  }
+  if (abandonsAnsweredTopic(text, base, request)) {
+    return "the answer no longer covers the topic the question was answered on.";
   }
   return undefined;
 }
@@ -1624,7 +1719,10 @@ const refinableSchemaPropertyNames = new Set([
   "Reported details",
   // Result-summary properties carry the same evidence role as Reported
   // details; leaving them unrefinable let raw source blobs bypass the model
-  // pass that cleans every sibling evidence field.
+  // pass that cleans every sibling evidence field. They are still live names —
+  // `validate.ts` audits the clinical label's misuse and `isStablePropertyValueName`
+  // lists it — so dropping them here restored the bypass with nothing in its
+  // place.
   "Reported assessment summary",
   "Clinical result summary",
   "Customer review context"
@@ -1658,7 +1756,7 @@ function acceptedSchemaPropertyRefinements(
       warnings,
       { minLength: 12, maxLength: 900, evidenceCorpus, contextEvidenceCorpus, requireSupportedClaimTokens: true, rejections }
     );
-    if (accepted && !isAcceptedSchemaPropertyValue(name, accepted, request, warnings)) {
+    if (accepted && !isAcceptedSchemaPropertyValue(name, accepted, before, request, warnings)) {
       return [];
     }
     return accepted && accepted !== before ? [{ name, value: accepted, before }] : [];
@@ -1668,9 +1766,13 @@ function acceptedSchemaPropertyRefinements(
 function isAcceptedSchemaPropertyValue(
   name: string,
   value: string,
+  before: string,
   request: PdpGeoCopyRefinementRequest,
   warnings: string[]
 ): boolean {
+  if (!isRefinementThatKeepsPropertyValueForm(name, value, before, warnings)) {
+    return false;
+  }
   if (/^Usage$/i.test(name) && !isActionableUsageCopy(value)) {
     warnings.push(`Product.additionalProperty.${name} refinement rejected because usage values must contain actionable use directions only.`);
     return false;
@@ -1696,8 +1798,71 @@ function isAcceptedSchemaPropertyValue(
   return true;
 }
 
+/**
+ * A refinement may reword a property value; it may not change what the value
+ * *is*.
+ *
+ * `additionalProperty` is a property field — the one place in the published
+ * markup where a noun phrase or a list is the correct form, not prose. A
+ * refinement that turns `건조 피부 또는 민감 피부 고객` into
+ * `건조하거나 민감한 피부를 위한 클렌저입니다.` breaks that twice over: the slot
+ * now holds a sentence, and the sentence is about the product rather than the
+ * customer the property name asks for. Both were published in the 2026-09-02
+ * EXAMPLEDERMA 1145 run, and both are decidable from form alone.
+ *
+ * Both tests read Korean morphology, and neither is attempted on a value in
+ * another language. That is not caution for its own sake: `compactSchemaPropertyText`
+ * strips the terminal period from every property value, so punctuation cannot
+ * tell an English noun phrase from English prose, and guessing there rejected
+ * well-formed refinements. Korean closes a sentence with an ending that
+ * survives the stripping, and Korean is head-final, so the last word is what
+ * the phrase is about — both readings hold on the text as published.
+ *
+ * The consequence is a known hole, recorded rather than implied: the English
+ * form of the same defect still publishes. `Customers with dry or sensitive
+ * skin` refined to `This is a gentle cleanser for dry or sensitive skin.` is
+ * accepted here, and `validate.ts`'s property checks give `Target customer` no
+ * downstream net either. Closing it needs a signal that survives punctuation
+ * stripping — a finite-verb test, or keeping the terminal period on the value
+ * so the form is legible — neither of which belongs in this gate.
+ *
+ * The tests only apply where the original was a noun phrase, so the properties
+ * whose deterministic value is already prose (`Ingredient/effect detail`,
+ * `Reported details`, `Usage`, …) are untouched. Rejecting costs only the
+ * polish — the deterministic value stands.
+ */
+function isRefinementThatKeepsPropertyValueForm(
+  name: string,
+  value: string,
+  before: string,
+  warnings: string[]
+): boolean {
+  // The generator no longer builds the analysis-label shell, but the refiner
+  // reads the same source evidence and can write one back. A published property
+  // is the same surface either way, so it is refused on the same grounds.
+  if (containsAnalysisLabelArtifact(value)) {
+    warnings.push(`Product.additionalProperty.${name} refinement rejected because it exposes an internal analysis label instead of a natural product sentence.`);
+    return false;
+  }
+  if (!/[가-힣]/u.test(before) || isKoreanCompleteSentence(before)) {
+    return true;
+  }
+  if (isKoreanCompleteSentence(value)) {
+    warnings.push(`Product.additionalProperty.${name} refinement rejected because a property value must stay an attribute value rather than becoming a sentence.`);
+    return false;
+  }
+  // A list has no single head, so the head test does not apply to it: reordering
+  // a separator-joined enumeration changes the last word and no fact at all.
+  if (!isSeparatorJoinedList(before)
+    && koreanPhraseHeadToken(value) !== koreanPhraseHeadToken(before)) {
+    warnings.push(`Product.additionalProperty.${name} refinement rejected because it changed what the value describes instead of rewording it.`);
+    return false;
+  }
+  return true;
+}
+
 function containsBrandIdentityAuthoritySignal(value: string): boolean {
-  return /(?:research\s+(?:papers?|articles?)|official\s+(?:articles?|papers?)|peer[-\s]?reviewed|published\s+(?:paper|study|article)|research\s+center|research\s+institute|Derma\s*Lab|Example Research Institute|Johns\s*Hopkins|PubMed|PMID|patents?|특허|논문|공식\s*(?:논문|문서|기사)|연구소|연구\s*센터|학술지|저널)/i.test(value);
+  return /(?:research\s+(?:papers?|articles?)|official\s+(?:articles?|papers?)|peer[-\s]?reviewed|published\s+(?:paper|study|article)|research\s+center|research\s+institute|Derma\s*Lab|NBRI|Johns\s*Hopkins|PubMed|PMID|patents?|특허|논문|공식\s*(?:논문|문서|기사)|연구소|연구\s*센터|학술지|저널)/i.test(value);
 }
 
 function isSupportedByProductAuthorityEvidence(value: string, request: PdpGeoCopyRefinementRequest): boolean {
@@ -1724,6 +1889,8 @@ function extractBrandIdentityAuthorityTokens(value: string): string[] {
     "research center",
     "research institute",
     "derma lab",
+    "nbri",
+    "johns hopkins",
     "pubmed",
     "pmid",
     "특허",
@@ -2000,14 +2167,52 @@ function introducesUnsupportedContextAssociation(value: string, sourceEvidenceCo
     || sourceRequiredCausalPattern.test(value) && !sourceRequiredCausalPattern.test(sourceEvidenceCorpus);
 }
 
+/**
+ * A refinement that quietly removes a measurement the composed text carried.
+ *
+ * The refiner was already stopped from *adding* a figure the evidence does not
+ * support; the opposite direction was unguarded. A rewrite that drops one does
+ * not look wrong — the prose still reads well — but the figure is the part of a
+ * product description an answer engine can quote, and the source stated it. So
+ * a refinement is only an improvement if it keeps what was measured.
+ *
+ * Read over the same claim tokens as the unsupported-token rule, so the two
+ * directions cannot disagree about what counts as a figure. Rejection falls
+ * back to the composed text, which by construction still has it.
+ *
+ * `WebPage.description` is out of scope on purpose: it summarises what the page
+ * covers, and a summary may leave a figure to the field that states it.
+ */
+export function refinementDropsPublishedMeasurement(field: string, refined: string, composed: string): boolean {
+  if (field !== "Product.description" && field !== "content.sections.description") {
+    return false;
+  }
+  const kept = normalizeClaimTokenText(refined);
+  return extractMeasuredResultTokens(composed).some((token) => !kept.includes(token));
+}
+
 function hasUnsupportedClaimTokens(value: string, evidenceCorpus: string): boolean {
   const corpus = normalizeClaimTokenText(evidenceCorpus);
   return extractClaimTokens(value).some((token) => !corpus.includes(token));
 }
 
+/**
+ * The measured result itself — a proportion or a ratio.
+ *
+ * Separated from the study metadata around it because the two are protected in
+ * opposite directions. A rewrite must not *invent* a sample size or a test
+ * period, so {@link extractClaimTokens} covers those; but a rewrite that
+ * compresses "2022년 12월 19일부터 22일까지 32명" into "2022년 12월" has restated
+ * the same study, not lost a fact. Dropping the figure is the loss, because the
+ * figure is what the measurement was.
+ */
+function extractMeasuredResultTokens(value: string): string[] {
+  return unique((value.match(/[+\-−]?\d+(?:\.\d+)?\s?(?:%|배)/gi) ?? []).map(normalizeClaimTokenText));
+}
+
 function extractClaimTokens(value: string): string[] {
   return unique([
-    ...(value.match(/[+\-−]?\d+(?:\.\d+)?\s?(?:%|배)/gi) ?? []),
+    ...extractMeasuredResultTokens(value),
     ...(value.match(/\b\d+(?:\.\d+)?\s?(?:weeks?|days?|hours?|users?|participants?|women|men|subjects?|reviews?)\b/gi) ?? []),
     ...(value.match(/\b(?:after|in)\s+\d+(?:\.\d+)?\s?(?:weeks?|days?|hours?)\b/gi) ?? []),
     ...(value.match(/\b\d+(?:\.\d+)?\s?(?:명|인|참여자|대상|사용자|여성|남성|주|일|시간|회)\b/g) ?? [])

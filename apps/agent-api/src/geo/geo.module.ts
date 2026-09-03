@@ -7,6 +7,7 @@ import { GeoResultRepository } from "./persistence/geo-result.repository";
 import { GeoQueue } from "./geo-queue.service";
 import { GeoAcceptService } from "./geo-accept.service";
 import { GenerationService } from "./generation.service";
+import { OcrEnrichmentService } from "./ocr-enrichment.service";
 import { GeoController } from "./geo.controller";
 import { GeoTestController } from "./geo-test.controller";
 import { GeoProcessor } from "./geo.processor";
@@ -32,6 +33,7 @@ const BACKOFF_MS = 5000;
     GeoGenerationRepository,
     GeoResultRepository,
     GeoAcceptService,
+    OcrEnrichmentService,
     GenerationService,
     GeoProcessor,
   ],

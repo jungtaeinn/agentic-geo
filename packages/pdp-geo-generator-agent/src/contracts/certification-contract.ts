@@ -79,3 +79,36 @@ export function selectAtomicFunctionalCertificationValues(value: string, locale:
     .filter((item) => !containsSerializedMetadata(item))
     .filter(isAtomicCertificationFactPhrase);
 }
+
+/**
+ * True when a transcribed sentence adds nothing a typed field does not
+ * already carry, and so must not be published as prose.
+ *
+ * The EXAMPLEDERMA 크림 미스트 PDP image reads "대학병원 피부과에서". OCR returned
+ * "휘경보건 피부과에서" at 0.91 confidence, and a clinic that does not exist was
+ * published. Neither a confidence score nor a list of institution names can
+ * catch that: the next misreading will be a different word.
+ *
+ * What can be checked is which representation the extractor committed to. It
+ * classified this block into `safetyTests` as "피부과 테스트" — that is its
+ * interpretation of the evidence, and it is the part a buyer needs. The
+ * surrounding transcription is unvetted surface around that interpretation,
+ * so republishing it as prose adds risk and no information.
+ *
+ * A sentence reporting a measured outcome is excluded: there the numbers are
+ * the fact, no typed field replaces them, and the description contract asks
+ * for the study context that qualifies them.
+ */
+export function restatesTypedFieldAsRawTranscription(
+  value: string,
+  typedFacts: string[]
+): boolean {
+  const text = cleanUsageText(value);
+  if (!text || isQuantifiedClinicalResultSentence(text)) {
+    return false;
+  }
+  return typedFacts
+    .map((fact) => cleanUsageText(fact))
+    .filter((fact) => fact.length >= 2)
+    .some((fact) => text.includes(fact) && text.length > fact.length * 2);
+}

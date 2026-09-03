@@ -70,10 +70,10 @@ const OFFICIAL_DOCS = "official-ai-search-platform-docs_v1.md";
 const COMMON_FORBIDDEN = ["clinically proven", "guaranteed", "cure", "treats eczema", "의학적 효능", "치료", "완치"];
 
 export const ragEvalGoldens: RagEvalGolden[] = [
-  // --- ExampleLuxe Botanical Renewal Serum (en-US) ---
+  // --- ExampleLuxe Botanical Ginseng Rejuvenating Serum (en-US) ---
   {
     id: "CGRS-FAQ",
-    productId: "exampleluxe-renewal-serum",
+    productId: "exampleluxe-cgr-serum",
     locale: "en-US",
     market: "US",
     target: "faq",
@@ -83,12 +83,12 @@ export const ragEvalGoldens: RagEvalGolden[] = [
       { document: CEP, heading: "CEP Dimensions" },
       { document: SCHEMA_DOC }
     ],
-    expectedClaims: ["Botanical Renewal Serum", "retinol"],
+    expectedClaims: ["Botanical Ginseng Rejuvenating Serum", "retinol"],
     forbiddenClaims: COMMON_FORBIDDEN
   },
   {
     id: "CGRS-HOWTO",
-    productId: "exampleluxe-renewal-serum",
+    productId: "exampleluxe-cgr-serum",
     locale: "en-US",
     market: "US",
     target: "howToUse",
@@ -107,7 +107,7 @@ export const ragEvalGoldens: RagEvalGolden[] = [
   },
   {
     id: "CGRS-PDESC",
-    productId: "exampleluxe-renewal-serum",
+    productId: "exampleluxe-cgr-serum",
     locale: "en-US",
     market: "US",
     target: "productDescription",
@@ -123,7 +123,7 @@ export const ragEvalGoldens: RagEvalGolden[] = [
   },
   {
     id: "CGRS-WDESC",
-    productId: "exampleluxe-renewal-serum",
+    productId: "exampleluxe-cgr-serum",
     locale: "en-US",
     market: "US",
     target: "webPageDescription",
@@ -158,7 +158,7 @@ export const ragEvalGoldens: RagEvalGolden[] = [
   },
   {
     id: "CGRS-SCHEMA",
-    productId: "exampleluxe-renewal-serum",
+    productId: "exampleluxe-cgr-serum",
     locale: "en-US",
     market: "US",
     target: "schema",
@@ -173,7 +173,7 @@ export const ragEvalGoldens: RagEvalGolden[] = [
   },
   {
     id: "CGRS-EVIDENCE",
-    productId: "exampleluxe-renewal-serum",
+    productId: "exampleluxe-cgr-serum",
     locale: "en-US",
     market: "US",
     target: "productDescription",
@@ -189,7 +189,7 @@ export const ragEvalGoldens: RagEvalGolden[] = [
   // --- ExampleLuxe Essential Activating Serum (en-US) ---
   {
     id: "FCAS-FAQ",
-    productId: "exampleluxe-activating-serum",
+    productId: "exampleluxe-fcas-vi",
     locale: "en-US",
     market: "US",
     target: "faq",
@@ -199,12 +199,12 @@ export const ragEvalGoldens: RagEvalGolden[] = [
       { document: EEAT, heading: "Experience" },
       { document: CEP, heading: "CEP Dimensions" }
     ],
-    expectedClaims: ["Essential Activating Serum"],
+    expectedClaims: ["Essential Care Activating Serum"],
     forbiddenClaims: COMMON_FORBIDDEN
   },
   {
     id: "FCAS-HOWTO",
-    productId: "exampleluxe-activating-serum",
+    productId: "exampleluxe-fcas-vi",
     locale: "en-US",
     market: "US",
     target: "howToUse",
@@ -218,7 +218,7 @@ export const ragEvalGoldens: RagEvalGolden[] = [
   },
   {
     id: "FCAS-PDESC",
-    productId: "exampleluxe-activating-serum",
+    productId: "exampleluxe-fcas-vi",
     locale: "en-US",
     market: "US",
     target: "productDescription",
@@ -233,7 +233,7 @@ export const ragEvalGoldens: RagEvalGolden[] = [
   },
   {
     id: "FCAS-CLAIMSAFETY",
-    productId: "exampleluxe-activating-serum",
+    productId: "exampleluxe-fcas-vi",
     locale: "en-US",
     market: "US",
     target: "productDescription",
@@ -247,7 +247,7 @@ export const ragEvalGoldens: RagEvalGolden[] = [
   },
   {
     id: "FCAS-SCHEMA",
-    productId: "exampleluxe-activating-serum",
+    productId: "exampleluxe-fcas-vi",
     locale: "en-US",
     market: "US",
     target: "schema",
@@ -261,7 +261,7 @@ export const ragEvalGoldens: RagEvalGolden[] = [
   },
   {
     id: "FCAS-WDESC",
-    productId: "exampleluxe-activating-serum",
+    productId: "exampleluxe-fcas-vi",
     locale: "en-US",
     market: "US",
     target: "webPageDescription",
@@ -274,7 +274,7 @@ export const ragEvalGoldens: RagEvalGolden[] = [
     forbiddenClaims: COMMON_FORBIDDEN
   },
 
-  // --- EXAMPLEDERMA 배리어케어365 캡슐 토너 (ko-KR) ---
+  // --- EXAMPLEDERMA 모이베리어365 캡슐 토너 (ko-KR) ---
   {
     id: "TONER-FAQ",
     productId: "examplederma-capsule-toner",
@@ -371,7 +371,7 @@ export const ragEvalGoldens: RagEvalGolden[] = [
     forbiddenClaims: COMMON_FORBIDDEN
   },
 
-  // --- EXAMPLEDERMA 배리어케어 365 크림 미스트 (ko-KR) ---
+  // --- EXAMPLEDERMA 모이베리어 365 크림 미스트 (ko-KR) ---
   {
     id: "MIST-FAQ",
     productId: "examplederma-cream-mist",

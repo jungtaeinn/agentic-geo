@@ -39,7 +39,14 @@ export interface PreparedImageOcrInputs {
   slicingUnavailableReason?: string;
 }
 
-const SLICE_FRAGMENT_PATTERN = /#ocr-slice-\d+of\d+$/;
+const SLICE_FRAGMENT_PATTERN = /#ocr-slice-(\d+)of(\d+)$/;
+
+/** Slice identity parsed from a display URL label. */
+export interface SliceFragmentInfo {
+  baseUrl: string;
+  sliceIndex?: number;
+  sliceCount?: number;
+}
 
 /** Builds the display URL for one slice of a tall image. */
 export function sliceDisplayUrl(imageUrl: string, sliceIndex: number, totalSlices: number): string {
@@ -49,6 +56,19 @@ export function sliceDisplayUrl(imageUrl: string, sliceIndex: number, totalSlice
 /** Removes the slice fragment so merged OCR evidence points at the original image. */
 export function stripSliceFragment(displayUrl: string): string {
   return displayUrl.replace(SLICE_FRAGMENT_PATTERN, "");
+}
+
+/** Parses the `#ocr-slice-NofM` label so slice order survives past the vision call. */
+export function parseSliceFragment(displayUrl: string): SliceFragmentInfo {
+  const match = displayUrl.match(SLICE_FRAGMENT_PATTERN);
+  if (!match) {
+    return { baseUrl: displayUrl };
+  }
+  return {
+    baseUrl: displayUrl.replace(SLICE_FRAGMENT_PATTERN, ""),
+    sliceIndex: Number(match[1]),
+    sliceCount: Number(match[2])
+  };
 }
 
 /**

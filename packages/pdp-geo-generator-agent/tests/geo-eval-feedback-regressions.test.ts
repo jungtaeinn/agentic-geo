@@ -37,17 +37,17 @@ describe("sentence punctuation spacing", () => {
           "@type": "Product",
           "@id": "https://example.com/p#product",
           name: "Essential Activating Serum",
-          description: "The formula includes E.G.R.3 Technology™ and a Vitamin C Derivative."
+          description: "The formula includes BOTANICAL SUPPORT Technology™ and a Vitamin C Derivative."
         }
       ]),
       content: emptySections,
       fallbackProductName: "Essential Activating Serum",
-      fallbackDescription: "The formula includes E.G.R.3 Technology™ and a Vitamin C Derivative.",
+      fallbackDescription: "The formula includes BOTANICAL SUPPORT Technology™ and a Vitamin C Derivative.",
       locale: "en-US"
     });
 
     const product = (repaired.schemaMarkup.jsonLd["@graph"] as Array<Record<string, unknown>>)[0];
-    expect(product?.description).toContain("E.G.R.3 Technology™");
+    expect(product?.description).toContain("BOTANICAL SUPPORT Technology™");
     expect(repaired.validationRepairs.map((repair) => repair.after ?? "").join(" ")).not.toContain("E. G. R. 3");
   });
 });
@@ -72,7 +72,7 @@ describe("HowTo planning", () => {
     reviews: { items: [], keywords: [] },
     breadcrumbs: [],
     sourceTexts: [
-      "ESSENTIAL ACTIVATING SERUM SÉRUM ESSENTIEL ACTIVATEUR ExampleLuxe EXAMPLELUXE EXAMPLELUXE EXAMPLELUXE ExampleLuxe ESSENTIAL CARE ACTIVATING SERUM EX 1997 2004 2009 2015 2020 2023 BEFORE AFTER 4WEEKS HYDRATED, MORE EVEN TONED SKIN UNRETOUCHED GENTLY PAT 2-3 PUMPS ONTO SKIN MORNING & NIGHT"
+      "FIRST CARE ACTIVATING SERUM VI SÉRUM ACTIVATEUR VI PREMIERS SOINS ExampleLuxe 雪花秀 雪花秀 雪花秀 ExampleLuxe FIRST CARE ACTIVATING SERUM EX 1997 2004 2009 2015 2020 2023 BEFORE AFTER 4WEEKS HYDRATED, MORE EVEN TONED SKIN UNRETOUCHED GENTLY PAT 2-3 PUMPS ONTO SKIN MORNING & NIGHT"
     ]
   };
 
@@ -124,8 +124,8 @@ describe("HowTo planning", () => {
     const result = await planPdpGeoContent(request, { contentPlanning: { enabled: false } });
 
     for (const step of result.plan.howTo.steps) {
-      expect(step.text).not.toMatch(/SÉRUM ACTIVATEUR|EXAMPLELUXE|1997 2004 2009/u);
-      expect(step.name).not.toMatch(/SÉRUM ACTIVATEUR|EXAMPLELUXE|1997 2004 2009/u);
+      expect(step.text).not.toMatch(/SÉRUM ACTIVATEUR|雪花秀|1997 2004 2009/u);
+      expect(step.name).not.toMatch(/SÉRUM ACTIVATEUR|雪花秀|1997 2004 2009/u);
     }
   });
 

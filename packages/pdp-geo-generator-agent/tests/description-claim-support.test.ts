@@ -11,8 +11,8 @@ import type { PdpGeoContentPlan, PdpProductSignal } from "../src/types";
  * must still be dropped.
  */
 const product = {
-  name: "배리어케어365 크림 미스트",
-  originalName: "배리어케어365 크림 미스트",
+  name: "모이베리어 365 크림 미스트",
+  originalName: "모이베리어 365 크림 미스트",
   description: "10,000ppm 함유된 고함량 세라마이드 미세분사로 피부장벽을 보호하는",
   brand: "EXAMPLEDERMA",
   images: [],
@@ -61,7 +61,7 @@ const product = {
   }
 } as unknown as PdpProductSignal;
 
-const identitySentence = "EXAMPLEDERMA 배리어케어365 크림 미스트는 건조 피부를 위한 크림 미스트로, 수분 충전과 동시에 피부 표면에 보습막을 형성합니다.";
+const identitySentence = "EXAMPLEDERMA 모이베리어 365 크림 미스트는 건조 피부를 위한 크림 미스트로, 수분 충전과 동시에 피부 표면에 보습막을 형성합니다.";
 const compositionSentence = "세라마이드를 함유하며, 세라마이드는 피부 장벽을 강화하고 피부 내 수분을 유지하는 데 도움을 주는 피부 장벽 성분으로 소개됩니다.";
 const formulaSentence = "작게 쪼개진 세라마이드와 수분을 묶은 특수 에멀젼 공법을 적용해 흔들지 않고 사용할 수 있다고 안내합니다.";
 const evidenceSentence = "피부과 테스트와 하이포알러제닉 테스트를 완료했으며, 고객들은 촉촉함, 산뜻함, 가벼운 사용감, 만족감을 언급합니다.";
@@ -124,6 +124,22 @@ describe("description claim support", () => {
     expect(text).not.toContain("주름");
     expect(text).toContain(compositionSentence);
     expect(warnings.join(" ")).toMatch(/removed unsupported claim unit|did not pass the evidence gate/u);
+  });
+
+  it("keeps the supported sentences when most of the paragraph is unsupported", async () => {
+    // Dropping the unsupported majority used to drop the field with it, and the
+    // renderer then republished the source description verbatim — one marketing
+    // line, source typo included. A pruned paragraph the ledger backs is the
+    // better publication, so the audit prunes and the surviving sentences stand
+    // on the same per-unit judgement every retained sentence already passes.
+    const invented = "임상시험에서 4주 사용 후 주름이 32% 개선되었습니다.";
+    const guarantee = "피부과 전문의가 모든 피부 타입에 자극이 전혀 없다고 보증했습니다.";
+    const { text, warnings } = await planDescription([compositionSentence, invented, guarantee].join(" "));
+
+    expect(text).toContain(compositionSentence);
+    expect(text).not.toContain("주름");
+    expect(text).not.toContain("보증");
+    expect(warnings.join(" ")).toContain("removed unsupported claim unit");
   });
 
   it("still drops a sentence that turns review wording into a product guarantee", async () => {

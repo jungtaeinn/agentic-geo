@@ -59,7 +59,7 @@ describe("GeoProcessor (end-to-end, mock provider)", () => {
     let status = "";
     while (Date.now() < deadline) {
       const row = await db.dataSource.query(
-        "select status from neo.geo_generation where geo_generation_id=$1",
+        "select status from agentic_geo.geo_generation where geo_generation_id=$1",
         [generationId],
       );
       status = row[0].status;
@@ -71,7 +71,7 @@ describe("GeoProcessor (end-to-end, mock provider)", () => {
 
   it("processes a job: generates and persists SUCCEEDED", async () => {
     await db.dataSource.query(
-      `insert into neo.geo_generation
+      `insert into agentic_geo.geo_generation
        (geo_generation_id, channel_id, dedup_key, locale, product, product_sn, status, version, created_at, updated_at)
        values ($1,$2,$3,'ko-KR','{"item":{"title":"Cream"}}','SN-TEST','PROCESSING',0,now(),now())`,
       [id, db.testChannelId, id],
@@ -80,7 +80,7 @@ describe("GeoProcessor (end-to-end, mock provider)", () => {
 
     expect(await waitForTerminalStatus(id)).toBe("SUCCEEDED");
     const res = await db.dataSource.query(
-      "select count(*)::int c from neo.geo_result where geo_generation_id=$1",
+      "select count(*)::int c from agentic_geo.geo_result where geo_generation_id=$1",
       [id],
     );
     expect(res[0].c).toBe(1);
@@ -89,7 +89,7 @@ describe("GeoProcessor (end-to-end, mock provider)", () => {
   it("retries once, then marks FAILED with error_phase=GENERATION when attempts are exhausted", async () => {
     const failId = "550e8400-e29b-41d4-a716-446655440099";
     await db.dataSource.query(
-      `insert into neo.geo_generation
+      `insert into agentic_geo.geo_generation
        (geo_generation_id, channel_id, dedup_key, locale, product, product_sn, status, version, created_at, updated_at)
        values ($1,$2,$3,'ko-KR','{"item":{"title":"X"}}','SN-TEST','PROCESSING',0,now(),now())`,
       [failId, db.testChannelId, failId],
@@ -105,14 +105,14 @@ describe("GeoProcessor (end-to-end, mock provider)", () => {
     expect(spy).toHaveBeenCalledTimes(2);
 
     const failRow = await db.dataSource.query(
-      "select error_phase, error_code from neo.geo_generation where geo_generation_id=$1",
+      "select error_phase, error_code from agentic_geo.geo_generation where geo_generation_id=$1",
       [failId],
     );
     expect(failRow[0].error_phase).toBe("GENERATION");
     expect(failRow[0].error_code).toBe("GENERATION_ERROR");
 
     const res = await db.dataSource.query(
-      "select count(*)::int c from neo.geo_result where geo_generation_id=$1",
+      "select count(*)::int c from agentic_geo.geo_result where geo_generation_id=$1",
       [failId],
     );
     expect(res[0].c).toBe(0);

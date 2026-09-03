@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { generatePdpGeo, pdpGeoGeneratorRagManifest } from "../src";
+import { hasUnpredicatedEnumeration } from "../src/contracts/enumeration-contract";
 
 /**
  * 생성에 공급되는 컨텍스트 — RAG 문서 스코핑·계약 도달·커버리지, 로케일 용어집.
@@ -33,8 +34,14 @@ describe("generatePdpGeo", () => {
 
     expect(description).toContain("Barrier Hydro Soothing Cream product page");
     expect(description).toContain("introduces the cream.");
-    expect(description).toMatch(/identifies customers with dry skin as the intended audience.*lists .*Compressed Hyaluronic Acid.*highlighted formula components.*documents hydration.*product benefits/i);
+    // The formula list narrows to a pair, so the assertion names the shape
+    // rather than a third item that prose no longer carries.
+    expect(description).toMatch(/identifies customers with dry skin as the intended audience.*lists .*Hyaluronic Acid.*highlighted formula components.*documents hydration.*product benefits/i);
+    expect(hasUnpredicatedEnumeration(description)).toBe(false);
     expect(description).not.toMatch(/purchase decisions|directions and routine order/i);
+    // The source-stated surface survives narrowing, not the canonicalized one
+    // the extractor derived from it: `Compressed Hyaluronic Acid`, in the
+    // position the source listed it.
     expect(String(product.description)).toContain("Compressed Hyaluronic Acid");
     expect(String(product.description)).toContain("Ceramide");
     expect(String(product.description)).toContain("The product's documented benefit is hydration");
@@ -55,16 +62,16 @@ describe("generatePdpGeo", () => {
           ingredients: [
             "PHA water",
             "high-density ceramide capsules",
-            "patent-pending Water Suspension Floating Formula"
+            "patent-pending Hydroqual Floating Formula"
           ],
           usage: [
-            "EXAMPLEDERMA BarrierCare365 Capsule Toner uses patent-pending Water Suspension Floating Formula with PHA water and high-density ceramide capsules.",
+            "EXAMPLEDERMA BarrierCare365 Capsule Toner uses patent-pending Hydroqual Floating Formula with PHA water and high-density ceramide capsules.",
             "Dispense an appropriate amount into your palm.",
             "Spread gently over skin and pat to absorb."
           ],
           sourceTexts: [
             "Recommended for dry or sensitive skin after cleansing.",
-            "PHA water and high-density ceramide capsules are presented with patent-pending Water Suspension Floating Formula.",
+            "PHA water and high-density ceramide capsules are presented with patent-pending Hydroqual Floating Formula.",
             "How to use. Dispense an appropriate amount into your palm. Spread gently over skin and pat to absorb."
           ]
         }
@@ -88,13 +95,13 @@ describe("generatePdpGeo", () => {
     expect(String(englishProduct.description)).not.toMatch(/(?:includes|combines|uses)[^.]*\bto support\b/i);
     expect(String(englishProduct.description)).not.toMatch(/formula highlights|active-ingredient story|patent[-\s]?pending[^.]*formula's|key ingredients? (?:and|\/) technolog(?:y|ies)/i);
     expect(englishHowTo?.step).toHaveLength(1);
-    expect(english.result.content.sections.howToUse).not.toMatch(/Water Suspension Floating Formula|uses patent[-\s]?pending/i);
-    expect(String(englishProperties.Usage)).not.toMatch(/Water Suspension Floating Formula|uses patent[-\s]?pending/i);
+    expect(english.result.content.sections.howToUse).not.toMatch(/Hydroqual Floating Formula|uses patent[-\s]?pending/i);
+    expect(String(englishProperties.Usage)).not.toMatch(/Hydroqual Floating Formula|uses patent[-\s]?pending/i);
 
     const japanese = await generatePdpGeo({
       product: {
         geoProduct: {
-          name: "EXAMPLEDERMA バリアケア365 カプセルトナー",
+          name: "EXAMPLEDERMA アトバリア365 カプセルトナー",
           description: "洗顔後の乾燥肌や敏感肌に向けたバリア保湿カプセルトナー。",
           brand: "EXAMPLEDERMA",
           category: "化粧水",
@@ -106,7 +113,7 @@ describe("generatePdpGeo", () => {
             "特許出願中のハイドロクオールフローティングフォーミュラ"
           ],
           usage: [
-            "EXAMPLEDERMA バリアケア365 カプセルトナーは特許出願中のハイドロクオールフローティングフォーミュラ処方を使用しています。",
+            "EXAMPLEDERMA アトバリア365 カプセルトナーは特許出願中のハイドロクオールフローティングフォーミュラ処方を使用しています。",
             "手のひらに適量を取ります。",
             "肌になじませます。"
           ],
@@ -129,7 +136,7 @@ describe("generatePdpGeo", () => {
     const japaneseHowTo = japaneseGraph.find((node) => node["@type"] === "HowTo") as Record<string, any>;
     const japaneseProperties = Object.fromEntries((japaneseProduct.additionalProperty as Array<Record<string, any>>).map((item) => [item.name, item.value]));
 
-    expect(String(japaneseWebPage.description)).toContain("EXAMPLEDERMA バリアケア365 カプセルトナーの商品ページ");
+    expect(String(japaneseWebPage.description)).toContain("EXAMPLEDERMA アトバリア365 カプセルトナーの商品ページ");
     expect(String(japaneseWebPage.description)).not.toMatch(/確認できる|確認できます|見られます|主な成分・技術|成分\/技術|特許\s*出願[^。]*処方の/);
     expect(String(japaneseProduct.description)).toMatch(/(?:配合|採用|もとに)/);
     expect(String(japaneseProduct.description)).toMatch(/主なベネフィット|うるおい|バリアケア/);
@@ -313,7 +320,7 @@ describe("generatePdpGeo", () => {
     await generatePdpGeo(
       {
         product: {
-          name: "예시더마 배리어케어365 크림",
+          name: "예시더마 모이베리어365 크림",
           brand: "EXAMPLEDERMA",
           category: "크림",
           description: "저자극 보습 크림",
@@ -626,7 +633,7 @@ describe("generatePdpGeo", () => {
     const { result } = await generatePdpGeo({
       product: {
         geoProduct: {
-          name: "예시더마 배리어케어365 크림",
+          name: "예시더마 모이베리어365 크림",
           brand: "EXAMPLEDERMA",
           category: "크림",
           description: "수분 보습과 피부 장벽 케어",
@@ -739,8 +746,28 @@ describe("generatePdpGeo", () => {
       expect(capturedBody?.text?.format?.type).toBe("json_schema");
       // Prompt-size budget. Raised from 50K to 55K when the geo-research/schema
       // knowledge docs moved to v2 (richer paper coverage) and the CEP/E-E-A-T
-      // description-arc guidance was added to the planner system prompt.
-      expect(JSON.stringify(capturedBody).length).toBeLessThan(55_000);
+      // description-arc guidance was added to the planner system prompt; to 56K
+      // when the review-derived CEP pipeline added its `reviewSituations` input
+      // and the one instruction that bounds it (stages 1-2 run in code, and
+      // stages 4-5 reuse the existing FAQ instruction rather than restating it);
+      // to 57K when the benefits-FAQ instruction stopped supplying a question to
+      // copy and stated its properties instead, and WebPage.description gained
+      // the rule that its page-scope opening names content the page carries
+      // rather than the buyer's task. The first of those was compressed back
+      // into one instruction rather than two; the second is a new contract.
+      // Raised to 58K for Task 7b/7d — three new contracts, each counted twice
+      // because the contract document is also a retrievable chunk: the arc as a
+      // chain of buyer questions (with the concern's stated mechanism and a
+      // source-stated form contrast), an in-prose price in WebPage.description,
+      // and the FAQ rules for buyer wording, a standalone opening answer, and
+      // specificity over generality. Measured body: 56,216 -> 57,561 (+1,345).
+      //
+      // This ceiling is a ratchet — every raise has been a raise — and the
+      // headroom is now a few hundred characters. What it protects is the
+      // planner's own attention: the contract text competes with the evidence
+      // ledger and the retrieved chunks for it. The next contract that needs
+      // room should take it from an existing instruction rather than from here.
+      expect(JSON.stringify(capturedBody).length).toBeLessThan(58_000);
       expect(result.diagnostics.evidence.some((item) => item.field === "content.plan")).toBe(true);
     } finally {
       vi.unstubAllGlobals();
@@ -880,12 +907,12 @@ describe("generatePdpGeo", () => {
     const { result } = await generatePdpGeo(
       {
         product: {
-          name: "Botanical Renewal Serum",
+          name: "Botanical Ginseng Rejuvenating Serum",
           brand: "ExampleLuxe",
           category: "Serum",
           description: "A ginseng serum for fine lines and firmness.",
           benefits: ["fine lines", "firmness"],
-          ingredients: ["Botanical Actives"],
+          ingredients: ["Korean Ginseng Actives"],
           usage: ["Apply after toner."]
         },
         hints: {

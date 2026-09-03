@@ -22,7 +22,7 @@ async function bootstrap(): Promise<void> {
 
   app.useBodyParser("json", { limit: "2mb" });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-  // GeoQueue.onApplicationShutdown이 SIGTERM에서 실제로 호출되게 한다 (queue design)
+  // GeoQueue.onApplicationShutdown이 SIGTERM에서 실제로 호출되게 한다 (GEO-221)
   app.enableShutdownHooks();
 
   if (langfuseEnabled) {

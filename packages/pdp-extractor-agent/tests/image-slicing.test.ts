@@ -1,6 +1,7 @@
 import sharp from "sharp";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  parseSliceFragment,
   prepareImageOcrInputs,
   readImageDimensions,
   sliceDisplayUrl,
@@ -51,6 +52,29 @@ describe("slice display URLs", () => {
     expect(display).toBe("https://cdn.example.com/pdp/detail.png#ocr-slice-3of12");
     expect(stripSliceFragment(display)).toBe("https://cdn.example.com/pdp/detail.png");
     expect(stripSliceFragment("https://cdn.example.com/pdp/detail.png#gallery")).toBe("https://cdn.example.com/pdp/detail.png#gallery");
+  });
+});
+
+describe("parseSliceFragment", () => {
+  it("parses slice index and count from a sliced display URL", () => {
+    const displayUrl = sliceDisplayUrl("https://cdn.example.com/detail.png", 3, 7);
+    expect(parseSliceFragment(displayUrl)).toEqual({
+      baseUrl: "https://cdn.example.com/detail.png",
+      sliceIndex: 3,
+      sliceCount: 7
+    });
+  });
+
+  it("returns the URL unchanged with no slice metadata when the fragment is absent", () => {
+    expect(parseSliceFragment("https://cdn.example.com/detail.png")).toEqual({
+      baseUrl: "https://cdn.example.com/detail.png"
+    });
+  });
+
+  it("does not treat unrelated fragments as slice labels", () => {
+    expect(parseSliceFragment("https://cdn.example.com/detail.png#section-2")).toEqual({
+      baseUrl: "https://cdn.example.com/detail.png#section-2"
+    });
   });
 });
 
@@ -181,7 +205,10 @@ describe("tall image slicing through the extraction pipeline", () => {
     );
 
     const sentInputImages = ocrImageParts.flat();
-    expect(sentInputImages).toHaveLength(5);
+    // Each slice is transcribed twice: slicing is the signal that an image
+    // carries dense small text, and a single reading of dense text cannot be
+    // checked against anything. Only tokens both readings agree on survive.
+    expect(sentInputImages).toHaveLength(10);
     expect(sentInputImages.every((inputUrl) => inputUrl.startsWith("data:image/jpeg"))).toBe(true);
 
     const geo = result.geoProduct as { ocr: { textBlocks: string[] }; sourceExtraction: { ocr: { imageTexts: Array<{ imageUrl: string }> } } };

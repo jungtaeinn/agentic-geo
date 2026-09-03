@@ -159,7 +159,7 @@ describe("Organization entity (P0)", () => {
         locale: "ko-KR",
         market: "KR",
         organization: {
-          name: "EXAMPLECOMPANY",
+          name: "EXAMPLE COMPANY",
           url: "https://brand.example.com",
           logoUrl: "https://brand.example.com/logo.png",
           sameAs: ["https://www.instagram.com/brand.example/", "not-a-url", ""]
@@ -174,7 +174,7 @@ describe("Organization entity (P0)", () => {
     expect(organization).toMatchObject({
       "@type": "Organization",
       "@id": "https://brand.example.com/#organization",
-      name: "EXAMPLECOMPANY",
+      name: "EXAMPLE COMPANY",
       url: "https://brand.example.com",
       logo: { "@type": "ImageObject", url: "https://brand.example.com/logo.png" },
       sameAs: ["https://www.instagram.com/brand.example/"]
@@ -216,11 +216,11 @@ describe("Brand.sameAs derived from the canonical product URL", () => {
   it("grounds the brand on the site the product page is served from", async () => {
     const { result } = await generatePdpGeo({
       product: { geoProduct: product },
-      source: { type: "pdp-extractor", url: "https://www.examplederma.com/web/product/view.do?prdSeq=1149" },
+      source: { type: "pdp-extractor", url: "https://examplederma.example/web/product/view.do?prdSeq=1149" },
       hints: { locale: "ko-KR", market: "KR" }
     });
 
-    expect(brandOf(result.schemaMarkup.jsonLd)?.sameAs).toEqual(["https://www.examplederma.com/"]);
+    expect(brandOf(result.schemaMarkup.jsonLd)?.sameAs).toEqual(["https://examplederma.example/"]);
   });
 
   it("stays silent when the host does not carry the brand name", async () => {
@@ -236,7 +236,7 @@ describe("Brand.sameAs derived from the canonical product URL", () => {
   it("lets an explicit hint win over the derived origin", async () => {
     const { result } = await generatePdpGeo({
       product: { geoProduct: product },
-      source: { type: "pdp-extractor", url: "https://www.examplederma.com/web/product/view.do?prdSeq=1149" },
+      source: { type: "pdp-extractor", url: "https://shop.example.com/web/product/view.do?prdSeq=1149" },
       hints: { locale: "ko-KR", market: "KR", brandSameAs: ["https://www.wikidata.org/wiki/Q1"] }
     });
 

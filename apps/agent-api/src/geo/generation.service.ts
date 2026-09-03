@@ -4,6 +4,7 @@ import type { PdpGeoContentSections, PdpGeoLocale } from "@agentic-geo/pdp-geo-g
 import { buildGeneratorOptions } from "../config/generator-options.factory";
 import { sanitizeProductHtml } from "./product-sanitizer";
 import { deriveSchemaTypes, computeResultHash } from "./schema-types.util";
+import { OcrEnrichmentService } from "./ocr-enrichment.service";
 
 export function resolveResultStatus(
   warnings: readonly string[],
@@ -74,11 +75,19 @@ export function buildGeneratorRequest(input: GenerationInput): {
 
 @Injectable()
 export class GenerationService {
+  constructor(private readonly ocrEnrichment: OcrEnrichmentService) {}
+
   async generate(input: GenerationInput): Promise<GeneratedArtifact> {
-    const run = await generatePdpGeo(buildGeneratorRequest(input), buildGeneratorOptions());
+    // source.url은 원본 product 기준(위 buildGeneratorRequest 설명과 동일한 원칙) — OCR 보강은
+    // canonicalUrl/offerUrl을 건드리지 않으므로 결과는 같지만, 원본에서 읽는다는 의도를 명시해 둔다.
+    const enrichment = await this.ocrEnrichment.enrich(input.product, extractSourceUrl(input.product));
+    const run = await generatePdpGeo(
+      buildGeneratorRequest({ ...input, product: enrichment.product }),
+      buildGeneratorOptions(),
+    );
 
     const jsonLd = run.result.schemaMarkup.jsonLd as Record<string, unknown>;
-    const warnings = run.result.diagnostics.validationWarnings ?? [];
+    const warnings = [...(run.result.diagnostics.validationWarnings ?? []), ...enrichment.warnings];
     return {
       resultStatus: resolveResultStatus(warnings),
       jsonLd,
@@ -86,7 +95,10 @@ export class GenerationService {
       schemaTypes: deriveSchemaTypes(jsonLd),
       resultHash: computeResultHash(jsonLd),
       ragProfile: run.result.ragProfile,
-      diagnostics: run.result.diagnostics as unknown as Record<string, unknown>,
+      diagnostics: {
+        ...run.result.diagnostics,
+        ocrEnrichment: enrichment.diagnostics,
+      } as unknown as Record<string, unknown>,
       contentSections: run.result.content.sections,
       generatedAt: run.result.generatedAt,
     };

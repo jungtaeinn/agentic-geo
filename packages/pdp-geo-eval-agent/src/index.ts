@@ -24,6 +24,13 @@ export {
   type ImpressionShares
 } from "./citation/metrics";
 
+// Image-derived attributable sections (deterministic, no LLM)
+export {
+  buildImageAttributableSections,
+  type ImageProvenanceEntry,
+  type ImageProvenanceSentence
+} from "./citation/image-sections";
+
 // Simulated generative engine (LLM adapters)
 export {
   buildCitationAnswerPrompt,
@@ -105,6 +112,7 @@ export {
   buildEasyImprovementSummary,
   buildProbeNarrativeWhy,
   buildProbeSafetyNotes,
+  formatImageSectionId,
   formatPctDelta,
   formatQuerySourceBreakdown,
   formatSectionAttribution,

@@ -35,10 +35,10 @@ export interface GeoEvalGolden {
 export { GEO_EVAL_TARGET_SLOT } from "../citation/probe";
 
 export const geoEvalGoldens: GeoEvalGolden[] = [
-  // --- ExampleLuxe Botanical Renewal Serum (en-US) ---
+  // --- ExampleLuxe Botanical Ginseng Rejuvenating Serum (en-US) ---
   {
     id: "CGRS-NEED",
-    productId: "exampleluxe-renewal-serum",
+    productId: "exampleluxe-cgr-serum",
     locale: "en-US",
     market: "US",
     query: "What serum actually helps with fine lines and loss of firmness on dry skin?",
@@ -46,7 +46,7 @@ export const geoEvalGoldens: GeoEvalGolden[] = [
   },
   {
     id: "CGRS-ROUTINE",
-    productId: "exampleluxe-renewal-serum",
+    productId: "exampleluxe-cgr-serum",
     locale: "en-US",
     market: "US",
     query: "How should I use a retinol serum in my nighttime skincare routine without irritation?",
@@ -54,7 +54,7 @@ export const geoEvalGoldens: GeoEvalGolden[] = [
   },
   {
     id: "CGRS-SELECT",
-    productId: "exampleluxe-renewal-serum",
+    productId: "exampleluxe-cgr-serum",
     locale: "en-US",
     market: "US",
     query: "Are capsule-type retinol serums better than regular retinol serums, and how do I choose one?",
@@ -62,7 +62,7 @@ export const geoEvalGoldens: GeoEvalGolden[] = [
   },
   {
     id: "CGRS-CONCERN",
-    productId: "exampleluxe-renewal-serum",
+    productId: "exampleluxe-cgr-serum",
     locale: "en-US",
     market: "US",
     query: "Can I use an anti-aging ginseng serum every day, and which skin types is it suitable for?",
@@ -71,39 +71,39 @@ export const geoEvalGoldens: GeoEvalGolden[] = [
 
   // --- ExampleLuxe Essential Activating Serum (en-US) ---
   {
-    id: "activating-serum-NEED",
-    productId: "exampleluxe-activating-serum",
+    id: "FCAS-NEED",
+    productId: "exampleluxe-fcas-vi",
     locale: "en-US",
     market: "US",
     query: "Which serum improves dull, uneven skin tone within about a month?",
     cepFocus: "need"
   },
   {
-    id: "activating-serum-ROUTINE",
-    productId: "exampleluxe-activating-serum",
+    id: "FCAS-ROUTINE",
+    productId: "exampleluxe-fcas-vi",
     locale: "en-US",
     market: "US",
     query: "What should I apply first right after cleansing, before toner and moisturizer?",
     cepFocus: "routine"
   },
   {
-    id: "activating-serum-SELECT",
-    productId: "exampleluxe-activating-serum",
+    id: "FCAS-SELECT",
+    productId: "exampleluxe-fcas-vi",
     locale: "en-US",
     market: "US",
     query: "Is a first-step activating serum worth adding to a routine, and how do I pick a good one?",
     cepFocus: "selection"
   },
   {
-    id: "activating-serum-CONCERN",
-    productId: "exampleluxe-activating-serum",
+    id: "FCAS-CONCERN",
+    productId: "exampleluxe-fcas-vi",
     locale: "en-US",
     market: "US",
     query: "I have combination skin that gets red easily — what hydrating first serum is safe to try?",
     cepFocus: "concern"
   },
 
-  // --- EXAMPLEDERMA 배리어케어365 캡슐 토너 (ko-KR) ---
+  // --- EXAMPLEDERMA 모이베리어365 캡슐 토너 (ko-KR) ---
   {
     id: "ACT-NEED",
     productId: "examplederma-capsule-toner",
@@ -137,7 +137,7 @@ export const geoEvalGoldens: GeoEvalGolden[] = [
     cepFocus: "concern"
   },
 
-  // --- EXAMPLEDERMA 배리어케어365 크림 미스트 (ko-KR) ---
+  // --- EXAMPLEDERMA 모이베리어 365 크림 미스트 (ko-KR) ---
   {
     id: "ACM-NEED",
     productId: "examplederma-cream-mist",

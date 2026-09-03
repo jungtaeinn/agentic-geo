@@ -4,7 +4,7 @@
       "concept": "korean-ginseng-science",
       "category": "ingredient-technology",
       "preferred": {
-        "ko-KR": ["인삼 과학", "식물 복합체", "인삼 유래 성분"],
+        "ko-KR": ["인삼 과학", "보태니컴플렉스", "인삼 유래 성분"],
         "ja-JP": ["高麗人参サイエンス", "高麗人参由来成分"],
         "en-US": ["Korean ginseng science", "ginseng-derived actives"],
         "en-GB": ["Korean ginseng science", "ginseng-derived actives"]
@@ -15,7 +15,7 @@
         "en-US": ["herbal cure", "miracle cure"],
         "en-GB": ["herbal cure", "miracle cure"]
       },
-      "notes": "Use only when ExampleLuxe product evidence supports ginseng, botanical complex, or related formulation context."
+      "notes": "Use only when ExampleLuxe product evidence supports ginseng, botanicalcomplex, or related formulation context."
     },
     {
       "concept": "premium-ritual",

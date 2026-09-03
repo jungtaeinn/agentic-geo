@@ -67,6 +67,13 @@ export interface CitationProbeContext {
    * lexical attribution, no extra LLM calls).
    */
   generatedSections?: AttributableSection[];
+  /**
+   * Image-derived sections of the generated text (one per source image URL,
+   * from published-copy provenance). When provided, results additionally
+   * report which image's content earned the citations — the same
+   * deterministic lexical attribution as `generatedSections`.
+   */
+  imageSections?: AttributableSection[];
 }
 
 export interface CitationProbeOptions {
@@ -94,6 +101,8 @@ export interface CitationProbeQueryResult {
   hallucinatedCitations: number[];
   /** Which generated-content section earned the citations (when sections were provided). */
   sectionAttribution?: CitationSectionAttribution[];
+  /** Which source image's content earned the citations (when image sections were provided). */
+  imageAttribution?: CitationSectionAttribution[];
 }
 
 export interface CitationProbeResult {
@@ -110,6 +119,8 @@ export interface CitationProbeResult {
   warnings: string[];
   /** Cross-query section attribution, weighted by each query's cited sentences. */
   sectionAttribution?: CitationSectionAttribution[];
+  /** Cross-query image attribution, weighted by each query's cited sentences. */
+  imageAttribution?: CitationSectionAttribution[];
   /** Fixed interpretation guard surfaced to UIs alongside the numbers. */
   interpretation: string;
 }
@@ -160,6 +171,9 @@ export async function runCitationProbe(
       const sectionAttribution = context.generatedSections && context.generatedSections.length > 0
         ? attributeCitationsToSections(generatedAnswer.answer, GEO_EVAL_TARGET_SLOT, context.generatedSections)
         : undefined;
+      const imageAttribution = context.imageSections && context.imageSections.length > 0
+        ? attributeCitationsToSections(generatedAnswer.answer, GEO_EVAL_TARGET_SLOT, context.imageSections)
+        : undefined;
       return {
         query: probeQuery.query,
         querySource: probeQuery.source,
@@ -174,7 +188,8 @@ export async function runCitationProbe(
           ...vanilla.shares.hallucinatedCitations,
           ...generated.shares.hallucinatedCitations
         ])].sort((a, b) => a - b),
-        sectionAttribution
+        sectionAttribution,
+        imageAttribution
       };
     } catch (error) {
       warnings.push(`Query "${probeQuery.query}" failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -214,22 +229,34 @@ export async function runCitationProbe(
     keypointCoverage,
     gate: evaluateUtilityGate({ visibilityDelta: mean.delta.wordpos, keypointCoverage }, PDP_COPY_UTILITY_GATE_THRESHOLDS),
     warnings,
-    sectionAttribution: combineSectionAttributions(queryResults),
+    sectionAttribution: combineAttributions(queryResults, (result) => result.sectionAttribution),
+    imageAttribution: combineAttributions(queryResults, (result) => result.imageAttribution),
     interpretation: CITATION_PROBE_INTERPRETATION
   };
 }
 
-/** Combines per-query attributions, weighting each query by its cited-sentence count. */
-function combineSectionAttributions(queryResults: CitationProbeQueryResult[]): CitationSectionAttribution[] | undefined {
-  const attributed = queryResults.filter((result) => result.sectionAttribution && result.sectionAttribution.length > 0);
+/**
+ * Combines per-query attributions into a cross-query result, weighting each
+ * query by its cited-sentence count. Shared by section and image attribution
+ * — `pick` selects which per-query attribution array to combine.
+ */
+function combineAttributions(
+  queryResults: CitationProbeQueryResult[],
+  pick: (result: CitationProbeQueryResult) => CitationSectionAttribution[] | undefined
+): CitationSectionAttribution[] | undefined {
+  const attributed = queryResults.filter((result) => {
+    const attribution = pick(result);
+    return attribution && attribution.length > 0;
+  });
   if (attributed.length === 0) {
     return undefined;
   }
   const buckets = new Map<string, { weight: number; count: number; sentences: string[] }>();
   let totalWeight = 0;
   for (const result of attributed) {
-    const queryWeight = (result.sectionAttribution ?? []).reduce((sum, item) => sum + item.citedSentences, 0);
-    for (const item of result.sectionAttribution ?? []) {
+    const attribution = pick(result) ?? [];
+    const queryWeight = attribution.reduce((sum, item) => sum + item.citedSentences, 0);
+    for (const item of attribution) {
       const bucket = buckets.get(item.sectionId) ?? { weight: 0, count: 0, sentences: [] };
       bucket.weight += item.share * queryWeight;
       bucket.count += item.citedSentences;

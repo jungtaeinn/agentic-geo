@@ -1,4 +1,5 @@
 import { ensurePdpGeoFaqPlanCoverage, generatePdpGeoArtifacts } from "./generate";
+import { mergeTokenUsages } from "./token-usage";
 import { refinePdpGeoCopy } from "./copy-refiner";
 import { createPdpGeoPublicCopyProvenance, finalProofreadPdpGeoArtifacts } from "./final-proofreader";
 import { createPdpGeoEvidenceLedger, planPdpGeoContent } from "./content-planner";
@@ -1455,10 +1456,7 @@ export function boostChunkForSubquery(
   const chunkIntents = new Set([...(chunk.intents ?? []), ...parseMetadataList(chunk.metadata.sectionIntents)].filter(isPdpGeoRagIntent));
   const fieldMatch = fieldTargets.some((fieldTarget) => chunkTargets.has(fieldTarget));
   const intentMatch = intents.some((intent) => chunkIntents.has(intent));
-  const faqCepDimensionMatch = intents.includes("faq")
-    && chunk.kind === "cep"
-    && `${chunk.title ?? ""} ${String(chunk.metadata.headingPath ?? "")}`.includes("CEP Dimensions");
-  return Math.min(1, chunk.score + (fieldMatch ? 0.08 : 0) + (intentMatch ? 0.04 : 0) + (faqCepDimensionMatch ? 0.12 : 0));
+  return Math.min(1, chunk.score + (fieldMatch ? 0.08 : 0) + (intentMatch ? 0.04 : 0));
 }
 
 function createNormalizeStepMessage(
@@ -1626,22 +1624,6 @@ function createGeneratorRuntimeUsage(
         ? "A model-backed generator step was called, but the provider did not return token usage metadata."
       : "No generator model call returned token usage; deterministic chunking/retrieval/reranking stages do not consume LLM tokens."
   };
-}
-
-function mergeTokenUsages(usages: PdpGeoTokenUsage[]): PdpGeoTokenUsage | undefined {
-  const merged = usages.reduce<PdpGeoTokenUsage>((total, usage) => ({
-    inputTokens: sumOptional(total.inputTokens, usage.inputTokens),
-    outputTokens: sumOptional(total.outputTokens, usage.outputTokens),
-    totalTokens: sumOptional(total.totalTokens, usage.totalTokens)
-  }), {});
-  return merged.inputTokens !== undefined || merged.outputTokens !== undefined || merged.totalTokens !== undefined ? merged : undefined;
-}
-
-function sumOptional(left: number | undefined, right: number | undefined): number | undefined {
-  if (left === undefined && right === undefined) {
-    return undefined;
-  }
-  return (left ?? 0) + (right ?? 0);
 }
 
 function runtimeProviderLabel(provider: PdpGeoGeneratorOptions["provider"]): string {

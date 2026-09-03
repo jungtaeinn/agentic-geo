@@ -1,7 +1,7 @@
 {
   "name": "@agentic-geo/pdp-extractor-agent",
   "author": "jungtaeinn",
-  "license": "SEE LICENSE IN ../../LICENSE",
+  "license": "SEE LICENSE IN LICENSE",
   "description": "Reusable PDP extraction agent for turning product pages, REST API payloads, OCR signals, reviews, and FAQ evidence into GEO-ready product intelligence.",
   "keywords": [
     "agentic-geo",

@@ -35,6 +35,52 @@ describe("extractCitationSentences", () => {
     expect(sentences).toHaveLength(2);
     expect(sentences[0]!.citations).toEqual([0]);
   });
+
+  // The answer prompt asks for a citation "immediately followed" by the
+  // sentence, and real engines place it after the terminal punctuation
+  // ("문장입니다. [0]"). Splitting there would strand the marker as its own
+  // wordless sentence and leave the claim itself uncited, which silently
+  // zeroes both impression shares and section attribution.
+  it("keeps a citation that follows terminal punctuation with its sentence", () => {
+    const sentences = extractCitationSentences(
+      "모이베리어 365 크림 미스트는 특수 에멀젼 공법을 적용해 흔들 필요가 없습니다. [0]"
+    );
+
+    expect(sentences).toHaveLength(1);
+    expect(sentences[0]!.citations).toEqual([0]);
+    expect(sentences[0]!.wordCount).toBeGreaterThan(0);
+  });
+
+  it("still separates following sentences when the marker sits between them", () => {
+    const sentences = extractCitationSentences("첫 문장입니다. [0] 둘째 문장입니다. [1][2]");
+
+    expect(sentences).toHaveLength(2);
+    expect(sentences[0]!.citations).toEqual([0]);
+    expect(sentences[1]!.citations).toEqual([1, 2]);
+    expect(sentences[1]!.text.startsWith("둘째")).toBe(true);
+  });
+
+  // Guard against a lookahead placed after `\s+`: greedy backtracking hands one
+  // space back, the guard sees a space instead of "[", and the marker is
+  // stranded again — the original defect, reachable with two spaces.
+  it.each([2, 4])("keeps the marker with its sentence across %i spaces", (spaces) => {
+    const gap = " ".repeat(spaces);
+    const sentences = extractCitationSentences(`첫 문장입니다.${gap}[0] 둘째 문장입니다.`);
+
+    expect(sentences).toHaveLength(2);
+    expect(sentences[0]!.citations).toEqual([0]);
+    expect(sentences[0]!.wordCount).toBeGreaterThan(0);
+    expect(sentences[1]!.citations).toEqual([]);
+    expect(sentences[1]!.text.startsWith("둘째")).toBe(true);
+  });
+
+  it("keeps a space-separated marker run with the sentence it cites", () => {
+    const sentences = extractCitationSentences("첫 문장입니다. [0] [1] 둘째 문장입니다.");
+
+    expect(sentences).toHaveLength(2);
+    expect(sentences[0]!.citations).toEqual([0, 1]);
+    expect(sentences[1]!.citations).toEqual([]);
+  });
 });
 
 describe("scoreImpressionShares", () => {

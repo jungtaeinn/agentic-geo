@@ -2,6 +2,15 @@
 .env
 .env.*
 !.env.example
+.envrc
+.npmrc
+.netrc
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*.json
+service-account*.json
 .vercel
 .vscode
 .idea

@@ -1,5 +1,11 @@
 import type { AiTokenUsage } from "../../types";
-import type { ImageTextExtractionRequest, ImageTextExtractionResponse } from "../types";
+import type {
+  ImageTextExtractionRequest,
+  ImageTextExtractionResponse,
+  OcrLayoutGroup,
+  OcrLayoutLine,
+  OcrLayoutLineRole
+} from "../types";
 
 export const IMAGE_DOWNLOAD_TIMEOUT_MS = 60_000;
 
@@ -62,6 +68,62 @@ interface RawOcrImagePayload {
   imageUrl?: unknown;
   text?: unknown;
   confidence?: unknown;
+  groups?: unknown;
+}
+
+const OCR_LAYOUT_LINE_ROLES = new Set<string>(["title", "body", "label", "value", "footnote"]);
+
+/** strict 스키마는 선택 필드를 nullable로 표현한다. 여기서 `null`을 부재로 되돌린다. */
+function optionalPayloadText(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+/**
+ * 모델이 보고한 레이아웃 관계를 계약 형태로 정규화한다.
+ *
+ * 여기서는 형태만 본다 — id 없는 그룹과 다섯 역할에 없는 라인은 계약 밖이므로
+ * 버린다. 관계가 전사에 실재하는지(포함 검사)는 전사가 확정된 뒤에 판정할
+ * 문제이므로 이 단계에서 다루지 않는다.
+ */
+function parseOcrLayoutGroups(value: unknown): OcrLayoutGroup[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value.flatMap((rawGroup): OcrLayoutGroup[] => {
+    const group = rawGroup as Record<string, unknown>;
+    const id = optionalPayloadText(group.id);
+    if (!id) {
+      return [];
+    }
+
+    const lines = Array.isArray(group.lines)
+      ? group.lines.flatMap((rawLine): OcrLayoutLine[] => {
+          const line = rawLine as Record<string, unknown>;
+          const text = optionalPayloadText(line.text);
+          const role = typeof line.role === "string" ? line.role : "";
+          if (!text || !OCR_LAYOUT_LINE_ROLES.has(role)) {
+            return [];
+          }
+          const pairedLabel = optionalPayloadText(line.pairedLabel);
+          return [{ text, role: role as OcrLayoutLineRole, ...(pairedLabel ? { pairedLabel } : {}) }];
+        })
+      : [];
+
+    const parentId = optionalPayloadText(group.parentId);
+    const title = optionalPayloadText(group.title);
+    const annotates = optionalPayloadText(group.annotates);
+    const ordinal = typeof group.ordinal === "number" && Number.isInteger(group.ordinal) ? group.ordinal : undefined;
+
+    return [{
+      id,
+      ...(parentId ? { parentId } : {}),
+      ...(title ? { title } : {}),
+      ...(ordinal !== undefined ? { ordinal } : {}),
+      ...(annotates ? { annotates } : {}),
+      lines
+    }];
+  });
 }
 
 /**
@@ -97,10 +159,13 @@ export function parseImageOcrPayloadText(rawText: string, imageUrls: string[]): 
         ? Math.min(1, Math.max(0, image.confidence))
         : undefined;
 
+      const groups = parseOcrLayoutGroups(image.groups);
+
       return {
         imageUrl,
         text: typeof image.text === "string" ? image.text : "",
-        ...(confidence !== undefined ? { confidence } : {})
+        ...(confidence !== undefined ? { confidence } : {}),
+        ...(groups !== undefined ? { groups } : {})
       };
     })
     .filter((image) => image.imageUrl.length > 0 && image.text.trim().length > 0);
