@@ -266,11 +266,10 @@ def test_an_application_action_keeps_the_audience_gate_out() -> None:
     assert is_procedural_usage_instruction("민감성 피부에 펴 바릅니다.") is True
 
 
-# 실제 페이지(SampleBotanics Essential Care Activating Serum VI, en-US)에서 그대로 가져온 블록.
-# 세 문장 중 마지막만 지시문이고, 이웃 문장의 단서가 경계를 넘어 합산되면서 블록 전체가
-# 절차로 읽혔다. 그 결과 적합성 문장이 usage·safety 카드로 끌려가 대상이 0건이 됐다.
+# Fictional mixed-content fixture: only the final sentence is an instruction.
+# The neighboring suitability cues must not make the entire block procedural.
 _LIVE_MIXED_BLOCK = (
-    "Considered one of the best Korean essence serums, Essential Care Activating Serum VI is "
+    "Considered one of the best Korean essence serums, Dewdrop Renewal Serum VII is "
     "suitable for dry, oily and combination skin. The lightweight, fast-absorbing texture "
     "layers easily without heaviness. Sensitive skin users should patch test before daily use."
 )

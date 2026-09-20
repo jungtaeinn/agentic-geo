@@ -458,8 +458,8 @@ async def test_normalizer_keeps_source_identity_and_only_accepts_direct_source_f
 async def test_normalizer_accepts_a_normalized_direct_source_title_variant() -> None:
     """A directly sourced multilingual/size title remains a valid identity variant."""
 
-    source_name = "Concentrated Botanical Rejuvenating Serum"
-    source_variant = "자음생세럼 Concentrated Botanical Rejuvenating Serum 60 mL"
+    source_name = "Botanical Renewal Serum"
+    source_variant = "가상 Botanical Renewal Serum 60 mL"
 
     class Normalizer:
         async def normalize_product_profile(self, _request: dict[str, Any]) -> dict[str, Any]:

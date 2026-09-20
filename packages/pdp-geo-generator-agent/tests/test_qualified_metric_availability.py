@@ -13,7 +13,7 @@ import pytest
 
 from pdp_geo_generator_agent.content_planning import _admission_evidence_states_qualified_metric
 
-_NAME = {"ko-KR": "SampleDerma BarrierCare365 클렌징폼 200g", "en-US": "Essential Care Activating Serum VI"}
+_NAME = {"ko-KR": "SampleDerma BarrierCare365 클렌징폼 200g", "en-US": "Dewdrop Renewal Serum VII"}
 
 _QUALIFIED = {
     "ko-KR": "색조 메이크업 세정력은 97.1%로 제시되며, 만 20~39세 성인 여성 30명을 대상으로 시험한 결과입니다.",

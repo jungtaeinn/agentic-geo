@@ -23,10 +23,10 @@ def _sample_botanics_like_english_product() -> dict[str, Any]:
     """Keep distinct source roles while making the unsupported normal-skin inference observable."""
 
     return {
-        "name": "SampleBotanics Essential Care Activating Serum",
+        "name": "SampleBotanics Dewdrop Renewal Serum",
         "brand": "SampleBotanics",
         "category": "serum",
-        "description": "SampleBotanics Essential Care Activating Serum is a serum for dry skin.",
+        "description": "SampleBotanics Dewdrop Renewal Serum is a serum for dry skin.",
         "ingredients": ["Ginseng Extract"],
         "benefits": ["supports hydration"],
         "effects": ["helps soothe dry skin"],
@@ -36,7 +36,7 @@ def _sample_botanics_like_english_product() -> dict[str, Any]:
         "faq": [],
         "reviews": {"items": [], "keywords": ["lightweight finish"]},
         "sourceTexts": [
-            "SampleBotanics Essential Care Activating Serum is a serum for dry skin.",
+            "SampleBotanics Dewdrop Renewal Serum is a serum for dry skin.",
             "Ginseng Extract supports hydration.",
             _ENGLISH_METRIC_SOURCE,
         ],
@@ -142,10 +142,10 @@ def test_english_source_faithful_description_keeps_product_and_webpage_provenanc
     webpage_description = _node(artifact["schemaMarkup"], "WebPage")["description"]
 
     for description in (product_description, webpage_description):
-        assert "SampleBotanics Essential Care Activating Serum is a serum." not in description
+        assert "SampleBotanics Dewdrop Renewal Serum is a serum." not in description
         assert not description.startswith(
-            "SampleBotanics Essential Care Activating Serum is a serum. "
-            "SampleBotanics Essential Care Activating Serum is a serum for dry skin."
+            "SampleBotanics Dewdrop Renewal Serum is a serum. "
+            "SampleBotanics Dewdrop Renewal Serum is a serum for dry skin."
         )
         assert "is intended for customers with normal" not in description
         assert "Reported improvement rate" not in description
@@ -156,7 +156,7 @@ def test_english_source_faithful_description_keeps_product_and_webpage_provenanc
         # An explicitly positive review keyword can be published only through
         # the exact branded, review-attributed frame.
         assert (
-            "Customers who reviewed SampleBotanics Essential Care Activating Serum positively noted lightweight finish."
+            "Customers who reviewed SampleBotanics Dewdrop Renewal Serum positively noted lightweight finish."
             in description
         )
     _assert_complete_description_bindings(artifact, diagnostics)

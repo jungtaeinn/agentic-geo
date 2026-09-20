@@ -15,7 +15,7 @@ import pytest
 
 from pdp_geo_generator_agent.generation import _attribute_atoms, _rich_additional_properties
 
-_NAMING = ["Essential Care Activating Serum VI", "BarrierCare365 Cleansing Foam 200g"]
+_NAMING = ["Dewdrop Renewal Serum VII", "BarrierCare365 Cleansing Foam 200g"]
 
 _MIXED: dict[str, list[str]] = {
     "ko-KR": [
@@ -27,7 +27,7 @@ _MIXED: dict[str, list[str]] = {
     "en-US": [
         "skin barrier protection",
         "lightweight makeup cleansing",
-        "The stated benefits of Essential Care Activating Serum VI from SampleBotanics include a lightweight, "
+        "The stated benefits of Dewdrop Renewal Serum VII from SampleBotanics include a lightweight, "
         "fast-absorbing formula designed to prevent visible signs of aging over time.",
         "+5.9%",
     ],

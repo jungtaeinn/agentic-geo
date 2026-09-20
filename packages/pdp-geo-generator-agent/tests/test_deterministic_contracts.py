@@ -143,7 +143,7 @@ def test_sentence_form_reads_an_assertion_as_a_sentence_in_any_locale() -> None:
 
     assert contract.is_complete_sentence("판테놀은 피부 장벽 개선을 돕습니다.")
     assert contract.is_complete_sentence("Panthenol strengthens the skin barrier.")
-    assert contract.is_complete_sentence("더마온은 보습을 전달합니다")
+    assert contract.is_complete_sentence("보습 복합체는 보습을 전달합니다")
     assert not contract.is_complete_sentence("아미노산 유래 세정 성분")
     assert not contract.is_complete_sentence("amino acid derived cleansing ingredient")
     assert not contract.is_complete_sentence("피부 장벽 보호")
@@ -157,10 +157,10 @@ def test_sentence_form_bounds_one_catalog_phrase_against_prose() -> None:
     assert contract.is_atomic_fact_phrase("아미노산 유래 세정 성분")
     assert contract.is_atomic_fact_phrase("피부과 테스트 완료")
     assert not contract.is_atomic_fact_phrase(
-        "세안 중에도 피부를 보호해주는 포뮬라에는 판테놀, 베타인, 더마온의 3종 장벽 보호 성분이 함유되어 있습니다."
+        "세안 중에도 피부를 보호해주는 포뮬라에는 판테놀, 베타인, 보습 복합체의 3종 장벽 보호 성분이 함유되어 있습니다."
     )
     assert not contract.is_atomic_fact_phrase(
-        "The barrier protective formula that shields skin during cleansing contains Panthenol, Betaine and Dermaon."
+        "The barrier protective formula that shields skin during cleansing contains Panthenol, Betaine and Moisture Complex."
     )
     # 인증 계약이 같은 상수를 따로 들고 있으면 둘이 조용히 갈라진다.
     assert certification.is_atomic_fact_phrase is contract.is_atomic_fact_phrase
@@ -182,7 +182,7 @@ def test_metric_statement_reads_a_called_name_without_lending_it_to_a_fragment()
         "SAMPLE_DERMA의 SampleDerma BarrierCare365 클렌징폼에는 판테놀이 있습니다.", "SampleDerma BarrierCare365 클렌징폼"
     )
     assert contract.states_naming_surface(
-        "SampleBotanics's Essential Care Activating Serum VI keeps its core ingredients.", "Essential Care Activating Serum VI"
+        "SampleBotanics's Dewdrop Renewal Serum VII keeps its core ingredients.", "Dewdrop Renewal Serum VII"
     )
     assert not contract.states_naming_surface("베타인이 들어 있습니다.", "베타")
     assert not contract.states_naming_surface("Vitamin C brightens skin.", "VI")

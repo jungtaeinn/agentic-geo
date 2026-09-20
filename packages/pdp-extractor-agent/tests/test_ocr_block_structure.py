@@ -44,7 +44,7 @@ def test_numbered_section_resumes_after_peripheral_text() -> None:
 
 def test_splits_english_three_section_summary() -> None:
     sections = parse_ocr_block_sections(
-        "BENEFITS\n1\nMildly acidic amino-acid derived\ncleansing agents guard the barrier\n2\nLight makeup cleansing power\nKEY INGREDIENTS\nBarrier Protective Formula\n(Panthenol, Betaine, DermaON)\nRECOMMENDED FOR\nDry or sensitive skin"
+        "BENEFITS\n1\nMildly acidic amino-acid derived\ncleansing agents guard the barrier\n2\nLight makeup cleansing power\nKEY INGREDIENTS\nBarrier Protective Formula\n(Panthenol, Betaine, Moisture Complex)\nRECOMMENDED FOR\nDry or sensitive skin"
     )
     assert sections == [
         {
@@ -54,7 +54,7 @@ def test_splits_english_three_section_summary() -> None:
                 {"ordinal": 2, "text": "Light makeup cleansing power"},
             ],
         },
-        {"heading": "KEY INGREDIENTS", "items": [{"text": "Barrier Protective Formula (Panthenol, Betaine, DermaON)"}]},
+        {"heading": "KEY INGREDIENTS", "items": [{"text": "Barrier Protective Formula (Panthenol, Betaine, Moisture Complex)"}]},
         {"heading": "RECOMMENDED FOR", "items": [{"text": "Dry or sensitive skin"}]},
     ]
 

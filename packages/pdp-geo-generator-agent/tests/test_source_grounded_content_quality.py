@@ -236,12 +236,12 @@ def _first_care_product_without_review_bodies() -> dict[str, Any]:
     )
     audience = "For normal, dry, combination, and oily skin types."
     usage = [
-        "Warm 2-3 pumps of Essential Care Activating Serum to the palm of your hands.",
+        "Warm 2-3 pumps of Dewdrop Renewal Serum to the palm of your hands.",
         "Begin applying serum in circular motions.",
         "Gently press the serum to cheeks, forehead, around the eyes, and chin until completely absorbed.",
     ]
     return {
-        "name": "Essential Care Activating Serum VI",
+        "name": "Dewdrop Renewal Serum VII",
         "brand": "SampleBotanics",
         "category": "serum",
         "description": description,
@@ -1880,11 +1880,11 @@ def test_shortened_product_name_still_identifies_its_own_digits() -> None:
         {"role": "identity", "text": "SAMPLE_DERMA"},
         {"role": "ingredient", "text": "판테놀"},
         {"role": "ingredient", "text": "베타인"},
-        {"role": "ingredient", "text": "더마온"},
+        {"role": "ingredient", "text": "보습 복합체"},
     ]
 
     assert sentence_evidence_has_direct_claim_support(
-        "SAMPLE_DERMA의 SampleDerma BarrierCare365 클렌징폼에는 판테놀, 베타인, 더마온 등이 주요 성분·기술로 포함되어 "
+        "SAMPLE_DERMA의 SampleDerma BarrierCare365 클렌징폼에는 판테놀, 베타인, 보습 복합체 등이 주요 성분·기술로 포함되어 "
         "있습니다.",
         evidence,
     )

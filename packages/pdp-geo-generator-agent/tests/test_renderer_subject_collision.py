@@ -17,9 +17,9 @@ from pdp_geo_generator_agent.generation import (
 )
 
 _ENTITY_KO = "SAMPLE_DERMA의 SampleDerma BarrierCare365 클렌징폼"
-_ENTITY_EN = "SampleBotanics's Essential Care Activating Serum"
+_ENTITY_EN = "SampleBotanics's Dewdrop Renewal Serum"
 
-# 실제로 공개 문구에 나갔던 두 문장의 원문이다.
+# Source-shaped sentence patterns used to protect subject attribution.
 _OWN_SUBJECT_KO = "아미노산 유래 세정 포뮬라는 세안 중 발생하는 장벽 손상을 줄여 피부 친화적인 데일리 클렌징을 돕습니다"
 _OWN_SUBJECT_KO_DEMONSTRATIVE = "이 제품은 약산성 아미노산 유래 세정 성분으로 장벽 손상 방어를 내세우며, 일상 노폐물부터 가벼운 메이크업까지 세정하도록 안내합니다"
 _SUBJECTLESS_KO = "아침과 저녁에 사용하기 적합한 데일리 클렌저로 안내됩니다"
@@ -73,7 +73,7 @@ def test_english_clause_that_names_its_subject_keeps_only_that_subject() -> None
     """같은 렌더러의 영문 경로가 이미 세운 규칙을 고정한다."""
 
     benefit = "The ginseng actives strengthen the skin barrier over time"
-    sentences = _english_entity_benefit_sentences(_ENTITY_EN, [benefit], "Essential Care Activating Serum", "serum")
+    sentences = _english_entity_benefit_sentences(_ENTITY_EN, [benefit], "Dewdrop Renewal Serum", "serum")
 
     assert sentences == [f"{benefit}."]
 
