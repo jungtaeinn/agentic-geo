@@ -23,15 +23,10 @@
     "build:pages": "NEXT_PUBLIC_DEPLOY_TARGET=github-pages next build",
     "dev": "next dev",
     "lint": "eslint .",
-    "test": "next typegen && tsc --noEmit",
-    "typecheck": "next typegen && tsc --noEmit",
-    "geo:benchmark": "tsx scripts/run-geo-benchmark.ts",
-    "geo:extract-rules": "tsx scripts/extract-engine-rules.ts"
+    "test": "tsx --test test/*.test.ts && next typegen && tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit"
   },
   "dependencies": {
-    "@agentic-geo/pdp-extractor-agent": "workspace:*",
-    "@agentic-geo/pdp-geo-eval-agent": "workspace:*",
-    "@agentic-geo/pdp-geo-generator-agent": "workspace:*",
     "lucide-react": "1.28.0",
     "next": "16.2.12",
     "react": "19.2.8",

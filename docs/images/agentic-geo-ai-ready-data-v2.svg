@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Agentic GEO makes product-page evidence AI-ready for ChatGPT and Gemini</title>
+  <desc id="desc">A clean editorial diagram showing product page evidence flowing through Agentic GEO AI-ready data to ChatGPT and Gemini, with discoverability, trust, and decision support below.</desc>
+  <rect width="1600" height="900" fill="#f8fafc"/>
+  <rect width="1600" height="12" fill="#1267d6"/>
+  <g font-family="Inter, Arial, Helvetica, sans-serif">
+    <text x="80" y="88" fill="#0d2442" font-size="42" font-weight="700" letter-spacing="-1">From product-page evidence to AI-ready data</text>
+    <text x="80" y="128" fill="#526981" font-size="22">Agentic GEO keeps page, product, FAQ, and HowTo evidence in their proper roles.</text>
+
+    <!-- Source evidence -->
+    <rect x="80" y="204" width="340" height="410" rx="18" fill="#fff" stroke="#c7d7e9" stroke-width="2"/>
+    <circle cx="120" cy="248" r="22" fill="#1267d6"/>
+    <text x="120" y="256" fill="#fff" font-size="21" font-weight="700" text-anchor="middle">1</text>
+    <text x="158" y="256" fill="#0d2442" font-size="28" font-weight="700">Product page evidence</text>
+    <line x1="110" y1="285" x2="390" y2="285" stroke="#dbe5ef" stroke-width="2"/>
+
+    <rect x="110" y="316" width="280" height="67" rx="12" fill="#edf5ff"/>
+    <rect x="129" y="334" width="28" height="28" rx="7" fill="#1267d6"/>
+    <path d="M136 342h14M136 349h14M136 356h9" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+    <text x="174" y="344" fill="#173651" font-size="18" font-weight="700">Product facts</text>
+    <text x="174" y="367" fill="#5b718a" font-size="15">identity, claims, attributes</text>
+
+    <rect x="110" y="400" width="280" height="67" rx="12" fill="#edf9f5"/>
+    <rect x="129" y="418" width="28" height="28" rx="7" fill="#079969"/>
+    <path d="M136 433l6 6 11-14" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="174" y="428" fill="#173651" font-size="18" font-weight="700">Usage guidance</text>
+    <text x="174" y="451" fill="#5b718a" font-size="15">direct, ordered instructions</text>
+
+    <rect x="110" y="484" width="280" height="67" rx="12" fill="#fff7e9"/>
+    <rect x="129" y="502" width="28" height="28" rx="7" fill="#f4a000"/>
+    <path d="M136 510c-4 0-6 3-6 6 0 6 6 6 6 10h14c0-4 6-4 6-10 0-3-2-6-6-6zM138 532h10" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="174" y="512" fill="#173651" font-size="18" font-weight="700">Visible Q&amp;A</text>
+    <text x="174" y="535" fill="#5b718a" font-size="15">customer questions on the page</text>
+
+    <text x="110" y="579" fill="#526981" font-size="15">Source-backed evidence only</text>
+
+    <!-- Arrow -->
+    <path d="M446 409h66" fill="none" stroke="#1267d6" stroke-width="7" stroke-linecap="round"/>
+    <path d="M496 388l27 21-27 21z" fill="#1267d6"/>
+
+    <!-- Agentic GEO -->
+    <rect x="550" y="204" width="420" height="410" rx="18" fill="#fff" stroke="#9ec8ff" stroke-width="2"/>
+    <circle cx="590" cy="248" r="22" fill="#1267d6"/>
+    <text x="590" y="256" fill="#fff" font-size="21" font-weight="700" text-anchor="middle">2</text>
+    <text x="628" y="256" fill="#0d2442" font-size="30" font-weight="700">Agentic GEO</text>
+    <line x1="580" y1="285" x2="940" y2="285" stroke="#dbe5ef" stroke-width="2"/>
+    <rect x="580" y="316" width="360" height="68" rx="34" fill="#1267d6"/>
+    <circle cx="622" cy="350" r="16" fill="#fff"/>
+    <ellipse cx="622" cy="344" rx="8" ry="4" fill="none" stroke="#1267d6" stroke-width="3"/>
+    <path d="M614 344v12c0 5 16 5 16 0v-12M614 350c0 5 16 5 16 0" fill="none" stroke="#1267d6" stroke-width="3"/>
+    <text x="654" y="359" fill="#fff" font-size="27" font-weight="700">AI-Ready Data</text>
+    <text x="580" y="430" fill="#173651" font-size="18" font-weight="700">Give every type of evidence one clear job</text>
+
+    <rect x="580" y="453" width="164" height="61" rx="10" fill="#edf5ff"/>
+    <text x="662" y="490" fill="#1267d6" font-size="18" font-weight="700" text-anchor="middle">WebPage</text>
+    <rect x="776" y="453" width="164" height="61" rx="10" fill="#edf5ff"/>
+    <text x="858" y="490" fill="#1267d6" font-size="18" font-weight="700" text-anchor="middle">Product</text>
+    <rect x="580" y="531" width="164" height="61" rx="10" fill="#edf9f5"/>
+    <text x="662" y="568" fill="#078e62" font-size="18" font-weight="700" text-anchor="middle">FAQPage</text>
+    <rect x="776" y="531" width="164" height="61" rx="10" fill="#fff7e9"/>
+    <text x="858" y="568" fill="#bd7600" font-size="18" font-weight="700" text-anchor="middle">HowTo</text>
+    <line x1="662" y1="514" x2="662" y2="531" stroke="#b9cbe0" stroke-width="3"/>
+    <line x1="858" y1="514" x2="858" y2="531" stroke="#b9cbe0" stroke-width="3"/>
+
+    <!-- Arrow -->
+    <path d="M996 409h66" fill="none" stroke="#1267d6" stroke-width="7" stroke-linecap="round"/>
+    <path d="M1046 388l27 21-27 21z" fill="#1267d6"/>
+
+    <!-- Answer engines -->
+    <rect x="1100" y="204" width="420" height="410" rx="18" fill="#fff" stroke="#c7d7e9" stroke-width="2"/>
+    <circle cx="1140" cy="248" r="22" fill="#1267d6"/>
+    <text x="1140" y="256" fill="#fff" font-size="21" font-weight="700" text-anchor="middle">3</text>
+    <text x="1178" y="256" fill="#0d2442" font-size="28" font-weight="700">AI answer engines</text>
+    <line x1="1130" y1="285" x2="1490" y2="285" stroke="#dbe5ef" stroke-width="2"/>
+
+    <rect x="1130" y="318" width="360" height="98" rx="14" fill="#f6faf8" stroke="#b7e1d1"/>
+    <g transform="translate(1158 337)" fill="none" stroke="#098a67" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M23 0c-10 0-18 8-18 18 0 5 2 10 6 14-3 4-4 8-4 13 0 10 8 18 18 18 4 0 8-1 11-4 4 3 8 4 13 4 10 0 18-8 18-18 0-4-1-8-4-12 3-4 4-8 4-13C67 8 59 0 49 0c-4 0-8 1-11 4-4-3-9-4-15-4z"/>
+      <path d="M18 17l20 12 21-12M18 46l20-12 21 12M38 29v22"/>
+    </g>
+    <text x="1245" y="361" fill="#173651" font-size="25" font-weight="700">ChatGPT</text>
+    <text x="1245" y="390" fill="#59728b" font-size="17">clearer page context</text>
+
+    <rect x="1130" y="440" width="360" height="98" rx="14" fill="#faf9ff" stroke="#d7d0ff"/>
+    <path d="M1185 455l12 28 28 12-28 12-12 28-12-28-28-12 28-12z" fill="#6657e8"/>
+    <text x="1245" y="489" fill="#173651" font-size="25" font-weight="700">Gemini</text>
+    <text x="1245" y="518" fill="#59728b" font-size="17">clearer entity boundaries</text>
+    <text x="1130" y="578" fill="#526981" font-size="15">They independently decide what to retrieve or cite.</text>
+
+    <!-- Impact strip -->
+    <rect x="80" y="672" width="1440" height="150" rx="18" fill="#0d2442"/>
+    <text x="120" y="718" fill="#d8eaff" font-size="18" font-weight="700">WHAT THIS SUPPORTS</text>
+    <text x="120" y="755" fill="#fff" font-size="24" font-weight="700">Clearer information for people and AI systems</text>
+    <line x1="650" y1="700" x2="650" y2="790" stroke="#3a5574" stroke-width="2"/>
+    <line x1="945" y1="700" x2="945" y2="790" stroke="#3a5574" stroke-width="2"/>
+    <circle cx="690" cy="723" r="8" fill="#53a9ff"/>
+    <text x="711" y="730" fill="#fff" font-size="20" font-weight="700">Discoverability</text>
+    <text x="690" y="760" fill="#b9cde2" font-size="15">Clearer product and page identity</text>
+    <circle cx="985" cy="723" r="8" fill="#51d3a1"/>
+    <text x="1006" y="730" fill="#fff" font-size="20" font-weight="700">Trust</text>
+    <text x="985" y="760" fill="#b9cde2" font-size="15">Source-grounded content boundaries</text>
+    <circle cx="1270" cy="723" r="8" fill="#f5bb45"/>
+    <text x="1291" y="730" fill="#fff" font-size="20" font-weight="700">Decisions</text>
+    <text x="1270" y="760" fill="#b9cde2" font-size="15">Useful FAQ and HowTo guidance</text>
+  </g>
+</svg>

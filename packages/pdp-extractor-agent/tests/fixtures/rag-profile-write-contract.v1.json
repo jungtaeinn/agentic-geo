@@ -1,0 +1,995 @@
+{
+  "schemaVersion": 1,
+  "provenance": {
+    "legacySourcePath": "src/rag/profile.ts",
+    "legacySourceBlob": "35a3a1faac89ab8dce015a55219dae3c11a846a0",
+    "legacySourceLastChange": "6689224ca088f6cfd2a9d673e8c268685d73719a",
+    "legacySourceSha256": "a4155b9a4b4734fd7a4c3606cca73c66805018d6dfbc54ba4cafd9ba69e469bb",
+    "nodeVersion": "v24.11.0",
+    "v8Version": "13.6.233.10-node.28",
+    "icuVersion": "77.1",
+    "pnpmVersion": "11.24.0",
+    "tsxVersion": "4.23.1",
+    "defaultLocale": "en-US",
+    "collator": {
+      "locale": "en-US",
+      "usage": "sort",
+      "sensitivity": "variant",
+      "ignorePunctuation": false,
+      "collation": "default",
+      "numeric": false,
+      "caseFirst": "false"
+    }
+  },
+  "cases": [
+    {
+      "id": "malformed-array-name",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": [
+          {
+            "name": [],
+            "content": "bad custom attachment"
+          }
+        ]
+      },
+      "inputSha256": "d62e6db02b25728943a9a4ea55f7cd0db5532a7b215bdfaffe2c048254569f7b",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "The \"path\" argument must be of type string. Received an instance of Array"
+        },
+        "files": [
+          "analysis-prompt_v1.md",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ]
+      },
+      "expectedSha256": "f33f2797ffb2094bf303ae3a73d8d4fea1cc8708b255e832267278d82ccc7bed"
+    },
+    {
+      "id": "malformed-object-name",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": [
+          {
+            "name": {},
+            "content": "bad custom attachment"
+          }
+        ]
+      },
+      "inputSha256": "deb2f35f328e1e2117e16569296dc4b3c2637f6a982da981971298f31f65ce2d",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "The \"path\" argument must be of type string. Received an instance of Object"
+        },
+        "files": [
+          "analysis-prompt_v1.md",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ]
+      },
+      "expectedSha256": "93e74dede4e783db4429bb4b37f519d1f2dcefcd2911495c1adebd5e5d6314aa"
+    },
+    {
+      "id": "malformed-boolean-name",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": [
+          {
+            "name": true,
+            "content": "bad custom attachment"
+          }
+        ]
+      },
+      "inputSha256": "3a8454c32b7158c0915304ebd88a5c3831b834f92bde3158527147563fbbcfc5",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "The \"path\" argument must be of type string. Received type boolean (true)"
+        },
+        "files": [
+          "analysis-prompt_v1.md",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ]
+      },
+      "expectedSha256": "b1547ef233e4b79fc9c04542ed8ddcba4d3909188743b8f810c432affaf3ad58"
+    },
+    {
+      "id": "malformed-negative-zero-name",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": [
+          {
+            "name": -0.0,
+            "content": "bad custom attachment"
+          }
+        ]
+      },
+      "inputSha256": "5d7ff170b0364bffd8f9839d7f349ed8ba554eed9677851d884a8d41f9c08514",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "The \"path\" argument must be of type string. Received type number (-0)"
+        },
+        "files": [
+          "analysis-prompt_v1.md",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ]
+      },
+      "expectedSha256": "51663c6c4a0270bf55949b8b9ad80a92e575144caae2515609d1fefc24fd2c26"
+    },
+    {
+      "id": "node-extname-..txt",
+      "input": {
+        "analysisPrompt": "Retained prompt",
+        "documents": [
+          {
+            "name": "..txt",
+            "content": "x"
+          }
+        ]
+      },
+      "inputSha256": "8017a2a015b54815eeb9a51f66c858e20b818c30067276582837ef0748728b72",
+      "expected": {
+        "error": null,
+        "files": [
+          "analysis-prompt_v1.md",
+          "custom/._v1.txt",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ],
+        "documents": [
+          {
+            "name": "._v1.txt",
+            "version": "v1",
+            "content": "x\n",
+            "managed": false,
+            "path": "custom/._v1.txt",
+            "size": 2
+          }
+        ]
+      },
+      "expectedSha256": "d710e7329b996aa99a198d12d8bcdcab58270c3434af8c7d8314880f51544e39"
+    },
+    {
+      "id": "node-extname-.txt",
+      "input": {
+        "analysisPrompt": "Retained prompt",
+        "documents": [
+          {
+            "name": ".txt",
+            "content": "x"
+          }
+        ]
+      },
+      "inputSha256": "f6ef6d7380d383def1229d9662792c30c041c500913e8fb08c8d6576a9c8d1ed",
+      "expected": {
+        "error": null,
+        "files": [
+          "analysis-prompt_v1.md",
+          "custom/rag-document_v1.md",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ],
+        "documents": [
+          {
+            "name": "rag-document_v1.md",
+            "version": "v1",
+            "content": "x\n",
+            "managed": false,
+            "path": "custom/rag-document_v1.md",
+            "size": 2
+          }
+        ]
+      },
+      "expectedSha256": "c2a1325a59be55bbea654ef43b3a85168fa1d35efc15eb91f214f080564453d6"
+    },
+    {
+      "id": "node-extname-...txt",
+      "input": {
+        "analysisPrompt": "Retained prompt",
+        "documents": [
+          {
+            "name": "...txt",
+            "content": "x"
+          }
+        ]
+      },
+      "inputSha256": "8c25feb40e53244f74b779dab33e7c006a0d93a82587fff0f252e8956637f0b1",
+      "expected": {
+        "error": null,
+        "files": [
+          "analysis-prompt_v1.md",
+          "custom/.._v1.txt",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ],
+        "documents": [
+          {
+            "name": ".._v1.txt",
+            "version": "v1",
+            "content": "x\n",
+            "managed": false,
+            "path": "custom/.._v1.txt",
+            "size": 2
+          }
+        ]
+      },
+      "expectedSha256": "969cf62cc3f43eda9b6741b6e84a461dbc926ea5337b5b6a3be72da8e99cb5ac"
+    },
+    {
+      "id": "node-extname-.config.json",
+      "input": {
+        "analysisPrompt": "Retained prompt",
+        "documents": [
+          {
+            "name": ".config.json",
+            "content": "x"
+          }
+        ]
+      },
+      "inputSha256": "25a1bc064374c0fb5e969d063ea26565b7aebd0800de3b8325557b04b192e2b5",
+      "expected": {
+        "error": null,
+        "files": [
+          "analysis-prompt_v1.md",
+          "custom/.config_v1.json",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ],
+        "documents": [
+          {
+            "name": ".config_v1.json",
+            "version": "v1",
+            "content": "x\n",
+            "managed": false,
+            "path": "custom/.config_v1.json",
+            "size": 2
+          }
+        ]
+      },
+      "expectedSha256": "e9e755d2655336f7fd7200a787317ed53d7ac62aa2b77122ae696063011250ba"
+    },
+    {
+      "id": "node-extname-doc.txt-slash-",
+      "input": {
+        "analysisPrompt": "Retained prompt",
+        "documents": [
+          {
+            "name": "doc.txt/",
+            "content": "x"
+          }
+        ]
+      },
+      "inputSha256": "793b93de6800820024ba75d3054cf8548ec1650bb9b70052325742d34db921b3",
+      "expected": {
+        "error": null,
+        "files": [
+          "analysis-prompt_v1.md",
+          "custom/doc_v1.txt",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ],
+        "documents": [
+          {
+            "name": "doc_v1.txt",
+            "version": "v1",
+            "content": "x\n",
+            "managed": false,
+            "path": "custom/doc_v1.txt",
+            "size": 2
+          }
+        ]
+      },
+      "expectedSha256": "36754544793016cd4d5193dfb64a5b1ae280a7f3e45c56116b839107f69d5cd8"
+    },
+    {
+      "id": "node-extname-dir-slash-.txt",
+      "input": {
+        "analysisPrompt": "Retained prompt",
+        "documents": [
+          {
+            "name": "dir/.txt",
+            "content": "x"
+          }
+        ]
+      },
+      "inputSha256": "37ff4b29b2f87a21e1b8005df9c8ded7f6065122f08d8046ff1927459d763e82",
+      "expected": {
+        "error": null,
+        "files": [
+          "analysis-prompt_v1.md",
+          "custom/dir_v1.md",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ],
+        "documents": [
+          {
+            "name": "dir_v1.md",
+            "version": "v1",
+            "content": "x\n",
+            "managed": false,
+            "path": "custom/dir_v1.md",
+            "size": 2
+          }
+        ]
+      },
+      "expectedSha256": "351ffef09a10363b6356dcdab1ecd9b9369f383decda69daf7a93ab8906b74d1"
+    },
+    {
+      "id": "ascii-version-digits",
+      "input": {
+        "analysisPrompt": "Retained prompt",
+        "documents": [
+          {
+            "name": "doc_v١.txt",
+            "content": "x"
+          },
+          {
+            "name": "plain.txt",
+            "version": "v١",
+            "content": "x"
+          },
+          {
+            "name": "ascii_v12.txt",
+            "content": "x"
+          }
+        ]
+      },
+      "inputSha256": "ab18323d8e6cc0a2649b82cf3ccd3adfaf8a498334862c20e9a450e00b47e7ab",
+      "expected": {
+        "error": null,
+        "files": [
+          "analysis-prompt_v1.md",
+          "custom/ascii_v12.txt",
+          "custom/doc_v١_v1.txt",
+          "custom/plain_v١.txt",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ],
+        "documents": [
+          {
+            "name": "ascii_v12.txt",
+            "version": "v12",
+            "content": "x\n",
+            "managed": false,
+            "path": "custom/ascii_v12.txt",
+            "size": 2
+          },
+          {
+            "name": "doc_v١_v1.txt",
+            "version": "v1",
+            "content": "x\n",
+            "managed": false,
+            "path": "custom/doc_v١_v1.txt",
+            "size": 2
+          },
+          {
+            "name": "plain_v١.txt",
+            "version": "v1",
+            "content": "x\n",
+            "managed": false,
+            "path": "custom/plain_v١.txt",
+            "size": 2
+          }
+        ]
+      },
+      "expectedSha256": "ee05f90cd4bba951be84c94a5383d4a5590302e52c1fc0abf7992b1a66242651"
+    },
+    {
+      "id": "locale-compare-order",
+      "input": {
+        "analysisPrompt": "Retained prompt",
+        "documents": [
+          {
+            "name": "Z.md",
+            "content": "x"
+          },
+          {
+            "name": "a.md",
+            "content": "x"
+          },
+          {
+            "name": "ä.md",
+            "content": "x"
+          }
+        ]
+      },
+      "inputSha256": "8725136029c42dc2010dc822c0d2ed65ac92b5debfe8388ae77da35730864f4b",
+      "expected": {
+        "error": null,
+        "files": [
+          "analysis-prompt_v1.md",
+          "custom/Z_v1.md",
+          "custom/a_v1.md",
+          "custom/ä_v1.md",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ],
+        "documents": [
+          {
+            "name": "a_v1.md",
+            "version": "v1",
+            "content": "x\n",
+            "managed": false,
+            "path": "custom/a_v1.md",
+            "size": 2
+          },
+          {
+            "name": "ä_v1.md",
+            "version": "v1",
+            "content": "x\n",
+            "managed": false,
+            "path": "custom/ä_v1.md",
+            "size": 2
+          },
+          {
+            "name": "Z_v1.md",
+            "version": "v1",
+            "content": "x\n",
+            "managed": false,
+            "path": "custom/Z_v1.md",
+            "size": 2
+          }
+        ]
+      },
+      "expectedSha256": "404e057102639c1f10a07d4c25d47e68af0f4e729dbfcce1acea01a04aa0233a"
+    },
+    {
+      "id": "utf16-even-boundary",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": [
+          {
+            "name": "𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀.md",
+            "content": "x"
+          }
+        ]
+      },
+      "inputSha256": "31568f5654957af941242fa08a3573f6d358bb3149274de7235ad1a92e311856",
+      "expected": {
+        "error": null,
+        "files": [
+          "analysis-prompt_v1.md",
+          "custom/𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀_v1.md",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ],
+        "documents": [
+          {
+            "name": "𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀_v1.md",
+            "version": "v1",
+            "content": "x\n",
+            "managed": false,
+            "path": "custom/𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀_v1.md",
+            "size": 2
+          }
+        ]
+      },
+      "expectedSha256": "80114ff9ad8bd1f56a5325b4842d432accc69ca79aa621132b3d2231968d09a1"
+    },
+    {
+      "id": "utf16-lone-surrogate-cleanup",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": [
+          {
+            "name": "A𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀.md",
+            "content": "x"
+          }
+        ]
+      },
+      "inputSha256": "1e8a40dc7fe43fc0544546eb49d69080a930f5d3d934ff96fa1bc2a2a86aac76",
+      "expected": {
+        "error": null,
+        "files": [
+          "analysis-prompt_v1.md",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ],
+        "documents": []
+      },
+      "expectedSha256": "02a1ed4402541f845da6d6452e55ee2554d4ec1251372fd3ec63158aa598fb6d"
+    },
+    {
+      "id": "sequential-custom-write",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": [
+          {
+            "name": "first.md",
+            "content": "one"
+          },
+          {
+            "name": [],
+            "content": "bad custom attachment"
+          }
+        ]
+      },
+      "inputSha256": "f97283a5cb76df4421ae7733e9c0e976c1bc61c5e3a5fc78ba4bc7ab5c4dc9b7",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "The \"path\" argument must be of type string. Received an instance of Array"
+        },
+        "files": [
+          "analysis-prompt_v1.md",
+          "custom/first_v1.md",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ]
+      },
+      "expectedSha256": "004f0233331735caa08016c0e8e588f52a146065c6775f98e92d5b40445c826e"
+    },
+    {
+      "id": "duplicate-custom-sequential-write",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": [
+          {
+            "name": "same.md",
+            "content": "one"
+          },
+          {
+            "name": "same.md",
+            "content": null
+          }
+        ]
+      },
+      "inputSha256": "92afcd32da0359922ea97c58daf7d70ea4c74ebbe50576dda4e9e2cc7171206b",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "Cannot read properties of null (reading 'endsWith')"
+        },
+        "files": [
+          "analysis-prompt_v1.md",
+          "custom/same_v1.md",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ]
+      },
+      "expectedSha256": "23fed6686feda708d988a9a6d3a9082a2a0ee1b72eeb8d68466e4b1720a39155"
+    },
+    {
+      "id": "null-map-element",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": [
+          null
+        ]
+      },
+      "inputSha256": "5b3ddbc7b148fdf48da91416b39e79b73cd9fb71e8ed146df621943496e2dcd7",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "Cannot read properties of null (reading 'name')"
+        },
+        "files": [
+          "analysis-prompt_v1.md"
+        ]
+      },
+      "expectedSha256": "34ac2ebbd21e7570f7cc0a9643fe7ed965f2b1571b2233f39bdce601b3fd1a4a"
+    },
+    {
+      "id": "null-content",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": [
+          {
+            "name": "content-null.md",
+            "content": null
+          }
+        ]
+      },
+      "inputSha256": "7764bcc244e14c90662dc375ab9ef7b8f5898312a01a06434810e0bc07f0ac85",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "Cannot read properties of null (reading 'endsWith')"
+        },
+        "files": [
+          "analysis-prompt_v1.md",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ]
+      },
+      "expectedSha256": "d216b10c05f121df077a42bbebd95d6abecc2a9da21d6d4d3d796db1c81ae6d8"
+    },
+    {
+      "id": "managed-null-content",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": [
+          {
+            "name": "faq-extraction_v1.md",
+            "content": null
+          }
+        ]
+      },
+      "inputSha256": "d804e4bcb1d7d77f5f827d4edd7260597ae265ceb741d3b6f2da1aa6a70d8443",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "Cannot read properties of null (reading 'endsWith')"
+        },
+        "files": [
+          "analysis-prompt_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ]
+      },
+      "expectedSha256": "3ab184d0ef7498aa4ac06b6c41c432b5f034983e36f8343ca1c2a4d18126440e"
+    },
+    {
+      "id": "missing-content",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": [
+          {
+            "name": "content-missing.md"
+          }
+        ]
+      },
+      "inputSha256": "fda21860ffb1fd547cc457a75a5b60f1c6296be2725729de5e6c3bbf30e29d96",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "Cannot read properties of undefined (reading 'endsWith')"
+        },
+        "files": [
+          "analysis-prompt_v1.md",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ]
+      },
+      "expectedSha256": "3837b808ea0d4546510922708d5bab1ec59b5c8357c3e39d55967f1dd854af9f"
+    },
+    {
+      "id": "mapping-documents",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": {}
+      },
+      "inputSha256": "599d2b732d3767ed006916c03a07c23ee7169485f3aa1d5258ed206d604461f8",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "(profile.documents ?? []).map is not a function"
+        },
+        "files": [
+          "analysis-prompt_v1.md"
+        ]
+      },
+      "expectedSha256": "a0948f0e45755de244791f80ab0135674e1713730b3116467212cd15be852bba"
+    },
+    {
+      "id": "string-documents",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": "x"
+      },
+      "inputSha256": "2d28511ba309d8e5dbae086b53723c58eb343473f5a9cb7408e6a7d1b1dd4fef",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "(profile.documents ?? []).map is not a function"
+        },
+        "files": [
+          "analysis-prompt_v1.md"
+        ]
+      },
+      "expectedSha256": "a0948f0e45755de244791f80ab0135674e1713730b3116467212cd15be852bba"
+    },
+    {
+      "id": "number-documents",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": 1
+      },
+      "inputSha256": "7f6aaf829b9bc4ad0224c3e593a7a10b3dabfe0821808d8d6c1789bb97563909",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "(profile.documents ?? []).map is not a function"
+        },
+        "files": [
+          "analysis-prompt_v1.md"
+        ]
+      },
+      "expectedSha256": "a0948f0e45755de244791f80ab0135674e1713730b3116467212cd15be852bba"
+    },
+    {
+      "id": "boolean-documents",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": false
+      },
+      "inputSha256": "04c52d254fca3dfbf32b6a366ed8ae544ba16bfd6f83c06d38523136e60f05f3",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "(profile.documents ?? []).map is not a function"
+        },
+        "files": [
+          "analysis-prompt_v1.md"
+        ]
+      },
+      "expectedSha256": "a0948f0e45755de244791f80ab0135674e1713730b3116467212cd15be852bba"
+    },
+    {
+      "id": "empty-document",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": [
+          {}
+        ]
+      },
+      "inputSha256": "a980b428133f49cf95d4b093420d49437a8fa4a38ff162ca169ab89a486ad8f8",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "The \"path\" argument must be of type string. Received undefined"
+        },
+        "files": [
+          "analysis-prompt_v1.md",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ]
+      },
+      "expectedSha256": "1ef4d26c3c7e50d31e9a189b8745da2a74e8d1b4015074054c89001bd6c9a5cc"
+    },
+    {
+      "id": "missing-name",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": [
+          {
+            "content": "x"
+          }
+        ]
+      },
+      "inputSha256": "a8687a03bcd935525f866c0ae4af0e7139696eff034227ef94c6f58feea0da9c",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "The \"path\" argument must be of type string. Received undefined"
+        },
+        "files": [
+          "analysis-prompt_v1.md",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ]
+      },
+      "expectedSha256": "1ef4d26c3c7e50d31e9a189b8745da2a74e8d1b4015074054c89001bd6c9a5cc"
+    },
+    {
+      "id": "array-document",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": [
+          []
+        ]
+      },
+      "inputSha256": "afcfcb9fe8a7fd7a0305422d7f8211bbd68fc8cf3fd7d83f2f30e3cf1c8d660e",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "The \"path\" argument must be of type string. Received undefined"
+        },
+        "files": [
+          "analysis-prompt_v1.md",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ]
+      },
+      "expectedSha256": "1ef4d26c3c7e50d31e9a189b8745da2a74e8d1b4015074054c89001bd6c9a5cc"
+    },
+    {
+      "id": "string-document",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": [
+          "x"
+        ]
+      },
+      "inputSha256": "ddc9fde7d9f6a2859f391a0923a6307a027ebccabca147d08c26049982c7f4d2",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "The \"path\" argument must be of type string. Received undefined"
+        },
+        "files": [
+          "analysis-prompt_v1.md",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ]
+      },
+      "expectedSha256": "1ef4d26c3c7e50d31e9a189b8745da2a74e8d1b4015074054c89001bd6c9a5cc"
+    },
+    {
+      "id": "number-document",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": [
+          1
+        ]
+      },
+      "inputSha256": "9958511a4f12090eedfb7d9d62985a003341edb98d87c3fa942b4cac04359d26",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "The \"path\" argument must be of type string. Received undefined"
+        },
+        "files": [
+          "analysis-prompt_v1.md",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ]
+      },
+      "expectedSha256": "1ef4d26c3c7e50d31e9a189b8745da2a74e8d1b4015074054c89001bd6c9a5cc"
+    },
+    {
+      "id": "boolean-document",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": [
+          false
+        ]
+      },
+      "inputSha256": "a40691f04c3e9100b17ca6b5fb14680fabfb0e3322f1e4f8b190a937a111c204",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "The \"path\" argument must be of type string. Received undefined"
+        },
+        "files": [
+          "analysis-prompt_v1.md",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ]
+      },
+      "expectedSha256": "1ef4d26c3c7e50d31e9a189b8745da2a74e8d1b4015074054c89001bd6c9a5cc"
+    },
+    {
+      "id": "explicit-null-name",
+      "input": {
+        "analysisPrompt": "Terminal retained prompt",
+        "documents": [
+          {
+            "name": null,
+            "content": "explicit null name"
+          }
+        ]
+      },
+      "inputSha256": "0deb277aa3e2fd8b22fe203557c798632535fc88b58da0b56d34a698295f5c85",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "The \"path\" argument must be of type string. Received null"
+        },
+        "files": [
+          "analysis-prompt_v1.md",
+          "faq-extraction_v1.md",
+          "ocr-keyword-classification_v1.md",
+          "product-normalization_v1.md",
+          "review-keyword-extraction_v1.md"
+        ]
+      },
+      "expectedSha256": "7415fc96ef689af5598579fb04ed653333116e8bd41fb02454d3a1d4241ba43b"
+    },
+    {
+      "id": "truthy-boolean-prompt",
+      "input": {
+        "analysisPrompt": true
+      },
+      "inputSha256": "85e5f862c5c8449fd86513e9d9fcdb5a11f50f7876e00996192cab09be2435b1",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "value.endsWith is not a function"
+        },
+        "files": []
+      },
+      "expectedSha256": "dff4488146df8f7f7703b80179b3aff2156ddb76890f330689712e656b28d26e"
+    },
+    {
+      "id": "truthy-number-prompt",
+      "input": {
+        "analysisPrompt": 1
+      },
+      "inputSha256": "2d11f716d7535f337e1e3b6f0d4a48a6f1fd6a4dd6e72c41f4a26768b924c781",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "value.endsWith is not a function"
+        },
+        "files": []
+      },
+      "expectedSha256": "dff4488146df8f7f7703b80179b3aff2156ddb76890f330689712e656b28d26e"
+    },
+    {
+      "id": "truthy-array-prompt",
+      "input": {
+        "analysisPrompt": []
+      },
+      "inputSha256": "4fa1701625312743672c5d9c94c3decb109fc4058b4e8acb5cf3d595f2387fc8",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "value.endsWith is not a function"
+        },
+        "files": []
+      },
+      "expectedSha256": "dff4488146df8f7f7703b80179b3aff2156ddb76890f330689712e656b28d26e"
+    },
+    {
+      "id": "truthy-object-prompt",
+      "input": {
+        "analysisPrompt": {}
+      },
+      "inputSha256": "91d1023a91e0c291ce3c0a1ad2a9f74410f2a09533c625ce9df9a1c2d07dff74",
+      "expected": {
+        "error": {
+          "name": "TypeError",
+          "message": "value.endsWith is not a function"
+        },
+        "files": []
+      },
+      "expectedSha256": "dff4488146df8f7f7703b80179b3aff2156ddb76890f330689712e656b28d26e"
+    }
+  ]
+}

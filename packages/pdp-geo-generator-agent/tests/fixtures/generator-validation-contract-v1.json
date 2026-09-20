@@ -1,0 +1,53 @@
+{
+  "provenance": {
+    "capture": "agentic-geo-public-synthetic-validation-v1",
+    "runtime": "Python deterministic validator"
+  },
+  "safe": {
+    "normalizedDescription": "Test Serum is a serum, described for dry skin. It includes ginseng.",
+    "normalizedQuickFacts": "First item, second item. Third item!",
+    "normalizedBenefits": "Calms dry skin.",
+    "normalizedFaq": "Q. Is Test Serum suitable for dry skin? A. Test Serum is suitable for dry skin, and layers easily.",
+    "usage": "Gently pat 2-3 pumps onto skin morning and night",
+    "keyIngredients": "Ginseng Extract, What, Niacinamide",
+    "callerHtml": "<article>caller-rendered</article>",
+    "productName": "Product ,  unchanged",
+    "organizationName": "Organization ,  unchanged",
+    "organizationDescription": "Organization copy ,  unchanged.",
+    "scriptTagPrefix": "<script type=\"application/ld+json\">",
+    "decimalPriceSentence": "Available options include 50 mL, with a listed price of $215.00."
+  },
+  "readOnly": {
+    "requiredFindingFields": [
+      "@context",
+      "Product.image",
+      "Product.offers",
+      "Product.aggregateRating",
+      "Product.review",
+      "FAQPage.mainEntity",
+      "Product.name",
+      "Product.description",
+      "FAQPage",
+      "WebPage.inLanguage",
+      "WebPage.hasPart",
+      "HowTo.inLanguage",
+      "schemaMarkup.scriptTag",
+      "Product.additionalProperty[0].value"
+    ],
+    "qualitativeReviewIssue": "Qualitative review wording was published without review-body or review-keyword evidence.",
+    "scriptTagIssue": "schemaMarkup.scriptTag does not serialize the same JSON-LD object as schemaMarkup.jsonLd."
+  },
+  "full": {
+    "context": "https://schema.org",
+    "fallbackName": "Fallback Serum",
+    "fallbackDescription": "Fallback serum description.",
+    "canonicalImage": "https://example.com/image.jpg",
+    "howToStep": {
+      "position": 1,
+      "name": "Step 1",
+      "text": "Gently pat 2-3 pumps onto skin morning and night."
+    },
+    "fallbackProductId": "urn:agentic-geo:pdp:fallback-serum#product"
+  },
+  "wholeContractSha256": "ba93650a0eaaf2f880966419f6569529c40a8b49836642208ef376be92d9e828"
+}

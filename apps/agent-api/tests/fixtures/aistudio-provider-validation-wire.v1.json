@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "provenance": {
+    "legacySourceCommit": "6702158280ec7de675594af93c7c381eb2feae38",
+    "legacySourcePaths": [
+      "apps/geo-generator/src/app/api/provider/validate/route.ts",
+      "apps/pdp-extractor/src/app/api/provider/validate/route.ts"
+    ],
+    "legacySourceSha256": "049a178b86dfdd19b6ddea22c717ccf66189c6283e3bdc035d327f9c3667964c",
+    "runtime": "Node v24.11.0",
+    "captureMethod": "At legacySourceCommit, the identical validateAistudio implementations call JSON.stringify(check.body). Node v24.11.0 captured the UTF-8 bytes and SHA-256 digests below; Python tests replay only these literals."
+  },
+  "requests": [
+    {
+      "name": "embedding",
+      "bodyUtf8Base64": "eyJpbnB1dCI6InBpbmcifQ==",
+      "bodySha256": "4b8c5bd24500a5df35468b195bc3181fdd9c55380513107ad476740b3a9d81a8"
+    },
+    {
+      "name": "chat-completions",
+      "bodyUtf8Base64": "eyJtZXNzYWdlcyI6W3sicm9sZSI6InVzZXIiLCJjb250ZW50IjoicGluZyJ9XX0=",
+      "bodySha256": "e84712403670483cf314e25461a22dd1ff0e3183b271950460d07a68fd68a466"
+    }
+  ]
+}

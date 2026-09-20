@@ -1,0 +1,5363 @@
+{
+  "contracts": {
+    "post_terminal": {
+      "outcomes": {
+        "test_media_type_validity_preserves_nest_parser_before_auth_boundary": {
+          "expected": [
+            {
+              "authCalls": 0,
+              "contentType": "application/json; charset=utf-8",
+              "raw": "{\"statusCode\":500,\"message\":\"Internal server error\"}",
+              "status": 500
+            },
+            {
+              "authCalls": 0,
+              "contentType": "application/json; charset=utf-8",
+              "raw": "{\"statusCode\":500,\"message\":\"Internal server error\"}",
+              "status": 500
+            },
+            {
+              "authCalls": 0,
+              "contentType": "application/json; charset=utf-8",
+              "raw": "{\"statusCode\":500,\"message\":\"Internal server error\"}",
+              "status": 500
+            },
+            {
+              "authCalls": 0,
+              "contentType": "application/json; charset=utf-8",
+              "raw": "{\"statusCode\":500,\"message\":\"Internal server error\"}",
+              "status": 500
+            },
+            {
+              "authCalls": 1,
+              "contentType": "application/json; charset=utf-8",
+              "raw": "{\"message\":\"invalid x-api-key\",\"error\":\"Unauthorized\",\"statusCode\":401}",
+              "status": 401
+            },
+            {
+              "authCalls": 0,
+              "contentType": "application/json; charset=utf-8",
+              "raw": "{\"statusCode\":500,\"message\":\"Internal server error\"}",
+              "status": 500
+            },
+            {
+              "authCalls": 0,
+              "contentType": "application/json; charset=utf-8",
+              "raw": "{\"statusCode\":500,\"message\":\"Internal server error\"}",
+              "status": 500
+            },
+            {
+              "authCalls": 1,
+              "contentType": "application/json; charset=utf-8",
+              "raw": "{\"message\":\"invalid x-api-key\",\"error\":\"Unauthorized\",\"statusCode\":401}",
+              "status": 401
+            },
+            {
+              "authCalls": 1,
+              "contentType": "application/json; charset=utf-8",
+              "raw": "{\"message\":\"invalid x-api-key\",\"error\":\"Unauthorized\",\"statusCode\":401}",
+              "status": 401
+            },
+            {
+              "authCalls": 1,
+              "contentType": "application/json; charset=utf-8",
+              "raw": "{\"message\":\"invalid x-api-key\",\"error\":\"Unauthorized\",\"statusCode\":401}",
+              "status": 401
+            },
+            {
+              "authCalls": 1,
+              "contentType": "application/json; charset=utf-8",
+              "raw": "{\"message\":\"invalid x-api-key\",\"error\":\"Unauthorized\",\"statusCode\":401}",
+              "status": 401
+            },
+            {
+              "authCalls": 1,
+              "contentType": "application/json; charset=utf-8",
+              "raw": "{\"message\":\"invalid x-api-key\",\"error\":\"Unauthorized\",\"statusCode\":401}",
+              "status": 401
+            },
+            {
+              "authCalls": 1,
+              "contentType": "application/json; charset=utf-8",
+              "raw": "{\"message\":\"invalid x-api-key\",\"error\":\"Unauthorized\",\"statusCode\":401}",
+              "status": 401
+            },
+            {
+              "authCalls": 1,
+              "contentType": "application/json; charset=utf-8",
+              "raw": "{\"message\":\"invalid x-api-key\",\"error\":\"Unauthorized\",\"statusCode\":401}",
+              "status": 401
+            },
+            {
+              "authCalls": 1,
+              "contentType": "application/json; charset=utf-8",
+              "raw": "{\"message\":\"invalid x-api-key\",\"error\":\"Unauthorized\",\"statusCode\":401}",
+              "status": 401
+            }
+          ],
+          "input_sha256": "39cb6007caa48902c2a30520b8c9d0564407ff4c683ec3e77c919b6b3a1d7db9",
+          "inputs": [
+            {
+              "auth": true,
+              "body": "{}",
+              "contentType": ";n",
+              "framed": true
+            },
+            {
+              "auth": false,
+              "body": "{}",
+              "contentType": ";n",
+              "framed": true
+            },
+            {
+              "auth": true,
+              "body": "",
+              "contentType": ";n",
+              "framed": true
+            },
+            {
+              "auth": false,
+              "body": "",
+              "contentType": ";n",
+              "framed": true
+            },
+            {
+              "auth": true,
+              "body": "{}",
+              "contentType": "",
+              "framed": true
+            },
+            {
+              "auth": true,
+              "body": "{}",
+              "contentType": ";",
+              "framed": true
+            },
+            {
+              "auth": true,
+              "body": "{}",
+              "contentType": " \t;n",
+              "framed": true
+            },
+            {
+              "auth": true,
+              "body": "{}",
+              "contentType": "application/json;n",
+              "framed": true
+            },
+            {
+              "auth": true,
+              "body": "{}",
+              "contentType": ".application/json",
+              "framed": true
+            },
+            {
+              "auth": true,
+              "body": "{}",
+              "contentType": "application*/json",
+              "framed": true
+            },
+            {
+              "auth": true,
+              "body": "{}",
+              "contentType": "application/+json",
+              "framed": true
+            },
+            {
+              "auth": true,
+              "body": "{}",
+              "contentType": "application/json*",
+              "framed": true
+            },
+            {
+              "auth": true,
+              "body": "{}",
+              "contentType": "application/json/extra",
+              "framed": true
+            },
+            {
+              "auth": true,
+              "body": "{}",
+              "contentType": "application/ json",
+              "framed": true
+            },
+            {
+              "auth": true,
+              "body": "",
+              "contentType": ";n",
+              "framed": false
+            }
+          ]
+        },
+        "test_provider_error_components_match_retained_filter_boolean_join": {
+          "expected": [
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: E1",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: E1\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code:  \t ",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code:  \\t \"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: true",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: true\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: ",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: \"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: [object Object]",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: [object Object]\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: E1",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: E1\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code:  \t ",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code:  \\t \"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: true",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: true\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: ",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: \"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: [object Object]",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: [object Object]\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: E1",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: E1\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code:  \t ",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code:  \\t \"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: true",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: true\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: ",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: \"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: [object Object]",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: [object Object]\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: E1",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: E1\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code:  \t ",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code:  \\t \"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: true",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: true\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: ",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: \"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: [object Object]",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: [object Object]\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: E1",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: E1\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code:  \t ",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code:  \\t \"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: true",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: true\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: ",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: \"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: [object Object]",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: [object Object]\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: E1",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: E1\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code:  \t ",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code:  \\t \"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: true",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: true\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: ",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: \"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: [object Object]",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: [object Object]\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "failure",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"failure\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "failure",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"failure\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "failure",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"failure\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "failure",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"failure\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "failure",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"failure\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "failure\ncode: E1",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"failure\\ncode: E1\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "failure\ncode:  \t ",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"failure\\ncode:  \\t \"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "failure\ncode: true",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"failure\\ncode: true\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "failure\ncode: ",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"failure\\ncode: \"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "failure\ncode: [object Object]",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"failure\\ncode: [object Object]\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "fallback message\ncode: FALLBACK",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"fallback message\\ncode: FALLBACK\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "fallback message\ncode: FALLBACK",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"fallback message\\ncode: FALLBACK\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "fallback message",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"fallback message\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "fallback message",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"fallback message\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "fallback message",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"fallback message\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "fallback message\ncode: FALLBACK",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"fallback message\\ncode: FALLBACK\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "fallback message\ncode: FALLBACK",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"fallback message\\ncode: FALLBACK\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "fallback message",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"fallback message\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "fallback message",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"fallback message\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "fallback message",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"fallback message\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: FALLBACK",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: FALLBACK\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: FALLBACK",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: FALLBACK\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: FALLBACK",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: FALLBACK\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: FALLBACK",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: FALLBACK\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: FALLBACK",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: FALLBACK\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: FALLBACK",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: FALLBACK\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: FALLBACK",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: FALLBACK\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "code: FALLBACK",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"code: FALLBACK\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\"}",
+              "status": 400
+            }
+          ],
+          "input_sha256": "323a8f288b1fd33c98b91df4fde03477f98f3af715f2d8564be538177285f6b2",
+          "inputs": [
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {}
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": null
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": ""
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": false
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": 0
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "E1"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": " \t "
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": true
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": []
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": {}
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "message": null
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": null,
+                  "message": null
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "",
+                  "message": null
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": false,
+                  "message": null
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": 0,
+                  "message": null
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "E1",
+                  "message": null
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": " \t ",
+                  "message": null
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": true,
+                  "message": null
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": [],
+                  "message": null
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": {},
+                  "message": null
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "message": ""
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": null,
+                  "message": ""
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "",
+                  "message": ""
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": false,
+                  "message": ""
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": 0,
+                  "message": ""
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "E1",
+                  "message": ""
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": " \t ",
+                  "message": ""
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": true,
+                  "message": ""
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": [],
+                  "message": ""
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": {},
+                  "message": ""
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "message": false
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": null,
+                  "message": false
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "",
+                  "message": false
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": false,
+                  "message": false
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": 0,
+                  "message": false
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "E1",
+                  "message": false
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": " \t ",
+                  "message": false
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": true,
+                  "message": false
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": [],
+                  "message": false
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": {},
+                  "message": false
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "message": 0
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": null,
+                  "message": 0
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "",
+                  "message": 0
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": false,
+                  "message": 0
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": 0,
+                  "message": 0
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "E1",
+                  "message": 0
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": " \t ",
+                  "message": 0
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": true,
+                  "message": 0
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": [],
+                  "message": 0
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": {},
+                  "message": 0
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "message": " \t\n"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": null,
+                  "message": " \t\n"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "",
+                  "message": " \t\n"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": false,
+                  "message": " \t\n"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": 0,
+                  "message": " \t\n"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "E1",
+                  "message": " \t\n"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": " \t ",
+                  "message": " \t\n"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": true,
+                  "message": " \t\n"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": [],
+                  "message": " \t\n"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": {},
+                  "message": " \t\n"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "message": "failure"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": null,
+                  "message": "failure"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "",
+                  "message": "failure"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": false,
+                  "message": "failure"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": 0,
+                  "message": "failure"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "E1",
+                  "message": "failure"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": " \t ",
+                  "message": "failure"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": true,
+                  "message": "failure"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": [],
+                  "message": "failure"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": {},
+                  "message": "failure"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "message": true
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": null,
+                  "message": true
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "",
+                  "message": true
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": false,
+                  "message": true
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": 0,
+                  "message": true
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "E1",
+                  "message": true
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": " \t ",
+                  "message": true
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": true,
+                  "message": true
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": [],
+                  "message": true
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": {},
+                  "message": true
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "message": []
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": null,
+                  "message": []
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "",
+                  "message": []
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": false,
+                  "message": []
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": 0,
+                  "message": []
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "E1",
+                  "message": []
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": " \t ",
+                  "message": []
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": true,
+                  "message": []
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": [],
+                  "message": []
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": {},
+                  "message": []
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "message": {}
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": null,
+                  "message": {}
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "",
+                  "message": {}
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": false,
+                  "message": {}
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": 0,
+                  "message": {}
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "E1",
+                  "message": {}
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": " \t ",
+                  "message": {}
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": true,
+                  "message": {}
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": [],
+                  "message": {}
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": {},
+                  "message": {}
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": null,
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "",
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": false,
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": 0,
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "message": null,
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": null,
+                  "message": null,
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "",
+                  "message": null,
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": false,
+                  "message": null,
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": 0,
+                  "message": null,
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "message": "",
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": null,
+                  "message": "",
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "",
+                  "message": "",
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": false,
+                  "message": "",
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": 0,
+                  "message": "",
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "message": false,
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": null,
+                  "message": false,
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "",
+                  "message": false,
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": false,
+                  "message": false,
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": 0,
+                  "message": false,
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "message": 0,
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": null,
+                  "message": 0,
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "",
+                  "message": 0,
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": false,
+                  "message": 0,
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": 0,
+                  "message": 0,
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "message": " \t\n",
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": null,
+                  "message": " \t\n",
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": "",
+                  "message": " \t\n",
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": false,
+                  "message": " \t\n",
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": 0,
+                  "message": " \t\n",
+                  "status": "FALLBACK"
+                },
+                "error_description": "fallback message"
+              },
+              "upstreamStatus": 401
+            }
+          ]
+        },
+        "test_utf7_imap_slash_stays_in_retained_shifted_alphabet_before_auth": {
+          "expected": [
+            {
+              "body": {
+                "message": "Unexpected token '\"', \"\"\"\" is not valid JSON",
+                "status": 400
+              },
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "Unexpected token '\"', \"\"\"\" is not valid JSON",
+                "status": 400
+              },
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "Unexpected token '\"', \"\"\uffff\"\" is not valid JSON",
+                "status": 400
+              },
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "Unexpected token '\"', \"\"\"\" is not valid JSON",
+                "status": 400
+              },
+              "status": 400
+            },
+            {
+              "body": {
+                "accepted": true
+              },
+              "status": 202
+            },
+            {
+              "body": {
+                "accepted": true
+              },
+              "status": 202
+            }
+          ],
+          "input_sha256": "9f046702793a1856ef0bd4cf72f2489e9bc6e80c7b7b0addd7babb75155fdb0c",
+          "inputs": [
+            {
+              "body": "IiYvIg==",
+              "contentType": "application/json; charset=utf-7-imap",
+              "encoding": "identity"
+            },
+            {
+              "body": "IiYvLyI=",
+              "contentType": "application/json; charset=utf-7-imap",
+              "encoding": "identity"
+            },
+            {
+              "body": "IiYvLy8i",
+              "contentType": "application/json; charset=utf-7-imap",
+              "encoding": "identity"
+            },
+            {
+              "body": "IiYsLyI=",
+              "contentType": "application/json; charset=utf-7-imap",
+              "encoding": "identity"
+            },
+            {
+              "body": "eyJ4IjoiJi8vOC0ifQ==",
+              "contentType": "application/json; charset=utf-7-imap",
+              "encoding": "identity"
+            },
+            {
+              "body": "eyJ4IjoiJiwsOC0ifQ==",
+              "contentType": "application/json; charset=utf-7-imap",
+              "encoding": "identity"
+            }
+          ]
+        }
+      },
+      "provenance": {
+        "dependencies": {
+          "express": "5.2.1",
+          "nestjs": "11.1.28",
+          "next": "16.2.12",
+          "node": "24.11.0",
+          "validator": "13.15.35"
+        },
+        "locale": "ko-KR",
+        "source_commit": "383bec65756ca9c1dce468f434667d28743ae586",
+        "source_input_sha256": "1026682d53b3703bb622077904cc0cb52b722261a2a94281773b442da0f321a8",
+        "timestamp_normalization": "No contract outcome contains a timestamp; generated request and log timestamps were excluded.",
+        "source_files": [
+          {
+            "path": "apps/agent-api/src/main.ts",
+            "blob_sha1": "d0c0cf9e7c7d20cb876be9d75be0ca0bcf3359e7",
+            "blob_sha256": "c76b67afac07aa9759519e92b7265a08587e00b1cd32993a5f71c2a195431c48"
+          },
+          {
+            "path": "apps/agent-api/src/geo/dto/submit-generation.dto.ts",
+            "blob_sha1": "f1fe9a2aaa7e17f6d30cab103db476a020d92ef3",
+            "blob_sha256": "3417075b2261cd9dd4435209a4e2b7496bca8aaf7617114ad1fd7041807c8797"
+          },
+          {
+            "path": "apps/geo-generator/src/app/api/provider/validate/route.ts",
+            "blob_sha1": "51fccc08808d782e788a9835f7c0fce13d2f006c",
+            "blob_sha256": "049a178b86dfdd19b6ddea22c717ccf66189c6283e3bdc035d327f9c3667964c"
+          }
+        ]
+      },
+      "version": 2
+    },
+    "round_five": {
+      "outcomes": {
+        "test_internal_url_whitespace_uses_retained_ecmascript_set": {
+          "expected": [
+            true,
+            false,
+            false,
+            false
+          ],
+          "input_sha256": "addb274a9248a8a4fb1f14b358840ce3a31d787f65b7af11a85348080d577a25",
+          "inputs": [
+            "https://example.com/path\u0085segment",
+            "https://example.com/path\ufeffsegment",
+            "https://exa\u0085mple.com",
+            "https://exa\ufeffmple.com"
+          ]
+        },
+        "test_provider_credentials_use_retained_ecmascript_regex_whitespace": {
+          "expected": [
+            {
+              "body": {
+                "message": "OpenAI API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.",
+                "models": [],
+                "ok": true,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer export\u0085key"
+                }
+              ],
+              "rawBody": "{\"ok\":true,\"provider\":\"openai\",\"message\":\"OpenAI API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.\",\"models\":[]}",
+              "status": 200
+            },
+            {
+              "body": {
+                "message": "OpenAI API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.",
+                "models": [],
+                "ok": true,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":true,\"provider\":\"openai\",\"message\":\"OpenAI API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.\",\"models\":[]}",
+              "status": 200
+            },
+            {
+              "body": {
+                "message": "OpenAI API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.",
+                "models": [],
+                "ok": true,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer X\u0085=\u0085key"
+                }
+              ],
+              "rawBody": "{\"ok\":true,\"provider\":\"openai\",\"message\":\"OpenAI API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.\",\"models\":[]}",
+              "status": 200
+            },
+            {
+              "body": {
+                "message": "OpenAI API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.",
+                "models": [],
+                "ok": true,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":true,\"provider\":\"openai\",\"message\":\"OpenAI API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.\",\"models\":[]}",
+              "status": 200
+            },
+            {
+              "body": {
+                "message": "OpenAI API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.",
+                "models": [],
+                "ok": true,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer X=key\u2028tail"
+                }
+              ],
+              "rawBody": "{\"ok\":true,\"provider\":\"openai\",\"message\":\"OpenAI API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.\",\"models\":[]}",
+              "status": 200
+            },
+            {
+              "body": {
+                "message": "OpenAI API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.",
+                "models": [],
+                "ok": true,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer X=key\rtail"
+                }
+              ],
+              "rawBody": "{\"ok\":true,\"provider\":\"openai\",\"message\":\"OpenAI API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.\",\"models\":[]}",
+              "status": 200
+            },
+            {
+              "body": {
+                "message": "OpenAI API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.",
+                "models": [],
+                "ok": true,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer \u212aEY=secret"
+                }
+              ],
+              "rawBody": "{\"ok\":true,\"provider\":\"openai\",\"message\":\"OpenAI API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.\",\"models\":[]}",
+              "status": 200
+            },
+            {
+              "body": {
+                "message": "OpenAI API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.",
+                "models": [],
+                "ok": true,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer \u017fEY=secret"
+                }
+              ],
+              "rawBody": "{\"ok\":true,\"provider\":\"openai\",\"message\":\"OpenAI API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.\",\"models\":[]}",
+              "status": 200
+            },
+            {
+              "body": {
+                "message": "OpenAI API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.",
+                "models": [],
+                "ok": true,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer \u0130EY=secret"
+                }
+              ],
+              "rawBody": "{\"ok\":true,\"provider\":\"openai\",\"message\":\"OpenAI API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.\",\"models\":[]}",
+              "status": 200
+            },
+            {
+              "body": {
+                "message": "OpenAI API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.",
+                "models": [],
+                "ok": true,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer \u0131EY=secret"
+                }
+              ],
+              "rawBody": "{\"ok\":true,\"provider\":\"openai\",\"message\":\"OpenAI API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.\",\"models\":[]}",
+              "status": 200
+            }
+          ],
+          "input_sha256": "89c310fc7eae39737e0bae002607a53ed1fd079bdc077d3fe14db2abbab3c579",
+          "inputs": [
+            {
+              "body": {
+                "apiKey": "export\u0085key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "data": []
+              },
+              "upstreamStatus": 200
+            },
+            {
+              "body": {
+                "apiKey": "export\ufeffkey",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "data": []
+              },
+              "upstreamStatus": 200
+            },
+            {
+              "body": {
+                "apiKey": "X\u0085=\u0085key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "data": []
+              },
+              "upstreamStatus": 200
+            },
+            {
+              "body": {
+                "apiKey": "X\ufeff=\ufeffkey",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "data": []
+              },
+              "upstreamStatus": 200
+            },
+            {
+              "body": {
+                "apiKey": "X=key\u2028tail",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "data": []
+              },
+              "upstreamStatus": 200
+            },
+            {
+              "body": {
+                "apiKey": "X=key\rtail",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "data": []
+              },
+              "upstreamStatus": 200
+            },
+            {
+              "body": {
+                "apiKey": "\u212aEY=secret",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "data": []
+              },
+              "upstreamStatus": 200
+            },
+            {
+              "body": {
+                "apiKey": "\u017fEY=secret",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "data": []
+              },
+              "upstreamStatus": 200
+            },
+            {
+              "body": {
+                "apiKey": "\u0130EY=secret",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "data": []
+              },
+              "upstreamStatus": 200
+            },
+            {
+              "body": {
+                "apiKey": "\u0131EY=secret",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "data": []
+              },
+              "upstreamStatus": 200
+            }
+          ]
+        },
+        "test_provider_error_codes_and_whitespace_use_retained_js_coercion": {
+          "expected": [
+            {
+              "body": {
+                "details": "failure\ncode: true",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"failure\\ncode: true\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "failure\ncode: a,,2",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"failure\\ncode: a,,2\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "failure\ncode: [object Object]",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"failure\\ncode: [object Object]\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "before\u0085after",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"before\u0085after\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "before after",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"before after\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "sk-proj-ABCDEFG\u212a",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"sk-proj-ABCDEFG\u212a\"}",
+              "status": 400
+            },
+            {
+              "body": {
+                "details": "incorrect api \u212aey",
+                "message": "OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401",
+                "ok": false,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"openai\",\"message\":\"OpenAI \uc5f0\uacb0 \ud655\uc778 \uc2e4\ud328: 401\",\"details\":\"incorrect api \u212aey\"}",
+              "status": 400
+            }
+          ],
+          "input_sha256": "f508551db9cec6ad20cb83d58d2d8e89c5bd0b582070c05621c8e871fbea6767",
+          "inputs": [
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": true,
+                  "message": "failure"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": [
+                    "a",
+                    null,
+                    2
+                  ],
+                  "message": "failure"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "code": {
+                    "kind": "x"
+                  },
+                  "message": "failure"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "message": "before\u0085after"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "message": "before\ufeffafter"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "message": "sk-proj-ABCDEFG\u212a"
+                }
+              },
+              "upstreamStatus": 401
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "openai"
+              },
+              "upstream": {
+                "error": {
+                  "message": "incorrect api \u212aey"
+                }
+              },
+              "upstreamStatus": 401
+            }
+          ]
+        },
+        "test_utf7_variants_discard_iconv_incomplete_utf16_tail_before_json_parse": {
+          "expected": [
+            {
+              "body": {
+                "accepted": true
+              },
+              "status": 202
+            },
+            {
+              "body": {
+                "accepted": true
+              },
+              "status": 202
+            },
+            {
+              "body": {
+                "accepted": true
+              },
+              "status": 202
+            },
+            {
+              "body": {
+                "accepted": true
+              },
+              "status": 202
+            }
+          ],
+          "input_sha256": "d4968b07fc2fb20567bf02af99a8d80c38df49fbec3b5e871e0d48673691b9bd",
+          "inputs": [
+            {
+              "body": "eyJnZW9HZW5lcmF0aW9uSWQiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJsb2NhbGUiOiJrby1LUiIsInByb2R1Y3QiOnt9LCJ4IjomQUNJQS0ifQ==",
+              "contentType": "application/json; charset=utf-7-imap",
+              "encoding": "identity"
+            },
+            {
+              "body": "eyJnZW9HZW5lcmF0aW9uSWQiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJsb2NhbGUiOiJrby1LUiIsInByb2R1Y3QiOnt9LCJ4IjorQUNJQS0ifQ==",
+              "contentType": "application/json; charset=utf-7",
+              "encoding": "identity"
+            },
+            {
+              "body": "eyJnZW9HZW5lcmF0aW9uSWQiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJsb2NhbGUiOiJrby1LUiIsInByb2R1Y3QiOnt9LCJ4IjomQUNJQUEtIn0=",
+              "contentType": "application/json; charset=utf-7-imap",
+              "encoding": "identity"
+            },
+            {
+              "body": "eyJnZW9HZW5lcmF0aW9uSWQiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJsb2NhbGUiOiJrby1LUiIsInByb2R1Y3QiOnt9LCJ4IjorQUNJQUEtIn0=",
+              "contentType": "application/json; charset=utf-7",
+              "encoding": "identity"
+            }
+          ]
+        },
+        "test_completed_zlib_streams_match_frozen_member_and_trailing_rules": {
+          "expected": [
+            {
+              "body": {
+                "accepted": true
+              },
+              "status": 202
+            },
+            {
+              "body": {
+                "accepted": true
+              },
+              "status": 202
+            },
+            {
+              "body": {
+                "accepted": true
+              },
+              "status": 202
+            },
+            {
+              "body": {
+                "message": "Unterminated string in JSON at position 44 (line 1 column 45)",
+                "status": 400
+              },
+              "status": 400
+            },
+            {
+              "body": {
+                "accepted": true
+              },
+              "status": 202
+            },
+            {
+              "body": {
+                "accepted": true
+              },
+              "status": 202
+            }
+          ],
+          "input_sha256": "0e719947e04ff30612c5f5e3f3a6464d3eb590ae586cf64735628788a4fce8b9",
+          "inputs": [
+            {
+              "body": "H4sIAAAAAAAC/6tWSk/Nd0/NSy1KLMnMz/NMUbJSMjU1SLUwMTDQTTWyTNI1MUwx0U00NzTTNTExMzM1NQHKGBgo6Sjl5Ccn5qQC1Wfn63oHAQUKivJTSpNLlKyqa2sBBJgIolgAAAAA",
+              "contentType": "application/json",
+              "encoding": "gzip"
+            },
+            {
+              "body": "H4sIAAAAAAAC/6tWSk/Nd0/NSy1KLMnMz/NMUbJSMjU1SLUwMTDQTTWyTNI1MUwx0U00NzTTNTExMzM1NQHKGBgo6Sjl5Ccn5qQC1Wfn63oHAQUKivJTSpNLlKyqa2sBBJgIolgAAAAAH4sIAAAAAAAC/6tWykzPyy9KTVGyKikqTa0FAMgIS/4QAAAA",
+              "contentType": "application/json",
+              "encoding": "gzip"
+            },
+            {
+              "body": "eJyrVkpPzXdPzUstSizJzM/zTFGyUjI1NUi1MDEw0E01skzSNTFMMdFNNDc00zUxMTMzNTUByhgYKOko5eQnJ+akAtVn5+t6BwEFCoryU0qTS5SsqmtrAWlUGWd0cmFpbGluZyBieXRlcw==",
+              "contentType": "application/json",
+              "encoding": "deflate"
+            },
+            {
+              "body": "eJyrVkpPzXdPzUstSizJzM/zTFGyUjI1NUi1MDEw0E01skzSNTFMMdFNNDc00wUAP2YMvXicMzExMzM1NTExAAIlHaWc/OTEnFQlK6XsfF3vIKBAQVF+SmlyiZJVdW0tAPlxDKs=",
+              "contentType": "application/json",
+              "encoding": "deflate"
+            },
+            {
+              "body": "eJyrVkpPzXdPzUstSizJzM/zTFGyUjI1NUi1MDEw0E01skzSNTFMMdFNNDc00zUxMTMzNTUByhgYKOko5eQnJ+akAtVn5+t6BwEFCoryU0qTS5SsqmtrAWlUGWd4nKtWykzPyy9KTVGyKikqTa0FADLBBh8=",
+              "contentType": "application/json",
+              "encoding": "deflate"
+            },
+            {
+              "body": "H4sIAAAAAAAC/6tWSk/Nd0/NSy1KLMnMz/NMUbJSMjU1SLUwMTDQTTWyTNI1MUwx0U00NzTTBQDHoKkiLAAAAB+LCAAAAAAAAv8zMTEzMzU1MTEAAiUdpZz85MScVCUrpex8Xe8goEBBUX5KaXKJklV1bS0A5ThfRiwAAAA=",
+              "contentType": "application/json",
+              "encoding": "gzip"
+            }
+          ]
+        },
+        "test_content_type_and_iconv_charset_boundary_match_frozen_before_auth": {
+          "expected": [
+            {
+              "body": {
+                "message": "unsupported charset \"UTF-8-SIG\"",
+                "status": 415
+              },
+              "status": 415
+            },
+            {
+              "body": {
+                "message": "unsupported charset \"UTF-8;FOO\"",
+                "status": 415
+              },
+              "status": 415
+            },
+            {
+              "body": {
+                "accepted": true
+              },
+              "status": 202
+            },
+            {
+              "body": {
+                "accepted": true
+              },
+              "status": 202
+            },
+            {
+              "body": {
+                "accepted": true
+              },
+              "status": 202
+            },
+            {
+              "body": {
+                "accepted": true
+              },
+              "status": 202
+            },
+            {
+              "body": {
+                "message": "unsupported charset \"LATIN1\"",
+                "status": 415
+              },
+              "status": 415
+            },
+            {
+              "body": {
+                "message": "unsupported charset \"LATIN1\"",
+                "status": 415
+              },
+              "status": 415
+            }
+          ],
+          "input_sha256": "31b4fd72384600aced6df67a843771d90f21960862da1b65f2ef131ccebeae85",
+          "inputs": [
+            {
+              "body": "77u/eyJnZW9HZW5lcmF0aW9uSWQiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJsb2NhbGUiOiJrby1LUiIsInByb2R1Y3QiOnt9fQ==",
+              "contentType": "application/json; charset=utf-8-sig",
+              "encoding": "identity"
+            },
+            {
+              "body": "eyJnZW9HZW5lcmF0aW9uSWQiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJsb2NhbGUiOiJrby1LUiIsInByb2R1Y3QiOnt9fQ==",
+              "contentType": "application/json; charset=\"utf-8;foo\"",
+              "encoding": "identity"
+            },
+            {
+              "body": "eyJnZW9HZW5lcmF0aW9uSWQiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJsb2NhbGUiOiJrby1LUiIsInByb2R1Y3QiOnt9fQ==",
+              "contentType": "application/json; charset=\"utf\\-8\"",
+              "encoding": "identity"
+            },
+            {
+              "body": "eyJnZW9HZW5lcmF0aW9uSWQiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJsb2NhbGUiOiJrby1LUiIsInByb2R1Y3QiOnt9fQ==",
+              "contentType": "application/json; note=\"x;y\"; charset=utf-8",
+              "encoding": "identity"
+            },
+            {
+              "body": "ewAiAGcAZQBvAEcAZQBuAGUAcgBhAHQAaQBvAG4ASQBkACIAOgAiADUANQAwAGUAOAA0ADAAMAAtAGUAMgA5AGIALQA0ADEAZAA0AC0AYQA3ADEANgAtADQANAA2ADYANQA1ADQANAAwADAAMAAwACIALAAiAGwAbwBjAGEAbABlACIAOgAiAGsAbwAtAEsAUgAiACwAIgBwAHIAbwBkAHUAYwB0ACIAOgB7AH0AfQA=",
+              "contentType": "application/json; charset=utf-16le",
+              "encoding": "identity"
+            },
+            {
+              "body": "eyJnZW9HZW5lcmF0aW9uSWQiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJsb2NhbGUiOiJrby1LUiIsInByb2R1Y3QiOnt9fQ==",
+              "contentType": "application/json; charset=utf-8; charset=latin1",
+              "encoding": "identity"
+            },
+            {
+              "body": "eyJnZW9HZW5lcmF0aW9uSWQiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJsb2NhbGUiOiJrby1LUiIsInByb2R1Y3QiOnt9fQ==",
+              "contentType": "application/json; charset=latin1; charset=utf-8",
+              "encoding": "identity"
+            },
+            {
+              "body": "eyJnZW9HZW5lcmF0aW9uSWQiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJsb2NhbGUiOiJrby1LUiIsInByb2R1Y3QiOnt9fQ==",
+              "contentType": "application/json; ignored; charset=latin1",
+              "encoding": "identity"
+            }
+          ]
+        }
+      },
+      "provenance": {
+        "dependencies": {
+          "express": "5.2.1",
+          "nestjs": "11.1.28",
+          "next": "16.2.12",
+          "node": "24.11.0",
+          "validator": "13.15.35"
+        },
+        "locale": "ko-KR",
+        "source_commit": "383bec65756ca9c1dce468f434667d28743ae586",
+        "source_input_sha256": "98f9f973e7f8c2ca8d9f8b0e4fa271674bbd2b7f0ed392b762d6dac421a538ff",
+        "timestamp_normalization": "No contract outcome contains a timestamp; generated request and log timestamps were excluded.",
+        "source_files": [
+          {
+            "path": "apps/agent-api/src/main.ts",
+            "blob_sha1": "d0c0cf9e7c7d20cb876be9d75be0ca0bcf3359e7",
+            "blob_sha256": "c76b67afac07aa9759519e92b7265a08587e00b1cd32993a5f71c2a195431c48"
+          },
+          {
+            "path": "apps/agent-api/src/geo/dto/submit-generation.dto.ts",
+            "blob_sha1": "f1fe9a2aaa7e17f6d30cab103db476a020d92ef3",
+            "blob_sha256": "3417075b2261cd9dd4435209a4e2b7496bca8aaf7617114ad1fd7041807c8797"
+          },
+          {
+            "path": "apps/agent-api/src/config/configuration.ts",
+            "blob_sha1": "683d02f5a09ed8df2e3a17e8e5c73850796e510d",
+            "blob_sha256": "5ab4b1316c5633b934cc449be0b67f3b79d3919100f45c1f78665e0c84e50690"
+          },
+          {
+            "path": "apps/geo-generator/src/app/api/provider/validate/route.ts",
+            "blob_sha1": "51fccc08808d782e788a9835f7c0fce13d2f006c",
+            "blob_sha256": "049a178b86dfdd19b6ddea22c717ccf66189c6283e3bdc035d327f9c3667964c"
+          }
+        ]
+      },
+      "version": 2
+    },
+    "round_four": {
+      "outcomes": {
+        "test_fixed_width_json_decoding_preserves_iconv_unpaired_surrogates": {
+          "expected": [
+            {
+              "body": {
+                "x": "\ud800"
+              },
+              "status": 202
+            },
+            {
+              "body": {
+                "x": "\ud800"
+              },
+              "status": 202
+            }
+          ],
+          "input_sha256": "44a0d1952b7ef58a8ee2f50b640c23bc86729ac22014b12b4f84aa2ffefd431d",
+          "inputs": [
+            {
+              "body": "ewAiAHgAIgA6ACIAANgiAH0A",
+              "contentType": "application/json; charset=utf-16le",
+              "echo": "true",
+              "encoding": "identity"
+            },
+            {
+              "body": "ewAAACIAAAB4AAAAIgAAADoAAAAiAAAAANgAACIAAAB9AAAA",
+              "contentType": "application/json; charset=utf-32le",
+              "echo": "true",
+              "encoding": "identity"
+            }
+          ]
+        },
+        "test_internal_utf_fixed_width_decoding_matches_iconv_partial_and_auto_endianness": {
+          "expected": [
+            {
+              "body": {
+                "accepted": true
+              },
+              "status": 202
+            },
+            {
+              "body": {
+                "accepted": true
+              },
+              "status": 202
+            },
+            {
+              "body": {
+                "accepted": true
+              },
+              "status": 202
+            },
+            {
+              "body": {
+                "accepted": true
+              },
+              "status": 202
+            }
+          ],
+          "input_sha256": "f95fad35bac713ddd303ed6fa21cf70e822f3c664830d1fd16328c0a328b2f06",
+          "inputs": [
+            {
+              "body": "ew==",
+              "contentType": "application/json; charset=utf-16le",
+              "encoding": "identity"
+            },
+            {
+              "body": "e30=",
+              "contentType": "application/json; charset=utf-32le",
+              "encoding": "identity"
+            },
+            {
+              "body": "AHsAIgBnAGUAbwBHAGUAbgBlAHIAYQB0AGkAbwBuAEkAZAAiADoAIgA1ADUAMABlADgANAAwADAALQBlADIAOQBiAC0ANAAxAGQANAAtAGEANwAxADYALQA0ADQANgA2ADUANQA0ADQAMAAwADAAMAAiACwAIgBsAG8AYwBhAGwAZQAiADoAIgBrAG8ALQBLAFIAIgAsACIAcAByAG8AZAB1AGMAdAAiADoAewB9AH0=",
+              "contentType": "application/json; charset=utf-16",
+              "encoding": "identity"
+            },
+            {
+              "body": "AAAAewAAACIAAABnAAAAZQAAAG8AAABHAAAAZQAAAG4AAABlAAAAcgAAAGEAAAB0AAAAaQAAAG8AAABuAAAASQAAAGQAAAAiAAAAOgAAACIAAAA1AAAANQAAADAAAABlAAAAOAAAADQAAAAwAAAAMAAAAC0AAABlAAAAMgAAADkAAABiAAAALQAAADQAAAAxAAAAZAAAADQAAAAtAAAAYQAAADcAAAAxAAAANgAAAC0AAAA0AAAANAAAADYAAAA2AAAANQAAADUAAAA0AAAANAAAADAAAAAwAAAAMAAAADAAAAAiAAAALAAAACIAAABsAAAAbwAAAGMAAABhAAAAbAAAAGUAAAAiAAAAOgAAACIAAABrAAAAbwAAAC0AAABLAAAAUgAAACIAAAAsAAAAIgAAAHAAAAByAAAAbwAAAGQAAAB1AAAAYwAAAHQAAAAiAAAAOgAAAHsAAAB9AAAAfQ==",
+              "contentType": "application/json; charset=utf-32",
+              "encoding": "identity"
+            }
+          ]
+        },
+        "test_provider_route_preserves_retained_property_and_malformed_payload_errors": {
+          "expected": [
+            {
+              "body": {
+                "message": "Cannot read properties of null (reading 'provider')",
+                "ok": false,
+                "provider": "mock"
+              },
+              "headers": [],
+              "rawBody": "{\"ok\":false,\"provider\":\"mock\",\"message\":\"Cannot read properties of null (reading 'provider')\"}",
+              "status": 500
+            },
+            {
+              "body": {
+                "message": "OpenAI API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.",
+                "models": [],
+                "ok": true,
+                "provider": "openai"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":true,\"provider\":\"openai\",\"message\":\"OpenAI API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.\",\"models\":[]}",
+              "status": 200
+            },
+            {
+              "body": {
+                "message": "Cannot read properties of null (reading 'id')",
+                "ok": false,
+                "provider": "mock"
+              },
+              "headers": [
+                {
+                  "Authorization": "Bearer key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"mock\",\"message\":\"Cannot read properties of null (reading 'id')\"}",
+              "status": 500
+            },
+            {
+              "body": {
+                "message": "config.model?.trim is not a function",
+                "ok": false,
+                "provider": "mock"
+              },
+              "headers": [],
+              "rawBody": "{\"ok\":false,\"provider\":\"mock\",\"message\":\"config.model?.trim is not a function\"}",
+              "status": 500
+            },
+            {
+              "body": {
+                "message": "item.name?.replace is not a function",
+                "ok": false,
+                "provider": "mock"
+              },
+              "headers": [
+                {
+                  "x-goog-api-key": "key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"mock\",\"message\":\"item.name?.replace is not a function\"}",
+              "status": 500
+            },
+            {
+              "body": {
+                "message": "Gemini API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.",
+                "models": [
+                  "gemini-test"
+                ],
+                "ok": true,
+                "provider": "gemini"
+              },
+              "headers": [
+                {
+                  "x-goog-api-key": "key"
+                }
+              ],
+              "rawBody": "{\"ok\":true,\"provider\":\"gemini\",\"message\":\"Gemini API Key\uc640 \ubaa8\ub378 \uc811\uadfc\uc744 \ud655\uc778\ud588\uc2b5\ub2c8\ub2e4.\",\"models\":[\"gemini-test\"]}",
+              "status": 200
+            },
+            {
+              "body": {
+                "message": "Cannot read properties of null (reading 'id')",
+                "ok": false,
+                "provider": "mock"
+              },
+              "headers": [
+                {
+                  "api-key": "key"
+                }
+              ],
+              "rawBody": "{\"ok\":false,\"provider\":\"mock\",\"message\":\"Cannot read properties of null (reading 'id')\"}",
+              "status": 500
+            }
+          ],
+          "input_sha256": "de2cd92aa053434770bfa49721dff4077f55ec42e43fdb5dec77c61f4dbe1456",
+          "inputs": [
+            {
+              "body": null,
+              "upstream": {
+                "data": []
+              }
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "provider": "openai"
+              },
+              "upstream": {
+                "data": null
+              }
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "provider": "openai"
+              },
+              "upstream": {
+                "data": [
+                  null
+                ]
+              }
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "model": 42,
+                "provider": "openai"
+              },
+              "upstream": {
+                "data": []
+              }
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "provider": "gemini"
+              },
+              "upstream": {
+                "models": [
+                  {
+                    "name": 42
+                  }
+                ]
+              }
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "listOnly": true,
+                "provider": "gemini"
+              },
+              "upstream": {
+                "models": [
+                  {
+                    "name": "models/gemini-test",
+                    "supportedGenerationMethods": "generateContent"
+                  }
+                ]
+              }
+            },
+            {
+              "body": {
+                "apiKey": "key",
+                "endpoint": "https://example.test",
+                "listOnly": true,
+                "provider": "azure-openai"
+              },
+              "upstream": {
+                "data": [
+                  null
+                ]
+              }
+            }
+          ]
+        },
+        "decoded_bom_console_bytes": {
+          "input_sha256": "c70d2ffa71c0fbca364c8e286c80d3574c6b6ab1b126548088e26a1c86b8364b",
+          "expected": [
+            {
+              "ok": true,
+              "value": {}
+            },
+            {
+              "ok": true,
+              "value": {}
+            },
+            {
+              "ok": false,
+              "message": "Unexpected token '\ufeff', \"\ufeff{}\" is not valid JSON"
+            }
+          ],
+          "inputs": [
+            {
+              "base64": "77u/e30="
+            },
+            {
+              "base64": "77u/77u/e30="
+            },
+            {
+              "base64": "77u/77u/77u/e30="
+            }
+          ]
+        },
+        "test_compressed_parser_failures_match_frozen_contract": {
+          "expected": [
+            {
+              "body": {
+                "message": "unexpected end of file",
+                "status": 400
+              },
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "unexpected end of file",
+                "status": 400
+              },
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "incorrect header check",
+                "status": 400
+              },
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "unexpected end of file",
+                "status": 400
+              },
+              "status": 400
+            },
+            {
+              "body": {
+                "message": "request entity too large",
+                "status": 413
+              },
+              "status": 413
+            },
+            {
+              "body": {
+                "message": "request entity too large",
+                "status": 413
+              },
+              "status": 413
+            }
+          ],
+          "input_sha256": "07f9d3903f5d20ef5fd7a14372c5cdd5222e4d4f0c4fd562512089f48676a952",
+          "inputs": [
+            {
+              "body": "H4s=",
+              "encoding": "gzip"
+            },
+            {
+              "body": "eJw=",
+              "encoding": "deflate"
+            },
+            {
+              "body": "bm90IGEgZ3ppcCBzdHJlYW0=",
+              "encoding": "gzip"
+            },
+            {
+              "body": "AQID",
+              "encoding": "br"
+            },
+            {
+              "body": "H4sIAAAAAAAC/+3BMQEAAADCoNqLbwwfoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADOBkHRp6EBACAA",
+              "encoding": "gzip"
+            },
+            {
+              "body": "mwAAIPgl8OKxQED3/gM=",
+              "encoding": "br"
+            }
+          ]
+        },
+        "test_decoded_bom_rules_match_frozen_contract": {
+          "expected": [
+            {
+              "body": {
+                "accepted": true
+              },
+              "status": 202
+            },
+            {
+              "body": {
+                "message": "Unexpected token '\ufeff', \"\ufeff{\"geoGene\"... is not valid JSON",
+                "status": 400
+              },
+              "status": 400
+            },
+            {
+              "body": {
+                "accepted": true
+              },
+              "status": 202
+            },
+            {
+              "body": {
+                "accepted": true
+              },
+              "status": 202
+            }
+          ],
+          "input_sha256": "4ac32717ce6f0ea9f106819630b6a742b05098403ca71650a329c0d304e561b9",
+          "inputs": [
+            {
+              "body": "77u/eyJnZW9HZW5lcmF0aW9uSWQiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJsb2NhbGUiOiJrby1LUiIsInByb2R1Y3QiOnt9fQ==",
+              "contentType": "application/json",
+              "encoding": "identity"
+            },
+            {
+              "body": "77u/77u/eyJnZW9HZW5lcmF0aW9uSWQiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJsb2NhbGUiOiJrby1LUiIsInByb2R1Y3QiOnt9fQ==",
+              "contentType": "application/json",
+              "encoding": "identity"
+            },
+            {
+              "body": "//57ACIAZwBlAG8ARwBlAG4AZQByAGEAdABpAG8AbgBJAGQAIgA6ACIANQA1ADAAZQA4ADQAMAAwAC0AZQAyADkAYgAtADQAMQBkADQALQBhADcAMQA2AC0ANAA0ADYANgA1ADUANAA0ADAAMAAwADAAIgAsACIAbABvAGMAYQBsAGUAIgA6ACIAawBvAC0ASwBSACIALAAiAHAAcgBvAGQAdQBjAHQAIgA6AHsAfQB9AA==",
+              "contentType": "application/json; charset=utf-16le",
+              "encoding": "identity"
+            },
+            {
+              "body": "/v8AewAiAGcAZQBvAEcAZQBuAGUAcgBhAHQAaQBvAG4ASQBkACIAOgAiADUANQAwAGUAOAA0ADAAMAAtAGUAMgA5AGIALQA0ADEAZAA0AC0AYQA3ADEANgAtADQANAA2ADYANQA1ADQANAAwADAAMAAwACIALAAiAGwAbwBjAGEAbABlACIAOgAiAGsAbwAtAEsAUgAiACwAIgBwAHIAbwBkAHUAYwB0ACIAOgB7AH0AfQ==",
+              "contentType": "application/json; charset=utf-16be",
+              "encoding": "identity"
+            }
+          ]
+        },
+        "test_console_json_parser_accepts_runtime_depth_without_python_recursion": {
+          "expected": {
+            "ok": true
+          },
+          "input_sha256": "fbdf41d8e84e6dc9fc81fb2bf8a8eddb8417f74209c756a21e0431ae8842460d",
+          "inputs": {
+            "depth": 2000
+          }
+        },
+        "test_internal_disconnect_is_the_frozen_body_parser_read_failure": {
+          "expected": {
+            "message": "request aborted",
+            "status": 400
+          },
+          "input_sha256": "761249546741a57dcfdaafceb4cf20cf2c1de797659f9043022db9467a50400a",
+          "inputs": {
+            "disconnect": true
+          }
+        },
+        "test_console_and_internal_json_boundaries_match_frozen_contract": {
+          "expected": [
+            "Unexpected token ']', \"[1,]\" is not valid JSON",
+            "Unexpected token '}', \"{\"a\":tru}\" is not valid JSON",
+            "No number after minus sign in JSON at position 1 (line 1 column 2)",
+            "Bad escaped character in JSON at position 7 (line 1 column 8)",
+            "Unterminated string in JSON at position 19 (line 1 column 20)",
+            "Unexpected number in JSON at position 1 (line 1 column 2)",
+            "Unexpected token '\ud83d', \"\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\"... is not valid JSON",
+            "Unexpected token '?', \"{\"\ud83d\ude00\":?}\" is not valid JSON",
+            "Expected property name or '}' in JSON at position 1 (line 1 column 2)",
+            "Expected double-quoted property name in JSON at position 7 (line 1 column 8)",
+            "Expected ':' after property name in JSON at position 5 (line 1 column 6)",
+            "Expected ',' or '}' after property value in JSON at position 7 (line 1 column 8)",
+            "Expected ',' or ']' after array element in JSON at position 3 (line 1 column 4)",
+            "Unterminated fractional number in JSON at position 2 (line 1 column 3)",
+            "Exponent part is missing a number in JSON at position 3 (line 1 column 4)",
+            "Unexpected non-whitespace character after JSON at position 1 (line 1 column 2)",
+            "Bad control character in string literal in JSON at position 10 (line 1 column 11)",
+            "Unexpected number in JSON at position 1 (line 1 column 2)",
+            "Unexpected string in JSON at position 1 (line 1 column 2)",
+            "Unexpected token '\ud83d', \"\"\\\ud83d\ude00\"\" is not valid JSON",
+            "Unexpected token '\u0100', \"\"\\\u0100\"\" is not valid JSON",
+            "Unexpected number in JSON at position 1 (line 1 column 2)",
+            "\"undefined\" is not valid JSON"
+          ],
+          "input_sha256": "26ef5d5a31bec0dd2221ee698d46505c968746f58e876e87d9b8efb4bd59239f",
+          "inputs": [
+            "[1,]",
+            "{\"a\":tru}",
+            "-Infinity",
+            "{\"a\":\"\\x\"}",
+            "{\"a\":\"unterminated}",
+            "01",
+            "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00? ",
+            "{\"\ud83d\ude00\":?}",
+            "{",
+            "{\"x\":1,}",
+            "{\"x\" 1}",
+            "{\"x\":1 \"z\":2}",
+            "[1 2]",
+            "1.",
+            "1e+",
+            "1x",
+            "{\"x\":\"line\n\"}",
+            "t1",
+            "f\"hi\"",
+            "\"\\\ud83d\ude00\"",
+            "\"\\\u0100\"",
+            "t-1",
+            "undefined"
+          ]
+        },
+        "test_internal_url_dto_matches_frozen_ip_and_zone_matrix": {
+          "expected": [
+            true,
+            true,
+            true,
+            false,
+            true,
+            false
+          ],
+          "input_sha256": "3dfc5e3b83adb93c2244de66d25af348c9f4ea2f85403ad21e7177181b5c2c16",
+          "inputs": [
+            "http://127.0.0.1",
+            "https://[::1]",
+            "http://[fe80::1%eth0]",
+            "http://[fe80::1%eth-0]",
+            "http://[2001:db8::1]:443",
+            "http://[2001:db8::1]:65536"
+          ]
+        },
+        "test_js_number_matches_frozen_non_ascii_and_ecmascript_cases": {
+          "expected": [
+            "NaN",
+            "NaN",
+            "42",
+            "16",
+            "-0",
+            "42"
+          ],
+          "input_sha256": "b58745afd9189b730f22e8d7517f1fc7c1b5aa4c176f251277bc0c06af92a6d3",
+          "inputs": [
+            "\u0661",
+            "\uff11\uff12",
+            "42",
+            "0x10",
+            "-0",
+            "\ufeff 42 \ufeff"
+          ]
+        }
+      },
+      "provenance": {
+        "dependencies": {
+          "express": "5.2.1",
+          "nestjs": "11.1.28",
+          "next": "16.2.12",
+          "node": "24.11.0",
+          "validator": "13.15.35"
+        },
+        "locale": "ko-KR",
+        "source_commit": "383bec65756ca9c1dce468f434667d28743ae586",
+        "source_input_sha256": "c6c927bada3194cc4606120290cbe41029cccc2b05b1a83cd83f9c2b4d6f32e1",
+        "timestamp_normalization": "No contract outcome contains a timestamp; generated request and log timestamps were excluded.",
+        "source_files": [
+          {
+            "path": "apps/agent-api/src/main.ts",
+            "blob_sha1": "d0c0cf9e7c7d20cb876be9d75be0ca0bcf3359e7",
+            "blob_sha256": "c76b67afac07aa9759519e92b7265a08587e00b1cd32993a5f71c2a195431c48"
+          },
+          {
+            "path": "apps/agent-api/src/geo/dto/submit-generation.dto.ts",
+            "blob_sha1": "f1fe9a2aaa7e17f6d30cab103db476a020d92ef3",
+            "blob_sha256": "3417075b2261cd9dd4435209a4e2b7496bca8aaf7617114ad1fd7041807c8797"
+          },
+          {
+            "path": "apps/agent-api/src/geo/dto/test-generation.dto.ts",
+            "blob_sha1": "98ef89c9cca7880908a2dfe98e11ed9fa0cdbf7b",
+            "blob_sha256": "13dfbd517fd8d8b5873da45cd25ba235a4980070b00dfb55c7668a6137b83241"
+          },
+          {
+            "path": "apps/agent-api/src/config/configuration.ts",
+            "blob_sha1": "683d02f5a09ed8df2e3a17e8e5c73850796e510d",
+            "blob_sha256": "5ab4b1316c5633b934cc449be0b67f3b79d3919100f45c1f78665e0c84e50690"
+          },
+          {
+            "path": "apps/geo-generator/src/app/api/provider/validate/route.ts",
+            "blob_sha1": "51fccc08808d782e788a9835f7c0fce13d2f006c",
+            "blob_sha256": "049a178b86dfdd19b6ddea22c717ccf66189c6283e3bdc035d327f9c3667964c"
+          }
+        ]
+      },
+      "version": 2
+    }
+  },
+  "format": "neo-agent-api-frozen-contracts"
+}

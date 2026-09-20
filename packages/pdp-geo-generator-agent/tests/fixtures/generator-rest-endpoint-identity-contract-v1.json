@@ -1,0 +1,109 @@
+{
+  "captureFormat": 1,
+  "provenance": {
+    "capture": "agentic-geo-public-rest-identity-v1",
+    "identityFormula": "new URL(value); reject username/password/search/hash; `${url.protocol}//${url.host}${url.pathname.replace(/\\/+$/, '') || '/'}`"
+  },
+  "cases": [
+    {
+      "id": "trusted-repeated-slash",
+      "input": "https://trusted.example/a//b",
+      "identity": "https://trusted.example/a//b"
+    },
+    {
+      "id": "trusted-repeated-slash-dot",
+      "input": "https://trusted.example/a//../b",
+      "identity": "https://trusted.example/a/b"
+    },
+    {
+      "id": "special-authority",
+      "input": "https:////trusted.example/a/../b",
+      "identity": "https://trusted.example/b"
+    },
+    {
+      "id": "uts46-sharp-s",
+      "input": "https://fa\u00df.de/v1",
+      "identity": "https://xn--fa-hia.de/v1"
+    },
+    {
+      "id": "uts46-ascii",
+      "input": "https://fass.de/v1",
+      "identity": "https://fass.de/v1"
+    },
+    {
+      "id": "hex-short-ipv4",
+      "input": "https://0x7f.1/v1",
+      "identity": "https://127.0.0.1/v1"
+    },
+    {
+      "id": "ipv6-default-port",
+      "input": "https://[2001:db8::1]:443/a/../v1///",
+      "identity": "https://[2001:db8::1]/v1"
+    },
+    {
+      "id": "snowman-host",
+      "input": "https://\u2603.example/v1",
+      "identity": "https://xn--n3h.example/v1"
+    },
+    {
+      "id": "underscore-host",
+      "input": "https://foo_bar.example/v1",
+      "identity": "https://foo_bar.example/v1"
+    },
+    {
+      "id": "surrounding-ascii-whitespace",
+      "input": " \nhttps://trusted.example/v1\t ",
+      "identity": "https://trusted.example/v1"
+    },
+    {
+      "id": "raw-path-brackets-and-pipe",
+      "input": "https://trusted.example/a[|]b",
+      "identity": "https://trusted.example/a[|]b"
+    },
+    {
+      "id": "raw-caret-path",
+      "input": "https://trusted.example/a^b",
+      "identity": "https://trusted.example/a%5Eb"
+    },
+    {
+      "id": "encoded-caret-path",
+      "input": "https://trusted.example/a%5Eb",
+      "identity": "https://trusted.example/a%5Eb"
+    },
+    {
+      "id": "ipv4-embedded-ipv6",
+      "input": "https://[::ffff:192.168.0.1]/v1",
+      "identity": "https://[::ffff:c0a8:1]/v1"
+    },
+    {
+      "id": "special-backslash-dot",
+      "input": "https://trusted.example\\a\\..\\b",
+      "identity": "https://trusted.example/b"
+    },
+    {
+      "id": "http-special",
+      "input": "http:example.com",
+      "identity": "http://example.com/"
+    },
+    {
+      "id": "mailto-non-special",
+      "input": "mailto:foo",
+      "identity": "mailto://foo"
+    },
+    {
+      "id": "file-non-special",
+      "input": "file:///tmp/profile",
+      "identity": "file:///tmp/profile"
+    }
+  ],
+  "invalidInputs": [
+    "https://08.0.0.1/v1",
+    "https://a\u200cb.example/v1",
+    "https://1.2.3.4.5/v1",
+    "https://1..2/v1",
+    "https://.1/v1",
+    "https://%zz.example/v1",
+    "https://[::1"
+  ],
+  "wholeContractSha256": "bc912307882e07f6f8acb9c68a2dd6f715704dd0413330a277d0595597fcbc6f"
+}

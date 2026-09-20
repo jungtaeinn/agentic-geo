@@ -1,0 +1,44 @@
+[project]
+name = "neo-agent-api"
+version = "0.1.4"
+description = "FastAPI service coordinating Agentic GEO PDP extraction, generation, and evaluation."
+requires-python = ">=3.14,<3.15"
+dependencies = [
+  "brotli>=1.1.0",
+  "fastapi>=0.128.0",
+  "greenlet>=3.3.2",
+  "httpx>=0.28.1",
+  "idna>=3.10",
+  "langfuse>=4.15.2",
+  "neo-js-compat>=0.1.0",
+  "pdp-extractor-agent>=0.1.2",
+  "pdp-geo-eval-agent>=0.1.1",
+  "pdp-geo-generator-agent>=0.1.4",
+  "psycopg[binary]>=3.2.10",
+  "pydantic>=2.12.5",
+  "PyICU>=2.16.2",
+  "sqlalchemy>=2.0.46",
+  "uvicorn>=0.38.0",
+]
+
+[project.scripts]
+neo-agent-live-pdp-quality-smoke = "neo_agent_api.tools.live_pdp_quality_smoke:main"
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+pdp-extractor-agent = { workspace = true }
+pdp-geo-eval-agent = { workspace = true }
+pdp-geo-generator-agent = { workspace = true }
+neo-js-compat = { workspace = true }
+
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/neo_agent_api"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/neo_agent_api"]

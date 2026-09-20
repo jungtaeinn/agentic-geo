@@ -1,0 +1,38 @@
+{
+  "concepts": [
+    {
+      "concept": "moisture-comfort-example",
+      "category": "ingredient-technology",
+      "preferred": {
+        "ko-KR": ["보습 케어", "피부를 편안하게 하는 사용감"],
+        "ja-JP": ["保湿ケア", "心地よい使用感"],
+        "en-US": ["moisture care", "comfortable application feel"],
+        "en-GB": ["moisture care", "comfortable application feel"]
+      },
+      "avoid": {
+        "ko-KR": ["아토피 치료", "질환 치료"],
+        "ja-JP": ["アトピー治療", "疾患治療"],
+        "en-US": ["eczema treatment", "disease treatment"],
+        "en-GB": ["eczema treatment", "disease treatment"]
+      },
+      "notes": "Use only when the current product evidence supports the stated care context."
+    },
+    {
+      "concept": "everyday-routine-example",
+      "category": "customer-language",
+      "preferred": {
+        "ko-KR": ["데일리 루틴", "사용 순서"],
+        "ja-JP": ["デイリールーティン", "使用順序"],
+        "en-US": ["daily routine", "use order"],
+        "en-GB": ["daily routine", "use order"]
+      },
+      "avoid": {
+        "ko-KR": ["모든 피부에 안전", "처방 수준"],
+        "ja-JP": ["すべての肌に安全", "処方レベル"],
+        "en-US": ["safe for everyone", "prescription-grade"],
+        "en-GB": ["safe for everyone", "prescription-grade"]
+      },
+      "notes": "Routine wording must preserve source-stated steps and conditions."
+    }
+  ]
+}

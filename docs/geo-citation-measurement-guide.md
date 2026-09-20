@@ -87,3 +87,15 @@
 2. 두 군의 CEP 프롬프트 패널을 측정 도구에 등록하고 적용 **전 2주** 베이스라인을 수집합니다.
 3. 적용 후 4~8주 추세를 비교합니다 (AI 인덱스 반영은 검색엔진보다 빠른 경우도 있지만 도메인별 편차가 큼).
 4. 판정은 단일 수치가 아니라: SOV 추세 기울기 차이 + Bing 공식 인용 수 + AI 리퍼럴 증가의 3중 일치로 합니다.
+
+## 5. 수동 PDP 품질 스모크 (명시적 opt-in)
+
+PDP 추출·생성 경로가 실제 공개 상품 페이지에서 동작하는지 확인해야 할 때만, 이미 설정된 로컬 프로세스 환경에서 다음 명령을 수동으로 실행합니다.
+
+```bash
+RUN_LIVE_PDP_EVAL=1 uv run --package neo-agent-api neo-agent-live-pdp-quality-smoke
+```
+
+이 명령은 `RUN_LIVE_PDP_EVAL` 값이 정확히 `1`일 때만 실행됩니다. 실행 환경에는 `AISTUDIO_API_KEY`, `AISTUDIO_ENDPOINT`, `AISTUDIO_MODEL`, `AISTUDIO_API_VERSION` 이름의 값이 모두 있어야 합니다. 값은 문서·저장소·출력에 복사하지 마세요.
+
+도구는 고정된 `en-US`/`ko-KR` PDP 두 건만 기존 추출·생성 오케스트레이션으로 보냅니다. 기본 실행은 provider 호출·파일 산출물을 만들지 않으며, opt-in 실행의 출력도 locale, URL host/path, 통과 여부, 최소 품질 검사와 일반화한 오류 범주만 포함합니다. 헤더, 자격 증명, URL query/fragment, 원본 산출물과 provider 오류 본문은 출력하지 않습니다. CI나 정기 자동화가 아니라 운영자가 승인한 수동 점검으로만 사용하세요.

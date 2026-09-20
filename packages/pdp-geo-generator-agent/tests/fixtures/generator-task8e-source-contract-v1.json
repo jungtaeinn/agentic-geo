@@ -1,0 +1,528 @@
+{
+  "provenance": {
+    "capture": "agentic-geo-public-synthetic-validation-v1",
+    "runtime": "Python deterministic validator"
+  },
+  "promptContracts": {
+    "productExplicitNull": {
+      "source": null,
+      "hints": null,
+      "fieldMapping": null,
+      "market": null
+    },
+    "productBoundary": {
+      "analysisPrompt": {
+        "name": "analysis-prompt",
+        "content": "first\n   second"
+      },
+      "ragDocument": {
+        "name": "policy\nname",
+        "version": null,
+        "content": {
+          "prefixCharacter": "a",
+          "prefixCodeUnits": 2399,
+          "loneHighSurrogate": 55357,
+          "base64": "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWHvv70=",
+          "sha256": "087a0b5d0fe6427f9f42199365156c00814f376e4eb9e133cfe99adf737d6e3d",
+          "codeUnitLength": 2400,
+          "trailingCodeUnits": [
+            97,
+            97,
+            97,
+            55357
+          ]
+        }
+      },
+      "rawProduct": {
+        "truncated": true,
+        "text": "\"\ud83d"
+      }
+    },
+    "keywordAbsent": {
+      "payload": {
+        "task": "Normalize only misspelled review keywords. Leave valid keywords unchanged by omitting them from corrections.",
+        "productName": "Glow Barrier Serum",
+        "locale": "en-US",
+        "reviewKeywords": [],
+        "context": {}
+      },
+      "keys": [
+        "task",
+        "productName",
+        "locale",
+        "reviewKeywords",
+        "context"
+      ],
+      "contextKeys": []
+    },
+    "finalAbsent": {
+      "payload": {
+        "locale": "en-US",
+        "productName": "Glow Barrier Serum",
+        "fields": []
+      },
+      "keys": [
+        "locale",
+        "productName",
+        "fields"
+      ]
+    },
+    "planningAbsent": {
+      "payload": {
+        "targetLocale": "en-US",
+        "productName": "Glow Barrier Serum",
+        "requestedSchemaTargets": [],
+        "correctiveFeedback": [],
+        "reviewSituations": [],
+        "evidenceLedger": [
+          {
+            "id": "evidence-1",
+            "role": "benefit",
+            "semanticRoles": [
+              "benefit",
+              "effect"
+            ],
+            "text": "Hydration support"
+          }
+        ],
+        "bestPracticeToneGuidance": [],
+        "toneApplicationPolicy": "Transfer BestPractice voice, cadence, transitions, and evidence density. Do not copy examples or facts.",
+        "taskGuidance": [
+          {
+            "source": "field.md",
+            "kind": "field-contracts",
+            "text": "Field guidance"
+          }
+        ],
+        "policyConstraints": []
+      },
+      "keys": [
+        "targetLocale",
+        "productName",
+        "requestedSchemaTargets",
+        "correctiveFeedback",
+        "reviewSituations",
+        "evidenceLedger",
+        "bestPracticeToneGuidance",
+        "toneApplicationPolicy",
+        "taskGuidance",
+        "policyConstraints"
+      ],
+      "ledgerKeys": [
+        "id",
+        "role",
+        "semanticRoles",
+        "text"
+      ],
+      "guidanceKeys": [
+        "source",
+        "kind",
+        "text"
+      ]
+    },
+    "copy": {
+      "keys": [
+        "task",
+        "locale",
+        "currentCopy",
+        "productEvidence",
+        "descriptionEvidence",
+        "fieldRoleContracts",
+        "fieldSeparatedEvidence",
+        "extractionPriorities",
+        "publicCopyQualityGate",
+        "bestPracticeToneGuidance",
+        "toneApplicationPolicy",
+        "strategicExposureGuidance",
+        "strategicFullDocuments",
+        "hydrationPolicy",
+        "ragGuidance",
+        "generativeQueryIntents"
+      ],
+      "currentCopy": {
+        "schemaDescriptions": {
+          "product": "Glow Barrier Serum supports hydration."
+        },
+        "schemaProperties": {
+          "Name ```json ,": "Value ```json , pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+        },
+        "faqAnswers": [
+          {
+            "question": "FAQ ```json ,",
+            "answer": "```json\nAnswer ,  value"
+          }
+        ],
+        "contentSections": {
+          "description": "Glow Barrier Serum supports hydration."
+        }
+      },
+      "productEvidenceKeys": [
+        "name",
+        "benefits",
+        "effects",
+        "ingredients",
+        "usage",
+        "metrics",
+        "faq",
+        "reviewSummary",
+        "sourceTexts"
+      ],
+      "sourceTextCleaned": "Fact, value",
+      "sourceTextBound": {
+        "prefixCharacter": "a",
+        "prefixCodeUnits": 519,
+        "suffix": "...",
+        "sha256": "0604a2d347208a918b8cc1e356e1030ce44fc8eb34a2ab596bf2e73122074292",
+        "codeUnitLength": 522,
+        "trailingCodeUnits": [
+          97,
+          46,
+          46,
+          46
+        ]
+      },
+      "strategicExcerpt": {
+        "prefixCharacter": "r",
+        "prefixCodeUnits": 699,
+        "suffix": "...",
+        "sha256": "86a17b565ed530d7f206e3b5681de1cb608c1f01426d067d579e922ec2b5cec3",
+        "codeUnitLength": 702,
+        "trailingCodeUnits": [
+          114,
+          46,
+          46,
+          46
+        ]
+      },
+      "hydratedDocument": {
+        "source": "full.md",
+        "version": "v1",
+        "kind": "geo-research",
+        "hydrationMode": "full",
+        "selectedChunkTitles": [
+          "Full"
+        ],
+        "contentTruncated": true,
+        "content": {
+          "prefixCharacter": "h",
+          "prefixCodeUnits": 7999,
+          "suffix": "...",
+          "sha256": "96468fd94ac0f58aa528b31b4ccd825edb9e6d16e5a1f0ebe3ec48c49e4fc3da",
+          "codeUnitLength": 8002,
+          "trailingCodeUnits": [
+            104,
+            46,
+            46,
+            46
+          ]
+        }
+      },
+      "ragGuidance": [
+        {
+          "source": "geo.md",
+          "kind": "geo-research",
+          "intents": [],
+          "fieldTargets": [],
+          "score": 1,
+          "excerpt": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr...",
+          "priority": "strategic"
+        }
+      ]
+    }
+  },
+  "validation": {
+    "full": {
+      "graph": [
+        {
+          "@type": "Product",
+          "@id": "https://catalog.example/kr/products/dew-capsule-toner#product",
+          "name": "DemoDerma Dew Capsule Toner",
+          "description": "\uac74\uc870\ud558\uac70\ub098 \ubbfc\uac10\ud55c \ud53c\ubd80\ub97c \uc704\ud55c \uc7a5\ubcbd \ubcf4\uc2b5 \ucea1\uc290 \ud1a0\ub108\uc785\ub2c8\ub2e4.",
+          "image": [
+            "https://assets.example/images/dew-capsule-toner.webp"
+          ]
+        },
+        {
+          "@type": "FAQPage",
+          "@id": "https://catalog.example/kr/products/dew-capsule-toner#faq",
+          "inLanguage": "ko-KR",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "\ucea1\uc290\uc740 \uc5b4\ub5a4 \ubc29\uc2dd\uc73c\ub85c \ud1a0\ub108\uc5d0 \ud3ec\ud568\ub418\ub098\uc694?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "DemoDerma Dew Capsule Toner\ub294 PHA \uc6cc\ud130\uc5d0 \ub744\uc6cc\uc9c4 \uc218\ubd84 \ubca0\uc774\uc2a4\uc5d0 \ucea1\uc290\ud615 \ubcf4\uc2b5 \uc131\ubd84\uc744 \ub2f4\uc740 \ud1a0\ub108\uc785\ub2c8\ub2e4."
+              }
+            }
+          ]
+        }
+      ],
+      "content": {
+        "html": "",
+        "sections": {
+          "productName": "DemoDerma Dew Capsule Toner",
+          "description": "\uac74\uc870\ud558\uac70\ub098 \ubbfc\uac10\ud55c \ud53c\ubd80\ub97c \uc704\ud55c \uc7a5\ubcbd \ubcf4\uc2b5 \ucea1\uc290 \ud1a0\ub108\uc785\ub2c8\ub2e4.",
+          "quickFacts": "\uc81c\ud488 \uc720\ud615: \ucea1\uc290 \ud1a0\ub108",
+          "benefits": "\uc7a5\ubcbd \ubcf4\uc2b5",
+          "ingredients": "\uace0\ubc00\ub3c4 \uc138\ub77c\ub9c8\uc774\ub4dc \ucea1\uc290",
+          "howToUse": "\uc190\ubc14\ub2e5\uc5d0 \uc801\ub2f9\ub7c9\uc744 \ub35c\uc5b4 \ud53c\ubd80\uacb0\uc744 \ub530\ub77c \ubd80\ub4dc\ub7fd\uac8c \ud3b4 \ubc14\ub985\ub2c8\ub2e4",
+          "faq": "Q. \ucea1\uc290\uc740 \uc5b4\ub5a4 \ubc29\uc2dd\uc73c\ub85c \ud1a0\ub108\uc5d0 \ud3ec\ud568\ub418\ub098\uc694?\nA. DemoDerma Dew Capsule Toner\ub294 PHA \uc6cc\ud130\uc5d0 \ub744\uc6cc\uc9c4 \uc218\ubd84 \ubca0\uc774\uc2a4\uc5d0 \ucea1\uc290\ud615 \ubcf4\uc2b5 \uc131\ubd84\uc744 \ub2f4\uc740 \ud1a0\ub108\uc785\ub2c8\ub2e4."
+        }
+      },
+      "repairs": [
+        {
+          "field": "Product.image",
+          "source": "schema-validator",
+          "issue": "Product.image contained malformed or truncated image URLs.",
+          "action": "Removed malformed image URLs from Product.image.",
+          "before": [
+            "https://assets.example/images/dew-capsule-toner-incomplete."
+          ],
+          "after": null,
+          "evidence": [
+            "Product.image",
+            "URL syntax check"
+          ]
+        },
+        {
+          "field": "FAQPage.mainEntity.acceptedAnswer.text",
+          "source": "field-contract-validator",
+          "issue": "FAQ answer opened with a non-answer (cannot-confirm) sentence instead of a supported product fact.",
+          "action": "Removed the non-answer lead sentence so the answer starts with the citable supported fact.",
+          "before": "\ub3d9\uc77c \uc5ec\ubd80\ub294 \ud604\uc7ac \uc81c\ud488 \uc815\ubcf4\ub9cc\uc73c\ub85c \ud655\uc778\ud558\uae30 \uc5b4\ub835\uc2b5\ub2c8\ub2e4. DemoDerma Dew Capsule Toner\ub294 PHA \uc6cc\ud130\uc5d0 \ub744\uc6cc\uc9c4 \uc218\ubd84 \ubca0\uc774\uc2a4\uc5d0 \ucea1\uc290\ud615 \ubcf4\uc2b5 \uc131\ubd84\uc744 \ub2f4\uc740 \ud1a0\ub108\uc785\ub2c8\ub2e4.",
+          "after": "DemoDerma Dew Capsule Toner\ub294 PHA \uc6cc\ud130\uc5d0 \ub744\uc6cc\uc9c4 \uc218\ubd84 \ubca0\uc774\uc2a4\uc5d0 \ucea1\uc290\ud615 \ubcf4\uc2b5 \uc131\ubd84\uc744 \ub2f4\uc740 \ud1a0\ub108\uc785\ub2c8\ub2e4.",
+          "evidence": [
+            "FAQPage.mainEntity.acceptedAnswer.text",
+            "answer-ready FAQ contract"
+          ]
+        },
+        {
+          "field": "FAQPage.mainEntity",
+          "source": "field-contract-validator",
+          "issue": "FAQ answer was only a non-answer (cannot-confirm) statement with no supported product fact.",
+          "action": "Removed the non-answer FAQ item because answer engines cannot cite an answer that answers nothing.",
+          "before": {
+            "@type": "Question",
+            "name": "\ub3d9\uc77c \uc5ec\ubd80\ub97c \ud655\uc778\ud560 \uc218 \uc788\ub098\uc694?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "\ub3d9\uc77c \uc5ec\ubd80\ub294 \ud604\uc7ac \uc81c\ud488 \uc815\ubcf4\ub9cc\uc73c\ub85c \ud655\uc778\ud558\uae30 \uc5b4\ub835\uc2b5\ub2c8\ub2e4."
+            }
+          },
+          "after": null,
+          "evidence": [
+            "FAQPage.mainEntity.acceptedAnswer.text",
+            "answer-ready FAQ contract"
+          ]
+        },
+        {
+          "field": "HowTo.step.text",
+          "source": "field-contract-validator",
+          "issue": "HowTo.step text did not satisfy the RAG field evidence contract for actionable usage directions.",
+          "action": "Removed the invalid HowTo step so benefit, evidence, ingredient, or review copy does not appear as a usage action.",
+          "before": {
+            "@type": "HowToStep",
+            "position": 1,
+            "name": "1\ub2e8\uacc4",
+            "text": "\ud53c\ubd80 \uc7a5\ubcbd \uc720\uc0ac \uc131\ubd84\uc744 \ub2f4\uc740 \ucea1\uc290 \ubbfc\uac10 \ud53c\ubd80 \uace0\ubcf4\uc2b5 \uc7a5\ubcbd \ud1a0\ub108 \ubc14\ub974\ub294 \uc21c\uac04 \uac1c\uc6b4\ud55c \u2018\ubcf4\uc2b5 \uc7a5\ubcbd\u2019 \ucf00\uc5b4 \ubb34\ub108\uc9c4 \ud53c\ubd80\uc7a5\ubcbd\uacfc \uc18d\uac74\uc870 \uac1c\uc120\uc5d0 \ub3c4\uc6c0 \ud53c\ubd80 \uc7a5\ubcbd \uc720\uc0ac \uc131\ubd84\uc744 \ub2f4\uc740 \ucea1\uc290 \ud1a0\ub108 \uc138\ub77c\ub9c8\uc774\ub4dc \ucea1\uc290 \uc138\ub77c\ub9c8\uc774\ub4dc"
+          },
+          "after": null,
+          "evidence": [
+            "RAG Field Evidence Contract",
+            "HowTo.step requires actionable usage evidence"
+          ]
+        },
+        {
+          "field": "HowTo.step.text",
+          "source": "field-contract-validator",
+          "issue": "HowTo.step text did not satisfy the RAG field evidence contract for actionable usage directions.",
+          "action": "Removed the invalid HowTo step so benefit, evidence, ingredient, or review copy does not appear as a usage action.",
+          "before": {
+            "@type": "HowToStep",
+            "position": 2,
+            "name": "2\ub2e8\uacc4",
+            "text": "\uc0b0\ub73b\ud55c \ub9c8\ubb34\ub9ac\uac10\uacfc \ubd80\ub4dc\ub7ec\uc6b4 \ud53c\ubd80\uacb0 \uc0ac\uc6a9\uac10\uc744 \uc81c\uacf5\ud569\ub2c8\ub2e4"
+          },
+          "after": null,
+          "evidence": [
+            "RAG Field Evidence Contract",
+            "HowTo.step requires actionable usage evidence"
+          ]
+        },
+        {
+          "field": "HowTo",
+          "source": "schema-validator",
+          "issue": "HowTo was missing a concrete goal name after field validation.",
+          "action": "Removed the inapplicable HowTo node while retaining source-backed directions as ordinary visible usage guidance.",
+          "before": {
+            "@type": "HowTo",
+            "@id": "https://catalog.example/kr/products/dew-capsule-toner#how-to-use",
+            "inLanguage": "ko-KR",
+            "step": [
+              {
+                "@type": "HowToStep",
+                "position": 1,
+                "name": "1\ub2e8\uacc4",
+                "text": "\uc190\ubc14\ub2e5\uc5d0 \uc801\ub2f9\ub7c9\uc744 \ub35c\uc5b4 \ud53c\ubd80\uacb0\uc744 \ub530\ub77c \ubd80\ub4dc\ub7fd\uac8c \ud3b4 \ubc14\ub985\ub2c8\ub2e4"
+              }
+            ]
+          },
+          "after": null,
+          "evidence": [
+            "HowTo.step",
+            "post-validation graph integrity"
+          ]
+        },
+        {
+          "field": "content.sections.howToUse",
+          "source": "field-contract-validator",
+          "issue": "Public content section contained lines that did not match the RAG field evidence contract.",
+          "action": "Removed misrouted lines so usage, ingredient, and benefit content stay separated after generation.",
+          "before": "1. \ud53c\ubd80 \uc7a5\ubcbd \uc720\uc0ac \uc131\ubd84\uc744 \ub2f4\uc740 \ucea1\uc290 \ubbfc\uac10 \ud53c\ubd80 \uace0\ubcf4\uc2b5 \uc7a5\ubcbd \ud1a0\ub108 \ubc14\ub974\ub294 \uc21c\uac04 \uac1c\uc6b4\ud55c \u2018\ubcf4\uc2b5 \uc7a5\ubcbd\u2019 \ucf00\uc5b4 \ubb34\ub108\uc9c4 \ud53c\ubd80\uc7a5\ubcbd\uacfc \uc18d\uac74\uc870 \uac1c\uc120\uc5d0 \ub3c4\uc6c0 \ud53c\ubd80 \uc7a5\ubcbd \uc720\uc0ac \uc131\ubd84\uc744 \ub2f4\uc740 \ucea1\uc290 \ud1a0\ub108 \uc138\ub77c\ub9c8\uc774\ub4dc \ucea1\uc290 \uc138\ub77c\ub9c8\uc774\ub4dc\n2. \uc0b0\ub73b\ud55c \ub9c8\ubb34\ub9ac\uac10\uacfc \ubd80\ub4dc\ub7ec\uc6b4 \ud53c\ubd80\uacb0 \uc0ac\uc6a9\uac10\uc744 \uc81c\uacf5\ud569\ub2c8\ub2e4\n3. \uc190\ubc14\ub2e5\uc5d0 \uc801\ub2f9\ub7c9\uc744 \ub35c\uc5b4 \ud53c\ubd80\uacb0\uc744 \ub530\ub77c \ubd80\ub4dc\ub7fd\uac8c \ud3b4 \ubc14\ub985\ub2c8\ub2e4",
+          "after": "\uc190\ubc14\ub2e5\uc5d0 \uc801\ub2f9\ub7c9\uc744 \ub35c\uc5b4 \ud53c\ubd80\uacb0\uc744 \ub530\ub77c \ubd80\ub4dc\ub7fd\uac8c \ud3b4 \ubc14\ub985\ub2c8\ub2e4",
+          "evidence": [
+            "RAG Field Evidence Contract",
+            "content.sections.howToUse"
+          ]
+        },
+        {
+          "field": "content.sections.faq",
+          "source": "field-contract-validator",
+          "issue": "Visible FAQ copy did not match the final validated FAQPage.mainEntity items.",
+          "action": "Rebuilt visible FAQ copy from the final validated FAQPage node.",
+          "before": "",
+          "after": "Q. \ucea1\uc290\uc740 \uc5b4\ub5a4 \ubc29\uc2dd\uc73c\ub85c \ud1a0\ub108\uc5d0 \ud3ec\ud568\ub418\ub098\uc694?\nA. DemoDerma Dew Capsule Toner\ub294 PHA \uc6cc\ud130\uc5d0 \ub744\uc6cc\uc9c4 \uc218\ubd84 \ubca0\uc774\uc2a4\uc5d0 \ucea1\uc290\ud615 \ubcf4\uc2b5 \uc131\ubd84\uc744 \ub2f4\uc740 \ud1a0\ub108\uc785\ub2c8\ub2e4.",
+          "evidence": [
+            "FAQPage.mainEntity",
+            "structured-data and visible-content parity"
+          ]
+        }
+      ],
+      "warnings": [
+        "Malformed Product.image URL was removed during schema validation.",
+        "Non-answer FAQ lead sentence was removed during final sentence QA.",
+        "Non-answer FAQ item was removed during final sentence QA.",
+        "HowTo step was removed because it was not actionable usage content.",
+        "Removed the inapplicable HowTo node while retaining source-backed directions as ordinary visible usage guidance.",
+        "Content section content.sections.howToUse was repaired by field evidence contract validation.",
+        "Rebuilt visible FAQ copy from the final validated FAQPage node."
+      ]
+    },
+    "readOnly": {
+      "warnings": [
+        "Product.image: Product.image contained malformed or truncated image URLs.",
+        "FAQPage.mainEntity.acceptedAnswer.text: FAQ answer opened with a non-answer (cannot-confirm) sentence instead of a supported product fact.",
+        "FAQPage.mainEntity: FAQ answer was only a non-answer (cannot-confirm) statement with no supported product fact.",
+        "HowTo.step.text: HowTo.step text did not satisfy the RAG field evidence contract for actionable usage directions.",
+        "HowTo: HowTo was missing a concrete goal name after field validation."
+      ],
+      "findings": [
+        {
+          "field": "Product.image",
+          "source": "schema-validator",
+          "issue": "Product.image contained malformed or truncated image URLs.",
+          "suggestedAction": "Not applied; suggested only: Removed malformed image URLs from Product.image.",
+          "before": [
+            "https://assets.example/images/dew-capsule-toner-incomplete."
+          ],
+          "suggestedAfter": null,
+          "evidence": [
+            "Product.image",
+            "URL syntax check"
+          ]
+        },
+        {
+          "field": "FAQPage.mainEntity.acceptedAnswer.text",
+          "source": "field-contract-validator",
+          "issue": "FAQ answer opened with a non-answer (cannot-confirm) sentence instead of a supported product fact.",
+          "suggestedAction": "Not applied; suggested only: Removed the non-answer lead sentence so the answer starts with the citable supported fact.",
+          "before": "\ub3d9\uc77c \uc5ec\ubd80\ub294 \ud604\uc7ac \uc81c\ud488 \uc815\ubcf4\ub9cc\uc73c\ub85c \ud655\uc778\ud558\uae30 \uc5b4\ub835\uc2b5\ub2c8\ub2e4. DemoDerma Dew Capsule Toner\ub294 PHA \uc6cc\ud130\uc5d0 \ub744\uc6cc\uc9c4 \uc218\ubd84 \ubca0\uc774\uc2a4\uc5d0 \ucea1\uc290\ud615 \ubcf4\uc2b5 \uc131\ubd84\uc744 \ub2f4\uc740 \ud1a0\ub108\uc785\ub2c8\ub2e4.",
+          "suggestedAfter": "DemoDerma Dew Capsule Toner\ub294 PHA \uc6cc\ud130\uc5d0 \ub744\uc6cc\uc9c4 \uc218\ubd84 \ubca0\uc774\uc2a4\uc5d0 \ucea1\uc290\ud615 \ubcf4\uc2b5 \uc131\ubd84\uc744 \ub2f4\uc740 \ud1a0\ub108\uc785\ub2c8\ub2e4.",
+          "evidence": [
+            "FAQPage.mainEntity.acceptedAnswer.text",
+            "answer-ready FAQ contract"
+          ]
+        },
+        {
+          "field": "FAQPage.mainEntity",
+          "source": "field-contract-validator",
+          "issue": "FAQ answer was only a non-answer (cannot-confirm) statement with no supported product fact.",
+          "suggestedAction": "Not applied; suggested only: Removed the non-answer FAQ item because answer engines cannot cite an answer that answers nothing.",
+          "before": {
+            "@type": "Question",
+            "name": "\ub3d9\uc77c \uc5ec\ubd80\ub97c \ud655\uc778\ud560 \uc218 \uc788\ub098\uc694?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "\ub3d9\uc77c \uc5ec\ubd80\ub294 \ud604\uc7ac \uc81c\ud488 \uc815\ubcf4\ub9cc\uc73c\ub85c \ud655\uc778\ud558\uae30 \uc5b4\ub835\uc2b5\ub2c8\ub2e4."
+            }
+          },
+          "suggestedAfter": null,
+          "evidence": [
+            "FAQPage.mainEntity.acceptedAnswer.text",
+            "answer-ready FAQ contract"
+          ]
+        },
+        {
+          "field": "HowTo.step.text",
+          "source": "field-contract-validator",
+          "issue": "HowTo.step text did not satisfy the RAG field evidence contract for actionable usage directions.",
+          "suggestedAction": "Not applied; suggested only: Removed the invalid HowTo step so benefit, evidence, ingredient, or review copy does not appear as a usage action.",
+          "before": {
+            "@type": "HowToStep",
+            "position": 1,
+            "name": "1\ub2e8\uacc4",
+            "text": "\ud53c\ubd80 \uc7a5\ubcbd \uc720\uc0ac \uc131\ubd84\uc744 \ub2f4\uc740 \ucea1\uc290 \ubbfc\uac10 \ud53c\ubd80 \uace0\ubcf4\uc2b5 \uc7a5\ubcbd \ud1a0\ub108 \ubc14\ub974\ub294 \uc21c\uac04 \uac1c\uc6b4\ud55c \u2018\ubcf4\uc2b5 \uc7a5\ubcbd\u2019 \ucf00\uc5b4 \ubb34\ub108\uc9c4 \ud53c\ubd80\uc7a5\ubcbd\uacfc \uc18d\uac74\uc870 \uac1c\uc120\uc5d0 \ub3c4\uc6c0 \ud53c\ubd80 \uc7a5\ubcbd \uc720\uc0ac \uc131\ubd84\uc744 \ub2f4\uc740 \ucea1\uc290 \ud1a0\ub108 \uc138\ub77c\ub9c8\uc774\ub4dc \ucea1\uc290 \uc138\ub77c\ub9c8\uc774\ub4dc"
+          },
+          "suggestedAfter": null,
+          "evidence": [
+            "RAG Field Evidence Contract",
+            "HowTo.step requires actionable usage evidence"
+          ]
+        },
+        {
+          "field": "HowTo.step.text",
+          "source": "field-contract-validator",
+          "issue": "HowTo.step text did not satisfy the RAG field evidence contract for actionable usage directions.",
+          "suggestedAction": "Not applied; suggested only: Removed the invalid HowTo step so benefit, evidence, ingredient, or review copy does not appear as a usage action.",
+          "before": {
+            "@type": "HowToStep",
+            "position": 2,
+            "name": "2\ub2e8\uacc4",
+            "text": "\uc0b0\ub73b\ud55c \ub9c8\ubb34\ub9ac\uac10\uacfc \ubd80\ub4dc\ub7ec\uc6b4 \ud53c\ubd80\uacb0 \uc0ac\uc6a9\uac10\uc744 \uc81c\uacf5\ud569\ub2c8\ub2e4"
+          },
+          "suggestedAfter": null,
+          "evidence": [
+            "RAG Field Evidence Contract",
+            "HowTo.step requires actionable usage evidence"
+          ]
+        },
+        {
+          "field": "HowTo",
+          "source": "schema-validator",
+          "issue": "HowTo was missing a concrete goal name after field validation.",
+          "suggestedAction": "Not applied; suggested only: Removed the inapplicable HowTo node while retaining source-backed directions as ordinary visible usage guidance.",
+          "before": {
+            "@type": "HowTo",
+            "@id": "https://catalog.example/kr/products/dew-capsule-toner#how-to-use",
+            "inLanguage": "ko-KR",
+            "step": [
+              {
+                "@type": "HowToStep",
+                "position": 1,
+                "name": "1\ub2e8\uacc4",
+                "text": "\uc190\ubc14\ub2e5\uc5d0 \uc801\ub2f9\ub7c9\uc744 \ub35c\uc5b4 \ud53c\ubd80\uacb0\uc744 \ub530\ub77c \ubd80\ub4dc\ub7fd\uac8c \ud3b4 \ubc14\ub985\ub2c8\ub2e4"
+              }
+            ]
+          },
+          "suggestedAfter": null,
+          "evidence": [
+            "HowTo.step",
+            "post-validation graph integrity"
+          ]
+        }
+      ]
+    },
+    "inputUnchanged": true
+  }
+}

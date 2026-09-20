@@ -1,0 +1,2169 @@
+[
+  {
+    "document": "analysis-prompt_v1.md",
+    "version": "v1",
+    "kind": "orchestration",
+    "sourceRole": "policy",
+    "checkedAt": "2026-07-11",
+    "intents": [
+      "schema",
+      "evidence",
+      "retrieval",
+      "general"
+    ],
+    "fieldTargets": [
+      "Product.description",
+      "WebPage.description",
+      "PDP.content",
+      "diagnostics"
+    ],
+    "priority": 0.84,
+    "sections": [
+      {
+        "heading": "RAG Orchestration",
+        "intents": [
+          "retrieval",
+          "schema",
+          "evidence"
+        ],
+        "fieldTargets": [
+          "diagnostics",
+          "retrieval"
+        ],
+        "priority": 0.94
+      },
+      {
+        "heading": "Source-Backed Rewriting",
+        "intents": [
+          "claims",
+          "evidence",
+          "customer"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content"
+        ],
+        "priority": 0.9
+      },
+      {
+        "heading": "Entity Separation",
+        "intents": [
+          "schema",
+          "faq",
+          "howTo"
+        ],
+        "fieldTargets": [
+          "WebPage.description",
+          "Product.description",
+          "FAQPage.mainEntity",
+          "HowTo.step"
+        ],
+        "priority": 0.92
+      }
+    ]
+  },
+  {
+    "document": "content-field-contracts_v1.md",
+    "version": "v1",
+    "kind": "field-contracts",
+    "sourceRole": "policy",
+    "checkedAt": "2026-08-27",
+    "intents": [
+      "schema",
+      "claims",
+      "evidence",
+      "faq",
+      "howTo",
+      "customer"
+    ],
+    "fieldTargets": [
+      "Product.description",
+      "WebPage.description",
+      "Product.additionalProperty",
+      "FAQPage.mainEntity",
+      "HowTo.step",
+      "PDP.content",
+      "diagnostics"
+    ],
+    "priority": 0.95,
+    "sections": [
+      {
+        "heading": "Description Composition Contract",
+        "intents": [
+          "claims",
+          "evidence",
+          "customer"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description"
+        ],
+        "priority": 0.98
+      },
+      {
+        "heading": "Description Separation Contract",
+        "intents": [
+          "schema",
+          "claims"
+        ],
+        "fieldTargets": [
+          "WebPage.description",
+          "Product.description"
+        ],
+        "priority": 0.97
+      },
+      {
+        "heading": "FAQ Contract",
+        "intents": [
+          "faq",
+          "customer",
+          "evidence"
+        ],
+        "fieldTargets": [
+          "FAQPage.mainEntity"
+        ],
+        "priority": 0.97
+      },
+      {
+        "heading": "HowTo Contract",
+        "intents": [
+          "howTo",
+          "schema"
+        ],
+        "fieldTargets": [
+          "HowTo.step"
+        ],
+        "priority": 0.97
+      },
+      {
+        "heading": "Schema Safety Contract",
+        "intents": [
+          "schema",
+          "claims",
+          "review"
+        ],
+        "fieldTargets": [
+          "Product.additionalProperty",
+          "Product.description"
+        ],
+        "priority": 0.97
+      },
+      {
+        "heading": "Public Wording Contract",
+        "intents": [
+          "claims",
+          "customer",
+          "schema",
+          "faq",
+          "howTo"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "Product.additionalProperty",
+          "FAQPage.mainEntity",
+          "HowTo.step",
+          "PDP.content"
+        ],
+        "priority": 0.98
+      },
+      {
+        "heading": "Evidence Routing Contract",
+        "intents": [
+          "evidence",
+          "claims",
+          "review"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "Product.additionalProperty",
+          "diagnostics"
+        ],
+        "priority": 0.97
+      }
+    ]
+  },
+  {
+    "document": "schema-org-product_v2.md",
+    "version": "v2",
+    "kind": "schema",
+    "sourceRole": "official-reference",
+    "checkedAt": "2026-07-30",
+    "intents": [
+      "schema",
+      "faq",
+      "howTo",
+      "evidence"
+    ],
+    "fieldTargets": [
+      "Product.description",
+      "WebPage.description",
+      "Product.additionalProperty",
+      "FAQPage.mainEntity",
+      "HowTo.step",
+      "BreadcrumbList"
+    ],
+    "priority": 0.92,
+    "sections": [
+      {
+        "heading": "Purpose",
+        "intents": [
+          "general"
+        ],
+        "fieldTargets": [
+          "diagnostics"
+        ],
+        "priority": 0.6
+      },
+      {
+        "heading": "Official Source Scope",
+        "intents": [
+          "general"
+        ],
+        "fieldTargets": [
+          "diagnostics"
+        ],
+        "priority": 0.6
+      },
+      {
+        "heading": "Graph Composition",
+        "intents": [
+          "schema"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "BreadcrumbList"
+        ],
+        "priority": 0.94
+      },
+      {
+        "heading": "WebPage and Product Descriptions",
+        "intents": [
+          "schema",
+          "evidence"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description"
+        ],
+        "priority": 0.94
+      },
+      {
+        "heading": "Product Properties",
+        "intents": [
+          "schema",
+          "evidence",
+          "claims"
+        ],
+        "fieldTargets": [
+          "Product.additionalProperty",
+          "Product.description"
+        ],
+        "priority": 0.94
+      },
+      {
+        "heading": "FAQPage, HowTo, and BreadcrumbList",
+        "intents": [
+          "faq",
+          "howTo",
+          "schema"
+        ],
+        "fieldTargets": [
+          "FAQPage.mainEntity",
+          "HowTo.step",
+          "BreadcrumbList"
+        ],
+        "priority": 0.96
+      },
+      {
+        "heading": "Public Safety",
+        "intents": [
+          "claims",
+          "schema"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "diagnostics"
+        ],
+        "priority": 0.9
+      }
+    ]
+  },
+  {
+    "document": "eeat_v1.md",
+    "version": "v1",
+    "kind": "eeat",
+    "sourceRole": "policy",
+    "checkedAt": "2026-07-11",
+    "intents": [
+      "evidence",
+      "claims",
+      "review",
+      "faq",
+      "howTo"
+    ],
+    "fieldTargets": [
+      "Product.description",
+      "WebPage.description",
+      "Product.additionalProperty",
+      "FAQPage.mainEntity",
+      "HowTo.step",
+      "diagnostics"
+    ],
+    "priority": 0.86,
+    "sections": [
+      {
+        "heading": "Evidence Hierarchy",
+        "intents": [
+          "evidence",
+          "claims"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "Product.additionalProperty",
+          "diagnostics"
+        ],
+        "priority": 0.94
+      },
+      {
+        "heading": "Experience",
+        "intents": [
+          "customer",
+          "review",
+          "faq",
+          "howTo"
+        ],
+        "fieldTargets": [
+          "FAQPage.mainEntity",
+          "HowTo.step",
+          "WebPage.description"
+        ],
+        "priority": 0.9
+      },
+      {
+        "heading": "Expertise",
+        "intents": [
+          "claims",
+          "evidence",
+          "schema"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "Product.additionalProperty"
+        ],
+        "priority": 0.93
+      },
+      {
+        "heading": "Authoritativeness",
+        "intents": [
+          "schema",
+          "claims",
+          "customer"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "BreadcrumbList"
+        ],
+        "priority": 0.92
+      },
+      {
+        "heading": "GEO Application",
+        "intents": [
+          "claims",
+          "evidence",
+          "schema",
+          "customer"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "FAQPage.mainEntity",
+          "HowTo.step"
+        ],
+        "priority": 0.92
+      },
+      {
+        "heading": "Operator Checklist",
+        "intents": [
+          "evidence",
+          "general"
+        ],
+        "fieldTargets": [
+          "diagnostics"
+        ],
+        "priority": 0.86
+      },
+      {
+        "heading": "Trust-First Claim Safety",
+        "intents": [
+          "claims",
+          "evidence",
+          "schema"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "Product.additionalProperty",
+          "diagnostics"
+        ],
+        "priority": 0.96
+      },
+      {
+        "heading": "Partial Update Query Planning",
+        "intents": [
+          "retrieval"
+        ],
+        "fieldTargets": [
+          "retrieval",
+          "diagnostics"
+        ],
+        "priority": 0.92
+      }
+    ]
+  },
+  {
+    "document": "cep_v1.md",
+    "version": "v1",
+    "kind": "cep",
+    "sourceRole": "policy",
+    "checkedAt": "2026-08-27",
+    "intents": [
+      "customer",
+      "faq",
+      "claims"
+    ],
+    "fieldTargets": [
+      "WebPage.description",
+      "Product.description",
+      "FAQPage.mainEntity",
+      "PDP.content"
+    ],
+    "priority": 0.82,
+    "sections": [
+      {
+        "heading": "CEP Dimensions",
+        "intents": [
+          "customer",
+          "claims",
+          "faq"
+        ],
+        "fieldTargets": [
+          "WebPage.description",
+          "Product.description",
+          "FAQPage.mainEntity",
+          "PDP.content"
+        ],
+        "priority": 0.9
+      },
+      {
+        "heading": "CEP Identification and Prioritization",
+        "intents": [
+          "customer",
+          "review",
+          "claims",
+          "retrieval"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "Product.additionalProperty",
+          "diagnostics"
+        ],
+        "priority": 0.94
+      },
+      {
+        "heading": "PDP Field Mapping",
+        "intents": [
+          "schema",
+          "faq",
+          "howTo",
+          "customer"
+        ],
+        "fieldTargets": [
+          "WebPage.description",
+          "Product.description",
+          "Product.additionalProperty",
+          "FAQPage.mainEntity",
+          "HowTo.step"
+        ],
+        "priority": 0.92
+      },
+      {
+        "heading": "Partial Update Query Planning",
+        "intents": [
+          "retrieval"
+        ],
+        "fieldTargets": [
+          "retrieval",
+          "diagnostics"
+        ],
+        "priority": 0.92
+      },
+      {
+        "heading": "Skincare and Beauty Examples",
+        "intents": [
+          "customer",
+          "faq",
+          "claims"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "FAQPage.mainEntity",
+          "PDP.content"
+        ],
+        "priority": 0.86
+      },
+      {
+        "heading": "Locale Rules",
+        "intents": [
+          "locale",
+          "customer"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "FAQPage.mainEntity"
+        ],
+        "priority": 0.86
+      },
+      {
+        "heading": "Anti-Patterns",
+        "intents": [
+          "claims",
+          "evidence"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "FAQPage.mainEntity",
+          "diagnostics"
+        ],
+        "priority": 0.9
+      }
+    ]
+  },
+  {
+    "document": "best-practice_v1.md",
+    "version": "v1",
+    "kind": "best-practice",
+    "sourceRole": "policy",
+    "checkedAt": "2026-07-11",
+    "intents": [
+      "faq",
+      "howTo",
+      "claims",
+      "review",
+      "customer",
+      "evidence"
+    ],
+    "fieldTargets": [
+      "WebPage.description",
+      "Product.description",
+      "FAQPage.mainEntity",
+      "HowTo.step",
+      "PDP.content",
+      "diagnostics"
+    ],
+    "priority": 0.9,
+    "sections": [
+      {
+        "heading": "RAG Corpus Orchestration",
+        "intents": [
+          "retrieval",
+          "general"
+        ],
+        "fieldTargets": [
+          "retrieval",
+          "diagnostics"
+        ],
+        "priority": 0.9
+      },
+      {
+        "heading": "Public Wording Guardrails",
+        "intents": [
+          "claims",
+          "evidence"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content"
+        ],
+        "priority": 0.92
+      },
+      {
+        "heading": "Core Principle",
+        "intents": [
+          "claims",
+          "evidence",
+          "customer"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content"
+        ],
+        "priority": 0.94
+      },
+      {
+        "heading": "BestPractice Tone Transfer",
+        "intents": [
+          "locale",
+          "customer",
+          "general"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content"
+        ],
+        "priority": 0.9
+      },
+      {
+        "heading": "Recommended JSON-LD Graph Shape",
+        "intents": [
+          "schema"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "BreadcrumbList"
+        ],
+        "priority": 0.92
+      },
+      {
+        "heading": "Schema.org + GEO Description Direction",
+        "intents": [
+          "schema",
+          "claims",
+          "customer"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description"
+        ],
+        "priority": 0.94
+      },
+      {
+        "heading": "Product Entity Best Practice",
+        "intents": [
+          "schema",
+          "claims",
+          "evidence"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "Product.additionalProperty"
+        ],
+        "priority": 0.93
+      },
+      {
+        "heading": "OCR Sentence Diagnostics and English RAG Use",
+        "intents": [
+          "evidence",
+          "claims",
+          "locale"
+        ],
+        "fieldTargets": [
+          "diagnostics",
+          "Product.description",
+          "PDP.content"
+        ],
+        "priority": 0.9
+      },
+      {
+        "heading": "Description Pattern",
+        "intents": [
+          "claims",
+          "customer",
+          "schema"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description"
+        ],
+        "priority": 0.92
+      },
+      {
+        "heading": "FAQ Best Practice",
+        "intents": [
+          "faq",
+          "customer",
+          "review",
+          "schema"
+        ],
+        "fieldTargets": [
+          "FAQPage.mainEntity"
+        ],
+        "priority": 0.94
+      },
+      {
+        "heading": "HowTo Best Practice",
+        "intents": [
+          "howTo",
+          "schema",
+          "evidence"
+        ],
+        "fieldTargets": [
+          "HowTo.step"
+        ],
+        "priority": 0.94
+      },
+      {
+        "heading": "Evidence Hierarchy",
+        "intents": [
+          "evidence",
+          "claims"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "Product.additionalProperty",
+          "diagnostics"
+        ],
+        "priority": 0.93
+      },
+      {
+        "heading": "Reference Pattern Template",
+        "intents": [
+          "schema",
+          "evidence",
+          "general"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "diagnostics"
+        ],
+        "priority": 0.9
+      },
+      {
+        "heading": "Field Evidence Routing Pattern",
+        "intents": [
+          "claims",
+          "evidence",
+          "schema"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "Product.additionalProperty",
+          "HowTo.step"
+        ],
+        "priority": 0.94
+      },
+      {
+        "heading": "Korean Reference Artifact Usage",
+        "intents": [
+          "locale",
+          "evidence",
+          "general"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.88
+      },
+      {
+        "heading": "Cross-Product Benchmarking Guidance",
+        "intents": [
+          "review",
+          "customer",
+          "claims"
+        ],
+        "fieldTargets": [
+          "PDP.content",
+          "Product.description",
+          "WebPage.description",
+          "diagnostics"
+        ],
+        "priority": 0.88
+      }
+    ]
+  },
+  {
+    "document": "brands/sample_botanics/best-practice_v2.md",
+    "version": "v2",
+    "kind": "best-practice",
+    "sourceRole": "policy",
+    "checkedAt": "2026-08-27",
+    "intents": [
+      "faq",
+      "howTo",
+      "claims",
+      "review",
+      "customer",
+      "evidence",
+      "schema"
+    ],
+    "fieldTargets": [
+      "WebPage.description",
+      "Product.description",
+      "FAQPage.mainEntity",
+      "HowTo.step",
+      "PDP.content",
+      "diagnostics",
+      "Product.additionalProperty"
+    ],
+    "priority": 0.91,
+    "sections": [
+      {
+        "heading": "Brand-Specific Best Practice Overlay",
+        "intents": [
+          "customer",
+          "claims",
+          "evidence",
+          "faq",
+          "howTo"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "FAQPage.mainEntity",
+          "HowTo.step",
+          "diagnostics"
+        ],
+        "priority": 0.96
+      },
+      {
+        "heading": "Demo Botanica Tone",
+        "intents": [
+          "customer",
+          "claims"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content"
+        ],
+        "priority": 0.93
+      },
+      {
+        "heading": "Demo Botanica Clinical Wording Boundaries",
+        "intents": [
+          "claims",
+          "evidence",
+          "schema"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description"
+        ],
+        "priority": 0.94
+      },
+      {
+        "heading": "Demo Botanica FAQ Question Patterns",
+        "intents": [
+          "faq",
+          "customer",
+          "locale"
+        ],
+        "fieldTargets": [
+          "FAQPage.mainEntity"
+        ],
+        "priority": 0.94
+      }
+    ]
+  },
+  {
+    "document": "brands/sample_derma/best-practice_v2.md",
+    "version": "v2",
+    "kind": "best-practice",
+    "sourceRole": "policy",
+    "checkedAt": "2026-08-27",
+    "intents": [
+      "faq",
+      "howTo",
+      "claims",
+      "review",
+      "customer",
+      "evidence",
+      "schema"
+    ],
+    "fieldTargets": [
+      "WebPage.description",
+      "Product.description",
+      "FAQPage.mainEntity",
+      "HowTo.step",
+      "PDP.content",
+      "diagnostics",
+      "Product.additionalProperty"
+    ],
+    "priority": 0.91,
+    "sections": [
+      {
+        "heading": "Brand-Specific Best Practice Overlay",
+        "intents": [
+          "customer",
+          "claims",
+          "evidence",
+          "faq",
+          "howTo"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "FAQPage.mainEntity",
+          "HowTo.step",
+          "diagnostics"
+        ],
+        "priority": 0.96
+      },
+      {
+        "heading": "Demo Derma Tone",
+        "intents": [
+          "customer",
+          "claims"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content"
+        ],
+        "priority": 0.93
+      },
+      {
+        "heading": "Demo Derma Description Adjustments",
+        "intents": [
+          "claims",
+          "evidence",
+          "schema"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description"
+        ],
+        "priority": 0.94
+      },
+      {
+        "heading": "Demo Derma FAQ Question Patterns",
+        "intents": [
+          "faq",
+          "customer",
+          "locale"
+        ],
+        "fieldTargets": [
+          "FAQPage.mainEntity"
+        ],
+        "priority": 0.94
+      }
+    ]
+  },
+  {
+    "document": "brands/sample_botanics/brand-identity_v1.md",
+    "version": "v1",
+    "kind": "custom",
+    "sourceRole": "custom",
+    "checkedAt": "2026-07-11",
+    "intents": [
+      "customer",
+      "schema",
+      "review",
+      "locale"
+    ],
+    "fieldTargets": [
+      "Product.description",
+      "WebPage.description",
+      "PDP.content",
+      "diagnostics"
+    ],
+    "priority": 0.8,
+    "sections": [
+      {
+        "heading": "Brand Evidence Scope and RAG Use",
+        "intents": [
+          "retrieval",
+          "schema",
+          "locale"
+        ],
+        "fieldTargets": [
+          "diagnostics",
+          "retrieval",
+          "Product.description",
+          "WebPage.description"
+        ],
+        "priority": 0.9
+      },
+      {
+        "heading": "Expected RAG Depth",
+        "intents": [
+          "retrieval",
+          "general"
+        ],
+        "fieldTargets": [
+          "diagnostics"
+        ],
+        "priority": 0.6,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Identity Pillars",
+        "intents": [
+          "customer",
+          "locale"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.92,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "GEO Projection Rules",
+        "intents": [
+          "schema",
+          "customer",
+          "review",
+          "locale"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.94
+      },
+      {
+        "heading": "CEP and Customer Intent",
+        "intents": [
+          "customer",
+          "review",
+          "locale"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.9
+      },
+      {
+        "heading": "Tone and Locale Guidance",
+        "intents": [
+          "locale",
+          "customer"
+        ],
+        "fieldTargets": [
+          "PDP.content",
+          "Product.description",
+          "WebPage.description",
+          "diagnostics"
+        ],
+        "priority": 0.86
+      },
+      {
+        "heading": "Claim Safety",
+        "intents": [
+          "schema",
+          "locale"
+        ],
+        "fieldTargets": [
+          "diagnostics",
+          "Product.description",
+          "WebPage.description"
+        ],
+        "priority": 0.94
+      },
+      {
+        "heading": "Official Research and Innovation Sources",
+        "intents": [
+          "customer",
+          "locale"
+        ],
+        "fieldTargets": [
+          "diagnostics"
+        ],
+        "priority": 0.6,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Official Product-Line Articles",
+        "intents": [
+          "customer",
+          "locale"
+        ],
+        "fieldTargets": [
+          "diagnostics"
+        ],
+        "priority": 0.6,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Research Papers and Official Articles",
+        "intents": [
+          "schema",
+          "customer",
+          "locale"
+        ],
+        "fieldTargets": [
+          "diagnostics",
+          "WebPage.description",
+          "PDP.content"
+        ],
+        "priority": 0.96
+      },
+      {
+        "heading": "Source Notes",
+        "intents": [
+          "general"
+        ],
+        "fieldTargets": [
+          "diagnostics"
+        ],
+        "priority": 0.6,
+        "ruleExtraction": "narrative"
+      }
+    ]
+  },
+  {
+    "document": "brands/sample_derma/brand-identity_v2.md",
+    "version": "v2",
+    "kind": "custom",
+    "sourceRole": "custom",
+    "checkedAt": "2026-09-07",
+    "intents": [
+      "customer",
+      "schema",
+      "review",
+      "locale"
+    ],
+    "fieldTargets": [
+      "Product.description",
+      "WebPage.description",
+      "PDP.content",
+      "diagnostics"
+    ],
+    "priority": 0.8,
+    "sections": [
+      {
+        "heading": "Brand Evidence Scope and RAG Use",
+        "intents": [
+          "retrieval",
+          "schema",
+          "locale"
+        ],
+        "fieldTargets": [
+          "diagnostics",
+          "retrieval",
+          "Product.description",
+          "WebPage.description"
+        ],
+        "priority": 0.7
+      },
+      {
+        "heading": "Approval Grades",
+        "intents": [
+          "retrieval",
+          "schema",
+          "review"
+        ],
+        "fieldTargets": [
+          "diagnostics",
+          "retrieval",
+          "Product.description",
+          "WebPage.description"
+        ],
+        "priority": 0.93
+      },
+      {
+        "heading": "Expected RAG Depth",
+        "intents": [
+          "retrieval",
+          "general"
+        ],
+        "fieldTargets": [
+          "diagnostics"
+        ],
+        "priority": 0.6,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Official Site-Derived Brand Identity Analysis",
+        "intents": [
+          "customer",
+          "schema",
+          "locale"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.97
+      },
+      {
+        "heading": "Core Brand Identity Statement",
+        "intents": [
+          "customer",
+          "locale"
+        ],
+        "fieldTargets": [
+          "diagnostics",
+          "PDP.content"
+        ],
+        "priority": 0.6,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Brand Narrative Architecture",
+        "intents": [
+          "customer",
+          "locale"
+        ],
+        "fieldTargets": [
+          "diagnostics",
+          "PDP.content"
+        ],
+        "priority": 0.6,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Official Korean Site Signals",
+        "intents": [
+          "customer",
+          "locale"
+        ],
+        "fieldTargets": [
+          "diagnostics"
+        ],
+        "priority": 0.6,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Claim-Safe Interpretation of Official Signals",
+        "intents": [
+          "schema",
+          "review",
+          "locale"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.95
+      },
+      {
+        "heading": "GEO Use Implications",
+        "intents": [
+          "schema",
+          "customer",
+          "locale"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.9,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Approved Korean Answer-Ready Statements",
+        "intents": [
+          "customer",
+          "schema",
+          "locale"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.96
+      },
+      {
+        "heading": "Market Source Prioritization and GEO Citation Strategy",
+        "intents": [
+          "locale",
+          "schema",
+          "customer"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.98
+      },
+      {
+        "heading": "Source Priority by Locale and Market",
+        "intents": [
+          "locale",
+          "schema"
+        ],
+        "fieldTargets": [
+          "diagnostics",
+          "WebPage.description",
+          "PDP.content"
+        ],
+        "priority": 0.9
+      },
+      {
+        "heading": "Approved and Excluded Source Sets",
+        "intents": [
+          "locale",
+          "schema",
+          "review"
+        ],
+        "fieldTargets": [
+          "diagnostics",
+          "WebPage.description",
+          "PDP.content"
+        ],
+        "priority": 0.95
+      },
+      {
+        "heading": "Public GEO Content Requirements",
+        "intents": [
+          "locale",
+          "customer",
+          "schema"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.88,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Site and URL Structure Recommendations",
+        "intents": [
+          "locale",
+          "schema"
+        ],
+        "fieldTargets": [
+          "diagnostics"
+        ],
+        "priority": 0.6,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Structured Data and Source Linking",
+        "intents": [
+          "schema",
+          "locale"
+        ],
+        "fieldTargets": [
+          "diagnostics",
+          "WebPage.description",
+          "PDP.content"
+        ],
+        "priority": 0.88,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Identity Pillars",
+        "intents": [
+          "customer",
+          "locale"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.92,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Line Identity Profiles",
+        "intents": [
+          "customer",
+          "schema",
+          "locale"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.93,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Hydration Care Example",
+        "intents": [
+          "customer",
+          "schema",
+          "locale"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.9,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Clarifying Care Example",
+        "intents": [
+          "customer",
+          "schema",
+          "locale"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.9,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Daily UV Care Example",
+        "intents": [
+          "customer",
+          "schema",
+          "locale"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.9,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Renewal Care Example",
+        "intents": [
+          "customer",
+          "schema",
+          "locale"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.9,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Comfort Care Example",
+        "intents": [
+          "customer",
+          "schema",
+          "locale"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.9,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Professional-Use Boundary Example",
+        "intents": [
+          "customer",
+          "schema",
+          "locale"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.9,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "GEO Projection Rules",
+        "intents": [
+          "schema",
+          "customer",
+          "review",
+          "locale"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.94
+      },
+      {
+        "heading": "Product.additionalProperty",
+        "intents": [
+          "schema",
+          "customer"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.9,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "CEP and Customer Intent",
+        "intents": [
+          "customer",
+          "review",
+          "locale"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.9,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Tone and Locale Guidance",
+        "intents": [
+          "locale",
+          "customer"
+        ],
+        "fieldTargets": [
+          "PDP.content",
+          "Product.description",
+          "WebPage.description",
+          "diagnostics"
+        ],
+        "priority": 0.86,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Claim Safety",
+        "intents": [
+          "schema",
+          "locale",
+          "review"
+        ],
+        "fieldTargets": [
+          "diagnostics",
+          "Product.description",
+          "WebPage.description"
+        ],
+        "priority": 0.94
+      },
+      {
+        "heading": "Prohibited and Substitute Expressions",
+        "intents": [
+          "schema",
+          "locale",
+          "review",
+          "customer"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.99
+      },
+      {
+        "heading": "Market-Scoped Claim Boundaries",
+        "intents": [
+          "locale",
+          "schema",
+          "review"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.97
+      },
+      {
+        "heading": "Withheld and Superseded Wording",
+        "intents": [
+          "schema",
+          "locale",
+          "review"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.99
+      },
+      {
+        "heading": "Open Brand Questions",
+        "intents": [
+          "retrieval",
+          "review",
+          "general"
+        ],
+        "fieldTargets": [
+          "diagnostics"
+        ],
+        "priority": 0.6,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Substantiated Claim Register",
+        "intents": [
+          "review",
+          "schema",
+          "customer"
+        ],
+        "fieldTargets": [
+          "diagnostics",
+          "Product.description",
+          "WebPage.description",
+          "PDP.content"
+        ],
+        "priority": 0.93,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Peer-Reviewed Research",
+        "intents": [
+          "customer",
+          "locale"
+        ],
+        "fieldTargets": [
+          "diagnostics"
+        ],
+        "priority": 0.6,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Official Research and Brand Sources",
+        "intents": [
+          "customer",
+          "locale"
+        ],
+        "fieldTargets": [
+          "diagnostics"
+        ],
+        "priority": 0.6,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Research Papers and Official Articles",
+        "intents": [
+          "schema",
+          "customer",
+          "locale"
+        ],
+        "fieldTargets": [
+          "diagnostics",
+          "WebPage.description",
+          "PDP.content"
+        ],
+        "priority": 0.96
+      },
+      {
+        "heading": "Research-Paper Handling Notes",
+        "intents": [
+          "schema",
+          "review",
+          "locale"
+        ],
+        "fieldTargets": [
+          "diagnostics",
+          "Product.description",
+          "WebPage.description"
+        ],
+        "priority": 0.94
+      },
+      {
+        "heading": "E-E-A-T Application",
+        "intents": [
+          "review",
+          "schema",
+          "customer"
+        ],
+        "fieldTargets": [
+          "diagnostics",
+          "Product.description",
+          "WebPage.description"
+        ],
+        "priority": 0.9
+      },
+      {
+        "heading": "Source Notes",
+        "intents": [
+          "general"
+        ],
+        "fieldTargets": [
+          "diagnostics"
+        ],
+        "priority": 0.6,
+        "ruleExtraction": "narrative"
+      }
+    ]
+  },
+  {
+    "document": "geo-research_v3.md",
+    "version": "v3",
+    "kind": "geo-research",
+    "sourceRole": "research",
+    "checkedAt": "2026-07-30",
+    "intents": [
+      "claims",
+      "customer",
+      "evidence",
+      "retrieval",
+      "schema",
+      "faq",
+      "howTo",
+      "review"
+    ],
+    "fieldTargets": [
+      "Product.description",
+      "WebPage.description",
+      "PDP.content",
+      "FAQPage.mainEntity",
+      "HowTo.step",
+      "Product.additionalProperty",
+      "diagnostics",
+      "retrieval"
+    ],
+    "priority": 0.82,
+    "sections": [
+      {
+        "heading": "Core Research Insights",
+        "intents": [
+          "claims",
+          "evidence",
+          "customer"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.9
+      },
+      {
+        "heading": "Research-Backed GEO Principles",
+        "intents": [
+          "claims",
+          "evidence",
+          "review",
+          "faq",
+          "howTo",
+          "schema"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "FAQPage.mainEntity",
+          "HowTo.step",
+          "Product.additionalProperty",
+          "PDP.content"
+        ],
+        "priority": 0.94
+      },
+      {
+        "heading": "Retrieval and Query Planning",
+        "intents": [
+          "retrieval"
+        ],
+        "fieldTargets": [
+          "retrieval",
+          "diagnostics"
+        ],
+        "priority": 0.96
+      },
+      {
+        "heading": "PDP Field Guidance",
+        "intents": [
+          "schema",
+          "claims",
+          "faq",
+          "howTo",
+          "customer"
+        ],
+        "fieldTargets": [
+          "WebPage.description",
+          "Product.description",
+          "FAQPage.mainEntity",
+          "HowTo.step",
+          "Product.additionalProperty"
+        ],
+        "priority": 0.94
+      },
+      {
+        "heading": "Evaluation Checklist",
+        "intents": [
+          "evidence",
+          "schema",
+          "claims"
+        ],
+        "fieldTargets": [
+          "diagnostics",
+          "Product.description",
+          "WebPage.description",
+          "PDP.content"
+        ],
+        "priority": 0.88
+      }
+    ]
+  },
+  {
+    "document": "evidence/geo-research-cards_v1.md",
+    "version": "v1",
+    "kind": "evidence-cards",
+    "sourceRole": "research",
+    "checkedAt": "2026-07-30",
+    "intents": [
+      "claims",
+      "evidence",
+      "retrieval",
+      "schema",
+      "customer",
+      "faq"
+    ],
+    "fieldTargets": [
+      "Product.description",
+      "WebPage.description",
+      "PDP.content",
+      "FAQPage.mainEntity",
+      "Product.additionalProperty",
+      "diagnostics",
+      "retrieval"
+    ],
+    "priority": 0.84,
+    "sections": [
+      {
+        "heading": "Card Format and Usage",
+        "intents": [
+          "retrieval",
+          "general"
+        ],
+        "fieldTargets": [
+          "retrieval",
+          "diagnostics"
+        ],
+        "priority": 0.8,
+        "ruleExtraction": "narrative"
+      },
+      {
+        "heading": "Peer-Reviewed Evidence Cards",
+        "intents": [
+          "claims",
+          "evidence",
+          "schema",
+          "retrieval"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "Product.additionalProperty",
+          "FAQPage.mainEntity",
+          "diagnostics"
+        ],
+        "priority": 0.92
+      },
+      {
+        "heading": "Preprint and Emerging Evidence Cards",
+        "intents": [
+          "claims",
+          "evidence",
+          "retrieval",
+          "customer"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "diagnostics"
+        ],
+        "priority": 0.84,
+        "ruleExtraction": "narrative"
+      }
+    ]
+  },
+  {
+    "document": "official-ai-search-platform-docs_v1.md",
+    "version": "v1",
+    "kind": "official-docs",
+    "sourceRole": "official-reference",
+    "checkedAt": "2026-07-11",
+    "intents": [
+      "retrieval",
+      "schema",
+      "evidence"
+    ],
+    "fieldTargets": [
+      "retrieval",
+      "Product.description",
+      "Product.additionalProperty",
+      "diagnostics"
+    ],
+    "priority": 0.84,
+    "sections": [
+      {
+        "heading": "Purpose",
+        "intents": [
+          "general"
+        ],
+        "fieldTargets": [
+          "diagnostics"
+        ],
+        "priority": 0.6
+      },
+      {
+        "heading": "OpenAI Retrieval and Embeddings",
+        "intents": [
+          "retrieval"
+        ],
+        "fieldTargets": [
+          "retrieval",
+          "diagnostics"
+        ],
+        "priority": 0.94
+      },
+      {
+        "heading": "Google Search Central Structured Data",
+        "intents": [
+          "schema",
+          "evidence"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "Product.additionalProperty",
+          "diagnostics"
+        ],
+        "priority": 0.92
+      },
+      {
+        "heading": "OpenAI Product Feeds and ChatGPT Shopping",
+        "intents": [
+          "schema",
+          "evidence"
+        ],
+        "fieldTargets": [
+          "Product.additionalProperty",
+          "Product.description",
+          "diagnostics"
+        ],
+        "priority": 0.94
+      },
+      {
+        "heading": "Bing, Copilot, and IndexNow",
+        "intents": [
+          "schema",
+          "retrieval"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "Product.additionalProperty",
+          "diagnostics"
+        ],
+        "priority": 0.88
+      },
+      {
+        "heading": "AI Crawler and Bot Access Requirements",
+        "intents": [
+          "retrieval",
+          "evidence"
+        ],
+        "fieldTargets": [
+          "diagnostics"
+        ],
+        "priority": 0.9
+      },
+      {
+        "heading": "llms.txt Status",
+        "intents": [
+          "retrieval",
+          "general"
+        ],
+        "fieldTargets": [
+          "diagnostics"
+        ],
+        "priority": 0.82
+      }
+    ]
+  },
+  {
+    "document": "locale-expression-guidelines_v1.md",
+    "version": "v1",
+    "kind": "locale",
+    "sourceRole": "policy",
+    "checkedAt": "2026-06-24",
+    "intents": [
+      "locale",
+      "claims"
+    ],
+    "fieldTargets": [
+      "Product.description",
+      "WebPage.description",
+      "PDP.content",
+      "FAQPage.mainEntity",
+      "HowTo.step"
+    ],
+    "priority": 0.78,
+    "sections": []
+  },
+  {
+    "document": "brands/sample_botanics/locale-expression-guidelines_v2.md",
+    "version": "v2",
+    "kind": "locale",
+    "sourceRole": "policy",
+    "checkedAt": "2026-08-27",
+    "intents": [
+      "locale",
+      "claims",
+      "customer"
+    ],
+    "fieldTargets": [
+      "Product.description",
+      "WebPage.description",
+      "PDP.content",
+      "FAQPage.mainEntity",
+      "HowTo.step"
+    ],
+    "priority": 0.8,
+    "sections": [
+      {
+        "heading": "Brand-Specific Locale Overlay",
+        "intents": [
+          "locale",
+          "claims",
+          "customer"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "FAQPage.mainEntity"
+        ],
+        "priority": 0.94
+      }
+    ]
+  },
+  {
+    "document": "brands/sample_derma/locale-expression-guidelines_v2.md",
+    "version": "v2",
+    "kind": "locale",
+    "sourceRole": "policy",
+    "checkedAt": "2026-08-27",
+    "intents": [
+      "locale",
+      "claims",
+      "customer"
+    ],
+    "fieldTargets": [
+      "Product.description",
+      "WebPage.description",
+      "PDP.content",
+      "FAQPage.mainEntity",
+      "HowTo.step"
+    ],
+    "priority": 0.8,
+    "sections": [
+      {
+        "heading": "Brand-Specific Locale Overlay",
+        "intents": [
+          "locale",
+          "claims",
+          "customer"
+        ],
+        "fieldTargets": [
+          "Product.description",
+          "WebPage.description",
+          "PDP.content",
+          "FAQPage.mainEntity"
+        ],
+        "priority": 0.94
+      }
+    ]
+  },
+  {
+    "document": "locale-terminology-map_v1.json",
+    "version": "v1",
+    "kind": "terminology",
+    "sourceRole": "locale-map",
+    "checkedAt": "2026-06-24",
+    "intents": [
+      "locale"
+    ],
+    "fieldTargets": [
+      "Product.description",
+      "WebPage.description",
+      "PDP.content"
+    ],
+    "priority": 0.76,
+    "sections": []
+  },
+  {
+    "document": "brands/sample_botanics/locale-terminology-map_v2.json",
+    "version": "v2",
+    "kind": "terminology",
+    "sourceRole": "locale-map",
+    "checkedAt": "2026-08-27",
+    "intents": [
+      "locale",
+      "claims",
+      "customer"
+    ],
+    "fieldTargets": [
+      "Product.description",
+      "WebPage.description",
+      "PDP.content",
+      "FAQPage.mainEntity"
+    ],
+    "priority": 0.78,
+    "sections": []
+  },
+  {
+    "document": "brands/sample_derma/locale-terminology-map_v2.json",
+    "version": "v2",
+    "kind": "terminology",
+    "sourceRole": "locale-map",
+    "checkedAt": "2026-08-27",
+    "intents": [
+      "locale",
+      "claims",
+      "customer"
+    ],
+    "fieldTargets": [
+      "Product.description",
+      "WebPage.description",
+      "PDP.content",
+      "FAQPage.mainEntity"
+    ],
+    "priority": 0.78,
+    "sections": []
+  }
+]

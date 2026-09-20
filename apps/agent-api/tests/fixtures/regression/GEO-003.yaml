@@ -1,0 +1,96 @@
+# GEO-003 — internally authored synthetic Korean toner fixture (ko-KR)
+#
+# This record exercises Korean FAQ, OCR, and qualified-metric paths without
+# retaining a scraped PDP, merchant identifier, or third-party asset.
+
+id: GEO-003
+name: "별모래 테스트 랩 워터폴드 캡슐 토너 (ko-KR)"
+tags: ["byeolmorae-test-lab", "ko-KR", "toner", "synthetic"]
+
+request: {
+  "locale": "ko-KR",
+  "product": {
+    "canonicalUrl": "https://catalog.example.test/products/waterfold-capsule-toner?variant=EX-WFT-003",
+    "offerUrl": "https://catalog.example.test/products/waterfold-capsule-toner?variant=EX-WFT-003",
+    "geoProduct": {
+      "id": "EX-WFT-003",
+      "name": "워터폴드 캡슐 토너",
+      "brand": "별모래 테스트 랩",
+      "category": "토너",
+      "sku": "EX-WFT-003",
+      "gtin": "0000000000031",
+      "price": {"raw": "₩21,000", "amount": 21000, "currency": "KRW"},
+      "description": "워터폴드 캡슐 토너는 회귀 테스트를 위해 작성한 가상 보습 토너입니다. 수분결 리포좀, 판테놀, 베타글루칸을 담은 것으로 설정해 세안 뒤 첫 단계에서 피부결을 편안하게 정돈하는 예시를 제공합니다.",
+      "images": [
+        "https://assets.example.test/fixtures/waterfold/packshot-280ml.png",
+        "https://assets.example.test/fixtures/waterfold/texture-swatch.png",
+        "https://assets.example.test/fixtures/waterfold/ingredient-card.png",
+        "https://assets.example.test/fixtures/waterfold/test-panel-card.png"
+      ],
+      "options": ["280 mL"],
+      "benefits": ["장벽 보습", "피부결 정돈", "세안 후 수분 공급"],
+      "effects": ["세안 뒤 당김이 덜 느껴지는 사용감", "가볍게 눌러 흡수되는 보습감"],
+      "ingredients": ["수분결 리포좀", "판테놀", "베타글루칸", "소듐하이알루로네이트", "글루코노락톤"],
+      "usage": ["세안 직후 손바닥에 덜어 얼굴 안쪽에서 바깥쪽으로 가볍게 눌러 흡수시킵니다. 이 문장은 합성 사용 예시입니다."],
+      "metrics": ["합성 테스트 패널: 14일 사용 후 20명 중 16명이 세안 뒤 당김이 덜 느껴졌다고 답했습니다."],
+      "faq": [
+        {"question": "토너 안의 리포좀 입자는 어떻게 사용하나요?", "answer": "이 합성 제품 설명에서는 입자가 보습 성분을 고르게 섞어 주는 시각적 예시로만 쓰입니다. 사용 전 가볍게 흔든 뒤 손바닥에 덜어 사용하세요."},
+        {"question": "민감하게 느껴지는 날에도 사용할 수 있나요?", "answer": "개인 피부 상태는 다르므로 작은 부위에 먼저 사용해 보고, 불편함이 있으면 사용을 멈추는 가상 안내입니다."},
+        {"question": "다른 보습 제품과 함께 쓰는 순서는 어떻게 되나요?", "answer": "세안 뒤 토너를 먼저 바르고, 필요에 따라 에센스와 크림을 덧바르는 합성 루틴 예시입니다."},
+        {"question": "임신 중이거나 어린이와 함께 쓸 때 무엇을 확인해야 하나요?", "answer": "이 레코드는 의료 조언이 아닙니다. 성분과 개인 상황을 확인하고 필요하면 전문가와 상담하라는 테스트용 안내입니다."}
+      ],
+      "reviews": {"items": [], "keywords": []},
+      "sourceExtraction": {
+        "html": {
+          "description": "워터폴드 캡슐 토너는 회귀 테스트를 위해 작성한 가상 보습 토너입니다. 수분결 리포좀, 판테놀, 베타글루칸을 담은 것으로 설정해 세안 뒤 첫 단계에서 피부결을 편안하게 정돈하는 예시를 제공합니다.",
+          "sections": [
+            {"title": "주요 성분", "category": "ingredient", "text": "수분결 리포좀, 판테놀, 베타글루칸, 소듐하이알루로네이트, 글루코노락톤.", "bullets": ["수분결 리포좀", "판테놀", "베타글루칸", "소듐하이알루로네이트", "글루코노락톤"]},
+            {"title": "도움을 주는 점", "category": "benefit", "text": "세안 후 수분 공급과 피부결 정돈을 위한 합성 보습 토너 예시입니다.", "bullets": ["장벽 보습", "피부결 정돈", "세안 후 수분 공급"]},
+            {"title": "사용 방법", "category": "usage", "text": "세안 직후 손바닥에 덜어 가볍게 눌러 흡수시킵니다.", "bullets": ["세안 직후", "손바닥 사용", "가볍게 눌러 흡수"]}
+          ],
+          "faq": [
+            {"question": "토너 안의 리포좀 입자는 어떻게 사용하나요?", "answer": "이 합성 제품 설명에서는 입자가 보습 성분을 고르게 섞어 주는 시각적 예시로만 쓰입니다. 사용 전 가볍게 흔든 뒤 손바닥에 덜어 사용하세요."},
+            {"question": "민감하게 느껴지는 날에도 사용할 수 있나요?", "answer": "개인 피부 상태는 다르므로 작은 부위에 먼저 사용해 보고, 불편함이 있으면 사용을 멈추는 가상 안내입니다."},
+            {"question": "다른 보습 제품과 함께 쓰는 순서는 어떻게 되나요?", "answer": "세안 뒤 토너를 먼저 바르고, 필요에 따라 에센스와 크림을 덧바르는 합성 루틴 예시입니다."},
+            {"question": "임신 중이거나 어린이와 함께 쓸 때 무엇을 확인해야 하나요?", "answer": "이 레코드는 의료 조언이 아닙니다. 성분과 개인 상황을 확인하고 필요하면 전문가와 상담하라는 테스트용 안내입니다."}
+          ]
+        },
+        "ocr": {
+          "imageTexts": [
+            {"imageUrl": "https://assets.example.test/fixtures/waterfold/ingredient-card.png", "text": "워터폴드 캡슐 토너. 수분결 리포좀과 판테놀을 담았다고 설정한 합성 보습 토너. 280 mL."},
+            {"imageUrl": "https://assets.example.test/fixtures/waterfold/test-panel-card.png", "text": "합성 테스트 패널. 14일 사용 후 20명 중 16명이 세안 뒤 당김이 덜 느껴졌다고 답했습니다."}
+          ],
+          "textBlocks": ["워터폴드 캡슐 토너. 수분결 리포좀과 판테놀을 담았다고 설정한 합성 보습 토너. 280 mL.", "수분결 리포좀은 이 픽스처에서 가벼운 보습 사용감을 설명하기 위한 가상 성분명입니다.", "합성 테스트 패널. 14일 사용 후 20명 중 16명이 세안 뒤 당김이 덜 느껴졌다고 답했습니다."],
+          "sentenceInsights": [
+            {"imageUrl": "https://assets.example.test/fixtures/waterfold/ingredient-card.png", "text": "수분결 리포좀은 이 픽스처에서 가벼운 보습 사용감을 설명하기 위한 가상 성분명입니다.", "category": "ingredient", "keywords": ["수분결 리포좀", "보습", "합성"]},
+            {"imageUrl": "https://assets.example.test/fixtures/waterfold/test-panel-card.png", "text": "합성 테스트 패널: 14일 사용 후 20명 중 16명이 세안 뒤 당김이 덜 느껴졌다고 답했습니다.", "category": "metric", "keywords": ["14일", "20명", "16명", "합성 테스트"]}
+          ],
+          "semanticFacts": {
+            "ingredients": ["수분결 리포좀", "판테놀", "베타글루칸", "소듐하이알루로네이트", "글루코노락톤"],
+            "benefits": ["장벽 보습", "피부결 정돈", "세안 후 수분 공급"],
+            "effects": ["세안 뒤 당김이 덜 느껴지는 사용감", "가볍게 눌러 흡수되는 보습감"],
+            "skinTypes": ["건성", "복합성", "민감하게 느껴지는 피부"],
+            "usageSteps": ["세안 직후 손바닥에 덜어 얼굴 안쪽에서 바깥쪽으로 가볍게 눌러 흡수시킵니다. 이 문장은 합성 사용 예시입니다."],
+            "metricClaims": [{"label": "세안 뒤 당김이 덜 느껴짐", "subject": "세안 뒤 당김", "value": "80", "unit": "%", "metric": "자가 응답", "direction": "improve", "timing": "14일 사용 후", "sample": "20명", "method": "합성 테스트 패널", "sentence": "합성 테스트 패널: 14일 사용 후 20명 중 16명이 세안 뒤 당김이 덜 느껴졌다고 답했습니다.", "sourceText": "합성 테스트 패널: 14일 사용 후 20명 중 16명이 세안 뒤 당김이 덜 느껴졌다고 답했습니다."}],
+            "evidenceSentences": ["합성 테스트 패널: 14일 사용 후 20명 중 16명이 세안 뒤 당김이 덜 느껴졌다고 답했습니다."],
+            "ingredientBenefitLinks": [{"ingredient": "수분결 리포좀", "benefit": "장벽 보습", "effect": "가볍게 눌러 흡수되는 보습감", "sentence": "수분결 리포좀은 이 픽스처에서 가벼운 보습 사용감을 설명하기 위한 가상 성분명입니다.", "sourceText": "수분결 리포좀은 이 픽스처에서 가벼운 보습 사용감을 설명하기 위한 가상 성분명입니다."}]
+          }
+        }
+      },
+      "aiAnalysis": {"keywords": {"product": ["워터폴드 캡슐 토너", "별모래 테스트 랩", "토너"], "price": ["₩21,000"], "benefit": ["장벽 보습", "피부결 정돈", "세안 후 수분 공급"], "effect": ["세안 뒤 당김이 덜 느껴지는 사용감"], "ingredient": ["수분결 리포좀", "판테놀", "베타글루칸"], "usage": ["세안 직후 사용"], "faq": ["리포좀 입자", "사용 순서", "개인 피부 상태"], "review": [], "metric": ["20명 중 16명", "14일"], "trend": [], "unknown": []}, "categorizedSections": [{"title": "주요 성분", "category": "ingredient", "text": "수분결 리포좀, 판테놀, 베타글루칸, 소듐하이알루로네이트, 글루코노락톤.", "bullets": ["수분결 리포좀", "판테놀", "베타글루칸", "소듐하이알루로네이트", "글루코노락톤"]}], "summary": "한국어 FAQ와 OCR·지표 관계를 포함하는 합성 토너 픽스처입니다."},
+      "semanticFacts": {"ingredients": ["수분결 리포좀", "판테놀", "베타글루칸", "소듐하이알루로네이트", "글루코노락톤"], "benefits": ["장벽 보습", "피부결 정돈", "세안 후 수분 공급"], "effects": ["세안 뒤 당김이 덜 느껴지는 사용감", "가볍게 눌러 흡수되는 보습감"], "skinTypes": ["건성", "복합성", "민감하게 느껴지는 피부"], "usageSteps": ["세안 직후 손바닥에 덜어 얼굴 안쪽에서 바깥쪽으로 가볍게 눌러 흡수시킵니다. 이 문장은 합성 사용 예시입니다."], "metricClaims": [{"label": "세안 뒤 당김이 덜 느껴짐", "subject": "세안 뒤 당김", "value": "80", "unit": "%", "metric": "자가 응답", "direction": "improve", "timing": "14일 사용 후", "sample": "20명", "method": "합성 테스트 패널", "sentence": "합성 테스트 패널: 14일 사용 후 20명 중 16명이 세안 뒤 당김이 덜 느껴졌다고 답했습니다.", "sourceText": "합성 테스트 패널: 14일 사용 후 20명 중 16명이 세안 뒤 당김이 덜 느껴졌다고 답했습니다."}], "evidenceSentences": ["합성 테스트 패널: 14일 사용 후 20명 중 16명이 세안 뒤 당김이 덜 느껴졌다고 답했습니다."], "ingredientBenefitLinks": [{"ingredient": "수분결 리포좀", "benefit": "장벽 보습", "effect": "가볍게 눌러 흡수되는 보습감", "sentence": "수분결 리포좀은 이 픽스처에서 가벼운 보습 사용감을 설명하기 위한 가상 성분명입니다.", "sourceText": "수분결 리포좀은 이 픽스처에서 가벼운 보습 사용감을 설명하기 위한 가상 성분명입니다."}]},
+      "categorizedProductInfo": {"benefits": ["장벽 보습", "피부결 정돈", "세안 후 수분 공급"], "effects": ["세안 뒤 당김이 덜 느껴지는 사용감", "가볍게 눌러 흡수되는 보습감"], "ingredients": ["수분결 리포좀", "판테놀", "베타글루칸", "소듐하이알루로네이트", "글루코노락톤"], "usage": ["세안 직후 손바닥에 덜어 얼굴 안쪽에서 바깥쪽으로 가볍게 눌러 흡수시킵니다. 이 문장은 합성 사용 예시입니다."], "metrics": ["합성 테스트 패널: 14일 사용 후 20명 중 16명이 세안 뒤 당김이 덜 느껴졌다고 답했습니다."], "faq": [{"question": "토너 안의 리포좀 입자는 어떻게 사용하나요?", "answer": "이 합성 제품 설명에서는 입자가 보습 성분을 고르게 섞어 주는 시각적 예시로만 쓰입니다. 사용 전 가볍게 흔든 뒤 손바닥에 덜어 사용하세요."}]},
+      "customerReviewAnalysis": {"items": [], "keywords": [], "reviewSignals": []},
+      "contentAnalysis": {"sections": [{"title": "사용 방법", "category": "usage", "text": "세안 직후 손바닥에 덜어 가볍게 눌러 흡수시킵니다.", "bullets": ["세안 직후", "손바닥 사용", "가볍게 눌러 흡수"]}], "reviewSignals": []},
+      "ocr": {"textBlocks": ["워터폴드 캡슐 토너. 수분결 리포좀과 판테놀을 담았다고 설정한 합성 보습 토너. 280 mL.", "합성 테스트 패널. 14일 사용 후 20명 중 16명이 세안 뒤 당김이 덜 느껴졌다고 답했습니다."], "keywords": {"product": ["워터폴드 캡슐 토너"], "benefit": ["장벽 보습", "피부결 정돈"], "ingredient": ["수분결 리포좀", "판테놀"], "metric": ["20명 중 16명", "14일"]}, "sentenceInsights": [{"imageUrl": "https://assets.example.test/fixtures/waterfold/test-panel-card.png", "text": "합성 테스트 패널: 14일 사용 후 20명 중 16명이 세안 뒤 당김이 덜 느껴졌다고 답했습니다.", "category": "metric", "keywords": ["14일", "20명", "16명", "합성"]}]},
+      "rag": {"chunks": [{"id": "ex-wft-003-product", "kind": "product", "text": "워터폴드 캡슐 토너\n세안 후 수분 공급과 피부결 정돈을 위한 합성 보습 토너."}, {"id": "ex-wft-003-faq-1", "kind": "faq", "text": "Q. 토너 안의 리포좀 입자는 어떻게 사용하나요?\nA. 사용 전 가볍게 흔든 뒤 손바닥에 덜어 사용하는 합성 안내입니다."}, {"id": "ex-wft-003-ocr-1", "kind": "ocr", "text": "합성 테스트 패널: 14일 사용 후 20명 중 16명이 세안 뒤 당김이 덜 느껴졌다고 답했습니다."}]},
+      "availability": "InStock",
+      "variants": [{"id": "EX-WFT-003", "sku": "EX-WFT-003", "title": "280 mL", "price": "₩21,000"}],
+      "tags": ["#합성픽스처", "#보습토너", "#예시데이터"]
+    }
+  }
+}
+
+expect:
+  resultStatus: SUCCEEDED
+  schemaTypes: ["Product", "WebPage"]

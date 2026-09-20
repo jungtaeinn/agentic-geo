@@ -1,0 +1,61 @@
+{
+  "version": "v1",
+  "cases": [
+    {
+      "id": "demo-us-evidence-serum",
+      "locale": "en-US",
+      "market": "US",
+      "sourceUrl": "https://catalog.example/products/evidence-serum",
+      "html": "<header><div class='modal'>dismiss</div></header><section class='modal'><div class='drawer'>dismiss</div></section><main data-product-root='true'><h1>Evidence Serum</h1></main>",
+      "sourceFacts": {
+        "orderedProcedure": [
+          {"ordinal": 1, "text": "Dispense two pumps over face and neck."},
+          {"ordinal": 2, "text": "Press gently until absorbed."}
+        ],
+        "formulaIngredient": {
+          "ingredient": "Ceramide",
+          "fact": "Ceramide supports the formula's moisture barrier context."
+        },
+        "effectMetric": {
+          "metric": "hydration",
+          "value": "1.3x",
+          "caveat": "Individual results may vary."
+        }
+      },
+      "expectedSourceRoleFacts": {
+        "productName": "Evidence Serum",
+        "procedureOrdinals": [1, 2],
+        "formulaIngredient": "Ceramide",
+        "qualifiedMetric": "hydration"
+      }
+    },
+    {
+      "id": "demo-kr-evidence-toner",
+      "locale": "ko-KR",
+      "market": "KR",
+      "sourceUrl": "https://catalog.example/kr/products/evidence-toner",
+      "html": "<header><div class='modal'>dismiss</div></header><section class='modal'><div class='drawer'>dismiss</div></section><main data-product-root='true'><h1>에비던스 토너</h1></main>",
+      "sourceFacts": {
+        "orderedProcedure": [
+          {"ordinal": 1, "text": "손바닥에 적당량을 덜어 피부결을 따라 펴 바릅니다."},
+          {"ordinal": 2, "text": "가볍게 눌러 흡수시킵니다."}
+        ],
+        "formulaIngredient": {
+          "ingredient": "세라마이드",
+          "fact": "세라마이드가 보습 장벽 맥락의 포뮬러 성분으로 제시됩니다."
+        },
+        "effectMetric": {
+          "metric": "수분",
+          "value": "1.3배",
+          "caveat": "개인차가 있을 수 있습니다."
+        }
+      },
+      "expectedSourceRoleFacts": {
+        "productName": "에비던스 토너",
+        "procedureOrdinals": [1, 2],
+        "formulaIngredient": "세라마이드",
+        "qualifiedMetric": "수분"
+      }
+    }
+  ]
+}

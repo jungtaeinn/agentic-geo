@@ -1,0 +1,42 @@
+[project]
+name = "pdp-geo-generator-agent"
+version = "0.1.4"
+description = "Evidence-grounded PDP GEO content generation agent for Agentic GEO."
+requires-python = ">=3.14,<3.15"
+dependencies = [
+  "httpx>=0.28.1",
+  "neo-js-compat>=0.1.0",
+  "pdp-geo-eval-agent>=0.1.1",
+  "pydantic>=2.12.5",
+  "PyICU>=2.16.2",
+  "ada-url==4.0.0",
+]
+
+[project.scripts]
+pdp-geo-rag-ingest-sources = "pdp_geo_generator_agent.rag.cli:ingest_sources_main"
+pdp-geo-rag-precompute-embeddings = "pdp_geo_generator_agent.rag.cli:precompute_embeddings_main"
+pdp-geo-rag-index-skeleton = "pdp_geo_generator_agent.rag.cli:index_skeleton_main"
+pdp-geo-rag-generate-fallback = "pdp_geo_generator_agent.rag.cli:generate_fallback_main"
+pdp-geo-rag-eval = "pdp_geo_generator_agent.rag.cli:eval_main"
+pdp-geo-extract-rules = "pdp_geo_generator_agent.geo_cli:extract_rules_main"
+pdp-geo-benchmark = "pdp_geo_generator_agent.geo_cli:benchmark_main"
+
+[tool.uv.sources]
+neo-js-compat = { workspace = true }
+pdp-geo-eval-agent = { workspace = true }
+
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pdp_geo_generator_agent"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/pdp_geo_generator_agent"]
+
+[tool.ruff]
+extend = "../../pyproject.toml"
+
+[tool.ruff.lint.per-file-ignores]
+"**/*.py" = ["E501"]

@@ -1,0 +1,67 @@
+{
+  "captureFormat": 1,
+  "provenance": {
+    "capture": "agentic-geo-public-synthetic-runtime-v1",
+    "normalizedTimestampValues": [
+      "completedAt",
+      "generatedAt",
+      "startedAt"
+    ],
+    "timestampValueSentinel": "<public-capture-timestamp>"
+  },
+  "contracts": [
+    {
+      "id": "sparse-hydra",
+      "inputSha256": "bc15c367cc20917f8e8dd35df41e44b51e05c09135f5b1d15bae3f43a9c5bd9b",
+      "directSha256": "5091f79c95150cc843c7e4d73d94b5f13844bf05f68d06c38b1b7e8f5b447fd9",
+      "restSha256": "a6ee210ea036dd1601e260e58cad6fcb7bb601414399092fdec32b299f0340c8"
+    },
+    {
+      "id": "fieldnote-arcwell-night-serum",
+      "inputSha256": "94ffbbde13e3923c77883a7650691be7df1fdb9a35122ffc1382d1d9f7dc1ba9",
+      "directSha256": "1cfe610df8a0fa4297017a41b33d6464603f2b979aba3e9efe8cc3f31c582964",
+      "restSha256": "78abba5a49cf37a5b083b1e53fd95cb062014e8cfc61c0e17c1171abec354277"
+    },
+    {
+      "id": "fieldnote-daybreak-first-essence",
+      "inputSha256": "7668930974f52acb3691a5d323b2731e02351d2db6dffd90c5d63d7df8ea5390",
+      "directSha256": "cc139d1ff4d3ce07bff4181ae683c01d0ce53af62feb717b87ef68904dd551cf",
+      "restSha256": "9744dab27b564c3fc4cd0070ccde32dc74132bdb5f1fb9e55c997c3199b34c76"
+    },
+    {
+      "id": "byeolmorae-waterfold-toner",
+      "inputSha256": "f339a721640306f94760bfec3cdfbdcc80fb55c0e9699d7ba5685b27d14f9a32",
+      "directSha256": "3067855215c4c16c6541d320fb14108a4aa2a5c5664cb7d20444c15d33e4c197",
+      "restSha256": "29edc7a5f7ea80e44cc4c0979d48cdceb1fee1e1126989450b004d609f49d883"
+    },
+    {
+      "id": "byeolmorae-cloudveil-mist",
+      "inputSha256": "dcc162cadb3a02b16cc89f3ec19dc96255428a658682448ea99ecb59b9b21ba0",
+      "directSha256": "d18174b303b59a88cfdc914f5adbd3cbd8f1f51971b48f542cb6be461cb1df25",
+      "restSha256": "caacad9380c71ca8152b9c8dcf35acb489eaa35c4c82a41f6d3121c27a63882a"
+    }
+  ],
+  "restEdgeCases": [
+    {
+      "id": "string",
+      "inputSha256": "ba2df4903a2c14e86dc3bcca58911b44ac1d2514b7227bf6eb08cfb978f55a1b",
+      "responseSha256": "380bdeaf41d8ca8165cad38911f1727def7ed3b117a2be86a084db5043e23a8e"
+    },
+    {
+      "id": "array",
+      "inputSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "responseSha256": "380bdeaf41d8ca8165cad38911f1727def7ed3b117a2be86a084db5043e23a8e"
+    },
+    {
+      "id": "number",
+      "inputSha256": "7902699be42c8a8e46fbbb4501726517e86b22c56a189f7625a6da49081b2451",
+      "responseSha256": "380bdeaf41d8ca8165cad38911f1727def7ed3b117a2be86a084db5043e23a8e"
+    },
+    {
+      "id": "null",
+      "inputSha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "responseSha256": "48e89c913855c80f5c7daaefc6dcb784f0b0bbb8790c1a844b6faf491acfd098"
+    }
+  ],
+  "wholeContractSha256": "7c48fa5ff29db8d1af6e52abac5968daf6295553e90c0553acf54d505b17c9dd"
+}

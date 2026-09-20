@@ -2,10 +2,12 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
 
+const isGitHubPages = process.env.NEXT_PUBLIC_DEPLOY_TARGET === "github-pages";
+
 export const metadata: Metadata = {
   title: "Agentic GEO Product Extractor",
   description: "URL and REST API product extraction console for GEO agents.",
-  manifest: "/manifest.webmanifest",
+  manifest: isGitHubPages ? "/agentic-geo/manifest.webmanifest" : "/manifest.webmanifest",
   icons: {
     icon: [
       { url: "/icons/profile-rounded-32.png", sizes: "32x32", type: "image/png" },

@@ -1,0 +1,62 @@
+{
+  "overallScore": 53,
+  "dimensions": [
+    {
+      "id": "geo",
+      "label": "GEO",
+      "score": 48,
+      "criteria": "GEO diagnostic criteria: required product/page identity, graph references, schema structure, validation stability, plus the on-page citation gatekeepers confirmed by controlled research (SIGIR 2026): an explicit price and a freshness timestamp. This is schema hygiene, not a citation-probability estimate. FAQ/HowTo presence earns no points.",
+      "summary": "48 · 5 issues to improve",
+      "evidence": [
+        "1 schema nodes generated: none",
+        "No price information in the schema.",
+        "No published/modified date in the schema.",
+        "Optional entity inventory: FAQ 0, HowTo 0 steps, Breadcrumb 0; presence itself earns no points",
+        "Images 0, offers 0, additional properties 0 strengthen PDP identity",
+        "All local schema references resolve to target nodes",
+        "No content applicability plan is available, so semantic FAQ/HowTo suitability is not scored",
+        "Output is built without warnings or automatic repairs"
+      ],
+      "improvements": [
+        "Add a published or modified date (dateModified) to the page. A recent timestamp is a confirmed AI-citation gatekeeper.",
+        "State the price explicitly in the schema. Controlled research confirmed explicit price as a primary AI-citation gatekeeper.",
+        "Basic product information (name, description) that search engines can read is missing. Fill in the product info first.",
+        "The page is missing its one-line introduction. Add what this page is about."
+      ]
+    },
+    {
+      "id": "cep",
+      "label": "CEP",
+      "score": 51,
+      "criteria": "CEP diagnostic criteria: source-present ingredient, benefit, and customer-choice context. CEP is a qualitative marketing framework (Ehrenberg-Bass) with a weaker evidence grade than the other dimensions; cue regexes are cross-checked against the content plan so one missed detection cannot swing the score. It does not predict citation rate.",
+      "summary": "51 · 3 issues to improve",
+      "evidence": [
+        "0 ingredient signals and 0 benefit/effect signals available",
+        "Direct ingredient-to-benefit bridge is weak",
+        "Customer selection criteria are not explicit enough"
+      ],
+      "improvements": [
+        "Help customers judge 'is this for me?' by mentioning skin type, concern, or usage situation (e.g. 'if your skin feels dry and tight').",
+        "Key ingredient information is thin. Pull more ingredient details from the product source.",
+        "It's not clear what improves after use. Strengthen the copy around the changes customers can expect."
+      ]
+    },
+    {
+      "id": "eeat",
+      "label": "E-E-A-T",
+      "score": 60,
+      "criteria": "E-E-A-T diagnostic criteria: this is a proxy for evidence and scoping hygiene, not Google's E-E-A-T rating — it checks evidence-link coverage, sample/time context on numeric claims, and claim-distortion signals. Validation warnings are penalized under GEO only.",
+      "summary": "60 · 1 issue to improve",
+      "evidence": [
+        "0 input/mapping/RAG/terminology evidence records across 0 diagnostic source types",
+        "No percentage/improvement claim detected; numeric-evidence checks do not affect the score",
+        "The current result has no per-claim evidence ID, so atomic claim-to-source coverage is not calculated"
+      ],
+      "improvements": [
+        "Write benefit sentences so each one is backed by the product source."
+      ]
+    }
+  ],
+  "validationDetails": [],
+  "validationImprovements": []
+}

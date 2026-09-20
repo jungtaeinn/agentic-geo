@@ -1,0 +1,2272 @@
+{
+  "schemaVersion": 1,
+  "provenance": {
+    "legacySourceCommit": "6702158280ec7de675594af93c7c381eb2feae38",
+    "legacySourceTreeSha256": "d64e965ad6331db09d55e037a845d99a5d8e91fb89b660b9e7a3061e3f5a9b93",
+    "captureLocale": "en-US",
+    "node": "v24.11.0",
+    "pnpm": "11.24.0",
+    "tsx": "tsx v4.23.1\nnode v24.11.0",
+    "vitest": "vitest/4.1.10 darwin-arm64 node-v24.11.0",
+    "timestampNormalization": "Only probe.probedAt is replaced with <legacy-capture-time>.",
+    "captureMethod": "Disposable detached checkout at legacySourceCommit; capture-legacy-contract.ts imported the historical TypeScript entrypoints and intercepted Request objects passed to its global fetch calls.",
+    "sourceHashes": {
+      "package.json": "d214340565a695636a9d2e89458c7ede9bbf11538b16e2226af8634926c13c7d",
+      "src/index.ts": "76f664608afda24279f663d1df433581155e1a58f14d638c4d59448cb3e40e19",
+      "src/types.ts": "66fb89d2f64b918da2fecd5976b19db1718978d0020694da9cfdd97107593c94",
+      "src/benchmark/index.ts": "3c98b20c52c0df6638a37c0aa63533e617aea6cf96a4a38ead88fdebcaef5cc1",
+      "src/rest.ts": "69a9904875de13fcfe1e6d0511659d21cf98435fb9b1e242665284364bd77a86",
+      "src/citation/engine.ts": "2cfada9b48d95725d3d130c2ae552a55feaa15302a6b16306e28bc14bc60382c"
+    },
+    "providerInputSha256": {
+      "openai-normal": "42586748beecc25f2fcf28e372468a7473771ac18e15cd658d776496266adca8",
+      "gemini-normal": "a6276b1a4cb85243f82ea7c551d3f15a5c1653cbac5c561f2fc00c2e75eb46a1",
+      "azure-retry-normal": "e732e49c61b45fdd6804390bba1aad0a6bb1510ef42fb854ae4657930b6cfb53",
+      "aistudio-normal": "5b0a1541728b8f4315e1d7bbb6eee8b9cce7767329b0b9c1993d25e73293acec",
+      "openai-unicode-negative-zero": "88c1c7394500632735d55615de779ef16d32af9783fcd0ea7c00c906fbc84488",
+      "gemini-unicode-nan": "3964d006f48b8d13db5c5cfaf9a089205eb531801252b321631e78de3e70a709",
+      "azure-retry-unicode-negative-zero": "4d03f20141c9989b71c363f95fcecbfc51d646f13b3669aa9e691a4cefaf8d51"
+    },
+    "benchmarkFixtureSanitization": "Benchmark fixtures, questions, distractors, and derived citation text were replaced with internally authored synthetic records for the public Python migration."
+  },
+  "quality": [
+    {
+      "id": "populated-en",
+      "input": {
+        "jsonLd": {
+          "@graph": [
+            {
+              "@type": "Product",
+              "@id": "#product",
+              "name": "Barrier Cream",
+              "description": "A cream that supports skin barrier comfort.",
+              "offers": {
+                "@type": "Offer",
+                "price": "29.00",
+                "priceCurrency": "USD"
+              },
+              "dateModified": "2026-01-02"
+            },
+            {
+              "@type": "WebPage",
+              "@id": "#page",
+              "mainEntity": {
+                "@id": "#product"
+              },
+              "description": "Barrier Cream product page."
+            },
+            {
+              "@type": "FAQPage",
+              "mainEntity": [
+                {
+                  "@type": "Question",
+                  "name": "Who is it for?",
+                  "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "It is for dry skin needing barrier support."
+                  }
+                }
+              ]
+            },
+            {
+              "@type": "HowTo",
+              "step": [
+                {
+                  "@type": "HowToStep",
+                  "name": "Apply",
+                  "text": "Apply after toner and press until absorbed."
+                }
+              ]
+            }
+          ]
+        },
+        "diagnostics": {
+          "normalizedProduct": {
+            "name": "Barrier Cream",
+            "brand": "NEO",
+            "category": "cream",
+            "benefits": [
+              "barrier support"
+            ],
+            "effects": [
+              "comfort"
+            ],
+            "ingredients": [
+              "ceramide"
+            ],
+            "usage": [
+              "Apply after toner"
+            ],
+            "faq": [
+              {
+                "question": "Who is it for?",
+                "answer": "Dry skin."
+              }
+            ],
+            "reviews": {
+              "keywords": [
+                "comfortable"
+              ]
+            },
+            "sourceTexts": [
+              "Clinical 95% satisfaction after 2 weeks among 30 participants."
+            ]
+          },
+          "validationWarnings": [
+            "description: reviewed wording"
+          ],
+          "validationRepairs": [
+            {
+              "field": "description",
+              "source": "validator",
+              "issue": "reviewed wording",
+              "action": "kept scoped"
+            }
+          ],
+          "ragUsage": [
+            {
+              "principle": "evidence-first",
+              "enabled": true,
+              "references": [
+                {
+                  "kind": "research",
+                  "fieldTargets": [
+                    "description"
+                  ]
+                }
+              ]
+            }
+          ],
+          "evidence": [
+            {
+              "field": "description",
+              "source": "PDP",
+              "value": "barrier support"
+            }
+          ],
+          "evidenceLedger": [
+            {
+              "id": "ev-1",
+              "role": "benefit",
+              "text": "barrier support"
+            }
+          ],
+          "contentPlan": {
+            "mode": "buyer",
+            "productDescription": {
+              "include": true,
+              "evidenceIds": [
+                "ev-1"
+              ]
+            },
+            "faq": [
+              {
+                "include": true,
+                "question": "Who is it for?",
+                "evidenceIds": [
+                  "ev-1"
+                ]
+              }
+            ],
+            "howTo": {
+              "eligible": true,
+              "steps": [
+                {
+                  "evidenceIds": [
+                    "ev-1"
+                  ]
+                }
+              ]
+            },
+            "cep": [
+              {
+                "situation": "after cleansing",
+                "need": "barrier comfort",
+                "evidenceIds": [
+                  "ev-1"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "inputHash": "325e84905a1d717df1011b1c27633c9b48221ca66fb37b3f76e331c2ade6fab4",
+      "language": "en",
+      "productName": "Barrier Cream",
+      "evaluation": {
+        "overallScore": 81,
+        "dimensions": [
+          {
+            "id": "geo",
+            "label": "GEO",
+            "score": 76,
+            "criteria": "GEO diagnostic criteria: required product/page identity, graph references, schema structure, validation stability, plus the on-page citation gatekeepers confirmed by controlled research (SIGIR 2026): an explicit price and a freshness timestamp. This is schema hygiene, not a citation-probability estimate. FAQ/HowTo presence earns no points.",
+            "summary": "76 · 3 issues to improve",
+            "evidence": [
+              "4 schema nodes generated: Product, WebPage, FAQPage, HowTo",
+              "An explicit price is present — one of the on-page AI-citation gatekeepers.",
+              "A published/modified date is present — one of the on-page AI-citation gatekeepers.",
+              "Optional entity inventory: FAQ 1, HowTo 1 step, Breadcrumb 0; presence itself earns no points",
+              "Images 0, offers 1, additional properties 0 strengthen PDP identity",
+              "All local schema references resolve to target nodes",
+              "No content applicability plan is available, so semantic FAQ/HowTo suitability is not scored",
+              "1 automatic repair was required; this is a generation-stability signal, not a quality gain"
+            ],
+            "improvements": [
+              "Show usage as numbered steps only when there is a real order (step 1 → step 2). For a one-line usage note, drop the step format.",
+              "1 item was auto-fixed by the system. Fixing the source product data means you won't depend on auto-fixes every time."
+            ]
+          },
+          {
+            "id": "cep",
+            "label": "CEP",
+            "score": 76,
+            "criteria": "CEP diagnostic criteria: source-present ingredient, benefit, and customer-choice context. CEP is a qualitative marketing framework (Ehrenberg-Bass) with a weaker evidence grade than the other dimensions; cue regexes are cross-checked against the content plan so one missed detection cannot swing the score. It does not predict citation rate.",
+            "summary": "76 · 1 issue to improve",
+            "evidence": [
+              "1 ingredient signal and 2 benefit/effect signals available",
+              "Direct ingredient-to-benefit bridge is weak",
+              "Customer context such as concern, skin type, or selection cue is included"
+            ],
+            "improvements": [
+              "After each ingredient name, add what it actually does in one sentence (e.g. 'ceramide refills a weakened skin barrier to reduce tightness')."
+            ]
+          },
+          {
+            "id": "eeat",
+            "label": "E-E-A-T",
+            "score": 90,
+            "criteria": "E-E-A-T diagnostic criteria: this is a proxy for evidence and scoping hygiene, not Google's E-E-A-T rating — it checks evidence-link coverage, sample/time context on numeric claims, and claim-distortion signals. Validation warnings are penalized under GEO only.",
+            "summary": "90 · no observable diagnostic issue",
+            "evidence": [
+              "1 atomic evidence item across 1 semantic role in the Evidence Ledger",
+              "No percentage/improvement claim detected; numeric-evidence checks do not affect the score",
+              "The current result has no per-claim evidence ID, so atomic claim-to-source coverage is not calculated"
+            ],
+            "improvements": [
+              "Write benefit sentences so each one is backed by the product source.",
+              "1 item was auto-fixed by the system. Fixing the source product data means you won't depend on auto-fixes every time."
+            ]
+          }
+        ],
+        "validationDetails": [
+          "1. description (validator): reviewed wording -> kept scoped"
+        ],
+        "validationImprovements": []
+      },
+      "report": "Quality metrics\nProduct: Barrier Cream\nDiagnostic score (not citation rate): 81/100\n\nGEO: 76/100\nCriteria: GEO diagnostic criteria: required product/page identity, graph references, schema structure, validation stability, plus the on-page citation gatekeepers confirmed by controlled research (SIGIR 2026): an explicit price and a freshness timestamp. This is schema hygiene, not a citation-probability estimate. FAQ/HowTo presence earns no points.\nEvaluation summary: 76 · 3 issues to improve\nRationale:\n- 4 schema nodes generated: Product, WebPage, FAQPage, HowTo\n- An explicit price is present — one of the on-page AI-citation gatekeepers.\n- A published/modified date is present — one of the on-page AI-citation gatekeepers.\n- Optional entity inventory: FAQ 1, HowTo 1 step, Breadcrumb 0; presence itself earns no points\n- Images 0, offers 1, additional properties 0 strengthen PDP identity\n- All local schema references resolve to target nodes\n- No content applicability plan is available, so semantic FAQ/HowTo suitability is not scored\n- 1 automatic repair was required; this is a generation-stability signal, not a quality gain\nImprovements:\n- Show usage as numbered steps only when there is a real order (step 1 → step 2). For a one-line usage note, drop the step format.\n- 1 item was auto-fixed by the system. Fixing the source product data means you won't depend on auto-fixes every time.\n\nCEP: 76/100\nCriteria: CEP diagnostic criteria: source-present ingredient, benefit, and customer-choice context. CEP is a qualitative marketing framework (Ehrenberg-Bass) with a weaker evidence grade than the other dimensions; cue regexes are cross-checked against the content plan so one missed detection cannot swing the score. It does not predict citation rate.\nEvaluation summary: 76 · 1 issue to improve\nRationale:\n- 1 ingredient signal and 2 benefit/effect signals available\n- Direct ingredient-to-benefit bridge is weak\n- Customer context such as concern, skin type, or selection cue is included\nImprovements:\n- After each ingredient name, add what it actually does in one sentence (e.g. 'ceramide refills a weakened skin barrier to reduce tightness').\n\nE-E-A-T: 90/100\nCriteria: E-E-A-T diagnostic criteria: this is a proxy for evidence and scoping hygiene, not Google's E-E-A-T rating — it checks evidence-link coverage, sample/time context on numeric claims, and claim-distortion signals. Validation warnings are penalized under GEO only.\nEvaluation summary: 90 · no observable diagnostic issue\nRationale:\n- 1 atomic evidence item across 1 semantic role in the Evidence Ledger\n- No percentage/improvement claim detected; numeric-evidence checks do not affect the score\n- The current result has no per-claim evidence ID, so atomic claim-to-source coverage is not calculated\nImprovements:\n- Write benefit sentences so each one is backed by the product source.\n- 1 item was auto-fixed by the system. Fixing the source product data means you won't depend on auto-fixes every time.\n\nValidation and repair details\nWarning items:\n- 1. description (validator): reviewed wording -> kept scoped"
+    },
+    {
+      "id": "populated-ko",
+      "input": {
+        "jsonLd": {
+          "@type": "Product",
+          "name": "보습 크림",
+          "description": "30명 대상 2주 사용 후 95%가 보습감을 느꼈습니다."
+        },
+        "diagnostics": {
+          "normalizedProduct": {
+            "name": "보습 크림",
+            "category": "크림",
+            "benefits": [
+              "보습"
+            ],
+            "ingredients": [
+              "세라마이드"
+            ],
+            "usage": [
+              "토너 후 바릅니다"
+            ],
+            "sourceTexts": [
+              "30명 대상 2주 사용 후 95%가 보습감을 느꼈습니다."
+            ]
+          },
+          "validationWarnings": [],
+          "contentPlan": {
+            "faq": [],
+            "cep": [
+              {
+                "situation": "세안 후",
+                "need": "당김 완화"
+              }
+            ]
+          }
+        }
+      },
+      "inputHash": "26b2a22d4978094ccde7e25974965816256fde926aa71f28af51d480764e07f8",
+      "language": "ko",
+      "productName": "보습 크림",
+      "evaluation": {
+        "overallScore": 58,
+        "dimensions": [
+          {
+            "id": "geo",
+            "label": "GEO",
+            "score": 58,
+            "criteria": "GEO 진단 기준: 필수 상품/페이지 엔티티, 그래프 참조, Schema 구조, 검증 안정성에 더해 통제 연구(SIGIR 2026)가 확인한 온페이지 인용 게이트키퍼(명시 가격, 신선도 타임스탬프)를 봅니다. 인용 확률 예측이 아닌 스키마 위생 진단입니다. FAQ/HowTo는 존재만으로 가점하지 않습니다.",
+            "summary": "58점 · 보완 이슈 4개",
+            "evidence": [
+              "1개 schema 노드가 생성됨: Product",
+              "가격 정보가 스키마에 없어요.",
+              "게시/수정 날짜가 스키마에 없어요.",
+              "선택 엔티티 현황: FAQ 0개, HowTo 0단계, Breadcrumb 0개 — 존재 자체는 가점하지 않음",
+              "이미지 0개, Offer 0개, 추가 속성 0개로 PDP 식별성 보강",
+              "로컬 스키마 참조가 모두 대상 노드와 연결됨",
+              "콘텐츠 적용 계획이 없어 FAQ/HowTo의 의미상 적합성은 점수화하지 않음",
+              "경고나 자동 보정 없이 산출물이 구성됨"
+            ],
+            "improvements": [
+              "페이지에 게시일 또는 수정일(dateModified)을 추가해주세요. 최신 타임스탬프는 AI 인용의 주요 관문으로 확인됐습니다.",
+              "가격을 스키마에 명시해주세요. 통제 연구에서 명시 가격은 AI 인용의 주요 관문으로 확인됐습니다.",
+              "이 페이지가 어떤 페이지인지 소개하는 정보가 빠져 있어요. 페이지 한 줄 소개를 보강해주세요."
+            ]
+          },
+          {
+            "id": "cep",
+            "label": "CEP",
+            "score": 65,
+            "criteria": "CEP 진단 기준: 근거에 있는 성분·효능·고객 선택 맥락의 연결을 봅니다. CEP는 마케팅 이론(Ehrenberg-Bass) 기반의 정성 프레임이라 다른 차원보다 근거 등급이 낮으며, 표현 큐 감지는 콘텐츠 플랜과 교차 확인해 단일 감지 실패가 점수를 좌우하지 않게 합니다. 실제 인용률을 예측하지 않습니다.",
+            "summary": "65점 · 보완 이슈 2개",
+            "evidence": [
+              "성분 신호 1개와 효능/효과 신호 1개를 연결 대상으로 확보",
+              "성분과 효능의 직접 연결 문장이 약함",
+              "피부 고민, 피부 타입, 선택 기준에 해당하는 고객 맥락을 포함"
+            ],
+            "improvements": [
+              "성분 이름 뒤에 '그래서 어떤 효과가 있는지'를 한 문장으로 이어주세요. (예: '세라마이드가 약해진 피부 장벽을 채워 당김을 줄여줍니다')"
+            ]
+          },
+          {
+            "id": "eeat",
+            "label": "E-E-A-T",
+            "score": 52,
+            "criteria": "E-E-A-T 진단 기준: 이 점수는 Google의 E-E-A-T 평가가 아니라 근거·스코핑 위생의 프록시입니다 — 근거 연결 커버리지, 수치 클레임의 표본·기간 문맥, 클레임 왜곡 신호를 봅니다. 검증 경고는 GEO 차원에서만 감점됩니다.",
+            "summary": "52점 · 보완 이슈 2개",
+            "evidence": [
+              "입력/매핑/RAG/용어집 계열 근거 레코드 0개, 진단상 출처 유형 0개 확인",
+              "퍼센트/개선율 등 수치 클레임을 포함",
+              "근거 조건 확인: 표본/대상 범위 명시, 기간 없음",
+              "현재 결과에는 주장별 evidence ID가 없어 원자 단위 출처 일치율은 계산하지 않음"
+            ],
+            "improvements": [
+              "숫자 효과 표현에는 사용 기간(예: '4주 사용 후')을 함께 적어주세요.",
+              "효능 문장마다 원문 근거가 연결되도록, 근거가 있는 표현 위주로 작성해주세요."
+            ]
+          }
+        ],
+        "validationDetails": [],
+        "validationImprovements": []
+      },
+      "report": "품질 평가 지표\n상품: 보습 크림\n진단 점수 (인용률 아님): 58/100\n\nGEO: 58/100\n평가 기준: GEO 진단 기준: 필수 상품/페이지 엔티티, 그래프 참조, Schema 구조, 검증 안정성에 더해 통제 연구(SIGIR 2026)가 확인한 온페이지 인용 게이트키퍼(명시 가격, 신선도 타임스탬프)를 봅니다. 인용 확률 예측이 아닌 스키마 위생 진단입니다. FAQ/HowTo는 존재만으로 가점하지 않습니다.\n평가 요약: 58점 · 보완 이슈 4개\n평가 근거:\n- 1개 schema 노드가 생성됨: Product\n- 가격 정보가 스키마에 없어요.\n- 게시/수정 날짜가 스키마에 없어요.\n- 선택 엔티티 현황: FAQ 0개, HowTo 0단계, Breadcrumb 0개 — 존재 자체는 가점하지 않음\n- 이미지 0개, Offer 0개, 추가 속성 0개로 PDP 식별성 보강\n- 로컬 스키마 참조가 모두 대상 노드와 연결됨\n- 콘텐츠 적용 계획이 없어 FAQ/HowTo의 의미상 적합성은 점수화하지 않음\n- 경고나 자동 보정 없이 산출물이 구성됨\n개선점:\n- 페이지에 게시일 또는 수정일(dateModified)을 추가해주세요. 최신 타임스탬프는 AI 인용의 주요 관문으로 확인됐습니다.\n- 가격을 스키마에 명시해주세요. 통제 연구에서 명시 가격은 AI 인용의 주요 관문으로 확인됐습니다.\n- 이 페이지가 어떤 페이지인지 소개하는 정보가 빠져 있어요. 페이지 한 줄 소개를 보강해주세요.\n\nCEP: 65/100\n평가 기준: CEP 진단 기준: 근거에 있는 성분·효능·고객 선택 맥락의 연결을 봅니다. CEP는 마케팅 이론(Ehrenberg-Bass) 기반의 정성 프레임이라 다른 차원보다 근거 등급이 낮으며, 표현 큐 감지는 콘텐츠 플랜과 교차 확인해 단일 감지 실패가 점수를 좌우하지 않게 합니다. 실제 인용률을 예측하지 않습니다.\n평가 요약: 65점 · 보완 이슈 2개\n평가 근거:\n- 성분 신호 1개와 효능/효과 신호 1개를 연결 대상으로 확보\n- 성분과 효능의 직접 연결 문장이 약함\n- 피부 고민, 피부 타입, 선택 기준에 해당하는 고객 맥락을 포함\n개선점:\n- 성분 이름 뒤에 '그래서 어떤 효과가 있는지'를 한 문장으로 이어주세요. (예: '세라마이드가 약해진 피부 장벽을 채워 당김을 줄여줍니다')\n\nE-E-A-T: 52/100\n평가 기준: E-E-A-T 진단 기준: 이 점수는 Google의 E-E-A-T 평가가 아니라 근거·스코핑 위생의 프록시입니다 — 근거 연결 커버리지, 수치 클레임의 표본·기간 문맥, 클레임 왜곡 신호를 봅니다. 검증 경고는 GEO 차원에서만 감점됩니다.\n평가 요약: 52점 · 보완 이슈 2개\n평가 근거:\n- 입력/매핑/RAG/용어집 계열 근거 레코드 0개, 진단상 출처 유형 0개 확인\n- 퍼센트/개선율 등 수치 클레임을 포함\n- 근거 조건 확인: 표본/대상 범위 명시, 기간 없음\n- 현재 결과에는 주장별 evidence ID가 없어 원자 단위 출처 일치율은 계산하지 않음\n개선점:\n- 숫자 효과 표현에는 사용 기간(예: '4주 사용 후')을 함께 적어주세요.\n- 효능 문장마다 원문 근거가 연결되도록, 근거가 있는 표현 위주로 작성해주세요."
+    },
+    {
+      "id": "falsy-object",
+      "input": {
+        "jsonLd": [],
+        "diagnostics": {
+          "normalizedProduct": {},
+          "validationWarnings": []
+        }
+      },
+      "inputHash": "13e0a41343d5dd3d4e96efb8f27fc7260efccbda8f886c7a780006db3a92bb38",
+      "language": "en",
+      "productName": "",
+      "evaluation": {
+        "overallScore": 53,
+        "dimensions": [
+          {
+            "id": "geo",
+            "label": "GEO",
+            "score": 48,
+            "criteria": "GEO diagnostic criteria: required product/page identity, graph references, schema structure, validation stability, plus the on-page citation gatekeepers confirmed by controlled research (SIGIR 2026): an explicit price and a freshness timestamp. This is schema hygiene, not a citation-probability estimate. FAQ/HowTo presence earns no points.",
+            "summary": "48 · 5 issues to improve",
+            "evidence": [
+              "1 schema nodes generated: none",
+              "No price information in the schema.",
+              "No published/modified date in the schema.",
+              "Optional entity inventory: FAQ 0, HowTo 0 steps, Breadcrumb 0; presence itself earns no points",
+              "Images 0, offers 0, additional properties 0 strengthen PDP identity",
+              "All local schema references resolve to target nodes",
+              "No content applicability plan is available, so semantic FAQ/HowTo suitability is not scored",
+              "Output is built without warnings or automatic repairs"
+            ],
+            "improvements": [
+              "Add a published or modified date (dateModified) to the page. A recent timestamp is a confirmed AI-citation gatekeeper.",
+              "State the price explicitly in the schema. Controlled research confirmed explicit price as a primary AI-citation gatekeeper.",
+              "Basic product information (name, description) that search engines can read is missing. Fill in the product info first.",
+              "The page is missing its one-line introduction. Add what this page is about."
+            ]
+          },
+          {
+            "id": "cep",
+            "label": "CEP",
+            "score": 51,
+            "criteria": "CEP diagnostic criteria: source-present ingredient, benefit, and customer-choice context. CEP is a qualitative marketing framework (Ehrenberg-Bass) with a weaker evidence grade than the other dimensions; cue regexes are cross-checked against the content plan so one missed detection cannot swing the score. It does not predict citation rate.",
+            "summary": "51 · 3 issues to improve",
+            "evidence": [
+              "0 ingredient signals and 0 benefit/effect signals available",
+              "Direct ingredient-to-benefit bridge is weak",
+              "Customer selection criteria are not explicit enough"
+            ],
+            "improvements": [
+              "Help customers judge 'is this for me?' by mentioning skin type, concern, or usage situation (e.g. 'if your skin feels dry and tight').",
+              "Key ingredient information is thin. Pull more ingredient details from the product source.",
+              "It's not clear what improves after use. Strengthen the copy around the changes customers can expect."
+            ]
+          },
+          {
+            "id": "eeat",
+            "label": "E-E-A-T",
+            "score": 60,
+            "criteria": "E-E-A-T diagnostic criteria: this is a proxy for evidence and scoping hygiene, not Google's E-E-A-T rating — it checks evidence-link coverage, sample/time context on numeric claims, and claim-distortion signals. Validation warnings are penalized under GEO only.",
+            "summary": "60 · 1 issue to improve",
+            "evidence": [
+              "0 input/mapping/RAG/terminology evidence records across 0 diagnostic source types",
+              "No percentage/improvement claim detected; numeric-evidence checks do not affect the score",
+              "The current result has no per-claim evidence ID, so atomic claim-to-source coverage is not calculated"
+            ],
+            "improvements": [
+              "Write benefit sentences so each one is backed by the product source."
+            ]
+          }
+        ],
+        "validationDetails": [],
+        "validationImprovements": []
+      },
+      "report": "Quality metrics\nProduct: \nDiagnostic score (not citation rate): 53/100\n\nGEO: 48/100\nCriteria: GEO diagnostic criteria: required product/page identity, graph references, schema structure, validation stability, plus the on-page citation gatekeepers confirmed by controlled research (SIGIR 2026): an explicit price and a freshness timestamp. This is schema hygiene, not a citation-probability estimate. FAQ/HowTo presence earns no points.\nEvaluation summary: 48 · 5 issues to improve\nRationale:\n- 1 schema nodes generated: none\n- No price information in the schema.\n- No published/modified date in the schema.\n- Optional entity inventory: FAQ 0, HowTo 0 steps, Breadcrumb 0; presence itself earns no points\n- Images 0, offers 0, additional properties 0 strengthen PDP identity\n- All local schema references resolve to target nodes\n- No content applicability plan is available, so semantic FAQ/HowTo suitability is not scored\n- Output is built without warnings or automatic repairs\nImprovements:\n- Add a published or modified date (dateModified) to the page. A recent timestamp is a confirmed AI-citation gatekeeper.\n- State the price explicitly in the schema. Controlled research confirmed explicit price as a primary AI-citation gatekeeper.\n- Basic product information (name, description) that search engines can read is missing. Fill in the product info first.\n- The page is missing its one-line introduction. Add what this page is about.\n\nCEP: 51/100\nCriteria: CEP diagnostic criteria: source-present ingredient, benefit, and customer-choice context. CEP is a qualitative marketing framework (Ehrenberg-Bass) with a weaker evidence grade than the other dimensions; cue regexes are cross-checked against the content plan so one missed detection cannot swing the score. It does not predict citation rate.\nEvaluation summary: 51 · 3 issues to improve\nRationale:\n- 0 ingredient signals and 0 benefit/effect signals available\n- Direct ingredient-to-benefit bridge is weak\n- Customer selection criteria are not explicit enough\nImprovements:\n- Help customers judge 'is this for me?' by mentioning skin type, concern, or usage situation (e.g. 'if your skin feels dry and tight').\n- Key ingredient information is thin. Pull more ingredient details from the product source.\n- It's not clear what improves after use. Strengthen the copy around the changes customers can expect.\n\nE-E-A-T: 60/100\nCriteria: E-E-A-T diagnostic criteria: this is a proxy for evidence and scoping hygiene, not Google's E-E-A-T rating — it checks evidence-link coverage, sample/time context on numeric claims, and claim-distortion signals. Validation warnings are penalized under GEO only.\nEvaluation summary: 60 · 1 issue to improve\nRationale:\n- 0 input/mapping/RAG/terminology evidence records across 0 diagnostic source types\n- No percentage/improvement claim detected; numeric-evidence checks do not affect the score\n- The current result has no per-claim evidence ID, so atomic claim-to-source coverage is not calculated\nImprovements:\n- Write benefit sentences so each one is backed by the product source."
+    },
+    {
+      "id": "falsy-boolean",
+      "input": {
+        "jsonLd": false,
+        "diagnostics": {
+          "normalizedProduct": {},
+          "validationWarnings": []
+        }
+      },
+      "inputHash": "0245757aa17517a89ebfe8ac6770373be301e217b33edc662d8b33fd549c09a7",
+      "language": "en",
+      "productName": "",
+      "evaluation": {
+        "overallScore": 53,
+        "dimensions": [
+          {
+            "id": "geo",
+            "label": "GEO",
+            "score": 48,
+            "criteria": "GEO diagnostic criteria: required product/page identity, graph references, schema structure, validation stability, plus the on-page citation gatekeepers confirmed by controlled research (SIGIR 2026): an explicit price and a freshness timestamp. This is schema hygiene, not a citation-probability estimate. FAQ/HowTo presence earns no points.",
+            "summary": "48 · 5 issues to improve",
+            "evidence": [
+              "0 schema nodes generated: none",
+              "No price information in the schema.",
+              "No published/modified date in the schema.",
+              "Optional entity inventory: FAQ 0, HowTo 0 steps, Breadcrumb 0; presence itself earns no points",
+              "Images 0, offers 0, additional properties 0 strengthen PDP identity",
+              "All local schema references resolve to target nodes",
+              "No content applicability plan is available, so semantic FAQ/HowTo suitability is not scored",
+              "Output is built without warnings or automatic repairs"
+            ],
+            "improvements": [
+              "Add a published or modified date (dateModified) to the page. A recent timestamp is a confirmed AI-citation gatekeeper.",
+              "State the price explicitly in the schema. Controlled research confirmed explicit price as a primary AI-citation gatekeeper.",
+              "Basic product information (name, description) that search engines can read is missing. Fill in the product info first.",
+              "The page is missing its one-line introduction. Add what this page is about."
+            ]
+          },
+          {
+            "id": "cep",
+            "label": "CEP",
+            "score": 51,
+            "criteria": "CEP diagnostic criteria: source-present ingredient, benefit, and customer-choice context. CEP is a qualitative marketing framework (Ehrenberg-Bass) with a weaker evidence grade than the other dimensions; cue regexes are cross-checked against the content plan so one missed detection cannot swing the score. It does not predict citation rate.",
+            "summary": "51 · 3 issues to improve",
+            "evidence": [
+              "0 ingredient signals and 0 benefit/effect signals available",
+              "Direct ingredient-to-benefit bridge is weak",
+              "Customer selection criteria are not explicit enough"
+            ],
+            "improvements": [
+              "Help customers judge 'is this for me?' by mentioning skin type, concern, or usage situation (e.g. 'if your skin feels dry and tight').",
+              "Key ingredient information is thin. Pull more ingredient details from the product source.",
+              "It's not clear what improves after use. Strengthen the copy around the changes customers can expect."
+            ]
+          },
+          {
+            "id": "eeat",
+            "label": "E-E-A-T",
+            "score": 60,
+            "criteria": "E-E-A-T diagnostic criteria: this is a proxy for evidence and scoping hygiene, not Google's E-E-A-T rating — it checks evidence-link coverage, sample/time context on numeric claims, and claim-distortion signals. Validation warnings are penalized under GEO only.",
+            "summary": "60 · 1 issue to improve",
+            "evidence": [
+              "0 input/mapping/RAG/terminology evidence records across 0 diagnostic source types",
+              "No percentage/improvement claim detected; numeric-evidence checks do not affect the score",
+              "The current result has no per-claim evidence ID, so atomic claim-to-source coverage is not calculated"
+            ],
+            "improvements": [
+              "Write benefit sentences so each one is backed by the product source."
+            ]
+          }
+        ],
+        "validationDetails": [],
+        "validationImprovements": []
+      },
+      "report": "Quality metrics\nProduct: \nDiagnostic score (not citation rate): 53/100\n\nGEO: 48/100\nCriteria: GEO diagnostic criteria: required product/page identity, graph references, schema structure, validation stability, plus the on-page citation gatekeepers confirmed by controlled research (SIGIR 2026): an explicit price and a freshness timestamp. This is schema hygiene, not a citation-probability estimate. FAQ/HowTo presence earns no points.\nEvaluation summary: 48 · 5 issues to improve\nRationale:\n- 0 schema nodes generated: none\n- No price information in the schema.\n- No published/modified date in the schema.\n- Optional entity inventory: FAQ 0, HowTo 0 steps, Breadcrumb 0; presence itself earns no points\n- Images 0, offers 0, additional properties 0 strengthen PDP identity\n- All local schema references resolve to target nodes\n- No content applicability plan is available, so semantic FAQ/HowTo suitability is not scored\n- Output is built without warnings or automatic repairs\nImprovements:\n- Add a published or modified date (dateModified) to the page. A recent timestamp is a confirmed AI-citation gatekeeper.\n- State the price explicitly in the schema. Controlled research confirmed explicit price as a primary AI-citation gatekeeper.\n- Basic product information (name, description) that search engines can read is missing. Fill in the product info first.\n- The page is missing its one-line introduction. Add what this page is about.\n\nCEP: 51/100\nCriteria: CEP diagnostic criteria: source-present ingredient, benefit, and customer-choice context. CEP is a qualitative marketing framework (Ehrenberg-Bass) with a weaker evidence grade than the other dimensions; cue regexes are cross-checked against the content plan so one missed detection cannot swing the score. It does not predict citation rate.\nEvaluation summary: 51 · 3 issues to improve\nRationale:\n- 0 ingredient signals and 0 benefit/effect signals available\n- Direct ingredient-to-benefit bridge is weak\n- Customer selection criteria are not explicit enough\nImprovements:\n- Help customers judge 'is this for me?' by mentioning skin type, concern, or usage situation (e.g. 'if your skin feels dry and tight').\n- Key ingredient information is thin. Pull more ingredient details from the product source.\n- It's not clear what improves after use. Strengthen the copy around the changes customers can expect.\n\nE-E-A-T: 60/100\nCriteria: E-E-A-T diagnostic criteria: this is a proxy for evidence and scoping hygiene, not Google's E-E-A-T rating — it checks evidence-link coverage, sample/time context on numeric claims, and claim-distortion signals. Validation warnings are penalized under GEO only.\nEvaluation summary: 60 · 1 issue to improve\nRationale:\n- 0 input/mapping/RAG/terminology evidence records across 0 diagnostic source types\n- No percentage/improvement claim detected; numeric-evidence checks do not affect the score\n- The current result has no per-claim evidence ID, so atomic claim-to-source coverage is not calculated\nImprovements:\n- Write benefit sentences so each one is backed by the product source."
+    },
+    {
+      "id": "falsy-number",
+      "input": {
+        "jsonLd": 0,
+        "diagnostics": {
+          "normalizedProduct": {},
+          "validationWarnings": []
+        }
+      },
+      "inputHash": "8394161d1a834774d4d992d21d3979e82a96172b99d86f8e74cfb92baadd6412",
+      "language": "en",
+      "productName": "",
+      "evaluation": {
+        "overallScore": 53,
+        "dimensions": [
+          {
+            "id": "geo",
+            "label": "GEO",
+            "score": 48,
+            "criteria": "GEO diagnostic criteria: required product/page identity, graph references, schema structure, validation stability, plus the on-page citation gatekeepers confirmed by controlled research (SIGIR 2026): an explicit price and a freshness timestamp. This is schema hygiene, not a citation-probability estimate. FAQ/HowTo presence earns no points.",
+            "summary": "48 · 5 issues to improve",
+            "evidence": [
+              "0 schema nodes generated: none",
+              "No price information in the schema.",
+              "No published/modified date in the schema.",
+              "Optional entity inventory: FAQ 0, HowTo 0 steps, Breadcrumb 0; presence itself earns no points",
+              "Images 0, offers 0, additional properties 0 strengthen PDP identity",
+              "All local schema references resolve to target nodes",
+              "No content applicability plan is available, so semantic FAQ/HowTo suitability is not scored",
+              "Output is built without warnings or automatic repairs"
+            ],
+            "improvements": [
+              "Add a published or modified date (dateModified) to the page. A recent timestamp is a confirmed AI-citation gatekeeper.",
+              "State the price explicitly in the schema. Controlled research confirmed explicit price as a primary AI-citation gatekeeper.",
+              "Basic product information (name, description) that search engines can read is missing. Fill in the product info first.",
+              "The page is missing its one-line introduction. Add what this page is about."
+            ]
+          },
+          {
+            "id": "cep",
+            "label": "CEP",
+            "score": 51,
+            "criteria": "CEP diagnostic criteria: source-present ingredient, benefit, and customer-choice context. CEP is a qualitative marketing framework (Ehrenberg-Bass) with a weaker evidence grade than the other dimensions; cue regexes are cross-checked against the content plan so one missed detection cannot swing the score. It does not predict citation rate.",
+            "summary": "51 · 3 issues to improve",
+            "evidence": [
+              "0 ingredient signals and 0 benefit/effect signals available",
+              "Direct ingredient-to-benefit bridge is weak",
+              "Customer selection criteria are not explicit enough"
+            ],
+            "improvements": [
+              "Help customers judge 'is this for me?' by mentioning skin type, concern, or usage situation (e.g. 'if your skin feels dry and tight').",
+              "Key ingredient information is thin. Pull more ingredient details from the product source.",
+              "It's not clear what improves after use. Strengthen the copy around the changes customers can expect."
+            ]
+          },
+          {
+            "id": "eeat",
+            "label": "E-E-A-T",
+            "score": 60,
+            "criteria": "E-E-A-T diagnostic criteria: this is a proxy for evidence and scoping hygiene, not Google's E-E-A-T rating — it checks evidence-link coverage, sample/time context on numeric claims, and claim-distortion signals. Validation warnings are penalized under GEO only.",
+            "summary": "60 · 1 issue to improve",
+            "evidence": [
+              "0 input/mapping/RAG/terminology evidence records across 0 diagnostic source types",
+              "No percentage/improvement claim detected; numeric-evidence checks do not affect the score",
+              "The current result has no per-claim evidence ID, so atomic claim-to-source coverage is not calculated"
+            ],
+            "improvements": [
+              "Write benefit sentences so each one is backed by the product source."
+            ]
+          }
+        ],
+        "validationDetails": [],
+        "validationImprovements": []
+      },
+      "report": "Quality metrics\nProduct: \nDiagnostic score (not citation rate): 53/100\n\nGEO: 48/100\nCriteria: GEO diagnostic criteria: required product/page identity, graph references, schema structure, validation stability, plus the on-page citation gatekeepers confirmed by controlled research (SIGIR 2026): an explicit price and a freshness timestamp. This is schema hygiene, not a citation-probability estimate. FAQ/HowTo presence earns no points.\nEvaluation summary: 48 · 5 issues to improve\nRationale:\n- 0 schema nodes generated: none\n- No price information in the schema.\n- No published/modified date in the schema.\n- Optional entity inventory: FAQ 0, HowTo 0 steps, Breadcrumb 0; presence itself earns no points\n- Images 0, offers 0, additional properties 0 strengthen PDP identity\n- All local schema references resolve to target nodes\n- No content applicability plan is available, so semantic FAQ/HowTo suitability is not scored\n- Output is built without warnings or automatic repairs\nImprovements:\n- Add a published or modified date (dateModified) to the page. A recent timestamp is a confirmed AI-citation gatekeeper.\n- State the price explicitly in the schema. Controlled research confirmed explicit price as a primary AI-citation gatekeeper.\n- Basic product information (name, description) that search engines can read is missing. Fill in the product info first.\n- The page is missing its one-line introduction. Add what this page is about.\n\nCEP: 51/100\nCriteria: CEP diagnostic criteria: source-present ingredient, benefit, and customer-choice context. CEP is a qualitative marketing framework (Ehrenberg-Bass) with a weaker evidence grade than the other dimensions; cue regexes are cross-checked against the content plan so one missed detection cannot swing the score. It does not predict citation rate.\nEvaluation summary: 51 · 3 issues to improve\nRationale:\n- 0 ingredient signals and 0 benefit/effect signals available\n- Direct ingredient-to-benefit bridge is weak\n- Customer selection criteria are not explicit enough\nImprovements:\n- Help customers judge 'is this for me?' by mentioning skin type, concern, or usage situation (e.g. 'if your skin feels dry and tight').\n- Key ingredient information is thin. Pull more ingredient details from the product source.\n- It's not clear what improves after use. Strengthen the copy around the changes customers can expect.\n\nE-E-A-T: 60/100\nCriteria: E-E-A-T diagnostic criteria: this is a proxy for evidence and scoping hygiene, not Google's E-E-A-T rating — it checks evidence-link coverage, sample/time context on numeric claims, and claim-distortion signals. Validation warnings are penalized under GEO only.\nEvaluation summary: 60 · 1 issue to improve\nRationale:\n- 0 input/mapping/RAG/terminology evidence records across 0 diagnostic source types\n- No percentage/improvement claim detected; numeric-evidence checks do not affect the score\n- The current result has no per-claim evidence ID, so atomic claim-to-source coverage is not calculated\nImprovements:\n- Write benefit sentences so each one is backed by the product source."
+    },
+    {
+      "id": "falsy-string",
+      "input": {
+        "jsonLd": "",
+        "diagnostics": {
+          "normalizedProduct": {},
+          "validationWarnings": []
+        }
+      },
+      "inputHash": "e669e7849821c0fe19587e91bd353d8cae481c65a29f77ecc14bf74f4f33a299",
+      "language": "en",
+      "productName": "",
+      "evaluation": {
+        "overallScore": 53,
+        "dimensions": [
+          {
+            "id": "geo",
+            "label": "GEO",
+            "score": 48,
+            "criteria": "GEO diagnostic criteria: required product/page identity, graph references, schema structure, validation stability, plus the on-page citation gatekeepers confirmed by controlled research (SIGIR 2026): an explicit price and a freshness timestamp. This is schema hygiene, not a citation-probability estimate. FAQ/HowTo presence earns no points.",
+            "summary": "48 · 5 issues to improve",
+            "evidence": [
+              "0 schema nodes generated: none",
+              "No price information in the schema.",
+              "No published/modified date in the schema.",
+              "Optional entity inventory: FAQ 0, HowTo 0 steps, Breadcrumb 0; presence itself earns no points",
+              "Images 0, offers 0, additional properties 0 strengthen PDP identity",
+              "All local schema references resolve to target nodes",
+              "No content applicability plan is available, so semantic FAQ/HowTo suitability is not scored",
+              "Output is built without warnings or automatic repairs"
+            ],
+            "improvements": [
+              "Add a published or modified date (dateModified) to the page. A recent timestamp is a confirmed AI-citation gatekeeper.",
+              "State the price explicitly in the schema. Controlled research confirmed explicit price as a primary AI-citation gatekeeper.",
+              "Basic product information (name, description) that search engines can read is missing. Fill in the product info first.",
+              "The page is missing its one-line introduction. Add what this page is about."
+            ]
+          },
+          {
+            "id": "cep",
+            "label": "CEP",
+            "score": 51,
+            "criteria": "CEP diagnostic criteria: source-present ingredient, benefit, and customer-choice context. CEP is a qualitative marketing framework (Ehrenberg-Bass) with a weaker evidence grade than the other dimensions; cue regexes are cross-checked against the content plan so one missed detection cannot swing the score. It does not predict citation rate.",
+            "summary": "51 · 3 issues to improve",
+            "evidence": [
+              "0 ingredient signals and 0 benefit/effect signals available",
+              "Direct ingredient-to-benefit bridge is weak",
+              "Customer selection criteria are not explicit enough"
+            ],
+            "improvements": [
+              "Help customers judge 'is this for me?' by mentioning skin type, concern, or usage situation (e.g. 'if your skin feels dry and tight').",
+              "Key ingredient information is thin. Pull more ingredient details from the product source.",
+              "It's not clear what improves after use. Strengthen the copy around the changes customers can expect."
+            ]
+          },
+          {
+            "id": "eeat",
+            "label": "E-E-A-T",
+            "score": 60,
+            "criteria": "E-E-A-T diagnostic criteria: this is a proxy for evidence and scoping hygiene, not Google's E-E-A-T rating — it checks evidence-link coverage, sample/time context on numeric claims, and claim-distortion signals. Validation warnings are penalized under GEO only.",
+            "summary": "60 · 1 issue to improve",
+            "evidence": [
+              "0 input/mapping/RAG/terminology evidence records across 0 diagnostic source types",
+              "No percentage/improvement claim detected; numeric-evidence checks do not affect the score",
+              "The current result has no per-claim evidence ID, so atomic claim-to-source coverage is not calculated"
+            ],
+            "improvements": [
+              "Write benefit sentences so each one is backed by the product source."
+            ]
+          }
+        ],
+        "validationDetails": [],
+        "validationImprovements": []
+      },
+      "report": "Quality metrics\nProduct: \nDiagnostic score (not citation rate): 53/100\n\nGEO: 48/100\nCriteria: GEO diagnostic criteria: required product/page identity, graph references, schema structure, validation stability, plus the on-page citation gatekeepers confirmed by controlled research (SIGIR 2026): an explicit price and a freshness timestamp. This is schema hygiene, not a citation-probability estimate. FAQ/HowTo presence earns no points.\nEvaluation summary: 48 · 5 issues to improve\nRationale:\n- 0 schema nodes generated: none\n- No price information in the schema.\n- No published/modified date in the schema.\n- Optional entity inventory: FAQ 0, HowTo 0 steps, Breadcrumb 0; presence itself earns no points\n- Images 0, offers 0, additional properties 0 strengthen PDP identity\n- All local schema references resolve to target nodes\n- No content applicability plan is available, so semantic FAQ/HowTo suitability is not scored\n- Output is built without warnings or automatic repairs\nImprovements:\n- Add a published or modified date (dateModified) to the page. A recent timestamp is a confirmed AI-citation gatekeeper.\n- State the price explicitly in the schema. Controlled research confirmed explicit price as a primary AI-citation gatekeeper.\n- Basic product information (name, description) that search engines can read is missing. Fill in the product info first.\n- The page is missing its one-line introduction. Add what this page is about.\n\nCEP: 51/100\nCriteria: CEP diagnostic criteria: source-present ingredient, benefit, and customer-choice context. CEP is a qualitative marketing framework (Ehrenberg-Bass) with a weaker evidence grade than the other dimensions; cue regexes are cross-checked against the content plan so one missed detection cannot swing the score. It does not predict citation rate.\nEvaluation summary: 51 · 3 issues to improve\nRationale:\n- 0 ingredient signals and 0 benefit/effect signals available\n- Direct ingredient-to-benefit bridge is weak\n- Customer selection criteria are not explicit enough\nImprovements:\n- Help customers judge 'is this for me?' by mentioning skin type, concern, or usage situation (e.g. 'if your skin feels dry and tight').\n- Key ingredient information is thin. Pull more ingredient details from the product source.\n- It's not clear what improves after use. Strengthen the copy around the changes customers can expect.\n\nE-E-A-T: 60/100\nCriteria: E-E-A-T diagnostic criteria: this is a proxy for evidence and scoping hygiene, not Google's E-E-A-T rating — it checks evidence-link coverage, sample/time context on numeric claims, and claim-distortion signals. Validation warnings are penalized under GEO only.\nEvaluation summary: 60 · 1 issue to improve\nRationale:\n- 0 input/mapping/RAG/terminology evidence records across 0 diagnostic source types\n- No percentage/improvement claim detected; numeric-evidence checks do not affect the score\n- The current result has no per-claim evidence ID, so atomic claim-to-source coverage is not calculated\nImprovements:\n- Write benefit sentences so each one is backed by the product source."
+    }
+  ],
+  "citation": {
+    "metricInput": {
+      "answer": "Barrier comfort lasts through the day. [2] Apply after toner at night [2][1].\n\nUnrelated competitor note [0].",
+      "sourceCount": 3,
+      "targetIndex": 2,
+      "sections": [
+        {
+          "id": "description",
+          "text": "Barrier comfort lasts through the day."
+        },
+        {
+          "id": "howToUse",
+          "text": "Apply after toner at night."
+        }
+      ]
+    },
+    "metricInputHash": "68450881a7d8b5af5556499b44330f37b79dd09e4de4eb83f51d9768426ec57e",
+    "sentences": [
+      {
+        "text": "Barrier comfort lasts through the day. [2]",
+        "paragraphIndex": 0,
+        "sentenceIndex": 0,
+        "wordCount": 6,
+        "citations": [
+          2
+        ]
+      },
+      {
+        "text": "Apply after toner at night [2][1].",
+        "paragraphIndex": 0,
+        "sentenceIndex": 1,
+        "wordCount": 4,
+        "citations": [
+          2,
+          1
+        ]
+      },
+      {
+        "text": "Unrelated competitor note [0].",
+        "paragraphIndex": 1,
+        "sentenceIndex": 2,
+        "wordCount": 3,
+        "citations": [
+          0
+        ]
+      }
+    ],
+    "shares": {
+      "wordpos": [
+        0.1158096543945687,
+        0.12729189370183733,
+        0.7568984519035938
+      ],
+      "word": [
+        0.23076923076923078,
+        0.15384615384615385,
+        0.6153846153846154
+      ],
+      "pos": [
+        0.18632372322584762,
+        0.15359794285924921,
+        0.6600783339149032
+      ],
+      "hallucinatedCitations": [],
+      "citedSentenceCount": 3,
+      "sentenceCount": 3
+    },
+    "visibility": {
+      "wordpos": 0.7568984519035938,
+      "word": 0.6153846153846154,
+      "pos": 0.6600783339149032,
+      "shares": {
+        "wordpos": [
+          0.1158096543945687,
+          0.12729189370183733,
+          0.7568984519035938
+        ],
+        "word": [
+          0.23076923076923078,
+          0.15384615384615385,
+          0.6153846153846154
+        ],
+        "pos": [
+          0.18632372322584762,
+          0.15359794285924921,
+          0.6600783339149032
+        ],
+        "hallucinatedCitations": [],
+        "citedSentenceCount": 3,
+        "sentenceCount": 3
+      }
+    },
+    "attribution": [
+      {
+        "sectionId": "description",
+        "share": 0.6,
+        "citedSentences": 1,
+        "sentences": [
+          "Barrier comfort lasts through the day."
+        ]
+      },
+      {
+        "sectionId": "howToUse",
+        "share": 0.4,
+        "citedSentences": 1,
+        "sentences": [
+          "Apply after toner at night."
+        ]
+      }
+    ],
+    "normalized": [
+      -1.0690449676496978,
+      -0.2672612419124245,
+      1.3363062095621219
+    ],
+    "imageInput": [
+      {
+        "fieldPath": "description",
+        "text": "fallback",
+        "imageUrls": [
+          "https://img.example/a.jpg"
+        ],
+        "sentences": [
+          {
+            "text": "barrier comfort",
+            "imageUrls": [
+              "https://img.example/a.jpg"
+            ]
+          },
+          {
+            "text": "apply nightly",
+            "imageUrls": [
+              "https://img.example/b.jpg"
+            ]
+          }
+        ]
+      }
+    ],
+    "imageSections": [
+      {
+        "id": "https://img.example/a.jpg",
+        "text": "barrier comfort"
+      },
+      {
+        "id": "https://img.example/b.jpg",
+        "text": "apply nightly"
+      }
+    ],
+    "probeContext": {
+      "generatedText": "generated",
+      "vanillaText": "vanilla",
+      "locale": "en-US",
+      "category": "cream",
+      "benefits": [
+        "barrier support"
+      ],
+      "contentPlan": {
+        "faq": [
+          {
+            "include": true,
+            "question": "Who is it for?"
+          }
+        ],
+        "cep": [
+          {
+            "situation": "after cleansing",
+            "need": "barrier comfort"
+          }
+        ]
+      }
+    },
+    "queries": [
+      {
+        "query": "Who is it for?",
+        "source": "content-plan-faq"
+      },
+      {
+        "query": "Which cream helps with barrier comfort (after cleansing)?",
+        "source": "content-plan-cep"
+      },
+      {
+        "query": "What cream is good for barrier support?",
+        "source": "template"
+      }
+    ],
+    "distractors": [
+      "How to choose a cream that actually works for you. Start by narrowing your main concern to one thing, then check the ingredient list for actives that address it at a meaningful position. Texture preferences matter more than marketing: try a sample or travel size before committing. Give any cream at least two weeks of consistent use before judging results, and patch test new formulas on your inner arm first.",
+      "NovaField Daily cream. A gentle daily formula with panthenol, madecassoside, and low-molecular hyaluronic acid. Dermatologist tested, suitable for sensitive skin. Apply morning and evening after cleansing. Fragrance-free, no added colorants. NovaField — everyday skin habits, simplified.",
+      "cream — In stock, ships in 1-2 business days. Product details: for facial use, imported, authenticity guaranteed by the marketplace seller program. Frequently bought together: cotton pads, moisturizer, sunscreen. Write a photo review for reward points. Returns accepted within 7 days for unopened items only.",
+      "Forum thread: What cream is everyone using? Mine got discontinued and I need a replacement. Reply 1: I settled on something with a short ingredient list — the kitchen-sink formulas broke me out. Reply 2: Bought an influencer pick and it did nothing for me, you really have to test yourself. Reply 3: Grab a mini size during sales before buying full size. Reply 4: \"Gentle\" on the label means nothing, read the full ingredient list."
+    ],
+    "generatedText": "Name\n\nDescription\n\nBenefit",
+    "vanillaText": "별모래 테스트 랩 워터폴드 캡슐 토너\nCategory: 토너\n워터폴드 캡슐 토너는 회귀 테스트를 위해 작성한 가상 보습 토너입니다.\n세안 뒤 첫 단계에서 피부결을 편안하게 정돈하는 예시를 제공합니다.\n주요 성분: 수분결 리포좀, 판테놀, 베타글루칸, 소듐하이알루로네이트, 글루코노락톤.\n합성 테스트 패널: 14일 사용 후 20명 중 16명이 세안 뒤 당김이 덜 느껴졌다고 답했습니다.\nBenefits: 장벽 보습, 피부결 정돈, 세안 후 수분 공급\nEffects: 세안 뒤 당김이 덜 느껴지는 사용감, 가볍게 눌러 흡수되는 보습감\nKey ingredients: 수분결 리포좀, 판테놀, 베타글루칸, 소듐하이알루로네이트, 글루코노락톤\nHow to use: 세안 직후 손바닥에 덜어 얼굴 안쪽에서 바깥쪽으로 가볍게 눌러 흡수시킵니다. 이 문장은 합성 사용 예시입니다.\nQ: 토너 안의 리포좀 입자는 어떻게 사용하나요? A: 이 합성 제품 설명에서는 입자가 보습 성분을 고르게 섞어 주는 시각적 예시로만 쓰입니다. 사용 전 가볍게 흔든 뒤 손바닥에 덜어 사용하세요.\nQ: 민감하게 느껴지는 날에도 사용할 수 있나요? A: 개인 피부 상태는 다르므로 작은 부위에 먼저 사용해 보고, 불편함이 있으면 사용을 멈추는 가상 안내입니다.\nQ: 다른 보습 제품과 함께 쓰는 순서는 어떻게 되나요? A: 세안 뒤 토너를 먼저 바르고, 필요에 따라 에센스와 크림을 덧바르는 합성 루틴 예시입니다.\nQ: 임신 중이거나 어린이와 함께 쓸 때 무엇을 확인해야 하나요? A: 이 레코드는 의료 조언이 아닙니다. 성분과 개인 상황을 확인하고 필요하면 전문가와 상담하라는 테스트용 안내입니다.",
+    "metadata": {
+      "contains": true,
+      "artifact": "platform.meta.value: x"
+    }
+  },
+  "utility": {
+    "keypointRaw": "{\"ev-1\":{\"label\":\"Supported\",\"justification\":\"Present\"}}",
+    "claimRaw": "{\"claims\":[{\"claimId\":1,\"claim\":\"Barrier support\",\"sourceIndices\":[0]}]}",
+    "supportRaw": "{\"support\":\"full_support\",\"justification\":\"Direct\"}",
+    "keypoints": {
+      "ev-1": {
+        "label": "Supported",
+        "justification": "Present"
+      }
+    },
+    "claims": [
+      {
+        "claimId": 1,
+        "claim": "Barrier support",
+        "sourceIndices": [
+          0
+        ]
+      }
+    ],
+    "support": {
+      "support": "full_support",
+      "justification": "Direct"
+    },
+    "coverage": {
+      "kpr": 1,
+      "kpc": 0,
+      "supported": 1,
+      "omitted": 0,
+      "contradicted": 0,
+      "total": 1,
+      "contradictions": []
+    },
+    "citationQuality": {
+      "precision": 1,
+      "recall": 1,
+      "citedClaims": 1,
+      "totalClaims": 1,
+      "weakClaims": []
+    },
+    "gate": {
+      "pass": true,
+      "failures": [],
+      "skippedChecks": []
+    }
+  },
+  "prompts": {
+    "citationAnswer": {
+      "system": "Write an accurate and concise answer for the given user question, using _only_ the provided summarized web search results. The answer should be correct, high-quality, and written by an expert using an unbiased and journalistic tone. Write the answer in the same language as the user question. The answer should be informative, interesting, and engaging. The answer's logic and reasoning should be rigorous and defensible. Every sentence in the answer should be _immediately followed_ by an in-line citation to the search result(s). The cited search result(s) should fully support _all_ the information in the sentence. Search results need to be cited using [index]. When citing several search results, use [1][2][3] format rather than [1, 2, 3]. You can use multiple search results to respond comprehensively while avoiding irrelevant search results.",
+      "user": "Question: What supports comfort?\n\nSearch Results:\n### Source 0:\nfirst\n\n### Source 1:\nsecond"
+    },
+    "concept": {
+      "system": "You are a strict content auditor for e-commerce product pages. Your job is to judge whether three optimization CONCEPTS are actually embodied in the given public copy — not whether the copy merely exists, and not whether the underlying source data happens to be rich. Score each concept independently, 0-100.\n\n1. GEO concept = self-contained answer coverage. A generative search engine, using ONLY this copy, must be able to answer each of: what the product is; who it is for; how to use it; which key ingredients/technology drive it; what real users experienced. Each answer must exist as one citable, self-contained sentence — not scattered fragments requiring outside inference.\n\n2. CEP concept = closed causal purchase path. The copy must connect, in order: the customer's entry situation -> their need -> how the product's composition addresses it -> the resulting outcome -> why this makes the product the right fit. Ingredients and benefits merely listed side by side, with no causal link between them, do NOT satisfy this concept even when both are present.\n\n3. EEAT concept = four elements, judged independently:\n   - Experience: a first-person or attributed account of real usage, not just a benefit claim.\n   - Expertise: ingredients/technology explained by FUNCTION (why it works), not just named.\n   - Authoritativeness: consistent brand/product identity and terminology, no internal contradictions.\n   - Trust: any numeric claim carries its sample size, time period, and measurement method, without overstated wording.\n\nFAIRNESS RULES — you must follow these:\n- Judge only whether each concept is embodied IN THE GIVEN COPY. Never penalize the copy for a source signal that was absent to begin with (see \"Source signals\" in the user message) — if the source has no review data, the absence of an attributed usage account is expected, not a defect.\n- Never propose an improvement that would add information not present in the source. Every improvement must be phrased as surfacing, connecting, or restructuring EXISTING content (\"surface the existing X\", \"connect Y to Z\"), never \"add W\".\n- Every \"missing\" entry must point to a concrete source signal that WAS available (per the source-signal summary) but did not make it into the copy. If a concept element has no supporting source signal at all, do not list it as missing.\n- Every \"embodied\"/\"missing\" entry must quote or closely paraphrase the specific wording it refers to.\n\nRespond with strict JSON only, no prose outside the JSON object, in exactly this shape:\n{\n  \"dimensions\": {\n    \"geo\": { \"score\": 0-100, \"embodied\": string[], \"missing\": string[], \"improvements\": string[] },\n    \"cep\": { \"score\": 0-100, \"embodied\": string[], \"missing\": string[], \"improvements\": string[] },\n    \"eeat\": { \"score\": 0-100, \"embodied\": string[], \"missing\": string[], \"improvements\": string[] }\n  },\n  \"summary\": string\n}\nWrite every string value in English.",
+      "user": "Public copy to judge:\n\n### Product description\nA cream that supports skin barrier comfort.\n\n### WebPage description\nBarrier Cream product page.\n\n### FAQ\n1. Q: Who is it for?\n   A: It is for dry skin needing barrier support.\n\n### How-to steps\n1. Apply: Apply after toner and press until absorbed.\n\n### Additional properties\n(none)\n\n---\nSource signals (for fairness only — never penalize the absence of a signal below, and never invent content beyond what these imply):\n{\n  \"hasReviewSignal\": true,\n  \"sourceIngredientCount\": 1,\n  \"sourceUsageStepCount\": 1,\n  \"sourceBenefitCount\": 2,\n  \"sourceFaqCount\": 1\n}\n\nReturn the JSON object and nothing else."
+    },
+    "conceptParsed": {
+      "overallScore": 80,
+      "dimensions": [
+        {
+          "id": "geo",
+          "score": 90,
+          "embodied": [
+            "A"
+          ],
+          "missing": [],
+          "improvements": []
+        },
+        {
+          "id": "cep",
+          "score": 80,
+          "embodied": [],
+          "missing": [
+            "B"
+          ],
+          "improvements": [
+            "C"
+          ]
+        },
+        {
+          "id": "eeat",
+          "score": 70,
+          "embodied": [],
+          "missing": [],
+          "improvements": []
+        }
+      ],
+      "summary": "Summary"
+    },
+    "contentSections": "### Product name\nCream\n\n### Description\nGood cream\n\n### Benefits\nFirming",
+    "qualityPrompt": "You are a GEO (generative engine optimization) content improvement assistant.\nBelow are the auto-generated schema.org JSON-LD and content for the product \"Barrier Cream\", together with an automated quality diagnosis.\n\n## Tasks\n1. Propose concrete fixes that resolve the \"Improvements\" in priority order, showing before/after at the sentence or JSON-LD field level.\n2. Hard rule: never invent benefits, figures, ingredients, certifications, or reviews that are absent from the content and JSON-LD below. Improve wording and structure only within the existing facts.\n3. State which diagnosis item (GEO/CEP/E-E-A-T/validation warning) each fix resolves.\n\n## Quality diagnosis (overall 81/100)\n### GEO — 76/100\nImprovements:\n- Show usage as numbered steps only when there is a real order (step 1 → step 2). For a one-line usage note, drop the step format.\n- 1 item was auto-fixed by the system. Fixing the source product data means you won't depend on auto-fixes every time.\nEvidence:\n- 4 schema nodes generated: Product, WebPage, FAQPage, HowTo\n- An explicit price is present — one of the on-page AI-citation gatekeepers.\n- A published/modified date is present — one of the on-page AI-citation gatekeepers.\n- Optional entity inventory: FAQ 1, HowTo 1 step, Breadcrumb 0; presence itself earns no points\n- Images 0, offers 1, additional properties 0 strengthen PDP identity\n- All local schema references resolve to target nodes\n- No content applicability plan is available, so semantic FAQ/HowTo suitability is not scored\n- 1 automatic repair was required; this is a generation-stability signal, not a quality gain\n\n### CEP — 76/100\nImprovements:\n- After each ingredient name, add what it actually does in one sentence (e.g. 'ceramide refills a weakened skin barrier to reduce tightness').\nEvidence:\n- 1 ingredient signal and 2 benefit/effect signals available\n- Direct ingredient-to-benefit bridge is weak\n- Customer context such as concern, skin type, or selection cue is included\n\n### E-E-A-T — 90/100\nImprovements:\n- Write benefit sentences so each one is backed by the product source.\n- 1 item was auto-fixed by the system. Fixing the source product data means you won't depend on auto-fixes every time.\nEvidence:\n- 1 atomic evidence item across 1 semantic role in the Evidence Ledger\n- No percentage/improvement claim detected; numeric-evidence checks do not affect the score\n- The current result has no per-claim evidence ID, so atomic claim-to-source coverage is not calculated\n\n## Validation warnings\n- 1. description (validator): reviewed wording -> kept scoped\n\n## Current content sections\n### Product name\nBarrier Cream\n\n### Description\nA cream\n\n### Benefits\nBarrier support\n\n## Current JSON-LD\n```json\n{\n  \"@graph\": [\n    {\n      \"@type\": \"Product\",\n      \"@id\": \"#product\",\n      \"name\": \"Barrier Cream\",\n      \"description\": \"A cream that supports skin barrier comfort.\",\n      \"offers\": {\n        \"@type\": \"Offer\",\n        \"price\": \"29.00\",\n        \"priceCurrency\": \"USD\"\n      },\n      \"dateModified\": \"2026-01-02\"\n    },\n    {\n      \"@type\": \"WebPage\",\n      \"@id\": \"#page\",\n      \"mainEntity\": {\n        \"@id\": \"#product\"\n      },\n      \"description\": \"Barrier Cream product page.\"\n    },\n    {\n      \"@type\": \"FAQPage\",\n      \"mainEntity\": [\n        {\n          \"@type\": \"Question\",\n          \"name\": \"Who is it for?\",\n          \"acceptedAnswer\": {\n            \"@type\": \"Answer\",\n            \"text\": \"It is for dry skin needing barrier support.\"\n          }\n        }\n      ]\n    },\n    {\n      \"@type\": \"HowTo\",\n      \"step\": [\n        {\n          \"@type\": \"HowToStep\",\n          \"name\": \"Apply\",\n          \"text\": \"Apply after toner and press until absorbed.\"\n        }\n      ]\n    }\n  ]\n}\n```\n",
+    "probePrompt": "You are an AI-search (generative engine) citation optimization assistant.\nThe generated content for \"Barrier Cream\" was tested on a simulated AI search engine (openai:test): with identical questions and competitor documents, the vanilla PDP and the generated content were each measured for citation share in the AI answer.\n\n## Per-question results (vanilla → generated)\n\n\n## Safety check\n- Citations did not drop and no sentence contradicts the product evidence.\n\n## Tasks\n1. Starting with the questions marked \"fix first\", propose sentence-level additions so the content directly answers each question — lead with the conclusion, use question-answer structure, lists/headings, and scope any figures within the existing evidence.\n2. Hard rule: never invent benefits, figures, ingredients, certifications, or reviews absent from the content below.\n3. State which question each addition targets.\n\n## Current content sections\n### Product name\nBarrier Cream\n\n### Description\nA cream\n\n### Benefits\nBarrier support\n",
+    "providers": [
+      {
+        "id": "openai-normal",
+        "config": {
+          "provider": "openai",
+          "apiKey": "key",
+          "model": "gpt-test",
+          "temperature": 0.2
+        },
+        "system": "system",
+        "user": "user",
+        "inputSha256": "42586748beecc25f2fcf28e372468a7473771ac18e15cd658d776496266adca8",
+        "calls": [
+          {
+            "url": "https://api.openai.com/v1/responses",
+            "headers": {
+              "authorization": "Bearer key",
+              "content-type": "application/json"
+            },
+            "body": {
+              "model": "gpt-test",
+              "instructions": "system",
+              "input": "user",
+              "temperature": 0.2
+            },
+            "bodyBase64": "eyJtb2RlbCI6ImdwdC10ZXN0IiwiaW5zdHJ1Y3Rpb25zIjoic3lzdGVtIiwiaW5wdXQiOiJ1c2VyIiwidGVtcGVyYXR1cmUiOjAuMn0=",
+            "bodySha256": "493c71e060fb2dd08e05f6c625d943d705ae98e1e754e5ee41dd6eedadb81eee"
+          }
+        ],
+        "answer": "answer"
+      },
+      {
+        "id": "gemini-normal",
+        "config": {
+          "provider": "gemini",
+          "apiKey": "key",
+          "model": "gemini-test"
+        },
+        "system": "system",
+        "user": "user",
+        "inputSha256": "a6276b1a4cb85243f82ea7c551d3f15a5c1653cbac5c561f2fc00c2e75eb46a1",
+        "calls": [
+          {
+            "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-test:generateContent",
+            "headers": {
+              "content-type": "application/json",
+              "x-goog-api-key": "key"
+            },
+            "body": {
+              "systemInstruction": {
+                "parts": [
+                  {
+                    "text": "system"
+                  }
+                ]
+              },
+              "contents": [
+                {
+                  "role": "user",
+                  "parts": [
+                    {
+                      "text": "user"
+                    }
+                  ]
+                }
+              ]
+            },
+            "bodyBase64": "eyJzeXN0ZW1JbnN0cnVjdGlvbiI6eyJwYXJ0cyI6W3sidGV4dCI6InN5c3RlbSJ9XX0sImNvbnRlbnRzIjpbeyJyb2xlIjoidXNlciIsInBhcnRzIjpbeyJ0ZXh0IjoidXNlciJ9XX1dfQ==",
+            "bodySha256": "7329042270098e80f1038c7d13f21dcdd818651fdd80dcf65cbbffc4c25bc118"
+          }
+        ],
+        "answer": "one\ntwo"
+      },
+      {
+        "id": "azure-retry-normal",
+        "config": {
+          "provider": "azure-openai",
+          "apiKey": "key",
+          "endpoint": "https://azure.example/",
+          "deployment": "prod",
+          "apiVersion": "2025-01-01",
+          "temperature": 0.2
+        },
+        "system": "system",
+        "user": "user",
+        "inputSha256": "e732e49c61b45fdd6804390bba1aad0a6bb1510ef42fb854ae4657930b6cfb53",
+        "calls": [
+          {
+            "url": "https://azure.example/openai/deployments/prod/chat/completions?api-version=2025-01-01",
+            "headers": {
+              "api-key": "key",
+              "content-type": "application/json"
+            },
+            "body": {
+              "messages": [
+                {
+                  "role": "system",
+                  "content": "system"
+                },
+                {
+                  "role": "user",
+                  "content": "user"
+                }
+              ],
+              "temperature": 0.2
+            },
+            "bodyBase64": "eyJtZXNzYWdlcyI6W3sicm9sZSI6InN5c3RlbSIsImNvbnRlbnQiOiJzeXN0ZW0ifSx7InJvbGUiOiJ1c2VyIiwiY29udGVudCI6InVzZXIifV0sInRlbXBlcmF0dXJlIjowLjJ9",
+            "bodySha256": "62b35c65456e70c200ce584e08140350d3db69246f595c20af465fb47fd2e4dc"
+          },
+          {
+            "url": "https://azure.example/openai/deployments/prod/chat/completions?api-version=2025-01-01",
+            "headers": {
+              "api-key": "key",
+              "content-type": "application/json"
+            },
+            "body": {
+              "messages": [
+                {
+                  "role": "system",
+                  "content": "system"
+                },
+                {
+                  "role": "user",
+                  "content": "user"
+                }
+              ]
+            },
+            "bodyBase64": "eyJtZXNzYWdlcyI6W3sicm9sZSI6InN5c3RlbSIsImNvbnRlbnQiOiJzeXN0ZW0ifSx7InJvbGUiOiJ1c2VyIiwiY29udGVudCI6InVzZXIifV19",
+            "bodySha256": "aaac0431a1600a70e7c7ac852a34d54696a2f7633dfbe52e212b06b5c4e33abc"
+          }
+        ],
+        "answer": "retry"
+      },
+      {
+        "id": "aistudio-normal",
+        "config": {
+          "provider": "aistudio",
+          "apiKey": "key",
+          "endpoint": "https://aistudio.example/",
+          "deployment": "prod",
+          "apiVersion": " 2025-01-01 "
+        },
+        "system": "system",
+        "user": "user",
+        "inputSha256": "5b0a1541728b8f4315e1d7bbb6eee8b9cce7767329b0b9c1993d25e73293acec",
+        "calls": [
+          {
+            "url": "https://aistudio.example/openai/deployments/prod/chat/completions?api-version=2025-01-01",
+            "headers": {
+              "authorization": "Bearer key",
+              "content-type": "application/json"
+            },
+            "body": {
+              "messages": [
+                {
+                  "role": "system",
+                  "content": "system"
+                },
+                {
+                  "role": "user",
+                  "content": "user"
+                }
+              ]
+            },
+            "bodyBase64": "eyJtZXNzYWdlcyI6W3sicm9sZSI6InN5c3RlbSIsImNvbnRlbnQiOiJzeXN0ZW0ifSx7InJvbGUiOiJ1c2VyIiwiY29udGVudCI6InVzZXIifV19",
+            "bodySha256": "aaac0431a1600a70e7c7ac852a34d54696a2f7633dfbe52e212b06b5c4e33abc"
+          }
+        ],
+        "answer": "studio"
+      },
+      {
+        "id": "openai-unicode-negative-zero",
+        "config": {
+          "provider": "openai",
+          "apiKey": "key",
+          "model": "gpt-test",
+          "temperature": {
+            "numberToken": "-0"
+          }
+        },
+        "system": "system=한글 \ud800 pair=😀",
+        "user": "user=\udc00",
+        "inputSha256": "88c1c7394500632735d55615de779ef16d32af9783fcd0ea7c00c906fbc84488",
+        "calls": [
+          {
+            "url": "https://api.openai.com/v1/responses",
+            "headers": {
+              "authorization": "Bearer key",
+              "content-type": "application/json"
+            },
+            "bodyBase64": "eyJtb2RlbCI6ImdwdC10ZXN0IiwiaW5zdHJ1Y3Rpb25zIjoic3lzdGVtPe2VnOq4gCBcdWQ4MDAgcGFpcj3wn5iAIiwiaW5wdXQiOiJ1c2VyPVx1ZGMwMCIsInRlbXBlcmF0dXJlIjowfQ==",
+            "bodySha256": "46338e363dd4c07e741e01e31cfb005e82b3a7e30e6d613c8ee4d03407771838"
+          }
+        ],
+        "answer": "unicode-openai"
+      },
+      {
+        "id": "gemini-unicode-nan",
+        "config": {
+          "provider": "gemini",
+          "apiKey": "key",
+          "model": "gemini-test",
+          "temperature": {
+            "numberToken": "NaN"
+          }
+        },
+        "system": "system=한글 \ud800 pair=😀",
+        "user": "user=\udc00",
+        "inputSha256": "3964d006f48b8d13db5c5cfaf9a089205eb531801252b321631e78de3e70a709",
+        "calls": [
+          {
+            "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-test:generateContent",
+            "headers": {
+              "content-type": "application/json",
+              "x-goog-api-key": "key"
+            },
+            "bodyBase64": "eyJzeXN0ZW1JbnN0cnVjdGlvbiI6eyJwYXJ0cyI6W3sidGV4dCI6InN5c3RlbT3tlZzquIAgXHVkODAwIHBhaXI98J+YgCJ9XX0sImNvbnRlbnRzIjpbeyJyb2xlIjoidXNlciIsInBhcnRzIjpbeyJ0ZXh0IjoidXNlcj1cdWRjMDAifV19XSwiZ2VuZXJhdGlvbkNvbmZpZyI6eyJ0ZW1wZXJhdHVyZSI6bnVsbH19",
+            "bodySha256": "4db17391e7e63a90a884f57d1ae66ed12293a369479f26624d8b98c048ea87e0"
+          }
+        ],
+        "answer": "unicode-gemini"
+      },
+      {
+        "id": "azure-retry-unicode-negative-zero",
+        "config": {
+          "provider": "azure-openai",
+          "apiKey": "key",
+          "endpoint": "https://azure.example/",
+          "deployment": "prod",
+          "apiVersion": "2025-01-01",
+          "temperature": {
+            "numberToken": "-0"
+          }
+        },
+        "system": "system=한글 \ud800 pair=😀",
+        "user": "user=\udc00",
+        "inputSha256": "4d03f20141c9989b71c363f95fcecbfc51d646f13b3669aa9e691a4cefaf8d51",
+        "calls": [
+          {
+            "url": "https://azure.example/openai/deployments/prod/chat/completions?api-version=2025-01-01",
+            "headers": {
+              "api-key": "key",
+              "content-type": "application/json"
+            },
+            "bodyBase64": "eyJtZXNzYWdlcyI6W3sicm9sZSI6InN5c3RlbSIsImNvbnRlbnQiOiJzeXN0ZW097ZWc6riAIFx1ZDgwMCBwYWlyPfCfmIAifSx7InJvbGUiOiJ1c2VyIiwiY29udGVudCI6InVzZXI9XHVkYzAwIn1dLCJ0ZW1wZXJhdHVyZSI6MH0=",
+            "bodySha256": "a90a3d973ec053e8dbdb8ad645b02aaff515cac4726c72b130a01a831231e7f0"
+          },
+          {
+            "url": "https://azure.example/openai/deployments/prod/chat/completions?api-version=2025-01-01",
+            "headers": {
+              "api-key": "key",
+              "content-type": "application/json"
+            },
+            "bodyBase64": "eyJtZXNzYWdlcyI6W3sicm9sZSI6InN5c3RlbSIsImNvbnRlbnQiOiJzeXN0ZW097ZWc6riAIFx1ZDgwMCBwYWlyPfCfmIAifSx7InJvbGUiOiJ1c2VyIiwiY29udGVudCI6InVzZXI9XHVkYzAwIn1dfQ==",
+            "bodySha256": "d728995945db79fe67ec2f929d86ac65b06e18819616b7282ce3aed6cb479325"
+          }
+        ],
+        "answer": "unicode-retry"
+      }
+    ]
+  },
+  "benchmark": {
+    "fixtures": {
+      "fieldnote-arcwell-night-serum": {
+        "id": "EX-ARC-001",
+        "name": "Arcwell Night Renewal Serum",
+        "brand": "Fieldnote Example Labs",
+        "category": "Skincare Serum",
+        "sku": "EX-ARC-001",
+        "gtin": "0000000000017",
+        "canonicalUrl": "https://catalog.example.test/products/arcwell-night-renewal-serum?variant=EX-ARC-001",
+        "offerUrl": "https://catalog.example.test/products/arcwell-night-renewal-serum?variant=EX-ARC-001",
+        "price": {
+          "raw": "$47.00",
+          "amount": 47,
+          "currency": "USD"
+        },
+        "images": [
+          "https://assets.example.test/fixtures/arcwell/packshot-30ml.png"
+        ],
+        "options": [
+          "30 mL"
+        ],
+        "benefits": [
+          "smoothing",
+          "comforting",
+          "moisturizing"
+        ],
+        "effects": [
+          "softer-feeling texture",
+          "more comfortable dry areas",
+          "a more even-looking surface"
+        ],
+        "ingredients": [
+          "Encapsulated Retinyl Oleate",
+          "Moonflower Peptide Blend",
+          "Oat Lipid Complex",
+          "Niacinamide"
+        ],
+        "usage": [
+          "In the evening, apply one pump after a water-based toner and follow with moisturizer. Begin on alternate nights in this synthetic routine example."
+        ],
+        "metrics": [
+          "Synthetic test panel: after 28 days, 19 of 24 adult volunteers reported smoother-feeling skin."
+        ],
+        "faq": [],
+        "reviews": {
+          "items": [],
+          "keywords": []
+        },
+        "breadcrumbs": [
+          {
+            "name": "Home"
+          },
+          {
+            "name": "Night care"
+          },
+          {
+            "name": "Arcwell Night Renewal Serum"
+          }
+        ],
+        "sourceTexts": [
+          "Arcwell Night Renewal Serum is an internally authored test formula with a light emulsion texture.",
+          "Encapsulated retinyl oleate and a moonflower peptide blend are described in this synthetic record as supporting the look of smoother, more comfortable skin overnight.",
+          "KEY INGREDIENTS: Encapsulated Retinyl Oleate, Moonflower Peptide Blend, Oat Lipid Complex, Niacinamide.",
+          "DESIGNED FOR: dry-feeling areas, uneven-looking texture, and an evening smoothing routine.",
+          "USE IN THE EVENING AFTER TONER; BEGIN ON ALTERNATE NIGHTS AND FOLLOW WITH MOISTURIZER."
+        ]
+      },
+      "fieldnote-daybreak-first-essence": {
+        "id": "EX-DAY-002",
+        "name": "Daybreak First Essence",
+        "brand": "Fieldnote Example Labs",
+        "category": "Skincare Essence",
+        "sku": "EX-DAY-002",
+        "gtin": "0000000000024",
+        "canonicalUrl": "https://catalog.example.test/products/daybreak-first-essence?variant=EX-DAY-002",
+        "offerUrl": "https://catalog.example.test/products/daybreak-first-essence?variant=EX-DAY-002",
+        "price": {
+          "raw": "$38.00",
+          "amount": 38,
+          "currency": "USD"
+        },
+        "images": [
+          "https://assets.example.test/fixtures/daybreak/packshot-45ml.png"
+        ],
+        "options": [
+          "45 mL",
+          "90 mL"
+        ],
+        "benefits": [
+          "hydrating",
+          "radiance",
+          "texture-refining"
+        ],
+        "effects": [
+          "a fresher-looking tone",
+          "more even-looking texture",
+          "comfortable first-step hydration"
+        ],
+        "ingredients": [
+          "Cloudleaf Ferment",
+          "Beta-Glucan",
+          "Vitamin C Derivative"
+        ],
+        "usage": [
+          "After cleansing, press two to three drops into the face before toner and moisturizer in this synthetic routine example."
+        ],
+        "metrics": [
+          "Synthetic user panel: after 21 days, 18 of 24 adult volunteers reported a fresher-looking tone.",
+          "Synthetic instrument reading: average surface hydration increased 12% after 14 days across 20 adult test participants."
+        ],
+        "faq": [],
+        "reviews": {
+          "items": [],
+          "keywords": []
+        },
+        "breadcrumbs": [
+          {
+            "name": "Home"
+          },
+          {
+            "name": "First-step care"
+          },
+          {
+            "name": "Daybreak First Essence"
+          }
+        ],
+        "sourceTexts": [
+          "Daybreak First Essence is a fictional first-step essence created for regression testing.",
+          "Cloudleaf ferment, beta-glucan, and a vitamin C derivative are described as a lightweight layer used immediately after cleansing.",
+          "KEY INGREDIENTS: Cloudleaf Ferment, Beta-Glucan, Vitamin C Derivative.",
+          "DESIGNED FOR: dull-looking tone, rough-feeling texture, and a lightweight first hydration step.",
+          "PRESS TWO TO THREE DROPS INTO SKIN IMMEDIATELY AFTER CLEANSING, BEFORE TONER AND MOISTURIZER."
+        ]
+      },
+      "byeolmorae-waterfold-toner": {
+        "id": "EX-WFT-003",
+        "name": "워터폴드 캡슐 토너",
+        "brand": "별모래 테스트 랩",
+        "category": "토너",
+        "sku": "EX-WFT-003",
+        "gtin": "0000000000031",
+        "canonicalUrl": "https://catalog.example.test/products/waterfold-capsule-toner?variant=EX-WFT-003",
+        "offerUrl": "https://catalog.example.test/products/waterfold-capsule-toner?variant=EX-WFT-003",
+        "price": {
+          "raw": "₩21,000",
+          "amount": 21000,
+          "currency": "KRW"
+        },
+        "images": [
+          "https://assets.example.test/fixtures/waterfold/packshot-280ml.png"
+        ],
+        "options": [
+          "280 mL"
+        ],
+        "benefits": [
+          "장벽 보습",
+          "피부결 정돈",
+          "세안 후 수분 공급"
+        ],
+        "effects": [
+          "세안 뒤 당김이 덜 느껴지는 사용감",
+          "가볍게 눌러 흡수되는 보습감"
+        ],
+        "ingredients": [
+          "수분결 리포좀",
+          "판테놀",
+          "베타글루칸",
+          "소듐하이알루로네이트",
+          "글루코노락톤"
+        ],
+        "usage": [
+          "세안 직후 손바닥에 덜어 얼굴 안쪽에서 바깥쪽으로 가볍게 눌러 흡수시킵니다. 이 문장은 합성 사용 예시입니다."
+        ],
+        "metrics": [
+          "합성 테스트 패널: 14일 사용 후 20명 중 16명이 세안 뒤 당김이 덜 느껴졌다고 답했습니다."
+        ],
+        "faq": [
+          {
+            "question": "토너 안의 리포좀 입자는 어떻게 사용하나요?",
+            "answer": "이 합성 제품 설명에서는 입자가 보습 성분을 고르게 섞어 주는 시각적 예시로만 쓰입니다. 사용 전 가볍게 흔든 뒤 손바닥에 덜어 사용하세요."
+          },
+          {
+            "question": "민감하게 느껴지는 날에도 사용할 수 있나요?",
+            "answer": "개인 피부 상태는 다르므로 작은 부위에 먼저 사용해 보고, 불편함이 있으면 사용을 멈추는 가상 안내입니다."
+          },
+          {
+            "question": "다른 보습 제품과 함께 쓰는 순서는 어떻게 되나요?",
+            "answer": "세안 뒤 토너를 먼저 바르고, 필요에 따라 에센스와 크림을 덧바르는 합성 루틴 예시입니다."
+          },
+          {
+            "question": "임신 중이거나 어린이와 함께 쓸 때 무엇을 확인해야 하나요?",
+            "answer": "이 레코드는 의료 조언이 아닙니다. 성분과 개인 상황을 확인하고 필요하면 전문가와 상담하라는 테스트용 안내입니다."
+          }
+        ],
+        "reviews": {
+          "items": [],
+          "keywords": []
+        },
+        "breadcrumbs": [
+          {
+            "name": "홈"
+          },
+          {
+            "name": "테스트 보습"
+          },
+          {
+            "name": "워터폴드 캡슐 토너"
+          }
+        ],
+        "sourceTexts": [
+          "워터폴드 캡슐 토너는 회귀 테스트를 위해 작성한 가상 보습 토너입니다.",
+          "세안 뒤 첫 단계에서 피부결을 편안하게 정돈하는 예시를 제공합니다.",
+          "주요 성분: 수분결 리포좀, 판테놀, 베타글루칸, 소듐하이알루로네이트, 글루코노락톤.",
+          "합성 테스트 패널: 14일 사용 후 20명 중 16명이 세안 뒤 당김이 덜 느껴졌다고 답했습니다."
+        ]
+      },
+      "byeolmorae-cloudveil-mist": {
+        "id": "EX-CVM-004",
+        "name": "클라우드베일 크림 미스트",
+        "brand": "별모래 테스트 랩",
+        "category": "미스트",
+        "sku": "EX-CVM-004",
+        "gtin": "0000000000048",
+        "canonicalUrl": "https://catalog.example.test/products/cloudveil-cream-mist?variant=EX-CVM-004",
+        "offerUrl": "https://catalog.example.test/products/cloudveil-cream-mist?variant=EX-CVM-004",
+        "price": {
+          "raw": "₩17,500",
+          "amount": 17500,
+          "currency": "KRW"
+        },
+        "images": [
+          "https://assets.example.test/fixtures/cloudveil/packshot-100ml.png"
+        ],
+        "options": [
+          "100 mL"
+        ],
+        "benefits": [
+          "가벼운 보습",
+          "건조할 때 수시 사용",
+          "메이크업 위 사용 예시"
+        ],
+        "effects": [
+          "미세하게 퍼지는 분사감",
+          "건조하게 느껴지는 부위의 편안한 사용감"
+        ],
+        "ingredients": [
+          "구름보습 지질 복합체",
+          "글리세린",
+          "스쿠알란",
+          "판테놀"
+        ],
+        "usage": [
+          "얼굴에서 약 20cm 떨어진 곳에서 두세 번 분사한 뒤 필요하면 손바닥으로 가볍게 눌러 줍니다. 이 문장은 합성 사용 예시입니다."
+        ],
+        "metrics": [
+          "합성 사용성 조사: 10일 사용 후 18명 중 15명이 메이크업 위에서 분사감이 가볍다고 답했습니다."
+        ],
+        "faq": [
+          {
+            "question": "크림 미스트는 스킨케어 순서에서 언제 사용하나요?",
+            "answer": "이 합성 루틴에서는 세안 뒤 보습 제품 전 또는 건조하게 느껴질 때 수시로 덧뿌리는 예시를 제공합니다."
+          },
+          {
+            "question": "메이크업 위에 사용해도 되나요?",
+            "answer": "가상의 사용 안내에서는 얼굴에서 거리를 두고 소량 분사한 다음 손으로 가볍게 눌러 보라고 안내합니다."
+          },
+          {
+            "question": "향에 민감한 사람은 무엇을 확인해야 하나요?",
+            "answer": "이 레코드는 실제 성분 안내가 아니므로 개별 제품의 전성분과 개인 반응을 확인하라는 테스트용 문구입니다."
+          },
+          {
+            "question": "분사가 고르게 나오지 않으면 어떻게 하나요?",
+            "answer": "노즐을 닦고 한두 번 공중에 시험 분사한 뒤 사용하라는 합성 고객지원 예시입니다."
+          }
+        ],
+        "reviews": {
+          "rating": 4.6,
+          "reviewCount": 37,
+          "items": [
+            {
+              "body": "가방에 넣고 다니다가 오후에 건조하게 느껴질 때 가볍게 뿌리기 좋았어요. 이 문장은 합성 리뷰입니다.",
+              "rating": 5
+            },
+            {
+              "body": "분사 범위가 넓어서 한 번만 뿌려도 얼굴 전체에 잘 퍼지는 느낌이었어요. 합성 테스트 리뷰입니다.",
+              "rating": 5
+            },
+            {
+              "body": "한 번에 많이 누르면 옷깃에 묻을 수 있어 거리를 두고 쓰는 편이 좋았어요. 합성 리뷰입니다.",
+              "rating": 3
+            }
+          ],
+          "keywords": [
+            "가벼운 분사",
+            "건조할 때",
+            "메이크업 위",
+            "합성 리뷰"
+          ]
+        },
+        "breadcrumbs": [
+          {
+            "name": "홈"
+          },
+          {
+            "name": "테스트 보습"
+          },
+          {
+            "name": "클라우드베일 크림 미스트"
+          }
+        ],
+        "sourceTexts": [
+          "클라우드베일 크림 미스트는 회귀 테스트용으로 만든 가상 보습 미스트입니다.",
+          "구름보습 지질 복합체와 판테놀을 담은 것으로 설정해 건조하게 느껴질 때 가볍게 덧뿌리는 사용 장면을 설명합니다.",
+          "주요 성분: 구름보습 지질 복합체, 글리세린, 스쿠알란, 판테놀.",
+          "합성 사용성 조사: 10일 사용 후 18명 중 15명이 메이크업 위에서 분사감이 가볍다고 답했습니다."
+        ]
+      }
+    },
+    "goldens": [
+      {
+        "id": "ARC-NEED",
+        "productId": "fieldnote-arcwell-night-serum",
+        "locale": "en-US",
+        "market": "US",
+        "query": "What nighttime serum is a reasonable option for dry skin that feels rough and less firm?",
+        "cepFocus": "need"
+      },
+      {
+        "id": "ARC-ROUTINE",
+        "productId": "fieldnote-arcwell-night-serum",
+        "locale": "en-US",
+        "market": "US",
+        "query": "How should I introduce an encapsulated night serum into a routine without using it every evening at first?",
+        "cepFocus": "routine"
+      },
+      {
+        "id": "ARC-SELECT",
+        "productId": "fieldnote-arcwell-night-serum",
+        "locale": "en-US",
+        "market": "US",
+        "query": "What should I compare when choosing a nighttime smoothing serum for dry-feeling skin?",
+        "cepFocus": "selection"
+      },
+      {
+        "id": "ARC-CONCERN",
+        "productId": "fieldnote-arcwell-night-serum",
+        "locale": "en-US",
+        "market": "US",
+        "query": "Can the Arcwell Night Renewal Serum fit a combination-skin routine with dry cheek areas?",
+        "cepFocus": "concern"
+      },
+      {
+        "id": "DAY-NEED",
+        "productId": "fieldnote-daybreak-first-essence",
+        "locale": "en-US",
+        "market": "US",
+        "query": "Which lightweight first-step essence is a good match for dull-looking, uneven texture?",
+        "cepFocus": "need"
+      },
+      {
+        "id": "DAY-ROUTINE",
+        "productId": "fieldnote-daybreak-first-essence",
+        "locale": "en-US",
+        "market": "US",
+        "query": "What should I apply right after cleansing before toner and moisturizer?",
+        "cepFocus": "routine"
+      },
+      {
+        "id": "DAY-SELECT",
+        "productId": "fieldnote-daybreak-first-essence",
+        "locale": "en-US",
+        "market": "US",
+        "query": "How do I choose a first essence when I want hydration without a heavy layer?",
+        "cepFocus": "selection"
+      },
+      {
+        "id": "DAY-CONCERN",
+        "productId": "fieldnote-daybreak-first-essence",
+        "locale": "en-US",
+        "market": "US",
+        "query": "I have combination skin that sometimes looks dull — is a lightweight first essence worth trying?",
+        "cepFocus": "concern"
+      },
+      {
+        "id": "WFT-NEED",
+        "productId": "byeolmorae-waterfold-toner",
+        "locale": "ko-KR",
+        "market": "KR",
+        "query": "세안 후 당김이 느껴지는 건성 피부에 가볍게 쓸 보습 토너는 어떤 게 있나요?",
+        "cepFocus": "need"
+      },
+      {
+        "id": "WFT-ROUTINE",
+        "productId": "byeolmorae-waterfold-toner",
+        "locale": "ko-KR",
+        "market": "KR",
+        "query": "보습 토너는 스킨케어 순서에서 언제, 어떻게 바르면 좋나요?",
+        "cepFocus": "routine"
+      },
+      {
+        "id": "WFT-SELECT",
+        "productId": "byeolmorae-waterfold-toner",
+        "locale": "ko-KR",
+        "market": "KR",
+        "query": "보습 토너를 고를 때 제형과 사용감에서 무엇을 확인하면 좋을까요?",
+        "cepFocus": "selection"
+      },
+      {
+        "id": "WFT-CONCERN",
+        "productId": "byeolmorae-waterfold-toner",
+        "locale": "ko-KR",
+        "market": "KR",
+        "query": "피부가 예민하게 느껴지는 날에는 토너를 어떻게 먼저 시험해 보면 좋을까요?",
+        "cepFocus": "concern"
+      },
+      {
+        "id": "CVM-NEED",
+        "productId": "byeolmorae-cloudveil-mist",
+        "locale": "ko-KR",
+        "market": "KR",
+        "query": "사무실에서 건조하게 느껴질 때 가볍게 덧뿌릴 보습 미스트가 있을까요?",
+        "cepFocus": "need"
+      },
+      {
+        "id": "CVM-ROUTINE",
+        "productId": "byeolmorae-cloudveil-mist",
+        "locale": "ko-KR",
+        "market": "KR",
+        "query": "크림 미스트는 세안 후 스킨케어 순서에서 언제 사용하는 게 좋나요?",
+        "cepFocus": "routine"
+      },
+      {
+        "id": "CVM-SELECT",
+        "productId": "byeolmorae-cloudveil-mist",
+        "locale": "ko-KR",
+        "market": "KR",
+        "query": "수분 미스트와 크림 미스트는 사용감이 어떻게 다르고 무엇을 고르면 좋나요?",
+        "cepFocus": "selection"
+      },
+      {
+        "id": "CVM-CONCERN",
+        "productId": "byeolmorae-cloudveil-mist",
+        "locale": "ko-KR",
+        "market": "KR",
+        "query": "메이크업 위에 미스트를 쓸 때 분사 거리는 어떻게 잡는 게 좋을까요?",
+        "cepFocus": "concern"
+      }
+    ],
+    "distractors": {
+      "fieldnote-arcwell-night-serum": [
+        "Building a gradual nighttime routine. If a leave-on product is new to your routine, introduce one product at a time and use it on alternate evenings before increasing frequency. Dry-feeling skin often benefits from applying a simple moisturizer afterward. During the day, use sun protection and avoid stacking several strong exfoliating products at once. A patch test can help you notice discomfort before using a new formula over the full face.",
+        "Willow Signal Overnight Concentrate. This fictional competitor uses bakuchiol, meadowfoam oil, and a peptide blend in a rich cream-serum. Its made-up consumer card says 17 of 25 participants liked the cushiony finish after three weeks. Apply a pea-sized amount at night after toner. Fragrance-free in this example, 25 mL, $52. Willow Signal is a sample brand created only for benchmark distractor text.",
+        "Night serum 30 mL — sample marketplace listing. Product details: lightweight emulsion, use on face and neck, suitable for an evening skincare routine. Delivery dates, rewards, and return terms vary by seller. Compare the ingredient list and patch-test advice before purchase. Related sample products include a plain moisturizer, mineral sunscreen, and reusable cotton pads. This listing has no relationship to the benchmark target product.",
+        "Forum discussion: How do you start a smoothing serum? One commenter alternates a new serum with rest nights, while another keeps the routine simple with cleanser and moisturizer. A third says that dry cheeks need extra moisturizer even when the forehead is comfortable. Replies disagree about whether capsules make a difference, but they agree that introducing several products at once makes it hard to know what caused irritation."
+      ],
+      "fieldnote-daybreak-first-essence": [
+        "First-step essence basics. A watery essence usually goes on after cleansing and before toner, serum, or moisturizer. The goal is not to replace every later step; it is simply a light layer that can make a routine feel more comfortable. People with combination skin often prefer a small amount pressed in with hands instead of a heavily layered routine. Fragrance and active ingredients should be considered separately from texture and price.",
+        "Hearth Bloom Morning Layer. This fictional essence contains oat beta-glucan, a fermented flower-water accord, and panthenol. Its synthetic product card suggests pressing two drops into the skin immediately after cleansing. A made-up 14-day diary reports that some users liked the light finish. The sample product is 50 mL for $29 and is included only as a non-target benchmark distractor.",
+        "Lightweight essence 45 mL — sample retailer entry. Product format: liquid, intended use: first hydration layer, suggested routine: cleanse, apply essence, then toner and moisturizer. Stock labels and shipping estimates are demonstrative only. Shoppers may also browse travel bottles, gentle cleansers, and face mist. Read the full ingredient list if you know that your skin reacts to a particular material or fragrance.",
+        "Community question: Is a first-step essence necessary? Some replies say it makes a dry routine feel less tight, while others say a basic moisturizer matters more. One member likes a thin ferment-style layer before toner; another prefers skipping it on humid days. The thread does not establish a universal result, but it does show why texture, routine order, and personal comfort are useful comparison points."
+      ],
+      "byeolmorae-waterfold-toner": [
+        "건성 피부를 위한 토너 사용 팁. 세안 뒤에는 피부가 당기게 느껴질 수 있으므로 보습 제품을 너무 오래 미루지 않는 편이 좋습니다. 토너를 고를 때는 향이나 알코올 유무뿐 아니라 손으로 눌러 흡수했을 때의 사용감도 확인하세요. 새 제품은 작은 부위에 먼저 써 보고, 불편함이 있으면 사용을 중단하는 것이 안전한 기본 원칙입니다.",
+        "다온결 수분 토너. 이 문서는 경쟁 문서 역할만 하는 가상 상품 설명입니다. 판테놀과 베타글루칸을 넣었다고 설정했으며, 세안 뒤 손바닥으로 가볍게 눌러 사용하는 250 mL 토너입니다. 가상의 사용 일지에서 가벼운 마무리감을 언급하지만 의료적 효능을 뜻하지는 않습니다. 가격과 배송 조건은 모두 예시이며 실제 판매 정보가 아닙니다.",
+        "보습 토너 280 mL — 예시 쇼핑 정보. 용량과 카테고리, 교환 안내, 적립 혜택은 테스트 문서용으로만 적혀 있습니다. 함께 보는 상품으로는 순한 세안제, 보습 크림, 화장솜이 있습니다. 전성분과 개인 피부 상태를 확인하고, 처음 쓰는 제품은 적은 양으로 반응을 살펴보는 것이 좋습니다. 이 문서는 대상 제품을 설명하지 않습니다.",
+        "커뮤니티 글: 세안 후 당김이 심할 때 뭘 먼저 바르나요? 댓글에는 토너를 여러 번 레이어링하기보다 한 번 바르고 보습제를 덧바른다는 의견과, 화장솜보다 손바닥 사용이 편했다는 의견이 있습니다. 다른 댓글은 환경과 계절에 따라 느낌이 달라진다고 말합니다. 누구에게나 같은 순서가 맞는 것은 아니므로 작은 양부터 시도해 보라는 조언이 반복됩니다."
+      ],
+      "byeolmorae-cloudveil-mist": [
+        "실내 건조감과 미스트 사용법. 냉난방이 지속되는 공간에서는 오후에 피부가 건조하게 느껴질 수 있습니다. 미스트를 사용할 때는 얼굴에서 거리를 두고 소량을 분사한 뒤 필요하면 손바닥으로 가볍게 눌러 주세요. 메이크업 위에 쓸 때는 한 번에 많이 뿌리기보다 얇게 덧뿌리는 편이 편할 수 있습니다. 개인 반응이 다르므로 향과 성분도 함께 확인하세요.",
+        "해솔빛 드롭 미스트. 이 문서는 합성 경쟁 상품으로, 글리세린과 식물성 오일을 담았다고 설정한 90 mL 분사 제품입니다. 가상의 리뷰에서는 가방에 넣기 편한 크기와 넓은 분사 범위를 언급합니다. 사용 전 노즐 상태를 확인하고 약 20cm 거리에서 사용하라는 예시 안내가 포함됩니다. 실제 상표, 가격, 판매처와는 관련이 없습니다.",
+        "보습 분사 제품 100 mL — 예시 마켓 정보. 이 문서에는 배송, 교환, 쿠폰, 함께 구매한 상품 같은 상업적 문구가 포함되어 있지만 실제 구매로 연결되지 않습니다. 메이크업 위 사용 여부는 개별 제품 설명과 개인 피부 상태에 따라 확인하세요. 새 제품은 눈가를 피하고 적은 양으로 분사 반응을 살펴보라는 일반적인 사용 주의가 적혀 있습니다.",
+        "커뮤니티 글: 미스트를 뿌리면 더 건조한 느낌이 드는 이유가 뭘까요? 일부 사용자는 분사 후 손으로 눌러 주면 편했다고 하고, 다른 사용자는 보습제를 먼저 바른 뒤 낮에 가볍게 덧뿌린다고 답합니다. 향이 강한 제품은 사무실에서 부담스러울 수 있다는 의견도 있습니다. 댓글들은 특정 제품의 효과를 증명하지 않고, 거리와 분사량을 조절해 보라는 경험담을 나눕니다."
+      ]
+    },
+    "fixtureHash": "308b77acb1d1fb1a00c56e415b060937a150b69f988253ffef0ca6e4e0430b53",
+    "goldenHash": "0be52e13df2149a528766d27398452d60aceca599afc4fc35dbe11115f13c0d7",
+    "distractorHash": "a1a0fa0bf5d858e9345c440a72b734a71a20cb72947fffbffbc8212ee1ddd99a",
+    "sourceSet": [
+      "건성 피부를 위한 토너 사용 팁. 세안 뒤에는 피부가 당기게 느껴질 수 있으므로 보습 제품을 너무 오래 미루지 않는 편이 좋습니다. 토너를 고를 때는 향이나 알코올 유무뿐 아니라 손으로 눌러 흡수했을 때의 사용감도 확인하세요. 새 제품은 작은 부위에 먼저 써 보고, 불편함이 있으면 사용을 중단하는 것이 안전한 기본 원칙입니다.",
+      "다온결 수분 토너. 이 문서는 경쟁 문서 역할만 하는 가상 상품 설명입니다. 판테놀과 베타글루칸을 넣었다고 설정했으며, 세안 뒤 손바닥으로 가볍게 눌러 사용하는 250 mL 토너입니다. 가상의 사용 일지에서 가벼운 마무리감을 언급하지만 의료적 효능을 뜻하지는 않습니다. 가격과 배송 조건은 모두 예시이며 실제 판매 정보가 아닙니다.",
+      "TARGET",
+      "보습 토너 280 mL — 예시 쇼핑 정보. 용량과 카테고리, 교환 안내, 적립 혜택은 테스트 문서용으로만 적혀 있습니다. 함께 보는 상품으로는 순한 세안제, 보습 크림, 화장솜이 있습니다. 전성분과 개인 피부 상태를 확인하고, 처음 쓰는 제품은 적은 양으로 반응을 살펴보는 것이 좋습니다. 이 문서는 대상 제품을 설명하지 않습니다.",
+      "커뮤니티 글: 세안 후 당김이 심할 때 뭘 먼저 바르나요? 댓글에는 토너를 여러 번 레이어링하기보다 한 번 바르고 보습제를 덧바른다는 의견과, 화장솜보다 손바닥 사용이 편했다는 의견이 있습니다. 다른 댓글은 환경과 계절에 따라 느낌이 달라진다고 말합니다. 누구에게나 같은 순서가 맞는 것은 아니므로 작은 양부터 시도해 보라는 조언이 반복됩니다."
+    ],
+    "aggregate": {
+      "goldens": 2,
+      "engineId": "openai:test",
+      "vanilla": {
+        "wordpos": 0.15,
+        "word": 0.15,
+        "pos": 0.15
+      },
+      "generated": {
+        "wordpos": 0.25,
+        "word": 0.2,
+        "pos": 0.3
+      },
+      "delta": {
+        "wordpos": 0.1,
+        "word": 0.05,
+        "pos": 0.15
+      },
+      "byLocale": {
+        "ko-KR": {
+          "goldens": 1,
+          "vanilla": {
+            "wordpos": 0.2,
+            "word": 0.2,
+            "pos": 0.2
+          },
+          "generated": {
+            "wordpos": 0.4,
+            "word": 0.3,
+            "pos": 0.5
+          },
+          "delta": {
+            "wordpos": 0.2,
+            "word": 0.1,
+            "pos": 0.3
+          }
+        },
+        "en-US": {
+          "goldens": 1,
+          "vanilla": {
+            "wordpos": 0.1,
+            "word": 0.1,
+            "pos": 0.1
+          },
+          "generated": {
+            "wordpos": 0.1,
+            "word": 0.1,
+            "pos": 0.1
+          },
+          "delta": {
+            "wordpos": 0,
+            "word": 0,
+            "pos": 0
+          }
+        }
+      },
+      "byCepFocus": {
+        "need": {
+          "goldens": 1,
+          "delta": {
+            "wordpos": 0.2,
+            "word": 0.1,
+            "pos": 0.3
+          }
+        },
+        "routine": {
+          "goldens": 1,
+          "delta": {
+            "wordpos": 0,
+            "word": 0,
+            "pos": 0
+          }
+        }
+      },
+      "gate": {
+        "evaluated": 2,
+        "passed": 1
+      }
+    },
+    "run": {
+      "artifact": {
+        "publicText": "Generated barrier answer.",
+        "evidenceLedger": []
+      },
+      "result": {
+        "engineId": "openai:capture-model",
+        "scores": [
+          {
+            "goldenId": "WFT-NEED",
+            "productId": "byeolmorae-waterfold-toner",
+            "locale": "ko-KR",
+            "cepFocus": "need",
+            "query": "세안 후 당김이 느껴지는 건성 피부에 가볍게 쓸 보습 토너는 어떤 게 있나요?",
+            "vanilla": {
+              "wordpos": 0,
+              "word": 0,
+              "pos": 0,
+              "citedSentenceCount": 1,
+              "sentenceCount": 1,
+              "hallucinatedCitations": [],
+              "cachedAnswer": false
+            },
+            "generated": {
+              "wordpos": 1,
+              "word": 1,
+              "pos": 1,
+              "citedSentenceCount": 1,
+              "sentenceCount": 1,
+              "hallucinatedCitations": [],
+              "cachedAnswer": false
+            },
+            "delta": {
+              "wordpos": 1,
+              "word": 1,
+              "pos": 1
+            },
+            "gate": {
+              "pass": true,
+              "failures": [],
+              "skippedChecks": [
+                "keypointCoverage",
+                "citationQuality"
+              ]
+            }
+          }
+        ],
+        "aggregates": {
+          "goldens": 1,
+          "engineId": "openai:capture-model",
+          "vanilla": {
+            "wordpos": 0,
+            "word": 0,
+            "pos": 0
+          },
+          "generated": {
+            "wordpos": 1,
+            "word": 1,
+            "pos": 1
+          },
+          "delta": {
+            "wordpos": 1,
+            "word": 1,
+            "pos": 1
+          },
+          "byLocale": {
+            "ko-KR": {
+              "goldens": 1,
+              "vanilla": {
+                "wordpos": 0,
+                "word": 0,
+                "pos": 0
+              },
+              "generated": {
+                "wordpos": 1,
+                "word": 1,
+                "pos": 1
+              },
+              "delta": {
+                "wordpos": 1,
+                "word": 1,
+                "pos": 1
+              }
+            }
+          },
+          "byCepFocus": {
+            "need": {
+              "goldens": 1,
+              "delta": {
+                "wordpos": 1,
+                "word": 1,
+                "pos": 1
+              }
+            }
+          },
+          "gate": {
+            "evaluated": 1,
+            "passed": 1
+          }
+        }
+      }
+    }
+  },
+  "rest": [
+    {
+      "label": "valid",
+      "requestBody": "{\"jsonLd\":{\"@graph\":[{\"@type\":\"Product\",\"@id\":\"#product\",\"name\":\"Barrier Cream\",\"description\":\"A cream that supports skin barrier comfort.\",\"offers\":{\"@type\":\"Offer\",\"price\":\"29.00\",\"priceCurrency\":\"USD\"},\"dateModified\":\"2026-01-02\"},{\"@type\":\"WebPage\",\"@id\":\"#page\",\"mainEntity\":{\"@id\":\"#product\"},\"description\":\"Barrier Cream product page.\"},{\"@type\":\"FAQPage\",\"mainEntity\":[{\"@type\":\"Question\",\"name\":\"Who is it for?\",\"acceptedAnswer\":{\"@type\":\"Answer\",\"text\":\"It is for dry skin needing barrier support.\"}}]},{\"@type\":\"HowTo\",\"step\":[{\"@type\":\"HowToStep\",\"name\":\"Apply\",\"text\":\"Apply after toner and press until absorbed.\"}]}]},\"diagnostics\":{\"normalizedProduct\":{\"name\":\"Barrier Cream\",\"brand\":\"NEO\",\"category\":\"cream\",\"benefits\":[\"barrier support\"],\"effects\":[\"comfort\"],\"ingredients\":[\"ceramide\"],\"usage\":[\"Apply after toner\"],\"faq\":[{\"question\":\"Who is it for?\",\"answer\":\"Dry skin.\"}],\"reviews\":{\"keywords\":[\"comfortable\"]},\"sourceTexts\":[\"Clinical 95% satisfaction after 2 weeks among 30 participants.\"]},\"validationWarnings\":[\"description: reviewed wording\"],\"validationRepairs\":[{\"field\":\"description\",\"source\":\"validator\",\"issue\":\"reviewed wording\",\"action\":\"kept scoped\"}],\"ragUsage\":[{\"principle\":\"evidence-first\",\"enabled\":true,\"references\":[{\"kind\":\"research\",\"fieldTargets\":[\"description\"]}]}],\"evidence\":[{\"field\":\"description\",\"source\":\"PDP\",\"value\":\"barrier support\"}],\"evidenceLedger\":[{\"id\":\"ev-1\",\"role\":\"benefit\",\"text\":\"barrier support\"}],\"contentPlan\":{\"mode\":\"buyer\",\"productDescription\":{\"include\":true,\"evidenceIds\":[\"ev-1\"]},\"faq\":[{\"include\":true,\"question\":\"Who is it for?\",\"evidenceIds\":[\"ev-1\"]}],\"howTo\":{\"eligible\":true,\"steps\":[{\"evidenceIds\":[\"ev-1\"]}]},\"cep\":[{\"situation\":\"after cleansing\",\"need\":\"barrier comfort\",\"evidenceIds\":[\"ev-1\"]}]}},\"contentSections\":{\"productName\":\"Barrier Cream\",\"description\":\"A cream\"},\"language\":\"en\"}",
+      "inputHash": "e034b243e6bb02390e18d053c4e9e0b3629fe174b0a45197b03b465cf0dbca0f",
+      "status": 200,
+      "headers": {
+        "contentType": "application/json"
+      },
+      "body": "{\"evaluation\":{\"overallScore\":81,\"dimensions\":[{\"id\":\"geo\",\"label\":\"GEO\",\"score\":76,\"criteria\":\"GEO diagnostic criteria: required product/page identity, graph references, schema structure, validation stability, plus the on-page citation gatekeepers confirmed by controlled research (SIGIR 2026): an explicit price and a freshness timestamp. This is schema hygiene, not a citation-probability estimate. FAQ/HowTo presence earns no points.\",\"summary\":\"76 · 3 issues to improve\",\"evidence\":[\"4 schema nodes generated: Product, WebPage, FAQPage, HowTo\",\"An explicit price is present — one of the on-page AI-citation gatekeepers.\",\"A published/modified date is present — one of the on-page AI-citation gatekeepers.\",\"Optional entity inventory: FAQ 1, HowTo 1 step, Breadcrumb 0; presence itself earns no points\",\"Images 0, offers 1, additional properties 0 strengthen PDP identity\",\"All local schema references resolve to target nodes\",\"No content applicability plan is available, so semantic FAQ/HowTo suitability is not scored\",\"1 automatic repair was required; this is a generation-stability signal, not a quality gain\"],\"improvements\":[\"Show usage as numbered steps only when there is a real order (step 1 → step 2). For a one-line usage note, drop the step format.\",\"1 item was auto-fixed by the system. Fixing the source product data means you won't depend on auto-fixes every time.\"]},{\"id\":\"cep\",\"label\":\"CEP\",\"score\":76,\"criteria\":\"CEP diagnostic criteria: source-present ingredient, benefit, and customer-choice context. CEP is a qualitative marketing framework (Ehrenberg-Bass) with a weaker evidence grade than the other dimensions; cue regexes are cross-checked against the content plan so one missed detection cannot swing the score. It does not predict citation rate.\",\"summary\":\"76 · 1 issue to improve\",\"evidence\":[\"1 ingredient signal and 2 benefit/effect signals available\",\"Direct ingredient-to-benefit bridge is weak\",\"Customer context such as concern, skin type, or selection cue is included\"],\"improvements\":[\"After each ingredient name, add what it actually does in one sentence (e.g. 'ceramide refills a weakened skin barrier to reduce tightness').\"]},{\"id\":\"eeat\",\"label\":\"E-E-A-T\",\"score\":90,\"criteria\":\"E-E-A-T diagnostic criteria: this is a proxy for evidence and scoping hygiene, not Google's E-E-A-T rating — it checks evidence-link coverage, sample/time context on numeric claims, and claim-distortion signals. Validation warnings are penalized under GEO only.\",\"summary\":\"90 · no observable diagnostic issue\",\"evidence\":[\"1 atomic evidence item across 1 semantic role in the Evidence Ledger\",\"No percentage/improvement claim detected; numeric-evidence checks do not affect the score\",\"The current result has no per-claim evidence ID, so atomic claim-to-source coverage is not calculated\"],\"improvements\":[\"Write benefit sentences so each one is backed by the product source.\",\"1 item was auto-fixed by the system. Fixing the source product data means you won't depend on auto-fixes every time.\"]}],\"validationDetails\":[\"1. description (validator): reviewed wording -> kept scoped\"],\"validationImprovements\":[]},\"report\":\"Quality metrics\\nProduct: Barrier Cream\\nDiagnostic score (not citation rate): 81/100\\n\\nGEO: 76/100\\nCriteria: GEO diagnostic criteria: required product/page identity, graph references, schema structure, validation stability, plus the on-page citation gatekeepers confirmed by controlled research (SIGIR 2026): an explicit price and a freshness timestamp. This is schema hygiene, not a citation-probability estimate. FAQ/HowTo presence earns no points.\\nEvaluation summary: 76 · 3 issues to improve\\nRationale:\\n- 4 schema nodes generated: Product, WebPage, FAQPage, HowTo\\n- An explicit price is present — one of the on-page AI-citation gatekeepers.\\n- A published/modified date is present — one of the on-page AI-citation gatekeepers.\\n- Optional entity inventory: FAQ 1, HowTo 1 step, Breadcrumb 0; presence itself earns no points\\n- Images 0, offers 1, additional properties 0 strengthen PDP identity\\n- All local schema references resolve to target nodes\\n- No content applicability plan is available, so semantic FAQ/HowTo suitability is not scored\\n- 1 automatic repair was required; this is a generation-stability signal, not a quality gain\\nImprovements:\\n- Show usage as numbered steps only when there is a real order (step 1 → step 2). For a one-line usage note, drop the step format.\\n- 1 item was auto-fixed by the system. Fixing the source product data means you won't depend on auto-fixes every time.\\n\\nCEP: 76/100\\nCriteria: CEP diagnostic criteria: source-present ingredient, benefit, and customer-choice context. CEP is a qualitative marketing framework (Ehrenberg-Bass) with a weaker evidence grade than the other dimensions; cue regexes are cross-checked against the content plan so one missed detection cannot swing the score. It does not predict citation rate.\\nEvaluation summary: 76 · 1 issue to improve\\nRationale:\\n- 1 ingredient signal and 2 benefit/effect signals available\\n- Direct ingredient-to-benefit bridge is weak\\n- Customer context such as concern, skin type, or selection cue is included\\nImprovements:\\n- After each ingredient name, add what it actually does in one sentence (e.g. 'ceramide refills a weakened skin barrier to reduce tightness').\\n\\nE-E-A-T: 90/100\\nCriteria: E-E-A-T diagnostic criteria: this is a proxy for evidence and scoping hygiene, not Google's E-E-A-T rating — it checks evidence-link coverage, sample/time context on numeric claims, and claim-distortion signals. Validation warnings are penalized under GEO only.\\nEvaluation summary: 90 · no observable diagnostic issue\\nRationale:\\n- 1 atomic evidence item across 1 semantic role in the Evidence Ledger\\n- No percentage/improvement claim detected; numeric-evidence checks do not affect the score\\n- The current result has no per-claim evidence ID, so atomic claim-to-source coverage is not calculated\\nImprovements:\\n- Write benefit sentences so each one is backed by the product source.\\n- 1 item was auto-fixed by the system. Fixing the source product data means you won't depend on auto-fixes every time.\\n\\nValidation and repair details\\nWarning items:\\n- 1. description (validator): reviewed wording -> kept scoped\",\"improvementPrompt\":\"You are a GEO (generative engine optimization) content improvement assistant.\\nBelow are the auto-generated schema.org JSON-LD and content for the product \\\"Barrier Cream\\\", together with an automated quality diagnosis.\\n\\n## Tasks\\n1. Propose concrete fixes that resolve the \\\"Improvements\\\" in priority order, showing before/after at the sentence or JSON-LD field level.\\n2. Hard rule: never invent benefits, figures, ingredients, certifications, or reviews that are absent from the content and JSON-LD below. Improve wording and structure only within the existing facts.\\n3. State which diagnosis item (GEO/CEP/E-E-A-T/validation warning) each fix resolves.\\n\\n## Quality diagnosis (overall 81/100)\\n### GEO — 76/100\\nImprovements:\\n- Show usage as numbered steps only when there is a real order (step 1 → step 2). For a one-line usage note, drop the step format.\\n- 1 item was auto-fixed by the system. Fixing the source product data means you won't depend on auto-fixes every time.\\nEvidence:\\n- 4 schema nodes generated: Product, WebPage, FAQPage, HowTo\\n- An explicit price is present — one of the on-page AI-citation gatekeepers.\\n- A published/modified date is present — one of the on-page AI-citation gatekeepers.\\n- Optional entity inventory: FAQ 1, HowTo 1 step, Breadcrumb 0; presence itself earns no points\\n- Images 0, offers 1, additional properties 0 strengthen PDP identity\\n- All local schema references resolve to target nodes\\n- No content applicability plan is available, so semantic FAQ/HowTo suitability is not scored\\n- 1 automatic repair was required; this is a generation-stability signal, not a quality gain\\n\\n### CEP — 76/100\\nImprovements:\\n- After each ingredient name, add what it actually does in one sentence (e.g. 'ceramide refills a weakened skin barrier to reduce tightness').\\nEvidence:\\n- 1 ingredient signal and 2 benefit/effect signals available\\n- Direct ingredient-to-benefit bridge is weak\\n- Customer context such as concern, skin type, or selection cue is included\\n\\n### E-E-A-T — 90/100\\nImprovements:\\n- Write benefit sentences so each one is backed by the product source.\\n- 1 item was auto-fixed by the system. Fixing the source product data means you won't depend on auto-fixes every time.\\nEvidence:\\n- 1 atomic evidence item across 1 semantic role in the Evidence Ledger\\n- No percentage/improvement claim detected; numeric-evidence checks do not affect the score\\n- The current result has no per-claim evidence ID, so atomic claim-to-source coverage is not calculated\\n\\n## Validation warnings\\n- 1. description (validator): reviewed wording -> kept scoped\\n\\n## Current content sections\\n### Product name\\nBarrier Cream\\n\\n### Description\\nA cream\\n\\n## Current JSON-LD\\n```json\\n{\\n  \\\"@graph\\\": [\\n    {\\n      \\\"@type\\\": \\\"Product\\\",\\n      \\\"@id\\\": \\\"#product\\\",\\n      \\\"name\\\": \\\"Barrier Cream\\\",\\n      \\\"description\\\": \\\"A cream that supports skin barrier comfort.\\\",\\n      \\\"offers\\\": {\\n        \\\"@type\\\": \\\"Offer\\\",\\n        \\\"price\\\": \\\"29.00\\\",\\n        \\\"priceCurrency\\\": \\\"USD\\\"\\n      },\\n      \\\"dateModified\\\": \\\"2026-01-02\\\"\\n    },\\n    {\\n      \\\"@type\\\": \\\"WebPage\\\",\\n      \\\"@id\\\": \\\"#page\\\",\\n      \\\"mainEntity\\\": {\\n        \\\"@id\\\": \\\"#product\\\"\\n      },\\n      \\\"description\\\": \\\"Barrier Cream product page.\\\"\\n    },\\n    {\\n      \\\"@type\\\": \\\"FAQPage\\\",\\n      \\\"mainEntity\\\": [\\n        {\\n          \\\"@type\\\": \\\"Question\\\",\\n          \\\"name\\\": \\\"Who is it for?\\\",\\n          \\\"acceptedAnswer\\\": {\\n            \\\"@type\\\": \\\"Answer\\\",\\n            \\\"text\\\": \\\"It is for dry skin needing barrier support.\\\"\\n          }\\n        }\\n      ]\\n    },\\n    {\\n      \\\"@type\\\": \\\"HowTo\\\",\\n      \\\"step\\\": [\\n        {\\n          \\\"@type\\\": \\\"HowToStep\\\",\\n          \\\"name\\\": \\\"Apply\\\",\\n          \\\"text\\\": \\\"Apply after toner and press until absorbed.\\\"\\n        }\\n      ]\\n    }\\n  ]\\n}\\n```\\n\"}"
+    },
+    {
+      "label": "invalid-json",
+      "requestBody": "{",
+      "inputHash": "e08e437cb3c6bc0c917c14d6b52cf8a5cea06cde15cff3a889a09a4710ce3b6d",
+      "status": 400,
+      "headers": {
+        "contentType": "application/json"
+      },
+      "body": "{\"error\":\"Request body must be valid JSON.\"}"
+    },
+    {
+      "label": "nullish",
+      "requestBody": "{\"jsonLd\":null}",
+      "inputHash": "dce08b9082ee108fb87c4903be50996bb6324af1b61be543d03069ab449004f5",
+      "status": 400,
+      "headers": {
+        "contentType": "application/json"
+      },
+      "body": "{\"error\":\"\\\"jsonLd\\\" is required: the schema.org graph to evaluate.\"}"
+    },
+    {
+      "label": "falsy-false",
+      "requestBody": "{\"jsonLd\":false,\"language\":\"en\"}",
+      "inputHash": "64a8e15090f07eb976922ca01e76f80be96946926ac4793f90f833509d3a96e3",
+      "status": 200,
+      "headers": {
+        "contentType": "application/json"
+      },
+      "body": "{\"evaluation\":{\"overallScore\":53,\"dimensions\":[{\"id\":\"geo\",\"label\":\"GEO\",\"score\":48,\"criteria\":\"GEO diagnostic criteria: required product/page identity, graph references, schema structure, validation stability, plus the on-page citation gatekeepers confirmed by controlled research (SIGIR 2026): an explicit price and a freshness timestamp. This is schema hygiene, not a citation-probability estimate. FAQ/HowTo presence earns no points.\",\"summary\":\"48 · 5 issues to improve\",\"evidence\":[\"0 schema nodes generated: none\",\"No price information in the schema.\",\"No published/modified date in the schema.\",\"Optional entity inventory: FAQ 0, HowTo 0 steps, Breadcrumb 0; presence itself earns no points\",\"Images 0, offers 0, additional properties 0 strengthen PDP identity\",\"All local schema references resolve to target nodes\",\"No content applicability plan is available, so semantic FAQ/HowTo suitability is not scored\",\"Output is built without warnings or automatic repairs\"],\"improvements\":[\"Add a published or modified date (dateModified) to the page. A recent timestamp is a confirmed AI-citation gatekeeper.\",\"State the price explicitly in the schema. Controlled research confirmed explicit price as a primary AI-citation gatekeeper.\",\"Basic product information (name, description) that search engines can read is missing. Fill in the product info first.\",\"The page is missing its one-line introduction. Add what this page is about.\"]},{\"id\":\"cep\",\"label\":\"CEP\",\"score\":51,\"criteria\":\"CEP diagnostic criteria: source-present ingredient, benefit, and customer-choice context. CEP is a qualitative marketing framework (Ehrenberg-Bass) with a weaker evidence grade than the other dimensions; cue regexes are cross-checked against the content plan so one missed detection cannot swing the score. It does not predict citation rate.\",\"summary\":\"51 · 3 issues to improve\",\"evidence\":[\"0 ingredient signals and 0 benefit/effect signals available\",\"Direct ingredient-to-benefit bridge is weak\",\"Customer selection criteria are not explicit enough\"],\"improvements\":[\"Help customers judge 'is this for me?' by mentioning skin type, concern, or usage situation (e.g. 'if your skin feels dry and tight').\",\"Key ingredient information is thin. Pull more ingredient details from the product source.\",\"It's not clear what improves after use. Strengthen the copy around the changes customers can expect.\"]},{\"id\":\"eeat\",\"label\":\"E-E-A-T\",\"score\":60,\"criteria\":\"E-E-A-T diagnostic criteria: this is a proxy for evidence and scoping hygiene, not Google's E-E-A-T rating — it checks evidence-link coverage, sample/time context on numeric claims, and claim-distortion signals. Validation warnings are penalized under GEO only.\",\"summary\":\"60 · 1 issue to improve\",\"evidence\":[\"0 input/mapping/RAG/terminology evidence records across 0 diagnostic source types\",\"No percentage/improvement claim detected; numeric-evidence checks do not affect the score\",\"The current result has no per-claim evidence ID, so atomic claim-to-source coverage is not calculated\"],\"improvements\":[\"Write benefit sentences so each one is backed by the product source.\"]}],\"validationDetails\":[],\"validationImprovements\":[]},\"report\":\"Quality metrics\\nProduct: \\nDiagnostic score (not citation rate): 53/100\\n\\nGEO: 48/100\\nCriteria: GEO diagnostic criteria: required product/page identity, graph references, schema structure, validation stability, plus the on-page citation gatekeepers confirmed by controlled research (SIGIR 2026): an explicit price and a freshness timestamp. This is schema hygiene, not a citation-probability estimate. FAQ/HowTo presence earns no points.\\nEvaluation summary: 48 · 5 issues to improve\\nRationale:\\n- 0 schema nodes generated: none\\n- No price information in the schema.\\n- No published/modified date in the schema.\\n- Optional entity inventory: FAQ 0, HowTo 0 steps, Breadcrumb 0; presence itself earns no points\\n- Images 0, offers 0, additional properties 0 strengthen PDP identity\\n- All local schema references resolve to target nodes\\n- No content applicability plan is available, so semantic FAQ/HowTo suitability is not scored\\n- Output is built without warnings or automatic repairs\\nImprovements:\\n- Add a published or modified date (dateModified) to the page. A recent timestamp is a confirmed AI-citation gatekeeper.\\n- State the price explicitly in the schema. Controlled research confirmed explicit price as a primary AI-citation gatekeeper.\\n- Basic product information (name, description) that search engines can read is missing. Fill in the product info first.\\n- The page is missing its one-line introduction. Add what this page is about.\\n\\nCEP: 51/100\\nCriteria: CEP diagnostic criteria: source-present ingredient, benefit, and customer-choice context. CEP is a qualitative marketing framework (Ehrenberg-Bass) with a weaker evidence grade than the other dimensions; cue regexes are cross-checked against the content plan so one missed detection cannot swing the score. It does not predict citation rate.\\nEvaluation summary: 51 · 3 issues to improve\\nRationale:\\n- 0 ingredient signals and 0 benefit/effect signals available\\n- Direct ingredient-to-benefit bridge is weak\\n- Customer selection criteria are not explicit enough\\nImprovements:\\n- Help customers judge 'is this for me?' by mentioning skin type, concern, or usage situation (e.g. 'if your skin feels dry and tight').\\n- Key ingredient information is thin. Pull more ingredient details from the product source.\\n- It's not clear what improves after use. Strengthen the copy around the changes customers can expect.\\n\\nE-E-A-T: 60/100\\nCriteria: E-E-A-T diagnostic criteria: this is a proxy for evidence and scoping hygiene, not Google's E-E-A-T rating — it checks evidence-link coverage, sample/time context on numeric claims, and claim-distortion signals. Validation warnings are penalized under GEO only.\\nEvaluation summary: 60 · 1 issue to improve\\nRationale:\\n- 0 input/mapping/RAG/terminology evidence records across 0 diagnostic source types\\n- No percentage/improvement claim detected; numeric-evidence checks do not affect the score\\n- The current result has no per-claim evidence ID, so atomic claim-to-source coverage is not calculated\\nImprovements:\\n- Write benefit sentences so each one is backed by the product source.\"}"
+    },
+    {
+      "label": "language-fallback",
+      "requestBody": "{\"jsonLd\":{},\"language\":\"ja\"}",
+      "inputHash": "739c9c041b5a71d6014208f2c2a24d618cb61ee8bb99c8d0dcfe04dabef25ef7",
+      "status": 200,
+      "headers": {
+        "contentType": "application/json"
+      },
+      "body": "{\"evaluation\":{\"overallScore\":53,\"dimensions\":[{\"id\":\"geo\",\"label\":\"GEO\",\"score\":48,\"criteria\":\"GEO 진단 기준: 필수 상품/페이지 엔티티, 그래프 참조, Schema 구조, 검증 안정성에 더해 통제 연구(SIGIR 2026)가 확인한 온페이지 인용 게이트키퍼(명시 가격, 신선도 타임스탬프)를 봅니다. 인용 확률 예측이 아닌 스키마 위생 진단입니다. FAQ/HowTo는 존재만으로 가점하지 않습니다.\",\"summary\":\"48점 · 보완 이슈 5개\",\"evidence\":[\"1개 schema 노드가 생성됨: 없음\",\"가격 정보가 스키마에 없어요.\",\"게시/수정 날짜가 스키마에 없어요.\",\"선택 엔티티 현황: FAQ 0개, HowTo 0단계, Breadcrumb 0개 — 존재 자체는 가점하지 않음\",\"이미지 0개, Offer 0개, 추가 속성 0개로 PDP 식별성 보강\",\"로컬 스키마 참조가 모두 대상 노드와 연결됨\",\"콘텐츠 적용 계획이 없어 FAQ/HowTo의 의미상 적합성은 점수화하지 않음\",\"경고나 자동 보정 없이 산출물이 구성됨\"],\"improvements\":[\"페이지에 게시일 또는 수정일(dateModified)을 추가해주세요. 최신 타임스탬프는 AI 인용의 주요 관문으로 확인됐습니다.\",\"가격을 스키마에 명시해주세요. 통제 연구에서 명시 가격은 AI 인용의 주요 관문으로 확인됐습니다.\",\"검색엔진이 읽을 수 있는 상품 기본 정보(이름·설명 등)가 빠져 있어요. 상품 정보를 먼저 채워주세요.\",\"이 페이지가 어떤 페이지인지 소개하는 정보가 빠져 있어요. 페이지 한 줄 소개를 보강해주세요.\"]},{\"id\":\"cep\",\"label\":\"CEP\",\"score\":51,\"criteria\":\"CEP 진단 기준: 근거에 있는 성분·효능·고객 선택 맥락의 연결을 봅니다. CEP는 마케팅 이론(Ehrenberg-Bass) 기반의 정성 프레임이라 다른 차원보다 근거 등급이 낮으며, 표현 큐 감지는 콘텐츠 플랜과 교차 확인해 단일 감지 실패가 점수를 좌우하지 않게 합니다. 실제 인용률을 예측하지 않습니다.\",\"summary\":\"51점 · 보완 이슈 3개\",\"evidence\":[\"성분 신호 0개와 효능/효과 신호 0개를 연결 대상으로 확보\",\"성분과 효능의 직접 연결 문장이 약함\",\"고객 선택 기준이 명확하게 드러나지 않음\"],\"improvements\":[\"고객이 '내게 맞는 상품인지' 판단할 수 있도록 피부 타입, 고민, 사용 상황을 문장에 넣어주세요. (예: '건조하고 당김이 심한 피부라면')\",\"핵심 성분 정보가 부족해요. 상품 원문에서 성분 정보를 더 가져와 보강해주세요.\",\"'써서 무엇이 좋아지는지'가 잘 드러나지 않아요. 사용 후 기대할 수 있는 변화를 중심으로 보강해주세요.\"]},{\"id\":\"eeat\",\"label\":\"E-E-A-T\",\"score\":60,\"criteria\":\"E-E-A-T 진단 기준: 이 점수는 Google의 E-E-A-T 평가가 아니라 근거·스코핑 위생의 프록시입니다 — 근거 연결 커버리지, 수치 클레임의 표본·기간 문맥, 클레임 왜곡 신호를 봅니다. 검증 경고는 GEO 차원에서만 감점됩니다.\",\"summary\":\"60점 · 보완 이슈 1개\",\"evidence\":[\"입력/매핑/RAG/용어집 계열 근거 레코드 0개, 진단상 출처 유형 0개 확인\",\"퍼센트/개선율 클레임이 없어 수치 근거 항목은 점수에 반영하지 않음\",\"현재 결과에는 주장별 evidence ID가 없어 원자 단위 출처 일치율은 계산하지 않음\"],\"improvements\":[\"효능 문장마다 원문 근거가 연결되도록, 근거가 있는 표현 위주로 작성해주세요.\"]}],\"validationDetails\":[],\"validationImprovements\":[]},\"report\":\"품질 평가 지표\\n상품: \\n진단 점수 (인용률 아님): 53/100\\n\\nGEO: 48/100\\n평가 기준: GEO 진단 기준: 필수 상품/페이지 엔티티, 그래프 참조, Schema 구조, 검증 안정성에 더해 통제 연구(SIGIR 2026)가 확인한 온페이지 인용 게이트키퍼(명시 가격, 신선도 타임스탬프)를 봅니다. 인용 확률 예측이 아닌 스키마 위생 진단입니다. FAQ/HowTo는 존재만으로 가점하지 않습니다.\\n평가 요약: 48점 · 보완 이슈 5개\\n평가 근거:\\n- 1개 schema 노드가 생성됨: 없음\\n- 가격 정보가 스키마에 없어요.\\n- 게시/수정 날짜가 스키마에 없어요.\\n- 선택 엔티티 현황: FAQ 0개, HowTo 0단계, Breadcrumb 0개 — 존재 자체는 가점하지 않음\\n- 이미지 0개, Offer 0개, 추가 속성 0개로 PDP 식별성 보강\\n- 로컬 스키마 참조가 모두 대상 노드와 연결됨\\n- 콘텐츠 적용 계획이 없어 FAQ/HowTo의 의미상 적합성은 점수화하지 않음\\n- 경고나 자동 보정 없이 산출물이 구성됨\\n개선점:\\n- 페이지에 게시일 또는 수정일(dateModified)을 추가해주세요. 최신 타임스탬프는 AI 인용의 주요 관문으로 확인됐습니다.\\n- 가격을 스키마에 명시해주세요. 통제 연구에서 명시 가격은 AI 인용의 주요 관문으로 확인됐습니다.\\n- 검색엔진이 읽을 수 있는 상품 기본 정보(이름·설명 등)가 빠져 있어요. 상품 정보를 먼저 채워주세요.\\n- 이 페이지가 어떤 페이지인지 소개하는 정보가 빠져 있어요. 페이지 한 줄 소개를 보강해주세요.\\n\\nCEP: 51/100\\n평가 기준: CEP 진단 기준: 근거에 있는 성분·효능·고객 선택 맥락의 연결을 봅니다. CEP는 마케팅 이론(Ehrenberg-Bass) 기반의 정성 프레임이라 다른 차원보다 근거 등급이 낮으며, 표현 큐 감지는 콘텐츠 플랜과 교차 확인해 단일 감지 실패가 점수를 좌우하지 않게 합니다. 실제 인용률을 예측하지 않습니다.\\n평가 요약: 51점 · 보완 이슈 3개\\n평가 근거:\\n- 성분 신호 0개와 효능/효과 신호 0개를 연결 대상으로 확보\\n- 성분과 효능의 직접 연결 문장이 약함\\n- 고객 선택 기준이 명확하게 드러나지 않음\\n개선점:\\n- 고객이 '내게 맞는 상품인지' 판단할 수 있도록 피부 타입, 고민, 사용 상황을 문장에 넣어주세요. (예: '건조하고 당김이 심한 피부라면')\\n- 핵심 성분 정보가 부족해요. 상품 원문에서 성분 정보를 더 가져와 보강해주세요.\\n- '써서 무엇이 좋아지는지'가 잘 드러나지 않아요. 사용 후 기대할 수 있는 변화를 중심으로 보강해주세요.\\n\\nE-E-A-T: 60/100\\n평가 기준: E-E-A-T 진단 기준: 이 점수는 Google의 E-E-A-T 평가가 아니라 근거·스코핑 위생의 프록시입니다 — 근거 연결 커버리지, 수치 클레임의 표본·기간 문맥, 클레임 왜곡 신호를 봅니다. 검증 경고는 GEO 차원에서만 감점됩니다.\\n평가 요약: 60점 · 보완 이슈 1개\\n평가 근거:\\n- 입력/매핑/RAG/용어집 계열 근거 레코드 0개, 진단상 출처 유형 0개 확인\\n- 퍼센트/개선율 클레임이 없어 수치 근거 항목은 점수에 반영하지 않음\\n- 현재 결과에는 주장별 evidence ID가 없어 원자 단위 출처 일치율은 계산하지 않음\\n개선점:\\n- 효능 문장마다 원문 근거가 연결되도록, 근거가 있는 표현 위주로 작성해주세요.\"}"
+    }
+  ],
+  "suite": {
+    "copy": {
+      "panelLabel": "GEO CEP E-E-A-T quality diagnostics",
+      "sequenceNote": "Conservative quality diagnostics—not a citation-rate prediction—are shown after schema generation.",
+      "kicker": "Follow-up evaluation",
+      "title": "Quality metrics",
+      "summaryLabel": "Evaluation summary",
+      "productLabel": "Product",
+      "overallScoreLabel": "Diagnostic score (not citation rate)",
+      "criteriaLabel": "Criteria",
+      "copyLabel": "Copy all metrics",
+      "copyDoneLabel": "Copied",
+      "detailLabel": "Quality evaluation detail",
+      "detailSummary": "Detailed rationale and improvements",
+      "evidenceLabel": "Rationale",
+      "improvementLabel": "Improvements",
+      "validationDetailLabel": "Validation and repair details",
+      "validationDetailDescription": "Validation and repair output is grouped by field, issue, and action so the next improvement step is visible.",
+      "validationIssueLabel": "Warning items",
+      "validationDirectionLabel": "Validation-based improvements",
+      "none": "none",
+      "geoCriteria": "GEO diagnostic criteria: required product/page identity, graph references, schema structure, validation stability, plus the on-page citation gatekeepers confirmed by controlled research (SIGIR 2026): an explicit price and a freshness timestamp. This is schema hygiene, not a citation-probability estimate. FAQ/HowTo presence earns no points.",
+      "cepCriteria": "CEP diagnostic criteria: source-present ingredient, benefit, and customer-choice context. CEP is a qualitative marketing framework (Ehrenberg-Bass) with a weaker evidence grade than the other dimensions; cue regexes are cross-checked against the content plan so one missed detection cannot swing the score. It does not predict citation rate.",
+      "eeatCriteria": "E-E-A-T diagnostic criteria: this is a proxy for evidence and scoping hygiene, not Google's E-E-A-T rating — it checks evidence-link coverage, sample/time context on numeric claims, and claim-distortion signals. Validation warnings are penalized under GEO only.",
+      "cleanValidationEvidence": "Output is built without warnings or automatic repairs",
+      "cepBridgeEvidence": "Ingredient and benefit are connected in the same explanatory context",
+      "cepBridgeMissingEvidence": "Direct ingredient-to-benefit bridge is weak",
+      "cepChoiceEvidence": "Customer context such as concern, skin type, or selection cue is included",
+      "cepChoiceMissingEvidence": "Customer selection criteria are not explicit enough",
+      "eeatMetricEvidence": "Includes numeric claims such as percentages or improvement rates",
+      "eeatMetricMissingEvidence": "No percentage/improvement claim detected; numeric-evidence checks do not affect the score",
+      "eeatStudyMissingEvidence": "Sample size or usage period evidence is weak",
+      "eeatRagEvidence": "Uses RAG evidence for the evidence-backed claims principle",
+      "atomicEvidenceUnavailable": "The current result has no per-claim evidence ID, so atomic claim-to-source coverage is not calculated",
+      "missingProductSchema": "Basic product information (name, description) that search engines can read is missing. Fill in the product info first.",
+      "missingWebPageSchema": "The page is missing its one-line introduction. Add what this page is about.",
+      "faqParityImprovement": "When on-page content is re-enabled, make sure the FAQ shown on screen matches the FAQ sent to search engines.",
+      "howToParityImprovement": "When on-page content is re-enabled, make sure the usage steps on screen match the steps sent to search engines.",
+      "faqApplicabilityImprovement": "Keep the FAQ only when there are real questions with real answers. Remove questions with empty answers.",
+      "howToApplicabilityImprovement": "Show usage as numbered steps only when there is a real order (step 1 → step 2). For a one-line usage note, drop the step format.",
+      "faqPlanImprovement": "The approved FAQ list and the published FAQ list differ. Publish only the approved questions.",
+      "howToPlanImprovement": "Whether usage steps are shown differs from the plan. Align it with the plan.",
+      "validationGenericDirection": "For the flagged copy, don't paste raw source text — rewrite it into natural, customer-ready sentences.",
+      "howToValidationDirection": "Keep only actual usage actions in the steps. Reviews, efficacy claims, and test results belong elsewhere.",
+      "propertyValidationDirection": "The product info list contains review sentences or unedited source text. Replace them with short, clear facts like 'key ingredient', 'main benefit', or 'recommended for'.",
+      "faqValidationDirection": "The FAQ contains headings instead of real questions. Rewrite them as questions customers would actually ask (e.g. 'Can oily skin use this?') with proper answers.",
+      "descriptionValidationDirection": "Polish the product/page description so it reads naturally: what the product is, what it does, and who it's for — without adding anything not in the source.",
+      "htmlValidationDirection": "There are code fragments or empty elements customers should never see. Keep only finished sentences and content.",
+      "claimValidationDirection": "For numeric claims (e.g. 'improved by 00%'), state in the same sentence how many people were tested and for how long.",
+      "factValidationDirection": "Ingredient/effect text pulled from detail images went in unsorted. Split it into ingredient / effect / recommended skin type / verified figures and place each where it belongs.",
+      "copyValidationDirection": "Check grammar and spacing for natural, complete sentences — without changing brand-specific expressions.",
+      "cepBridgeImprovement": "After each ingredient name, add what it actually does in one sentence (e.g. 'ceramide refills a weakened skin barrier to reduce tightness').",
+      "cepChoiceImprovement": "Help customers judge 'is this for me?' by mentioning skin type, concern, or usage situation (e.g. 'if your skin feels dry and tight').",
+      "cepIngredientImprovement": "Key ingredient information is thin. Pull more ingredient details from the product source.",
+      "cepBenefitImprovement": "It's not clear what improves after use. Strengthen the copy around the changes customers can expect.",
+      "eeatSampleImprovement": "Next to numeric claims, say how many people they were tested on. If the source doesn't say, state the scope openly.",
+      "eeatTimeImprovement": "Next to numeric claims, add the usage period (e.g. 'after 4 weeks of use').",
+      "eeatRagImprovement": "Write benefit sentences so each one is backed by the product source.",
+      "geoFallbackImprovement": "Structure looks good. Just re-check that the core product info stays intact on the next generation.",
+      "cepFallbackImprovement": "Ingredient-benefit-customer connections look good. Just confirm they hold up on the next generation.",
+      "eeatFallbackImprovement": "Evidence wording looks good. Just re-check that figures, audiences, and periods still match the source.",
+      "gatekeeperPriceEvidence": "An explicit price is present — one of the on-page AI-citation gatekeepers.",
+      "gatekeeperPriceMissingEvidence": "No price information in the schema.",
+      "gatekeeperFreshnessEvidence": "A published/modified date is present — one of the on-page AI-citation gatekeepers.",
+      "gatekeeperFreshnessMissingEvidence": "No published/modified date in the schema.",
+      "gatekeeperPriceImprovement": "State the price explicitly in the schema. Controlled research confirmed explicit price as a primary AI-citation gatekeeper.",
+      "gatekeeperFreshnessImprovement": "Add a published or modified date (dateModified) to the page. A recent timestamp is a confirmed AI-citation gatekeeper."
+    },
+    "evaluationSuite": {
+      "kicker": "Follow-up evaluation",
+      "title": "Quality diagnosis + citation test",
+      "note": "The output is checked in two stages: (1) structure/evidence quality diagnosis (always on), (2) a simulated-engine citation test (when the probe is enabled in settings). Conservative diagnostics, not citation-rate predictions.",
+      "qualityBlockTitle": "1. Quality diagnosis · GEO / CEP / E-E-A-T",
+      "probeBlockTitle": "2. Citation test · Citation Probe",
+      "easyTitle": "What to change",
+      "citationTileEnableHint": "Enable the probe in settings to measure",
+      "citationTileError": "Did not run",
+      "citationDetailLabel": "Citation test detail",
+      "probeDetailHeading": "Citation test",
+      "easyAllGood": "All three areas look healthy. The items below make them even sturdier.",
+      "easyEmpty": "Nothing needs an immediate fix.",
+      "dimFriendly": {
+        "geo": "structure AI reads",
+        "cep": "customer questions & context",
+        "eeat": "trust & evidence wording"
+      },
+      "qualityPromptButton": "Copy LLM improvement prompt",
+      "probePromptButton": "Copy LLM citation prompt",
+      "promptCopiedLabel": "Copied",
+      "promptHint": "Paste the copied prompt into an LLM such as Claude Code to get diagnosis-grounded fixes, then regenerate and re-evaluate — a quality improvement loop.",
+      "probeOffHint": "Enable the citation probe in Settings → Input to also measure how much more this content gets cited in AI answers than the vanilla PDP.",
+      "probeErrorTitle": "Citation test did not run",
+      "probeShareExplainer": "Citation share is how much of the AI answer cites our document when the AI writes from our document plus 4 competitor documents. Higher means more of the answer came from our product content.",
+      "citationRowLabel": "AI-answer citation share",
+      "narrativeWhyDown": "The generated content often failed to answer the questions directly. Use the citation-improvement prompt below, starting with the weakest questions.",
+      "narrativeWhyFlat": "Both versions answered the questions about equally well, so citations did not shift.",
+      "attributionLabel": "Citation contribution",
+      "overallAttributionLabel": "Overall contribution (which section earned the citations)",
+      "imageAttributionLabel": "Image contribution",
+      "overallImageAttributionLabel": "Overall image contribution (which image earned the citations)",
+      "imageOtherLabel": "citations without image lineage",
+      "sectionLabels": {
+        "productName": "Product name",
+        "description": "Description",
+        "productDescription": "Product description",
+        "webPageDescription": "WebPage description",
+        "quickFacts": "Quick facts",
+        "benefits": "Benefits",
+        "ingredients": "Ingredients",
+        "howToUse": "How to use",
+        "faq": "FAQ",
+        "other": "other (unmatched)"
+      },
+      "vanillaLabel": "Vanilla PDP",
+      "generatedLabel": "Generated content",
+      "safetyPassTitle": "Safety check passed",
+      "safetyFailTitle": "Safety check — attention",
+      "safetyPassNote": "Citations did not drop and no sentence contradicts the product evidence.",
+      "safetyDeltaFail": "The generated content was cited less than the original.",
+      "detailSummary": "Details",
+      "outcomeLabels": {
+        "improved": "Much improved",
+        "flat": "About the same",
+        "worse": "Original wins"
+      },
+      "querySourceLabels": {
+        "content-plan-faq": "content-plan FAQ",
+        "content-plan-cep": "content-plan CEP",
+        "template": "category template"
+      },
+      "warningsLabel": "Warnings",
+      "interpretation": "One-shot comparison for this product on a simulated engine. Never compare across products or runs, and never read it as a production citation probability."
+    },
+    "share": 13,
+    "delta": "-13%p",
+    "outcome": "improved",
+    "imageId": "a.jpg",
+    "attribution": "Description 70%",
+    "breakdown": "category template 2",
+    "easy": {
+      "headline": "GEO (structure AI reads) scored lowest at 76. Applying the items below yields the biggest gains.",
+      "items": [
+        {
+          "text": "[GEO] Show usage as numbered steps only when there is a real order (step 1 → step 2). For a one-line usage note, drop the step format."
+        },
+        {
+          "text": "[GEO] 1 item was auto-fixed by the system. Fixing the source product data means you won't depend on auto-fixes every time."
+        },
+        {
+          "text": "[CEP] After each ingredient name, add what it actually does in one sentence (e.g. 'ceramide refills a weakened skin barrier to reduce tightness')."
+        }
+      ]
+    },
+    "safety": [
+      "Citations did not drop and no sentence contradicts the product evidence."
+    ],
+    "narrative": "Both versions answered the questions about equally well, so citations did not shift."
+  },
+  "publicSurface": {
+    "packageExports": {
+      ".": "./src/index.ts",
+      "./types": "./src/types.ts",
+      "./benchmark": "./src/benchmark/index.ts",
+      "./rest": "./src/rest.ts"
+    },
+    "entrypoints": {
+      ".": {
+        "runtime": {
+          "CITATION_ANSWER_INSTRUCTIONS": "CITATION_ANSWER_INSTRUCTIONS",
+          "CITATION_PROBE_INTERPRETATION": "CITATION_PROBE_INTERPRETATION",
+          "DEFAULT_UTILITY_GATE_THRESHOLDS": "DEFAULT_UTILITY_GATE_THRESHOLDS",
+          "GEO_EVAL_TARGET_SLOT": "GEO_EVAL_TARGET_SLOT",
+          "PDP_COPY_UTILITY_GATE_THRESHOLDS": "PDP_COPY_UTILITY_GATE_THRESHOLDS",
+          "argValue": "arg_value",
+          "attributeCitationsToSections": "attribute_citations_to_sections",
+          "buildCitationAnswerPrompt": "build_citation_answer_prompt",
+          "buildConceptEmbodimentPrompt": "build_concept_embodiment_prompt",
+          "buildEasyImprovementSummary": "build_easy_improvement_summary",
+          "buildGeneratedSourceText": "build_generated_source_text",
+          "buildImageAttributableSections": "build_image_attributable_sections",
+          "buildProbeDistractors": "build_probe_distractors",
+          "buildProbeNarrativeWhy": "build_probe_narrative_why",
+          "buildProbeSafetyNotes": "build_probe_safety_notes",
+          "buildVanillaSourceText": "build_vanilla_source_text",
+          "completeWithProvider": "complete_with_provider",
+          "containsSerializedMetadata": "contains_serialized_metadata",
+          "deriveProbeQueries": "derive_probe_queries",
+          "evaluateGeoQuality": "evaluate_geo_quality",
+          "evaluateUtilityGate": "evaluate_utility_gate",
+          "extractCitationSentences": "extract_citation_sentences",
+          "findSerializedMetadataArtifact": "find_serialized_metadata_artifact",
+          "formatContentSectionsForPrompt": "format_content_sections_for_prompt",
+          "formatGeoQualityEvaluationText": "format_geo_quality_evaluation_text",
+          "formatImageSectionId": "format_image_section_id",
+          "formatPctDelta": "format_pct_delta",
+          "formatProbeLlmPrompt": "format_probe_llm_prompt",
+          "formatQualityLlmPrompt": "format_quality_llm_prompt",
+          "formatQuerySourceBreakdown": "format_query_source_breakdown",
+          "formatSectionAttribution": "format_section_attribution",
+          "generateEngineAnswer": "generate_engine_answer",
+          "geoEvalEngineId": "geo_eval_engine_id",
+          "getEvaluationSuiteCopy": "get_evaluation_suite_copy",
+          "getGeoQualityCopy": "get_geo_quality_copy",
+          "judgeCitationQuality": "judge_citation_quality",
+          "judgeConceptEmbodiment": "judge_concept_embodiment",
+          "judgeKeypointCoverage": "judge_keypoint_coverage",
+          "parseCitationSupport": "parse_citation_support",
+          "parseConceptEmbodimentResponse": "parse_concept_embodiment_response",
+          "parseExtractedClaims": "parse_extracted_claims",
+          "parseKeypointJudgments": "parse_keypoint_judgments",
+          "probeQueryOutcome": "probe_query_outcome",
+          "resolveEngineConfigFromEnv": "resolve_engine_config_from_env",
+          "runCitationProbe": "run_citation_probe",
+          "scoreCitationQuality": "score_citation_quality",
+          "scoreCitationVisibility": "score_citation_visibility",
+          "scoreImpressionShares": "score_impression_shares",
+          "scoreKeypointCoverage": "score_keypoint_coverage",
+          "shareToPct": "share_to_pct",
+          "truncateQuote": "truncate_quote",
+          "zNormalizeScores": "z_normalize_scores"
+        },
+        "runtimeValues": {
+          "CITATION_ANSWER_INSTRUCTIONS": "Write an accurate and concise answer for the given user question, using _only_ the provided summarized web search results. The answer should be correct, high-quality, and written by an expert using an unbiased and journalistic tone. Write the answer in the same language as the user question. The answer should be informative, interesting, and engaging. The answer's logic and reasoning should be rigorous and defensible. Every sentence in the answer should be _immediately followed_ by an in-line citation to the search result(s). The cited search result(s) should fully support _all_ the information in the sentence. Search results need to be cited using [index]. When citing several search results, use [1][2][3] format rather than [1, 2, 3]. You can use multiple search results to respond comprehensively while avoiding irrelevant search results.",
+          "CITATION_PROBE_INTERPRETATION": "Paired one-shot diagnostic for this product only: generated vs vanilla PDP text competing on identical queries, distractors, and engine. Not a production citation-probability estimate and not comparable across products or runs.",
+          "DEFAULT_UTILITY_GATE_THRESHOLDS": {
+            "minVisibilityDelta": 0,
+            "maxKpc": 0,
+            "minKpr": 0.8,
+            "minCitationPrecision": 0.7
+          },
+          "GEO_EVAL_TARGET_SLOT": 2,
+          "PDP_COPY_UTILITY_GATE_THRESHOLDS": {
+            "minVisibilityDelta": 0,
+            "maxKpc": 0,
+            "minKpr": 0,
+            "minCitationPrecision": 0.7
+          }
+        },
+        "typeOnly": [
+          "AttributableSection",
+          "CitationProbeContext",
+          "CitationProbeOptions",
+          "CitationProbeQuery",
+          "CitationProbeQueryResult",
+          "CitationProbeQuerySource",
+          "CitationProbeResult",
+          "CitationProbeShare",
+          "CitationQualityScore",
+          "CitationSectionAttribution",
+          "CitationSentence",
+          "CitationSupportJudgment",
+          "CitationSupportLevel",
+          "CitationVisibilityScore",
+          "ConceptEmbodimentAssessment",
+          "ConceptEmbodimentDimension",
+          "EasyImprovementItem",
+          "EvalContentPlanInput",
+          "EvalContentSections",
+          "EvalDiagnosticsInput",
+          "EvalEvidenceItem",
+          "EvalEvidenceRecord",
+          "EvalNormalizedProduct",
+          "EvalRagUsageItem",
+          "EvalUiLanguage",
+          "EvalValidationRepair",
+          "EvaluationSuiteCopy",
+          "ExtractedClaim",
+          "GeoEvalEngineAnswer",
+          "GeoEvalEngineConfig",
+          "GeoEvalProvider",
+          "GeoQualityCopy",
+          "GeoQualityDimension",
+          "GeoQualityDimensionId",
+          "GeoQualityEvalInput",
+          "GeoQualityEvaluation",
+          "ImageProvenanceEntry",
+          "ImageProvenanceSentence",
+          "ImpressionShares",
+          "KeypointCoverageScore",
+          "KeypointJudgment",
+          "KeypointLabel",
+          "ProbePromptContext",
+          "QualityPromptContext",
+          "UtilityGateInput",
+          "UtilityGateResult",
+          "UtilityGateThresholds"
+        ]
+      },
+      "./types": {
+        "runtime": {},
+        "typeOnly": [
+          "EvalContentPlanInput",
+          "EvalContentSections",
+          "EvalDiagnosticsInput",
+          "EvalEvidenceItem",
+          "EvalEvidenceRecord",
+          "EvalNormalizedProduct",
+          "EvalRagUsageItem",
+          "EvalUiLanguage",
+          "EvalValidationRepair",
+          "GeoQualityEvalInput"
+        ]
+      },
+      "./benchmark": {
+        "runtime": {
+          "GEO_EVAL_TARGET_SLOT": "GEO_EVAL_TARGET_SLOT",
+          "aggregateGeoScores": "aggregate_geo_scores",
+          "buildSourceSet": "build_source_set",
+          "evalProducts": "eval_products",
+          "geoEvalDistractors": "geo_eval_distractors",
+          "geoEvalGoldens": "geo_eval_goldens",
+          "runGeoBenchmark": "run_geo_benchmark"
+        },
+        "runtimeValues": {
+          "GEO_EVAL_TARGET_SLOT": 2
+        },
+        "typeOnly": [
+          "EvalProductId",
+          "GeneratedProductArtifact",
+          "GeoCepFocus",
+          "GeoEvalAggregates",
+          "GeoEvalGolden",
+          "GeoEvalGoldenResult",
+          "GeoEvalRunOptions",
+          "GeoEvalRunResult",
+          "GeoEvalShareAggregate",
+          "GeoEvalVariantScore"
+        ]
+      },
+      "./rest": {
+        "runtime": {
+          "createPdpGeoEvalRestHandler": "create_pdp_geo_eval_rest_handler"
+        },
+        "typeOnly": []
+      }
+    }
+  }
+}

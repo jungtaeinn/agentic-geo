@@ -10,6 +10,8 @@ WORKDIR /repo
 COPY --from=build /repo /repo
 WORKDIR /repo/apps/pdp-extractor
 ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0
+# Set at deployment time to the separately deployed Python Agent API.
+ENV AGENTIC_GEO_API_URL=
 EXPOSE 3000
 USER node
 CMD ["./node_modules/.bin/next","start"]

@@ -32,12 +32,10 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import type { ChangeEvent, DragEvent } from "react";
-import type { ProductExtractionDiagnostics, ProductExtractionResult, ProductExtractionStep } from "@agentic-geo/pdp-extractor-agent/types";
 import {
   buildEasyImprovementSummary,
   buildProbeNarrativeWhy,
   buildProbeSafetyNotes,
-  evaluateGeoQuality,
   formatGeoQualityEvaluationText,
   formatImageSectionId,
   formatPctDelta,
@@ -49,20 +47,25 @@ import {
   probeQueryOutcome,
   shareToPct,
   truncateQuote,
-  formatQuerySourceBreakdown,
-  type CitationProbeResult,
-  type EasyImprovementItem,
-  type GeoQualityEvaluation
-} from "@agentic-geo/pdp-geo-eval-agent";
+  formatQuerySourceBreakdown
+} from "../lib/evaluation-presentation";
+import { pythonAgentBrowserEndpoint, requestGeoQualityEvaluation } from "../lib/python-agent-browser-client";
 import type {
+  CitationProbeResult,
+  EasyImprovementItem,
+  GeoQualityEvaluation,
   PdpGeoDiagnostics,
   PdpGeoGenerationResult,
   PdpGeoGenerationStageId,
   PdpGeoGenerationStep,
   PdpGeoLocale,
   PdpGeoOcrSentenceDiagnostic,
-  PdpGeoRagMode
-} from "@agentic-geo/pdp-geo-generator-agent/types";
+  PdpGeoPublicCopyOmission,
+  PdpGeoRagMode,
+  ProductExtractionDiagnostics,
+  ProductExtractionResult,
+  ProductExtractionStep
+} from "../lib/python-agent-dtos";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type SourceMode = "auto" | "url" | "restApi" | "manual-json";
@@ -86,6 +89,11 @@ type AiSettingsFeedback = "tested" | "saved" | "reset" | null;
 type AiSettingsAction = "test" | "save" | null;
 type RagSettingsFeedback = "saved" | "reset" | null;
 type RagSettingsAction = "save" | "reset" | null;
+
+/** A run may update the UI only while its epoch is the active epoch and it has not been aborted. */
+export function shouldApplyRunUpdate(activeEpoch: number, runEpoch: number, aborted: boolean): boolean {
+  return activeEpoch === runEpoch && !aborted;
+}
 
 interface PanelRagReference {
   id: string;
@@ -132,6 +140,152 @@ interface GeoGeneratorLog {
   generatorProcess: PdpGeoGenerationStep[];
 }
 
+type EntryBoundGeoGeneratorLog = GeoGeneratorLog & {
+  entryId: string;
+  runId: string;
+};
+
+type EntryBoundExtractorLog = ProductExtractionDiagnostics & {
+  entryId: string;
+  runId: string;
+};
+
+export interface GeoHistoryEntry {
+  entryId: string;
+  runId: string;
+  requestId?: string;
+  result: GeoGeneratorResult;
+  log?: EntryBoundGeoGeneratorLog;
+}
+
+export interface ExtractorHistoryEntry {
+  entryId: string;
+  runId: string;
+  requestId?: string;
+  result: TimedProductExtractionResult;
+  log?: EntryBoundExtractorLog;
+}
+
+interface LegacyUnpairedLog<Log> {
+  log: Log;
+  reason: "ambiguous-v1-source" | "orphaned-v1-source";
+}
+
+interface GeoHistoryStorageV2 {
+  version: 2;
+  entries: GeoHistoryEntry[];
+  unpairedLegacyLogs: LegacyUnpairedLog<GeoGeneratorLog>[];
+}
+
+interface ExtractorHistoryStorageV2 {
+  version: 2;
+  entries: ExtractorHistoryEntry[];
+  unpairedLegacyLogs: LegacyUnpairedLog<ProductExtractionDiagnostics>[];
+}
+
+type FailureStepStatus = "pending" | "running" | "done" | "error";
+
+interface GeoGeneratorFailureProcessStep {
+  id: string;
+  status: FailureStepStatus;
+}
+
+interface GeoGeneratorFailureRuntimeStage {
+  stage: string;
+  called?: boolean;
+  applied?: boolean;
+  retrievedCount?: number;
+  selectedRagCount?: number;
+}
+
+type GeoGeneratorCorrectiveAdoptionReason =
+  | "notNeeded"
+  | "noCorrectiveRuntime"
+  | "correctiveNotApplied"
+  | "adopted"
+  | "provenanceRegression"
+  | "structuralShortfall"
+  | "notImproved";
+
+type GeoGeneratorProvenanceDecisionPhase = "initial" | "afterProofreader" | "afterSafeRepair" | "correctedCandidate";
+type GeoGeneratorProvenanceDecisionOutcome = "bound" | "protected" | "unsupported" | "notPresent";
+type GeoGeneratorProvenanceDecisionReason =
+  | "noEligibleEvidence"
+  | "assertionFrameRejected"
+  | "directSupportRejected"
+  | "planTextMismatch"
+  | "notPresent"
+  | "directSupportAccepted"
+  | "verbatimSource";
+type GeoGeneratorProvenanceEvidenceRole =
+  | "identity"
+  | "description"
+  | "benefit"
+  | "effect"
+  | "ingredient"
+  | "audience"
+  | "usage"
+  | "metric"
+  | "faq"
+  | "review"
+  | "source"
+  | "commerce";
+
+interface GeoGeneratorFailureCorrectiveDiagnostics {
+  correctiveApplied: boolean;
+  correctedMissingPaths: string[];
+  adoptionReason: GeoGeneratorCorrectiveAdoptionReason;
+  structuralShortfallCount: number;
+  provenanceRegressionDelta: number;
+}
+
+interface GeoGeneratorFailureProvenanceDecision {
+  fieldPath: string;
+  phase: GeoGeneratorProvenanceDecisionPhase;
+  sentenceIndex: number | null;
+  outcome: GeoGeneratorProvenanceDecisionOutcome;
+  reason: GeoGeneratorProvenanceDecisionReason;
+  plan: {
+    mode: "model" | "nonModel";
+    fieldIncluded: boolean | null;
+    textHashMatch: boolean | null;
+  };
+  eligibleEvidenceCount: number;
+  eligibleRoleCounts: Partial<Record<GeoGeneratorProvenanceEvidenceRole, number>>;
+  selectedEvidenceCount: number;
+}
+
+interface GeoGeneratorFailureDiagnostics {
+  requestId?: string;
+  process: GeoGeneratorFailureProcessStep[];
+  qualityGate?: {
+    attempted: boolean;
+    adopted: boolean;
+    reason: string;
+    shortfalls: string[];
+    blockingShortfalls: string[];
+    scores: Record<string, Record<string, number>>;
+    correctiveDiagnostics?: GeoGeneratorFailureCorrectiveDiagnostics;
+  };
+  validationFindings: Array<{ field: string; source: "public-copy-provenance"; reason: string }>;
+  finalPublicCopyProvenance: { count: number; fieldPaths: string[] };
+  publicCopyProvenanceDecisionDiagnostics?: GeoGeneratorFailureProvenanceDecision[];
+  runtimeStages: GeoGeneratorFailureRuntimeStage[];
+  extractor?: {
+    process: GeoGeneratorFailureProcessStep[];
+    diagnostics: {
+      warningCount: number;
+      evidenceCount: number;
+      runtimeStages: GeoGeneratorFailureRuntimeStage[];
+    };
+  };
+}
+
+interface GeoGeneratorFailureDiagnosticsForRun {
+  runId: string;
+  diagnostics: GeoGeneratorFailureDiagnostics;
+}
+
 interface GeoGeneratorResponse {
   results: GeoGeneratorResult[];
   logs: GeoGeneratorLog[];
@@ -139,8 +293,414 @@ interface GeoGeneratorResponse {
     source: string;
     sourceType: SourceMode;
     error: string;
+    diagnostics?: unknown;
   }>;
   error?: string;
+}
+
+export function resolveGeoGeneratorFailureMessage(
+  payload: Pick<GeoGeneratorResponse, "error" | "failures">
+): string {
+  return payload.failures[0]?.error || payload.error || "GEO generation failed.";
+}
+
+function safeFailureText(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value.trim().slice(0, 240) || fallback : fallback;
+}
+
+function safeFailureStepList(value: unknown): GeoGeneratorFailureProcessStep[] {
+  const statuses = new Set<FailureStepStatus>(["pending", "running", "done", "error"]);
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    if (!isRecord(item) || typeof item.id !== "string" || typeof item.status !== "string" || !statuses.has(item.status as FailureStepStatus)) {
+      return [];
+    }
+    return [{ id: item.id.slice(0, 120), status: item.status as FailureStepStatus }];
+  });
+}
+
+function safeFailureStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return Array.from(new Set(value.flatMap((item) => {
+    const text = safeFailureText(item);
+    return text ? [text] : [];
+  })));
+}
+
+function safeFailureScores(value: unknown): Record<string, number> {
+  if (!isRecord(value)) {
+    return {};
+  }
+  return Object.fromEntries(
+    ["overall", "geo", "cep", "eeat"].flatMap((key) => typeof value[key] === "number" && Number.isFinite(value[key] as number)
+      ? [[key, value[key] as number]]
+      : [])
+  );
+}
+
+function safeFailureFindingReason(value: unknown): string {
+  const reason = safeFailureText(value).toLowerCase();
+  if (reason.includes("missing")) return "Final public-copy provenance binding is missing.";
+  if (reason.includes("ambiguous")) return "Final public-copy provenance binding is ambiguous.";
+  if (reason.includes("does not correspond")) return "Final public-copy provenance binding does not match a published field.";
+  if (reason.includes("hash") || reason.includes("evidence") || reason.includes("text does not match")) {
+    return "Final public-copy provenance binding does not match finalized evidence.";
+  }
+  return "Final public-copy provenance did not validate.";
+}
+
+function safeFailureRuntimeStages(value: unknown): GeoGeneratorFailureRuntimeStage[] {
+  if (!isRecord(value)) {
+    return [];
+  }
+  const stages: GeoGeneratorFailureRuntimeStage[] = [];
+  for (const stage of ["productNormalization", "keywordNormalization", "contentPlanning", "copyRefinement", "finalProofreading"]) {
+    const details = value[stage];
+    if (isRecord(details)) {
+      stages.push({ stage, called: details.called === true, applied: details.applied === true });
+    }
+  }
+  const rag = value.rag;
+  if (isRecord(rag)) {
+    const retrievedCount = typeof rag.retrievedCount === "number" && rag.retrievedCount >= 0 ? rag.retrievedCount : undefined;
+    const selectedRagCount = typeof rag.selectedRagCount === "number" && rag.selectedRagCount >= 0 ? rag.selectedRagCount : undefined;
+    if (retrievedCount !== undefined || selectedRagCount !== undefined) {
+      stages.push({ stage: "rag", retrievedCount, selectedRagCount });
+    }
+  }
+  return stages;
+}
+
+const correctiveAdoptionReasons = new Set<GeoGeneratorCorrectiveAdoptionReason>([
+  "notNeeded",
+  "noCorrectiveRuntime",
+  "correctiveNotApplied",
+  "adopted",
+  "provenanceRegression",
+  "structuralShortfall",
+  "notImproved"
+]);
+const provenanceDecisionPhases = new Set<GeoGeneratorProvenanceDecisionPhase>([
+  "initial",
+  "afterProofreader",
+  "afterSafeRepair",
+  "correctedCandidate"
+]);
+const provenanceDecisionOutcomes = new Set<GeoGeneratorProvenanceDecisionOutcome>([
+  "bound",
+  "protected",
+  "unsupported",
+  "notPresent"
+]);
+const provenanceDecisionReasons = new Set<GeoGeneratorProvenanceDecisionReason>([
+  "noEligibleEvidence",
+  "assertionFrameRejected",
+  "directSupportRejected",
+  "planTextMismatch",
+  "notPresent",
+  "directSupportAccepted",
+  "verbatimSource"
+]);
+const provenanceEvidenceRoles: GeoGeneratorProvenanceEvidenceRole[] = [
+  "identity",
+  "description",
+  "benefit",
+  "effect",
+  "ingredient",
+  "audience",
+  "usage",
+  "metric",
+  "faq",
+  "review",
+  "source",
+  "commerce"
+];
+const publicCopyOmissionActions = new Set<PdpGeoPublicCopyOmission["action"]>([
+  "sentenceOmitted",
+  "fieldOmitted",
+  "faqItemOmitted",
+  "howToStepOmitted"
+]);
+const publicCopyOmissionReasons = new Set<PdpGeoPublicCopyOmission["reason"]>([
+  "noEligibleEvidence",
+  "assertionFrameRejected",
+  "directSupportRejected",
+  "unresolvedBinding"
+]);
+
+function safeFailurePublicCopyFieldPath(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  if (value === "Product.description" || value === "WebPage.description") {
+    return value;
+  }
+  if (/^FAQPage\.mainEntity\[\d+\]\.(?:name|acceptedAnswer\.text)$/.test(value)) {
+    return value;
+  }
+  return /^HowTo\.step\[\d+\]\.text$/.test(value) ? value : undefined;
+}
+
+function safeFailurePublicCopyFieldPathList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return Array.from(new Set(value.flatMap((item) => {
+    const fieldPath = safeFailurePublicCopyFieldPath(item);
+    return fieldPath ? [fieldPath] : [];
+  })));
+}
+
+function safeFailureNonnegativeCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+const safeRequestIdPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+/** Keep only the compact correlation ID that this console generated and the API echoed. */
+function normalizeSafeRequestId(value: unknown): string | undefined {
+  return typeof value === "string" && safeRequestIdPattern.test(value) ? value : undefined;
+}
+
+function resolveEchoedRequestId(response: Response, submittedRequestId: string | undefined): string | undefined {
+  const submitted = normalizeSafeRequestId(submittedRequestId);
+  const echoed = normalizeSafeRequestId(response.headers.get("x-request-id"));
+  return submitted && echoed === submitted ? echoed : undefined;
+}
+
+function withSafeRequestId<T extends object>(value: T, requestId: unknown): T & { requestId?: string } {
+  const safeRequestId = normalizeSafeRequestId(requestId);
+  return safeRequestId ? { ...value, requestId: safeRequestId } : value;
+}
+
+/**
+ * Keep success diagnostics copy-free even if an upstream response includes
+ * additional fields. This is intentionally separate from failure diagnostics:
+ * a successful artifact can report an omission without becoming a failed run.
+ */
+export function resolvePublicCopyOmissions(value: unknown): PdpGeoPublicCopyOmission[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((item) => {
+    if (!isRecord(item)) {
+      return [];
+    }
+    const fieldPath = safeFailurePublicCopyFieldPath(item.fieldPath);
+    const action = item.action;
+    const reason = item.reason;
+    const count = safeFailureNonnegativeCount(item.count);
+    const rawSentenceIndex = item.sentenceIndex;
+    const sentenceIndex = rawSentenceIndex === null ? null : safeFailureNonnegativeCount(rawSentenceIndex);
+    if (
+      !fieldPath
+      || typeof action !== "string" || !publicCopyOmissionActions.has(action as PdpGeoPublicCopyOmission["action"])
+      || typeof reason !== "string" || !publicCopyOmissionReasons.has(reason as PdpGeoPublicCopyOmission["reason"])
+      || count === undefined || count < 1
+      || sentenceIndex === undefined
+    ) {
+      return [];
+    }
+    return [{
+      fieldPath,
+      action: action as PdpGeoPublicCopyOmission["action"],
+      reason: reason as PdpGeoPublicCopyOmission["reason"],
+      count,
+      sentenceIndex
+    }];
+  });
+}
+
+/** Strip raw omission fields before a successful diagnostics object is copied or serialized. */
+export function sanitizePdpGeoDiagnosticsForDisplay(
+  diagnostics: PdpGeoDiagnostics
+): PdpGeoDiagnostics {
+  const { publicCopyOmissions: _discarded, ...safeDiagnostics } = diagnostics;
+  const publicCopyOmissions = resolvePublicCopyOmissions(_discarded);
+  return publicCopyOmissions.length > 0
+    ? { ...safeDiagnostics, publicCopyOmissions }
+    : safeDiagnostics as PdpGeoDiagnostics;
+}
+
+function safeFailureCorrectiveDiagnostics(value: unknown): GeoGeneratorFailureCorrectiveDiagnostics {
+  const raw = isRecord(value) ? value : {};
+  const reason = raw.adoptionReason;
+  return {
+    correctiveApplied: raw.correctiveApplied === true,
+    correctedMissingPaths: safeFailurePublicCopyFieldPathList(raw.correctedMissingPaths),
+    adoptionReason: typeof reason === "string" && correctiveAdoptionReasons.has(reason as GeoGeneratorCorrectiveAdoptionReason)
+      ? reason as GeoGeneratorCorrectiveAdoptionReason
+      : "notNeeded",
+    structuralShortfallCount: safeFailureNonnegativeCount(raw.structuralShortfallCount) ?? 0,
+    provenanceRegressionDelta: safeFailureNonnegativeCount(raw.provenanceRegressionDelta) ?? 0
+  };
+}
+
+function safeFailureProvenanceRoleCounts(
+  value: unknown
+): Partial<Record<GeoGeneratorProvenanceEvidenceRole, number>> {
+  if (!isRecord(value)) {
+    return {};
+  }
+  return Object.fromEntries(provenanceEvidenceRoles.flatMap((role) => {
+    const count = safeFailureNonnegativeCount(value[role]);
+    return count === undefined ? [] : [[role, count]];
+  })) as Partial<Record<GeoGeneratorProvenanceEvidenceRole, number>>;
+}
+
+function safeFailureProvenanceDecisionDiagnostics(value: unknown): GeoGeneratorFailureProvenanceDecision[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    if (!isRecord(item)) {
+      return [];
+    }
+    const fieldPath = safeFailurePublicCopyFieldPath(item.fieldPath);
+    const phase = item.phase;
+    const outcome = item.outcome;
+    const reason = item.reason;
+    const rawSentenceIndex = item.sentenceIndex;
+    const sentenceIndex = rawSentenceIndex === null ? null : safeFailureNonnegativeCount(rawSentenceIndex);
+    if (
+      !fieldPath
+      || typeof phase !== "string" || !provenanceDecisionPhases.has(phase as GeoGeneratorProvenanceDecisionPhase)
+      || typeof outcome !== "string" || !provenanceDecisionOutcomes.has(outcome as GeoGeneratorProvenanceDecisionOutcome)
+      || typeof reason !== "string" || !provenanceDecisionReasons.has(reason as GeoGeneratorProvenanceDecisionReason)
+      || sentenceIndex === undefined
+    ) {
+      return [];
+    }
+    const plan = isRecord(item.plan) ? item.plan : {};
+    return [{
+      fieldPath,
+      phase: phase as GeoGeneratorProvenanceDecisionPhase,
+      sentenceIndex,
+      outcome: outcome as GeoGeneratorProvenanceDecisionOutcome,
+      reason: reason as GeoGeneratorProvenanceDecisionReason,
+      plan: {
+        mode: plan.mode === "model" ? "model" : "nonModel",
+        fieldIncluded: typeof plan.fieldIncluded === "boolean" ? plan.fieldIncluded : null,
+        textHashMatch: typeof plan.textHashMatch === "boolean" ? plan.textHashMatch : null
+      },
+      eligibleEvidenceCount: safeFailureNonnegativeCount(item.eligibleEvidenceCount) ?? 0,
+      eligibleRoleCounts: safeFailureProvenanceRoleCounts(item.eligibleRoleCounts),
+      selectedEvidenceCount: safeFailureNonnegativeCount(item.selectedEvidenceCount) ?? 0
+    }];
+  });
+}
+
+function hasRecognizedFailureDiagnostics(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (isRecord(value.qualityGate) || safeFailureStepList(value.process).length > 0 || safeFailureRuntimeStages(value.runtimeStages).length > 0) {
+    return true;
+  }
+  const extractor = value.extractor;
+  if (isRecord(extractor) && isRecord(extractor.diagnostics)) {
+    const diagnostics = extractor.diagnostics;
+    if (
+      safeFailureStepList(extractor.process).length > 0
+      || safeFailureNonnegativeCount(diagnostics.warningCount) !== undefined
+      || safeFailureNonnegativeCount(diagnostics.evidenceCount) !== undefined
+      || (Array.isArray(diagnostics.runtimeStages) && diagnostics.runtimeStages.length > 0)
+    ) {
+      return true;
+    }
+  }
+  return safeFailureProvenanceDecisionDiagnostics(value.publicCopyProvenanceDecisionDiagnostics).length > 0;
+}
+
+/** Normalize only the documented, safe failure diagnostics before the UI renders them. */
+export function resolveGeoGeneratorFailureDiagnostics(
+  payload: Pick<GeoGeneratorResponse, "failures">
+): GeoGeneratorFailureDiagnostics | undefined {
+  const raw = payload.failures
+    .map((failure) => failure.diagnostics)
+    .find(hasRecognizedFailureDiagnostics);
+  if (!isRecord(raw)) {
+    return undefined;
+  }
+  const quality = isRecord(raw.qualityGate) ? raw.qualityGate : undefined;
+  const scores = quality && isRecord(quality.scores) ? quality.scores : {};
+  const correctiveDiagnostics = quality && isRecord(quality.correctiveDiagnostics)
+    ? safeFailureCorrectiveDiagnostics(quality.correctiveDiagnostics)
+    : undefined;
+  const findings = Array.isArray(raw.validationFindings)
+    ? raw.validationFindings.flatMap((item) => {
+      if (!isRecord(item) || item.source !== "public-copy-provenance") return [];
+      const field = safeFailurePublicCopyFieldPath(item.field);
+      return field ? [{ field, source: "public-copy-provenance" as const, reason: safeFailureFindingReason(item.reason) }] : [];
+    })
+    : [];
+  const provenance = isRecord(raw.finalPublicCopyProvenance) ? raw.finalPublicCopyProvenance : {};
+  const fieldPaths = safeFailurePublicCopyFieldPathList(provenance.fieldPaths);
+  const extractor = isRecord(raw.extractor) && isRecord(raw.extractor.diagnostics)
+    ? {
+      process: safeFailureStepList(raw.extractor.process),
+      diagnostics: {
+        warningCount: typeof raw.extractor.diagnostics.warningCount === "number" ? raw.extractor.diagnostics.warningCount : 0,
+        evidenceCount: typeof raw.extractor.diagnostics.evidenceCount === "number" ? raw.extractor.diagnostics.evidenceCount : 0,
+        runtimeStages: Array.isArray(raw.extractor.diagnostics.runtimeStages)
+          ? raw.extractor.diagnostics.runtimeStages.flatMap((item) => {
+            if (!isRecord(item) || typeof item.stage !== "string") return [];
+            return [{ stage: item.stage.slice(0, 120), called: item.called === true }];
+          })
+          : []
+      }
+    }
+    : undefined;
+  const provenanceDecisionDiagnostics = Array.isArray(raw.publicCopyProvenanceDecisionDiagnostics)
+    ? safeFailureProvenanceDecisionDiagnostics(raw.publicCopyProvenanceDecisionDiagnostics)
+    : undefined;
+  const process = safeFailureStepList(raw.process);
+  const runtimeStages = safeFailureRuntimeStages(raw.runtimeStages);
+
+  if (
+    !quality
+    && process.length === 0
+    && findings.length === 0
+    && fieldPaths.length === 0
+    && runtimeStages.length === 0
+    && !extractor
+    && (!provenanceDecisionDiagnostics || provenanceDecisionDiagnostics.length === 0)
+  ) {
+    return undefined;
+  }
+
+  return {
+    process,
+    ...(quality ? {
+      qualityGate: {
+        attempted: quality.attempted === true,
+        adopted: quality.adopted === true,
+        reason: safeFailureText(quality.reason, "Quality gate blocked final artifact."),
+        shortfalls: safeFailureStringList(quality.shortfalls),
+        blockingShortfalls: safeFailureStringList(quality.blockingShortfalls),
+        scores: Object.fromEntries(
+          ["initial", "corrected"].flatMap((key) => {
+            const score = safeFailureScores(scores[key]);
+            return Object.keys(score).length > 0 ? [[key, score]] : [];
+          })
+        ),
+        ...(correctiveDiagnostics ? { correctiveDiagnostics } : {})
+      }
+    } : {}),
+    validationFindings: findings,
+    finalPublicCopyProvenance: {
+      count: fieldPaths.length,
+      fieldPaths
+    },
+    ...(provenanceDecisionDiagnostics ? { publicCopyProvenanceDecisionDiagnostics: provenanceDecisionDiagnostics } : {}),
+    runtimeStages,
+    ...(extractor ? { extractor } : {})
+  };
 }
 
 type GeoGeneratorStreamEvent =
@@ -153,6 +713,7 @@ type GeoGeneratorStreamEvent =
     sourceCount: number;
     step: ProductExtractionStep | PdpGeoGenerationStep;
   }
+  | { type: "heartbeat" }
   | { type: "result"; payload: GeoGeneratorResponse }
   | { type: "error"; error: string };
 
@@ -290,6 +851,11 @@ type ProcessStep = {
   description: string;
   status: "pending" | "running" | "done" | "error";
   message?: string;
+  metrics?: {
+    ocrImageCandidateCount?: number;
+    reviewItemCount?: number;
+    ragChunkCount?: number;
+  };
 };
 
 interface GeoPipelineProcessState {
@@ -305,6 +871,68 @@ interface GeoPipelineProcessState {
   generatorSteps?: PdpGeoGenerationStep[];
 }
 
+/** Keep an in-flight or failed run visible even when a user is reading an older artifact. */
+export function resolveCurrentRunProcess(
+  runStatus: RunStatus,
+  process: GeoPipelineProcessState
+): GeoPipelineProcessState | undefined {
+  return (runStatus === "running" || runStatus === "error") && process.status === runStatus
+    ? process
+    : undefined;
+}
+
+/** The status panel must describe the current run before the selected history artifact. */
+export function resolvePanelSources(
+  currentRun: Pick<GeoPipelineProcessState, "activeSource"> | undefined,
+  selectedSource: string | undefined
+): string[] {
+  return currentRun?.activeSource ? [currentRun.activeSource] : selectedSource ? [selectedSource] : [];
+}
+
+/** Never show one run's failure diagnostics beside a different history artifact. */
+export function resolveSelectedGeneratorFailureDiagnostics(
+  failure: GeoGeneratorFailureDiagnosticsForRun | undefined,
+  selectedRunId: string | undefined
+): GeoGeneratorFailureDiagnostics | undefined {
+  if (!failure || (selectedRunId && failure.runId !== selectedRunId)) {
+    return undefined;
+  }
+  return failure.diagnostics;
+}
+
+/** A completed run is one request, while history remains a separately browsable archive. */
+export function resolveRunResultCount(
+  runStatus: RunStatus,
+  process: Pick<GeoPipelineProcessState, "status" | "completedSourceCount">,
+  historyCount: number
+): number {
+  return runStatus === "done" && process.status === "done"
+    ? process.completedSourceCount
+    : historyCount;
+}
+
+/** The standalone extractor is a JSON request, so only fetch is live before its response arrives. */
+export function createStandaloneExtractorInFlightProcess(
+  input: Pick<NormalizedComposerInput, "sources">
+): GeoPipelineProcessState {
+  return {
+    status: "running",
+    currentGroup: "extractor",
+    currentStepId: "fetch",
+    sourceCount: input.sources.length,
+    completedSourceCount: 0,
+    activeSource: input.sources[0]
+  };
+}
+
+/** Prefer the server's completed process snapshot to any client-side approximation. */
+export function resolveStandaloneExtractorProcessSnapshot(
+  payload: Pick<ProductExtractorResponse, "logs">,
+  source: string | undefined
+): ProductExtractionDiagnostics | undefined {
+  return source ? payload.logs.find((log) => log.source === source) : undefined;
+}
+
 const ragModeLabels: Record<PdpGeoRagMode, string> = {
   "local-versioned-rag": "Local RAG",
   "managed-vector-store-rag": "Vector Store"
@@ -314,9 +942,13 @@ const SETTINGS_STORAGE_KEY = "agentic-geo.geo-generator.provider-settings.v2";
 const LEGACY_SETTINGS_STORAGE_KEYS = ["agentic-geo.geo-generator.provider-settings.v1"];
 const RUN_SETTINGS_STORAGE_KEY = "agentic-geo.geo-generator.run-settings.v1";
 const RAG_SETTINGS_STORAGE_KEY = "agentic-geo.geo-generator.rag-profile-settings.v1";
-const HISTORY_STORAGE_KEY = "agentic-geo.geo-generator.history.v1";
-const EXTRACTOR_HISTORY_STORAGE_KEY = "agentic-geo.geo-generator.extractor-history.v1";
+const HISTORY_STORAGE_KEY = "agentic-geo.geo-generator.history.v2";
+const LEGACY_HISTORY_STORAGE_KEY = "agentic-geo.geo-generator.history.v1";
+const EXTRACTOR_HISTORY_STORAGE_KEY = "agentic-geo.geo-generator.extractor-history.v2";
+const LEGACY_EXTRACTOR_HISTORY_STORAGE_KEY = "agentic-geo.geo-generator.extractor-history.v1";
 const HISTORY_LIMIT = 30;
+const HISTORY_STORAGE_BYTE_LIMIT = 3_000_000;
+const HISTORY_STORAGE_RETRY_BYTE_LIMITS = [HISTORY_STORAGE_BYTE_LIMIT, 1_000_000, 256_000];
 
 const defaultProviderSettings: ProviderSettings = {
   provider: "mock",
@@ -781,9 +1413,15 @@ const generatorStepIds = Object.keys(generatorStepCopy.ko) as PdpGeoGenerationSt
 export function GeoGeneratorConsole() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const ragFileInputRef = useRef<HTMLInputElement>(null);
+  const settingsLauncherRef = useRef<HTMLElement | null>(null);
+  const settingsCloseButtonRef = useRef<HTMLButtonElement>(null);
   const runSettingsFeedbackTimerRef = useRef<number | null>(null);
   const aiSettingsFeedbackTimerRef = useRef<number | null>(null);
   const ragSettingsFeedbackTimerRef = useRef<number | null>(null);
+  const generatorRunRef = useRef<{ epoch: number; controller: AbortController | null }>({ epoch: 0, controller: null });
+  const extractorRunRef = useRef<{ epoch: number; controller: AbortController | null }>({ epoch: 0, controller: null });
+  const generatorSelectionRevisionRef = useRef(0);
+  const extractorSelectionRevisionRef = useRef(0);
   const [draft, setDraft] = useState("");
   const [uiLanguage, setUiLanguage] = useState<UiLanguage>("ko");
   const [activeMode, setActiveMode] = useState<WorkspaceMode>("generator");
@@ -810,13 +1448,14 @@ export function GeoGeneratorConsole() {
   const [selectedRagFileId, setSelectedRagFileId] = useState<string | null>(null);
   const [ragMessage, setRagMessage] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [results, setResults] = useState<GeoGeneratorResult[]>([]);
-  const [logs, setLogs] = useState<GeoGeneratorLog[]>([]);
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [geoHistory, setGeoHistory] = useState<GeoHistoryEntry[]>([]);
+  const [geoLegacyUnpairedLogs, setGeoLegacyUnpairedLogs] = useState<LegacyUnpairedLog<GeoGeneratorLog>[]>([]);
+  const [generatorFailureDiagnostics, setGeneratorFailureDiagnostics] = useState<GeoGeneratorFailureDiagnosticsForRun | undefined>();
+  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const [extractorMessages, setExtractorMessages] = useState<ChatMessage[]>([]);
-  const [extractorResults, setExtractorResults] = useState<TimedProductExtractionResult[]>([]);
-  const [extractorLogs, setExtractorLogs] = useState<ProductExtractionDiagnostics[]>([]);
-  const [selectedExtractorIndex, setSelectedExtractorIndex] = useState(0);
+  const [extractorHistory, setExtractorHistory] = useState<ExtractorHistoryEntry[]>([]);
+  const [extractorLegacyUnpairedLogs, setExtractorLegacyUnpairedLogs] = useState<LegacyUnpairedLog<ProductExtractionDiagnostics>[]>([]);
+  const [selectedExtractorEntryId, setSelectedExtractorEntryId] = useState<string | null>(null);
   const [isHistoryReady, setIsHistoryReady] = useState(false);
   const [runStatus, setRunStatus] = useState<RunStatus>("idle");
   const [extractorRunStatus, setExtractorRunStatus] = useState<RunStatus>("idle");
@@ -880,42 +1519,45 @@ export function GeoGeneratorConsole() {
     setSelectedRagReference(null);
   };
 
-  const selectedResult = results[selectedIndex];
-  const selectedLog = selectedResult ? logs.find((log) => log.source === selectedResult.source) : undefined;
+  const results = geoHistory.map((entry) => entry.result);
+  const extractorResults = extractorHistory.map((entry) => entry.result);
+  const selectedGeoEntry = findGeoHistoryEntry(geoHistory, selectedEntryId);
+  const selectedResult = selectedGeoEntry?.result;
+  const selectedLog = selectedGeoEntry?.log;
   const selectedDiagnostics = selectedResult?.generator.diagnostics ?? selectedLog?.generator;
-  const selectedExtractorResult = extractorResults[selectedExtractorIndex];
-  const selectedExtractorLog = selectedExtractorResult ? extractorLogs.find((log) => log.source === selectedExtractorResult.source) : undefined;
-  const activeGeneratorPipelineProcess = runStatus === "running" || (runStatus === "error" && !selectedResult) ? pipelineProcess : undefined;
-  const activeExtractorPipelineProcess = extractorRunStatus === "running" || (extractorRunStatus === "error" && !selectedExtractorResult) ? extractorPipelineProcess : undefined;
+  const selectedGeneratorFailureDiagnostics = resolveSelectedGeneratorFailureDiagnostics(
+    generatorFailureDiagnostics,
+    selectedGeoEntry?.runId
+  );
+  const selectedExtractorEntry = findExtractorHistoryEntry(extractorHistory, selectedExtractorEntryId);
+  const selectedExtractorResult = selectedExtractorEntry?.result;
+  const selectedExtractorLog = selectedExtractorEntry?.log;
+  const activeGeneratorPipelineProcess = resolveCurrentRunProcess(runStatus, pipelineProcess);
+  const activeExtractorPipelineProcess = resolveCurrentRunProcess(extractorRunStatus, extractorPipelineProcess);
   const activePipelineProcess = activeMode === "extractor"
     ? activeExtractorPipelineProcess
     : activeGeneratorPipelineProcess;
   const processProgressLabel = activePipelineProcess ? formatGeoProcessProgress(activePipelineProcess, uiLanguage) : "";
-  const panelSources = activeMode === "extractor"
-    ? selectedExtractorResult
-      ? [selectedExtractorResult.source]
-      : activePipelineProcess?.activeSource
-        ? [activePipelineProcess.activeSource]
-        : []
-    : selectedResult
-      ? [selectedResult.source]
-      : activePipelineProcess?.activeSource
-        ? [activePipelineProcess.activeSource]
-        : [];
-  const generatorHasStarted = messages.length > 0 || runStatus !== "idle";
-  const extractorHasStarted = extractorMessages.length > 0 || extractorRunStatus !== "idle";
+  const panelSources = resolvePanelSources(
+    activePipelineProcess,
+    activeMode === "extractor" ? selectedExtractorResult?.source : selectedResult?.source
+  );
+  const generatorHasStarted = messages.length > 0 || runStatus !== "idle" || Boolean(selectedGeoEntry);
+  const extractorHasStarted = extractorMessages.length > 0 || extractorRunStatus !== "idle" || Boolean(selectedExtractorEntry);
   const hasStarted = activeMode === "extractor" ? extractorHasStarted : generatorHasStarted;
   const activeMessages = activeMode === "extractor" ? extractorMessages : messages;
   const activeRunStatus = activeMode === "extractor" ? extractorRunStatus : runStatus;
   const runElapsedLabel = useRunElapsedLabel(activeRunStatus === "running");
   const activeModeCopy = text.modes[activeMode];
   const schemaText = selectedResult ? JSON.stringify(selectedResult.generator.schemaMarkup.jsonLd, null, 2) : "";
-  const diagnosticsText = selectedResult ? JSON.stringify({
+  const diagnosticsText = selectedResult ? JSON.stringify(withSafeRequestId({
     extractor: selectedLog?.extractor,
-    generator: selectedResult.generator.diagnostics
-  }, null, 2) : "";
+    generator: sanitizePdpGeoDiagnosticsForDisplay(selectedResult.generator.diagnostics)
+  }, selectedGeoEntry?.requestId), null, 2) : "";
   const extractorJsonText = selectedExtractorResult ? JSON.stringify(selectedExtractorResult, null, 2) : "";
-  const extractorDiagnosticsText = selectedExtractorLog ? JSON.stringify(selectedExtractorLog, null, 2) : "";
+  const extractorDiagnosticsText = selectedExtractorLog
+    ? JSON.stringify(withSafeRequestId(selectedExtractorLog, selectedExtractorEntry?.requestId), null, 2)
+    : "";
   const generatorOutputText = outputView === "schema" ? schemaText : diagnosticsText;
   const extractorOutputText = extractorOutputView === "result" ? extractorJsonText : extractorDiagnosticsText;
   const canSubmitComposer = activeMode === "extractor"
@@ -925,13 +1567,15 @@ export function GeoGeneratorConsole() {
   const activeModelOptions = modelOptions[providerSettings.provider] ?? [];
   const selectedRagProfile = ragProfiles[selectedRagTarget];
   const selectedRagFile = selectedRagProfile.files.find((file) => file.id === selectedRagFileId) ?? selectedRagProfile.files[0];
-  const panelRagReferences = activeMode === "extractor"
-    ? getExtractorPanelRagReferences(selectedExtractorResult)
-    : getGeneratorPanelRagReferences(selectedDiagnostics);
-  const generatorFloatingCopyTarget = createArtifactCopyTarget("generator-floating", selectedResult?.id, outputView);
-  const generatorPanelCopyTarget = createArtifactCopyTarget("generator-panel", selectedResult?.id, outputView);
-  const extractorFloatingCopyTarget = createArtifactCopyTarget("extractor-floating", selectedExtractorResult?.source, extractorOutputView);
-  const extractorPanelCopyTarget = createArtifactCopyTarget("extractor-panel", selectedExtractorResult?.source, extractorOutputView);
+  const panelRagReferences = activePipelineProcess
+    ? []
+    : activeMode === "extractor"
+      ? getExtractorPanelRagReferences(selectedExtractorResult)
+      : getGeneratorPanelRagReferences(selectedDiagnostics);
+  const generatorFloatingCopyTarget = createArtifactCopyTarget("generator-floating", selectedGeoEntry?.entryId, outputView);
+  const generatorPanelCopyTarget = createArtifactCopyTarget("generator-panel", selectedGeoEntry?.entryId, outputView);
+  const extractorFloatingCopyTarget = createArtifactCopyTarget("extractor-floating", selectedExtractorEntry?.entryId, extractorOutputView);
+  const extractorPanelCopyTarget = createArtifactCopyTarget("extractor-panel", selectedExtractorEntry?.entryId, extractorOutputView);
   const isGeneratorFloatingCopied = copiedArtifactTarget === generatorFloatingCopyTarget;
   const isGeneratorPanelCopied = copiedArtifactTarget === generatorPanelCopyTarget;
   const isExtractorFloatingCopied = copiedArtifactTarget === extractorFloatingCopyTarget;
@@ -948,8 +1592,7 @@ export function GeoGeneratorConsole() {
   const visibleGeneratorHistory = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
 
-    return results
-      .map((result, index) => ({ result, index }))
+    return geoHistory
       .filter(({ result }) => {
         if (!query) {
           return true;
@@ -960,12 +1603,11 @@ export function GeoGeneratorConsole() {
           result.generator.content.sections.productName
         ].join(" ").toLowerCase().includes(query);
       });
-  }, [results, searchQuery]);
+  }, [geoHistory, searchQuery]);
   const visibleExtractorHistory = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
 
-    return extractorResults
-      .map((result, index) => ({ result, index }))
+    return extractorHistory
       .filter(({ result }) => {
         if (!query) {
           return true;
@@ -976,7 +1618,7 @@ export function GeoGeneratorConsole() {
           result.geoProduct.name
         ].join(" ").toLowerCase().includes(query);
       });
-  }, [extractorResults, searchQuery]);
+  }, [extractorHistory, searchQuery]);
   const shellClassName = [
     "codexShell",
     isSidebarCollapsed ? "sidebarCollapsed" : "",
@@ -987,7 +1629,9 @@ export function GeoGeneratorConsole() {
 
   const runSummary = useMemo(() => {
     const status = activeMode === "extractor" ? extractorRunStatus : runStatus;
-    const count = activeMode === "extractor" ? extractorResults.length : results.length;
+    const process = activeMode === "extractor" ? extractorPipelineProcess : pipelineProcess;
+    const historyCount = activeMode === "extractor" ? extractorResults.length : results.length;
+    const count = resolveRunResultCount(status, process, historyCount);
 
     if (status === "running") {
       return text.runStatus.running;
@@ -999,7 +1643,7 @@ export function GeoGeneratorConsole() {
       return text.runStatus.error;
     }
     return text.runStatus.idle;
-  }, [activeMode, extractorResults.length, extractorRunStatus, results.length, runStatus, text]);
+  }, [activeMode, extractorPipelineProcess, extractorResults.length, extractorRunStatus, pipelineProcess, results.length, runStatus, text]);
 
   const settingsTitle = settingsTab === "run" ? text.settings.run : settingsTab === "ai" ? text.settings.ai : text.settings.rag;
   const settingsDescription = settingsTab === "run"
@@ -1027,14 +1671,14 @@ export function GeoGeneratorConsole() {
     setHeadersJson(storedRunSettings.headersJson);
     setCitationProbeMode(storedRunSettings.citationProbeMode);
     setRagProfiles(storedRagProfiles);
-    setResults(storedHistory.results);
-    setLogs(storedHistory.logs);
-    setSelectedIndex(storedHistory.results.length > 0 ? 0 : -1);
-    setRunStatus(storedHistory.results.length > 0 ? "done" : "idle");
-    setExtractorResults(storedExtractorHistory.results);
-    setExtractorLogs(storedExtractorHistory.logs);
-    setSelectedExtractorIndex(storedExtractorHistory.results.length > 0 ? 0 : -1);
-    setExtractorRunStatus(storedExtractorHistory.results.length > 0 ? "done" : "idle");
+    setGeoHistory(storedHistory.entries);
+    setGeoLegacyUnpairedLogs(storedHistory.unpairedLegacyLogs);
+    setSelectedEntryId(storedHistory.entries[0]?.entryId ?? null);
+    setRunStatus(storedHistory.entries.length > 0 ? "done" : "idle");
+    setExtractorHistory(storedExtractorHistory.entries);
+    setExtractorLegacyUnpairedLogs(storedExtractorHistory.unpairedLegacyLogs);
+    setSelectedExtractorEntryId(storedExtractorHistory.entries[0]?.entryId ?? null);
+    setExtractorRunStatus(storedExtractorHistory.entries.length > 0 ? "done" : "idle");
     setSelectedRagFileId(storedRagProfiles.generator.files[0]?.id ?? storedRagProfiles.extractor.files[0]?.id ?? null);
     setConnectionStatus(isAuthorizedAiSettings(storedProviderSettings) ? "connected" : "idle");
     setConnectionMessage(isAuthorizedAiSettings(storedProviderSettings)
@@ -1068,34 +1712,20 @@ export function GeoGeneratorConsole() {
       return;
     }
 
-    try {
-      window.sessionStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify({
-        results: results.slice(0, HISTORY_LIMIT),
-        logs: logs.slice(0, HISTORY_LIMIT)
-      }));
-    } catch {
-      // Session storage is best effort; keep the in-memory history available if quota is exceeded.
-    }
-  }, [isHistoryReady, logs, results]);
+    persistGeoHistoryForSession(geoHistory, geoLegacyUnpairedLogs);
+  }, [geoHistory, geoLegacyUnpairedLogs, isHistoryReady]);
 
   useEffect(() => {
     if (!isHistoryReady) {
       return;
     }
 
-    try {
-      window.sessionStorage.setItem(EXTRACTOR_HISTORY_STORAGE_KEY, JSON.stringify({
-        results: extractorResults.slice(0, HISTORY_LIMIT),
-        logs: extractorLogs.slice(0, HISTORY_LIMIT)
-      }));
-    } catch {
-      // Session storage is best effort; keep the in-memory history available if quota is exceeded.
-    }
-  }, [extractorLogs, extractorResults, isHistoryReady]);
+    persistExtractorHistoryForSession(extractorHistory, extractorLegacyUnpairedLogs);
+  }, [extractorHistory, extractorLegacyUnpairedLogs, isHistoryReady]);
 
   useEffect(() => {
     setSelectedRagReference(null);
-  }, [activeMode, selectedExtractorIndex, selectedIndex]);
+  }, [activeMode, selectedExtractorEntryId, selectedEntryId]);
 
   useEffect(() => {
     return () => {
@@ -1108,8 +1738,57 @@ export function GeoGeneratorConsole() {
       if (ragSettingsFeedbackTimerRef.current !== null) {
         window.clearTimeout(ragSettingsFeedbackTimerRef.current);
       }
+      generatorRunRef.current.controller?.abort();
+      extractorRunRef.current.controller?.abort();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isSettingsOpen) {
+      return;
+    }
+
+    const previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusModal = () => settingsCloseButtonRef.current?.focus();
+    const frame = window.requestAnimationFrame(focusModal);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setIsSettingsOpen(false);
+        window.requestAnimationFrame(() => settingsLauncherRef.current?.focus());
+        return;
+      }
+      if (event.key !== "Tab") {
+        return;
+      }
+      const modal = document.querySelector<HTMLElement>(".settingsModal");
+      const focusable = modal ? Array.from(modal.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )).filter((element) => !element.hasAttribute("hidden")) : [];
+      if (focusable.length === 0) {
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!first || !last) {
+        return;
+      }
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isSettingsOpen]);
 
   function clearRunSettingsFeedback() {
     if (runSettingsFeedbackTimerRef.current !== null) {
@@ -1174,14 +1853,53 @@ export function GeoGeneratorConsole() {
     setErrorMessage("");
   }
 
+  function openSettings() {
+    settingsLauncherRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setIsSettingsOpen(true);
+  }
+
+  function closeSettings() {
+    setIsSettingsOpen(false);
+    window.requestAnimationFrame(() => settingsLauncherRef.current?.focus());
+  }
+
+  function selectGeoHistoryEntry(entryId: string) {
+    generatorSelectionRevisionRef.current += 1;
+    setSelectedEntryId(entryId);
+    setErrorMessage("");
+  }
+
+  function selectExtractorHistoryEntry(entryId: string) {
+    extractorSelectionRevisionRef.current += 1;
+    setSelectedExtractorEntryId(entryId);
+    setErrorMessage("");
+  }
+
+  function invalidateGeneratorRun() {
+    generatorRunRef.current.controller?.abort();
+    generatorRunRef.current = {
+      epoch: generatorRunRef.current.epoch + 1,
+      controller: null
+    };
+  }
+
+  function invalidateExtractorRun() {
+    extractorRunRef.current.controller?.abort();
+    extractorRunRef.current = {
+      epoch: extractorRunRef.current.epoch + 1,
+      controller: null
+    };
+  }
+
   function startNewChat() {
     setDraft("");
     setComposerStatus("");
     setComposerAttachments([]);
     setIsDragActive(false);
     if (activeMode === "extractor") {
+      invalidateExtractorRun();
       setExtractorMessages([]);
-      setSelectedExtractorIndex(-1);
+      setSelectedExtractorEntryId(null);
       setExtractorRunStatus("idle");
       setExtractorPipelineProcess({
         status: "idle",
@@ -1192,8 +1910,9 @@ export function GeoGeneratorConsole() {
       });
       setExtractorOutputView("result");
     } else {
+      invalidateGeneratorRun();
       setMessages([]);
-      setSelectedIndex(-1);
+      setSelectedEntryId(null);
       setRunStatus("idle");
       setPipelineProcess({
         status: "idle",
@@ -1237,10 +1956,17 @@ export function GeoGeneratorConsole() {
     const sourceCount = Math.max(input.products.length + input.sources.length, 1);
     const firstSource = input.sources[0] ?? (input.products.length > 0 ? text.composer.jsonSummary(input.products.length) : undefined);
     const runStartedAt = getRunClockMs();
+    generatorRunRef.current.controller?.abort();
+    const controller = new AbortController();
+    const runEpoch = generatorRunRef.current.epoch + 1;
+    const runId = createDurableHistoryId();
+    const selectionRevisionAtStart = generatorSelectionRevisionRef.current;
+    generatorRunRef.current = { epoch: runEpoch, controller };
+    const isCurrentRun = () => shouldApplyRunUpdate(generatorRunRef.current.epoch, runEpoch, controller.signal.aborted);
 
     setRunStatus("running");
     setErrorMessage("");
-    setSelectedIndex(-1);
+    setGeneratorFailureDiagnostics(undefined);
     setPipelineProcess({
       status: "running",
       currentGroup: input.sources.length > 0 ? "extractor" : "generator",
@@ -1271,27 +1997,42 @@ export function GeoGeneratorConsole() {
 
     try {
       const body = createRequestBody(input);
-      const { payload, ok } = await requestGeoGenerator(body, (event) => {
+      const { payload, ok, requestId: echoedRequestId } = await requestGeoGenerator(body, (event) => {
+        if (!isCurrentRun()) {
+          return;
+        }
         applyGeneratorProgressEvent(
           event,
           setPipelineProcess,
           getExtractorSteps(uiLanguage) as ProductExtractionStep[],
           getGeneratorSteps(uiLanguage)
         );
-      });
+      }, controller.signal, runId);
+      if (!isCurrentRun()) {
+        return;
+      }
+      const resolvedFailureDiagnostics = resolveGeoGeneratorFailureDiagnostics(payload);
+      const failureDiagnostics = resolvedFailureDiagnostics
+        ? withSafeRequestId(resolvedFailureDiagnostics, echoedRequestId)
+        : undefined;
+      setGeneratorFailureDiagnostics(failureDiagnostics ? { runId, diagnostics: failureDiagnostics } : undefined);
 
-      if (!ok && !payload.results?.length) {
-        throw new Error(payload.error ?? "GEO generation failed.");
+      if (!ok && !payload.results?.length && !failureDiagnostics) {
+        throw new Error(resolveGeoGeneratorFailureMessage(payload));
       }
 
       const runDurationMs = getRunClockMs() - runStartedAt;
       const runDurationLabel = formatElapsedDuration(runDurationMs);
       const incomingResults = attachRunDurationToGeoResults(payload.results ?? [], runDurationMs);
-      const nextResults = mergeGeoHistoryResults(incomingResults, results);
-      const nextLogs = mergeGeoHistoryLogs(payload.logs ?? [], logs);
-      setResults(nextResults);
-      setLogs(nextLogs);
-      setSelectedIndex(incomingResults.length ? 0 : -1);
+      const incomingHistory = createGeoHistoryEntries(incomingResults, payload.logs ?? [], runId, undefined, echoedRequestId);
+      setGeoHistory((current) => appendGeoHistoryEntries(incomingHistory.entries, current));
+      if (incomingHistory.unpairedLegacyLogs.length > 0) {
+        setGeoLegacyUnpairedLogs((current) => [...incomingHistory.unpairedLegacyLogs, ...current].slice(0, HISTORY_LIMIT));
+      }
+      if (incomingHistory.entries.length > 0 && generatorSelectionRevisionRef.current === selectionRevisionAtStart) {
+        const firstEntry = incomingHistory.entries[0];
+        if (firstEntry) setSelectedEntryId(firstEntry.entryId);
+      }
       setRunStatus(payload.failures?.length ? "error" : "done");
       setPipelineProcess({
         status: payload.failures?.length ? "error" : "done",
@@ -1318,7 +2059,13 @@ export function GeoGeneratorConsole() {
           )
         }
       ]);
+      if (generatorRunRef.current.epoch === runEpoch) {
+        generatorRunRef.current = { epoch: runEpoch, controller: null };
+      }
     } catch (error) {
+      if (!isCurrentRun()) {
+        return;
+      }
       const runDurationLabel = formatElapsedDuration(getRunClockMs() - runStartedAt);
       const message = error instanceof Error ? error.message : "GEO generation failed.";
       setRunStatus("error");
@@ -1336,6 +2083,9 @@ export function GeoGeneratorConsole() {
           body: appendRunDuration(message, runDurationLabel, uiLanguage)
         }
       ]);
+      if (generatorRunRef.current.epoch === runEpoch) {
+        generatorRunRef.current = { epoch: runEpoch, controller: null };
+      }
     }
   }
 
@@ -1377,21 +2127,19 @@ export function GeoGeneratorConsole() {
 
     const sourceCount = input.sources.length;
     const firstSource = input.sources[0];
-    let progressController: { cancelled: boolean } | undefined;
     const runStartedAt = getRunClockMs();
+    extractorRunRef.current.controller?.abort();
+    const controller = new AbortController();
+    const runEpoch = extractorRunRef.current.epoch + 1;
+    const runId = createDurableHistoryId();
+    const selectionRevisionAtStart = extractorSelectionRevisionRef.current;
+    extractorRunRef.current = { epoch: runEpoch, controller };
+    const isCurrentRun = () => shouldApplyRunUpdate(extractorRunRef.current.epoch, runEpoch, controller.signal.aborted);
 
     setExtractorRunStatus("running");
     setErrorMessage("");
-    setSelectedExtractorIndex(-1);
     setExtractorOutputView("result");
-    setExtractorPipelineProcess({
-      status: "running",
-      currentGroup: "extractor",
-      currentStepId: "input",
-      sourceCount,
-      completedSourceCount: 0,
-      activeSource: firstSource
-    });
+    setExtractorPipelineProcess(createStandaloneExtractorInFlightProcess(input));
     setExtractorMessages((current) => [
       ...current,
       {
@@ -1413,17 +2161,10 @@ export function GeoGeneratorConsole() {
 
     try {
       const body = createExtractorRequestBody(input);
-      progressController = { cancelled: false };
-      const progress = playExtractorPipelineProgress(input, setExtractorPipelineProcess, progressController);
-      const response = await fetch("/api/extract", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(body)
-      });
-      const payload = await response.json() as ProductExtractorResponse;
-      await progress;
+      const { response, payload, requestId: echoedRequestId } = await requestGeoExtractor(body, controller.signal, runId);
+      if (!isCurrentRun()) {
+        return;
+      }
 
       if (!response.ok && !payload.results?.length) {
         throw new Error(payload.error ?? `Product extraction failed: ${response.status}`);
@@ -1432,11 +2173,16 @@ export function GeoGeneratorConsole() {
       const runDurationMs = getRunClockMs() - runStartedAt;
       const runDurationLabel = formatElapsedDuration(runDurationMs);
       const incomingResults = attachRunDurationToExtractorResults(payload.results ?? [], runDurationMs);
-      const nextResults = mergeExtractorHistoryResults(incomingResults, extractorResults);
-      const nextLogs = mergeExtractorHistoryLogs(payload.logs ?? [], extractorLogs);
-      setExtractorResults(nextResults);
-      setExtractorLogs(nextLogs);
-      setSelectedExtractorIndex(incomingResults.length ? 0 : -1);
+      const incomingHistory = createExtractorHistoryEntries(incomingResults, payload.logs ?? [], runId, undefined, echoedRequestId);
+      const processSnapshot = resolveStandaloneExtractorProcessSnapshot(payload, firstSource);
+      setExtractorHistory((current) => appendExtractorHistoryEntries(incomingHistory.entries, current));
+      if (incomingHistory.unpairedLegacyLogs.length > 0) {
+        setExtractorLegacyUnpairedLogs((current) => [...incomingHistory.unpairedLegacyLogs, ...current].slice(0, HISTORY_LIMIT));
+      }
+      if (incomingHistory.entries.length > 0 && extractorSelectionRevisionRef.current === selectionRevisionAtStart) {
+        const firstEntry = incomingHistory.entries[0];
+        if (firstEntry) setSelectedExtractorEntryId(firstEntry.entryId);
+      }
       setExtractorRunStatus(payload.failures?.length ? "error" : "done");
       setExtractorPipelineProcess({
         status: payload.failures?.length ? "error" : "done",
@@ -1445,7 +2191,8 @@ export function GeoGeneratorConsole() {
         sourceCount,
         completedSourceCount: incomingResults.length + (payload.failures?.length ?? 0),
         activeSource: incomingResults[0]?.source ?? payload.failures?.[0]?.source ?? firstSource,
-        errorMessage: payload.failures?.[0]?.error
+        errorMessage: payload.failures?.[0]?.error,
+        extractorSteps: processSnapshot?.process
       });
       setErrorMessage(payload.failures?.map((failure) => `${failure.source}: ${failure.error}`).join("\n") ?? "");
       setExtractorMessages((current) => [
@@ -1462,9 +2209,12 @@ export function GeoGeneratorConsole() {
           )
         }
       ]);
+      if (extractorRunRef.current.epoch === runEpoch) {
+        extractorRunRef.current = { epoch: runEpoch, controller: null };
+      }
     } catch (error) {
-      if (progressController) {
-        progressController.cancelled = true;
+      if (!isCurrentRun()) {
+        return;
       }
       const runDurationLabel = formatElapsedDuration(getRunClockMs() - runStartedAt);
       const message = error instanceof Error ? error.message : "Product extraction failed.";
@@ -1483,6 +2233,9 @@ export function GeoGeneratorConsole() {
           body: appendRunDuration(message, runDurationLabel, uiLanguage)
         }
       ]);
+      if (extractorRunRef.current.epoch === runEpoch) {
+        extractorRunRef.current = { epoch: runEpoch, controller: null };
+      }
     }
   }
 
@@ -2000,15 +2753,15 @@ export function GeoGeneratorConsole() {
               <p className="emptyHistory">{extractorResults.length === 0 ? activeModeCopy.emptyHistory : text.sidebar.noSearchResults}</p>
             ) : (
               <div className="historyList">
-                {visibleExtractorHistory.map(({ result, index }) => (
-                  <div className={`queueThread ${index === selectedExtractorIndex ? "active" : ""}`} key={`${result.sourceType}:${result.source}`}>
-                    <button className="queueThreadMain" type="button" onClick={() => setSelectedExtractorIndex(index)}>
+                {visibleExtractorHistory.map((entry) => (
+                  <div className={`queueThread ${entry.entryId === selectedExtractorEntryId ? "active" : ""}`} key={entry.entryId}>
+                    <button className="queueThreadMain" type="button" onClick={() => selectExtractorHistoryEntry(entry.entryId)}>
                       <CheckCircle2 className="statusIcon done" size={14} />
                       <span className="historyText">
-                        <span className="historyTitle">{result.geoProduct.name}</span>
-                        <span className="historySource">{result.source}</span>
+                        <span className="historyTitle">{entry.result.geoProduct.name}</span>
+                        <span className="historySource">{entry.result.source}</span>
                       </span>
-                      <time dateTime={result.generatedAt}>{formatHistoryTime(result.generatedAt, text)}</time>
+                      <time dateTime={entry.result.generatedAt}>{formatHistoryTime(entry.result.generatedAt, text)}</time>
                     </button>
                   </div>
                 ))}
@@ -2018,15 +2771,15 @@ export function GeoGeneratorConsole() {
             <p className="emptyHistory">{results.length === 0 ? activeModeCopy.emptyHistory : text.sidebar.noSearchResults}</p>
           ) : (
             <div className="historyList">
-              {visibleGeneratorHistory.map(({ result, index }) => (
-                <div className={`queueThread ${index === selectedIndex ? "active" : ""}`} key={result.id}>
-                  <button className="queueThreadMain" type="button" onClick={() => setSelectedIndex(index)}>
+              {visibleGeneratorHistory.map((entry) => (
+                <div className={`queueThread ${entry.entryId === selectedEntryId ? "active" : ""}`} key={entry.entryId}>
+                  <button className="queueThreadMain" type="button" onClick={() => selectGeoHistoryEntry(entry.entryId)}>
                     <CheckCircle2 className="statusIcon done" size={14} />
                     <span className="historyText">
-                      <span className="historyTitle">{result.generator.content.sections.productName}</span>
-                      <span className="historySource">{result.source}</span>
+                      <span className="historyTitle">{entry.result.generator.content.sections.productName}</span>
+                      <span className="historySource">{entry.result.source}</span>
                     </span>
-                    <time dateTime={result.generator.generatedAt}>{formatHistoryTime(result.generator.generatedAt, text)}</time>
+                    <time dateTime={entry.result.generator.generatedAt}>{formatHistoryTime(entry.result.generator.generatedAt, text)}</time>
                   </button>
                 </div>
               ))}
@@ -2035,7 +2788,7 @@ export function GeoGeneratorConsole() {
         </section>
 
         <footer className="sidebarFooter">
-          <button type="button" onClick={() => setIsSettingsOpen(true)}>
+          <button type="button" onClick={openSettings}>
             <Settings size={16} />
             <span className="footerText">{text.sidebar.settings}</span>
           </button>
@@ -2068,7 +2821,14 @@ export function GeoGeneratorConsole() {
             <button className={isSidebarCollapsed ? "active" : ""} type="button" onClick={() => setIsSidebarCollapsed((current) => !current)} aria-label={text.header.leftPanelToggle}>
               <PanelLeft size={17} />
             </button>
-            <button className={isStatusPanelOpen ? "active" : ""} type="button" onClick={() => setIsStatusPanelOpen((current) => !current)} aria-label={text.header.rightPanelToggle}>
+            <button
+              className={isStatusPanelOpen ? "active" : ""}
+              type="button"
+              onClick={() => setIsStatusPanelOpen((current) => !current)}
+              aria-controls="geo-progress-panel"
+              aria-expanded={isStatusPanelOpen}
+              aria-label={text.header.rightPanelToggle}
+            >
               <PanelRight size={17} />
             </button>
           </div>
@@ -2197,7 +2957,7 @@ export function GeoGeneratorConsole() {
           )}
 
           {isStatusPanelOpen && (
-            <aside className="statusPanel" aria-label="Progress">
+            <aside className="statusPanel" id="geo-progress-panel" aria-label="Progress">
               <div className="progressTitle">
                 <span>
                   {text.panel.progress}
@@ -2205,15 +2965,27 @@ export function GeoGeneratorConsole() {
                 </span>
                 <em className={`processBadge ${activeRunStatus}`}>{runSummary}</em>
                 <button
+                  className="progressCloseButton"
+                  type="button"
+                  onClick={() => setIsStatusPanelOpen(false)}
+                  aria-label={uiLanguage === "ko" ? "진행 상황 닫기" : "Close progress"}
+                >
+                  <X size={16} />
+                </button>
+                <button
                   className="resultCycleButton"
                   type="button"
                   disabled={activeMode === "extractor" ? extractorResults.length <= 1 : results.length <= 1}
                   onClick={() => {
                     if (activeMode === "extractor") {
-                      setSelectedExtractorIndex((current) => (current + 1) % extractorResults.length);
+                      const currentIndex = extractorHistory.findIndex((entry) => entry.entryId === selectedExtractorEntryId);
+                      const next = extractorHistory[(currentIndex + 1 + extractorHistory.length) % extractorHistory.length];
+                      if (next) selectExtractorHistoryEntry(next.entryId);
                       return;
                     }
-                    setSelectedIndex((current) => (current + 1) % results.length);
+                    const currentIndex = geoHistory.findIndex((entry) => entry.entryId === selectedEntryId);
+                    const next = geoHistory[(currentIndex + 1 + geoHistory.length) % geoHistory.length];
+                    if (next) selectGeoHistoryEntry(next.entryId);
                   }}
                   aria-label={text.panel.nextResult}
                 >
@@ -2324,6 +3096,12 @@ export function GeoGeneratorConsole() {
                     </div>
                     <GeoDiagnosticLog diagnostics={selectedDiagnostics} process={selectedLog?.generatorProcess} text={text} uiLanguage={uiLanguage} onOpenDetail={openPanelDetail} />
                   </>
+                ) : selectedGeneratorFailureDiagnostics ? (
+                  <GeoFailureDiagnosticLog
+                    diagnostics={selectedGeneratorFailureDiagnostics}
+                    uiLanguage={uiLanguage}
+                    onOpenDetail={openPanelDetail}
+                  />
                 ) : activePipelineProcess ? (
                   <strong>
                     {uiLanguage === "ko"
@@ -2334,6 +3112,19 @@ export function GeoGeneratorConsole() {
                   <strong>{text.panel.noDiagnostics}</strong>
                 )}
                   </div>
+                  {selectedGeneratorFailureDiagnostics && (selectedResult || selectedDiagnostics) && (
+                    <>
+                      <div className="panelDivider" />
+                      <div className="panelBlock">
+                        <span>{uiLanguage === "ko" ? "실패 진단" : "Failure diagnostics"}</span>
+                        <GeoFailureDiagnosticLog
+                          diagnostics={selectedGeneratorFailureDiagnostics}
+                          uiLanguage={uiLanguage}
+                          onOpenDetail={openPanelDetail}
+                        />
+                      </div>
+                    </>
+                  )}
                 </>
               )}
 
@@ -2488,7 +3279,7 @@ export function GeoGeneratorConsole() {
         <div className="settingsOverlay" role="dialog" aria-modal="true" aria-labelledby="settings-title">
           <div className="settingsModal">
             <aside className="settingsSidebar" aria-label="Settings navigation">
-              <button className="backToApp" type="button" onClick={() => setIsSettingsOpen(false)}>
+              <button className="backToApp" type="button" onClick={closeSettings}>
                 <ArrowLeft size={15} />
                 {text.settings.back}
               </button>
@@ -2519,11 +3310,12 @@ export function GeoGeneratorConsole() {
                   <h2 id="settings-title">{settingsTitle}</h2>
                   <p>{settingsDescription}</p>
                 </div>
-                <button type="button" aria-label={text.settings.close} onClick={() => setIsSettingsOpen(false)}>
+                <button ref={settingsCloseButtonRef} type="button" aria-label={text.settings.close} onClick={closeSettings}>
                   <X size={18} />
                 </button>
               </div>
 
+              <div className="settingsScroll">
               {settingsTab === "run" && (
                 <>
                   <section className="settingsSection">
@@ -2617,24 +3409,6 @@ export function GeoGeneratorConsole() {
                     </div>
                   </section>
 
-                  <div className="settingsActions">
-                    <button
-                      className={runSettingsFeedback === "reset" ? "confirmed" : ""}
-                      type="button"
-                      onClick={resetRunSettings}
-                    >
-                      {runSettingsFeedback === "reset" && <CheckCircle2 size={14} />}
-                      <span>{runSettingsFeedback === "reset" ? text.settings.resetDone : text.settings.reset}</span>
-                    </button>
-                    <button
-                      className={`primary${runSettingsFeedback === "saved" ? " confirmed" : ""}`}
-                      type="button"
-                      onClick={saveRunSettings}
-                    >
-                      {runSettingsFeedback === "saved" && <CheckCircle2 size={14} />}
-                      <span>{runSettingsFeedback === "saved" ? text.settings.saved : text.settings.saveRun}</span>
-                    </button>
-                  </div>
                 </>
               )}
 
@@ -2767,44 +3541,6 @@ export function GeoGeneratorConsole() {
                     </div>
                   </section>
 
-                  <div className="settingsActions">
-                    <button
-                      className={aiSettingsFeedback === "reset" ? "confirmed" : ""}
-                      type="button"
-                      disabled={aiSettingsAction !== null}
-                      onClick={resetProviderSettings}
-                      aria-live="polite"
-                    >
-                      {aiSettingsFeedback === "reset" && <CheckCircle2 size={14} />}
-                      <span>{aiSettingsFeedback === "reset" ? text.settings.resetDone : text.settings.reset}</span>
-                    </button>
-                    <button
-                      className={aiSettingsFeedback === "tested" ? "confirmed" : ""}
-                      type="button"
-                      disabled={aiSettingsAction !== null || !isProviderSettingsReady}
-                      onClick={() => {
-                        void testProviderConnection();
-                      }}
-                      aria-live="polite"
-                    >
-                      {aiSettingsAction === "test" && <Loader2 className="spin" size={14} />}
-                      {aiSettingsFeedback === "tested" && <CheckCircle2 size={14} />}
-                      <span>{aiSettingsAction === "test" ? text.settings.testingConnection : aiSettingsFeedback === "tested" ? text.settings.tested : text.settings.testConnection}</span>
-                    </button>
-                    <button
-                      className={`primary${aiSettingsFeedback === "saved" ? " confirmed" : ""}`}
-                      type="button"
-                      disabled={aiSettingsAction !== null || !isProviderSettingsReady}
-                      onClick={() => {
-                        void saveProviderSettings();
-                      }}
-                      aria-live="polite"
-                    >
-                      {aiSettingsAction === "save" && <Loader2 className="spin" size={14} />}
-                      {aiSettingsFeedback === "saved" && <CheckCircle2 size={14} />}
-                      <span>{aiSettingsAction === "save" ? text.settings.saving : aiSettingsFeedback === "saved" ? text.settings.saved : text.settings.saveAndApply}</span>
-                    </button>
-                  </div>
                 </>
               )}
 
@@ -2985,37 +3721,102 @@ export function GeoGeneratorConsole() {
                       </section>
                     )}
 
-                    <div className="settingsActions">
-                      <button
-                        className={ragSettingsFeedback === "reset" ? "confirmed" : ""}
-                        type="button"
-                        disabled={ragSettingsAction !== null}
-                        onClick={() => {
-                          void resetRagProfileSettings();
-                        }}
-                        aria-live="polite"
-                      >
-                        {ragSettingsAction === "reset" && <Loader2 className="spin" size={14} />}
-                        {ragSettingsFeedback === "reset" && <CheckCircle2 size={14} />}
-                        <span>{ragSettingsAction === "reset" ? text.settings.resetting : ragSettingsFeedback === "reset" ? text.settings.resetDone : text.settings.reset}</span>
-                      </button>
-                      <button
-                        className={`primary${ragSettingsFeedback === "saved" ? " confirmed" : ""}`}
-                        type="button"
-                        disabled={ragSettingsAction !== null}
-                        onClick={() => {
-                          void saveRagProfileSettings();
-                        }}
-                        aria-live="polite"
-                      >
-                        {ragSettingsAction === "save" && <Loader2 className="spin" size={14} />}
-                        {ragSettingsFeedback === "saved" && <CheckCircle2 size={14} />}
-                        <span>{ragSettingsAction === "save" ? text.settings.saving : ragSettingsFeedback === "saved" ? text.settings.saved : text.settings.saveRag}</span>
-                      </button>
-                    </div>
                   </div>
                 </>
               )}
+              </div>
+              <div className="settingsActions">
+                {settingsTab === "run" && (
+                  <>
+                    <button
+                      className={runSettingsFeedback === "reset" ? "confirmed" : ""}
+                      type="button"
+                      onClick={resetRunSettings}
+                    >
+                      {runSettingsFeedback === "reset" && <CheckCircle2 size={14} />}
+                      <span>{runSettingsFeedback === "reset" ? text.settings.resetDone : text.settings.reset}</span>
+                    </button>
+                    <button
+                      className={`primary${runSettingsFeedback === "saved" ? " confirmed" : ""}`}
+                      type="button"
+                      onClick={saveRunSettings}
+                    >
+                      {runSettingsFeedback === "saved" && <CheckCircle2 size={14} />}
+                      <span>{runSettingsFeedback === "saved" ? text.settings.saved : text.settings.saveRun}</span>
+                    </button>
+                  </>
+                )}
+                {settingsTab === "ai" && (
+                  <>
+                    <button
+                      className={aiSettingsFeedback === "reset" ? "confirmed" : ""}
+                      type="button"
+                      disabled={aiSettingsAction !== null}
+                      onClick={resetProviderSettings}
+                      aria-live="polite"
+                    >
+                      {aiSettingsFeedback === "reset" && <CheckCircle2 size={14} />}
+                      <span>{aiSettingsFeedback === "reset" ? text.settings.resetDone : text.settings.reset}</span>
+                    </button>
+                    <button
+                      className={aiSettingsFeedback === "tested" ? "confirmed" : ""}
+                      type="button"
+                      disabled={aiSettingsAction !== null || !isProviderSettingsReady}
+                      onClick={() => {
+                        void testProviderConnection();
+                      }}
+                      aria-live="polite"
+                    >
+                      {aiSettingsAction === "test" && <Loader2 className="spin" size={14} />}
+                      {aiSettingsFeedback === "tested" && <CheckCircle2 size={14} />}
+                      <span>{aiSettingsAction === "test" ? text.settings.testingConnection : aiSettingsFeedback === "tested" ? text.settings.tested : text.settings.testConnection}</span>
+                    </button>
+                    <button
+                      className={`primary${aiSettingsFeedback === "saved" ? " confirmed" : ""}`}
+                      type="button"
+                      disabled={aiSettingsAction !== null || !isProviderSettingsReady}
+                      onClick={() => {
+                        void saveProviderSettings();
+                      }}
+                      aria-live="polite"
+                    >
+                      {aiSettingsAction === "save" && <Loader2 className="spin" size={14} />}
+                      {aiSettingsFeedback === "saved" && <CheckCircle2 size={14} />}
+                      <span>{aiSettingsAction === "save" ? text.settings.saving : aiSettingsFeedback === "saved" ? text.settings.saved : text.settings.saveAndApply}</span>
+                    </button>
+                  </>
+                )}
+                {settingsTab === "rag" && (
+                  <>
+                    <button
+                      className={ragSettingsFeedback === "reset" ? "confirmed" : ""}
+                      type="button"
+                      disabled={ragSettingsAction !== null}
+                      onClick={() => {
+                        void resetRagProfileSettings();
+                      }}
+                      aria-live="polite"
+                    >
+                      {ragSettingsAction === "reset" && <Loader2 className="spin" size={14} />}
+                      {ragSettingsFeedback === "reset" && <CheckCircle2 size={14} />}
+                      <span>{ragSettingsAction === "reset" ? text.settings.resetting : ragSettingsFeedback === "reset" ? text.settings.resetDone : text.settings.reset}</span>
+                    </button>
+                    <button
+                      className={`primary${ragSettingsFeedback === "saved" ? " confirmed" : ""}`}
+                      type="button"
+                      disabled={ragSettingsAction !== null}
+                      onClick={() => {
+                        void saveRagProfileSettings();
+                      }}
+                      aria-live="polite"
+                    >
+                      {ragSettingsAction === "save" && <Loader2 className="spin" size={14} />}
+                      {ragSettingsFeedback === "saved" && <CheckCircle2 size={14} />}
+                      <span>{ragSettingsAction === "save" ? text.settings.saving : ragSettingsFeedback === "saved" ? text.settings.saved : text.settings.saveRag}</span>
+                    </button>
+                  </>
+                )}
+              </div>
             </section>
           </div>
         </div>
@@ -3193,17 +3994,41 @@ function EvaluationSuitePanel({
   uiLanguage: UiLanguage;
 }>) {
   const [copiedAction, setCopiedAction] = useState<"report" | "qualityPrompt" | "probePrompt" | null>(null);
+  const [evaluation, setEvaluation] = useState<GeoQualityEvaluation>();
+  const diagnostics = useMemo(
+    () => sanitizePdpGeoDiagnosticsForDisplay(result.generator.diagnostics),
+    [result.generator.diagnostics]
+  );
+
+  useEffect(() => {
+    let current = true;
+    setEvaluation(undefined);
+    void requestGeoQualityEvaluation({
+      jsonLd: result.generator.schemaMarkup.jsonLd,
+      diagnostics
+    }, uiLanguage).then((next) => {
+      if (current) {
+        setEvaluation(next);
+      }
+    }).catch(() => {
+      if (current) {
+        setEvaluation(undefined);
+      }
+    });
+    return () => {
+      current = false;
+    };
+  }, [diagnostics, result.generator.schemaMarkup.jsonLd, uiLanguage]);
 
   if (countSchemaNodes(result.generator.schemaMarkup.jsonLd) === 0) {
+    return null;
+  }
+  if (!evaluation) {
     return null;
   }
 
   const copy = getGeoQualityCopy(uiLanguage);
   const suite = getEvaluationSuiteCopy(uiLanguage);
-  const evaluation = evaluateGeoQuality({
-    jsonLd: result.generator.schemaMarkup.jsonLd,
-    diagnostics: result.generator.diagnostics
-  }, uiLanguage);
   const probe = result.citationProbe;
   const validationPointerPrefix = copy.validationImprovement(987654).split("987654")[0] ?? "";
   const easySummary = buildEasyImprovementSummary(evaluation, suite, validationPointerPrefix);
@@ -3385,7 +4210,7 @@ function EvaluationSuitePanel({
                 <div>
                   <span>{copy.evidenceLabel}</span>
                   <ul>
-                    {dimension.evidence.map((item) => (
+                    {dimension.evidence.map((item, index) => (
                       <li key={item}>{item}</li>
                     ))}
                   </ul>
@@ -3540,7 +4365,7 @@ function EvaluationSuitePanel({
                       <strong>{suite.warningsLabel}</strong>
                     </div>
                     <ul className="probeWarningList">
-                      {probe.warnings.map((warning) => (
+                      {probe.warnings.map((warning, index) => (
                         <li key={warning}>{warning}</li>
                       ))}
                     </ul>
@@ -3677,6 +4502,7 @@ function createGeneratorProcessPanelDetail(
   const stageId = String(step.id);
   const validationRepairs = diagnostics.validationRepairs ?? [];
   const validationFindings = diagnostics.validationFindings ?? [];
+  const publicCopyOmissions = resolvePublicCopyOmissions(diagnostics.publicCopyOmissions);
   const stageBase = {
     id: step.id,
     title: step.title,
@@ -3694,11 +4520,14 @@ function createGeneratorProcessPanelDetail(
   if (stageId === "validate" || stageId === "repair") {
     const firstFinding = validationFindings[0];
     const title = localized.title;
-    const subtitle = firstFinding
+    const validationSubtitle = firstFinding
       ? `${validationFindings.length}개 진단 · ${firstFinding.field}: ${firstFinding.issue}`
       : diagnostics.validationWarnings.length > 0
         ? `${diagnostics.validationWarnings.length}개 경고 · ${diagnostics.validationWarnings[0]}`
         : (uiLanguage === "ko" ? "읽기 전용 검증 통과" : "Read-only validation passed");
+    const subtitle = publicCopyOmissions.length > 0
+      ? `${validationSubtitle} · ${formatPublicCopyOmissionCount(publicCopyOmissions.length, uiLanguage)}`
+      : validationSubtitle;
 
     return createPanelDetail("Generator process", title, subtitle, {
       stage: stageBase,
@@ -3706,6 +4535,7 @@ function createGeneratorProcessPanelDetail(
         warningCount: diagnostics.validationWarnings.length,
         repairCount: validationRepairs.length,
         findingCount: validationFindings.length,
+        publicCopyOmissionCount: publicCopyOmissions.length,
         firstIssue: firstFinding?.issue,
         firstAction: firstFinding?.suggestedAction
       },
@@ -3719,6 +4549,7 @@ function createGeneratorProcessPanelDetail(
         suggestedAfter: finding.suggestedAfter,
         evidence: finding.evidence ?? []
       })),
+      publicCopyOmissions,
       warnings: diagnostics.validationWarnings,
       repairEvidence: diagnostics.evidence.filter((item) => item.source === "repair" || item.source === "schema-validator" || item.source === "html-validator"),
       finalArtifacts: result
@@ -3730,7 +4561,30 @@ function createGeneratorProcessPanelDetail(
       ...baseMetadata,
       warnings: diagnostics.validationWarnings.length,
       repairs: validationRepairs.length,
-      findings: validationFindings.length
+      findings: validationFindings.length,
+      omissions: publicCopyOmissions.length
+    });
+  }
+
+  if (stageId === "quality-gate") {
+    const subtitle = publicCopyOmissions.length > 0
+      ? formatPublicCopyOmissionRetentionMessage(publicCopyOmissions.length, uiLanguage)
+      : localized.description;
+    return createPanelDetail("Generator process", localized.title, subtitle, {
+      stage: stageBase,
+      summary: {
+        warningCount: diagnostics.validationWarnings.length,
+        findingCount: validationFindings.length,
+        repairCount: validationRepairs.length,
+        publicCopyOmissionCount: publicCopyOmissions.length
+      },
+      publicCopyOmissions
+    }, {
+      ...baseMetadata,
+      warnings: diagnostics.validationWarnings.length,
+      findings: validationFindings.length,
+      repairs: validationRepairs.length,
+      omissions: publicCopyOmissions.length
     });
   }
 
@@ -3966,7 +4820,7 @@ function ExtractorDiagnosticLog({
                 }))}
               >
                 <b>{localized.title}</b>
-                <span>{step.message ?? localized.description}</span>
+                <span>{localized.description}</span>
               </button>
             );
           })
@@ -3977,10 +4831,10 @@ function ExtractorDiagnosticLog({
         {warnings.length === 0 ? (
           <p>{uiLanguage === "ko" ? "경고가 없습니다." : "No warnings."}</p>
         ) : (
-          warnings.map((warning) => (
+          warnings.map((warning, index) => (
             <button
               className="diagnosticEntryButton"
-              key={`${warning.code}-${warning.message}`}
+              key={`${index}-${warning.code}`}
               type="button"
               onClick={() => onOpenDetail(createPanelDetail("Extractor warning", warning.code, warning.message, warning, {
                 code: warning.code
@@ -3997,10 +4851,10 @@ function ExtractorDiagnosticLog({
         {evidence.length === 0 ? (
           <p>{text.panel.noEvidence}</p>
         ) : (
-          evidence.map((item) => (
+          evidence.map((item, index) => (
             <button
               className="diagnosticEntryButton"
-              key={`${item.field}-${item.source}-${item.value.slice(0, 30)}`}
+              key={`${index}-${item.field}-${item.source}`}
               type="button"
               onClick={() => onOpenDetail(createPanelDetail("Extractor evidence", `${item.field} · ${item.source}`, item.value, item, {
                 field: item.field,
@@ -4089,6 +4943,86 @@ function ProcessGroup({
   );
 }
 
+function formatPublicCopyOmissionCount(count: number, uiLanguage: UiLanguage): string {
+  if (uiLanguage === "ko") {
+    return `공개 문구 ${count}건 제외`;
+  }
+  return `${count} public-copy omission${count === 1 ? "" : "s"}`;
+}
+
+function formatPublicCopyOmissionRetentionMessage(count: number, uiLanguage: UiLanguage): string {
+  if (uiLanguage === "ko") {
+    return `최종 근거가 결속되지 않은 공개 문구 ${count}건만 제외하고 나머지 산출물을 유지했습니다.`;
+  }
+  return `${count} public-copy item${count === 1 ? " was" : "s were"} omitted after the final evidence check; the remaining artifact was retained.`;
+}
+
+function formatPublicCopyOmissionAction(
+  action: PdpGeoPublicCopyOmission["action"],
+  uiLanguage: UiLanguage
+): string {
+  const labels = uiLanguage === "ko"
+    ? {
+      sentenceOmitted: "문장 제외",
+      fieldOmitted: "필드 제외",
+      faqItemOmitted: "FAQ 제외",
+      howToStepOmitted: "HowTo 단계 제외"
+    }
+    : {
+      sentenceOmitted: "Sentence omitted",
+      fieldOmitted: "Field omitted",
+      faqItemOmitted: "FAQ item omitted",
+      howToStepOmitted: "HowTo step omitted"
+    };
+  return labels[action];
+}
+
+function formatPublicCopyOmissionReason(
+  reason: PdpGeoPublicCopyOmission["reason"],
+  uiLanguage: UiLanguage
+): string {
+  const labels = uiLanguage === "ko"
+    ? {
+      noEligibleEvidence: "최종 문장을 뒷받침할 수 있는 근거를 찾지 못했습니다.",
+      assertionFrameRejected: "최종 문장이 확인 가능한 관계를 넘어섰습니다.",
+      directSupportRejected: "최종 표현에 대한 직접 근거를 확인하지 못했습니다.",
+      unresolvedBinding: "최종 문장과 근거의 결속을 확인하지 못했습니다."
+    }
+    : {
+      noEligibleEvidence: "No eligible evidence supported the final wording.",
+      assertionFrameRejected: "The final wording went beyond the verified relationship.",
+      directSupportRejected: "Direct support for the final wording was not confirmed.",
+      unresolvedBinding: "The final wording could not be bound to evidence."
+    };
+  return labels[reason];
+}
+
+function formatPublicCopyOmissionTitle(
+  omission: PdpGeoPublicCopyOmission,
+  uiLanguage: UiLanguage
+): string {
+  const sentence = omission.sentenceIndex === null
+    ? undefined
+    : (uiLanguage === "ko" ? `문장 ${omission.sentenceIndex + 1}` : `sentence ${omission.sentenceIndex + 1}`);
+  return [omission.fieldPath, formatPublicCopyOmissionAction(omission.action, uiLanguage), sentence]
+    .filter((value): value is string => Boolean(value))
+    .join(" · ");
+}
+
+function createPublicCopyOmissionsPanelDetail(
+  omissions: PdpGeoPublicCopyOmission[],
+  uiLanguage: UiLanguage
+): PanelDetail {
+  const title = uiLanguage === "ko" ? "공개 문구 제외" : "Public-copy omissions";
+  return createPanelDetail(
+    "Generator diagnostics",
+    title,
+    formatPublicCopyOmissionRetentionMessage(omissions.length, uiLanguage),
+    { count: omissions.length, omissions },
+    { count: omissions.length }
+  );
+}
+
 function GeoDiagnosticLog({
   diagnostics,
   onOpenDetail,
@@ -4113,6 +5047,7 @@ function GeoDiagnosticLog({
   const ragUsage = (diagnostics.ragUsage ?? []).slice(0, 6);
   const ragChunks = diagnostics.selectedRagChunks.slice(0, 6);
   const runtimeUsage = diagnostics.runtimeUsage;
+  const publicCopyOmissions = resolvePublicCopyOmissions(diagnostics.publicCopyOmissions);
 
   return (
     <div className="diagnosticLog">
@@ -4124,6 +5059,11 @@ function GeoDiagnosticLog({
         <button type="button" onClick={() => onOpenDetail(createPanelDetail("Generator diagnostics", text.panel.evidence, undefined, diagnostics.evidence, { count: diagnostics.evidence.length }))}>evidence {diagnostics.evidence.length}</button>
         <button type="button" onClick={() => onOpenDetail(createPanelDetail("Generator diagnostics", "OCR sentence sources", undefined, diagnostics.ocrSentences, { count: diagnostics.ocrSentences.length }))}>OCR {diagnostics.ocrSentences.length}</button>
         <button type="button" onClick={() => onOpenDetail(createPanelDetail("Generator diagnostics", "RAG usage", undefined, diagnostics.ragUsage ?? [], { count: diagnostics.ragUsage?.length ?? 0 }))}>RAG usage {diagnostics.ragUsage?.length ?? 0}</button>
+        {publicCopyOmissions.length > 0 && (
+          <button type="button" onClick={() => onOpenDetail(createPublicCopyOmissionsPanelDetail(publicCopyOmissions, uiLanguage))}>
+            {formatPublicCopyOmissionCount(publicCopyOmissions.length, uiLanguage)}
+          </button>
+        )}
       </div>
       <PipelineUsageSummary label="Generator pipeline" usage={runtimeUsage} uiLanguage={uiLanguage} onOpenDetail={onOpenDetail} />
       <div className="diagnosticSection">
@@ -4153,15 +5093,44 @@ function GeoDiagnosticLog({
           })
         )}
       </div>
+      {publicCopyOmissions.length > 0 && (
+        <div className="diagnosticSection">
+          <strong>{uiLanguage === "ko" ? "공개 문구 제외" : "Public-copy omissions"}</strong>
+          <p>{formatPublicCopyOmissionRetentionMessage(publicCopyOmissions.length, uiLanguage)}</p>
+          {publicCopyOmissions.map((omission) => (
+            <button
+              className="diagnosticEntryButton"
+              key={`${omission.fieldPath}-${omission.action}-${omission.sentenceIndex ?? "none"}-${omission.reason}`}
+              type="button"
+              onClick={() => onOpenDetail(createPanelDetail(
+                "Generator diagnostics",
+                formatPublicCopyOmissionTitle(omission, uiLanguage),
+                formatPublicCopyOmissionReason(omission.reason, uiLanguage),
+                omission,
+                {
+                  fieldPath: omission.fieldPath,
+                  action: omission.action,
+                  reason: omission.reason,
+                  count: omission.count,
+                  sentenceIndex: omission.sentenceIndex ?? "none"
+                }
+              ))}
+            >
+              <b>{formatPublicCopyOmissionTitle(omission, uiLanguage)}</b>
+              <span>{formatPublicCopyOmissionReason(omission.reason, uiLanguage)}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="diagnosticSection">
         <strong>{text.panel.recommendations}</strong>
         {recommendations.length === 0 ? (
           <p>{text.panel.noRecommendations}</p>
         ) : (
-          recommendations.map((item) => (
+          recommendations.map((item, index) => (
             <button
               className="diagnosticEntryButton"
-              key={`${item.field}-${item.message}-${item.reason}`}
+              key={`${index}-${item.field}`}
               type="button"
               onClick={() => onOpenDetail(createPanelDetail("Generator recommendation", item.field, item.message, item, {
                 field: item.field
@@ -4178,10 +5147,10 @@ function GeoDiagnosticLog({
         {evidence.length === 0 ? (
           <p>{text.panel.noEvidence}</p>
         ) : (
-          evidence.map((item) => (
+          evidence.map((item, index) => (
             <button
               className="diagnosticEntryButton"
-              key={`${item.field}-${item.source}-${item.value.slice(0, 30)}`}
+              key={`${index}-${item.field}-${item.source}`}
               type="button"
               onClick={() => onOpenDetail(createPanelDetail("Generator evidence", `${item.field} · ${item.source}`, item.value, item, {
                 field: item.field,
@@ -4199,10 +5168,10 @@ function GeoDiagnosticLog({
         {ocrSentences.length === 0 ? (
           <p>{uiLanguage === "ko" ? "OCR 문장 진단이 없습니다." : "No OCR sentence diagnostics."}</p>
         ) : (
-          ocrSentences.map((item) => (
+          ocrSentences.map((item, index) => (
             <button
               className="diagnosticEntryButton"
-              key={`${item.text}-${item.imageUrls?.join("|") ?? "unknown"}`}
+              key={`${index}-${item.text.slice(0, 40)}`}
               type="button"
               onClick={() => onOpenDetail(createPanelDetail("OCR sentence source", formatOcrSentenceSource(item, uiLanguage), item.text, item, {
                 images: item.imageUrls?.length ?? 0,
@@ -4252,6 +5221,283 @@ function GeoDiagnosticLog({
           ))
         )}
       </div>
+    </div>
+  );
+}
+
+function formatFailureCorrectiveOutcome(
+  diagnostics: GeoGeneratorFailureCorrectiveDiagnostics,
+  uiLanguage: UiLanguage
+): string {
+  if (uiLanguage === "ko") {
+    return diagnostics.correctiveApplied ? "보정 단계 적용" : "보정 단계 미적용";
+  }
+  return diagnostics.correctiveApplied ? "Corrective pass applied" : "Corrective pass not applied";
+}
+
+function formatFailureCorrectiveSummary(
+  diagnostics: GeoGeneratorFailureCorrectiveDiagnostics,
+  uiLanguage: UiLanguage
+): string {
+  if (uiLanguage === "ko") {
+    return [
+      diagnostics.adoptionReason,
+      `영향 경로 ${diagnostics.correctedMissingPaths.length}개`,
+      `구조 부족 ${diagnostics.structuralShortfallCount}개`,
+      `출처 변화 ${diagnostics.provenanceRegressionDelta}`
+    ].join(" · ");
+  }
+  return [
+    diagnostics.adoptionReason,
+    `${diagnostics.correctedMissingPaths.length} affected path${diagnostics.correctedMissingPaths.length === 1 ? "" : "s"}`,
+    `${diagnostics.structuralShortfallCount} structural shortfall${diagnostics.structuralShortfallCount === 1 ? "" : "s"}`,
+    `provenance delta ${diagnostics.provenanceRegressionDelta}`
+  ].join(" · ");
+}
+
+function formatFailureProvenanceDecisionTitle(
+  decision: GeoGeneratorFailureProvenanceDecision,
+  uiLanguage: UiLanguage
+): string {
+  const sentenceIndex = decision.sentenceIndex === null
+    ? (uiLanguage === "ko" ? "문장 인덱스 없음" : "no sentence index")
+    : (uiLanguage === "ko" ? `문장 인덱스 ${decision.sentenceIndex}` : `sentence index ${decision.sentenceIndex}`);
+  return `${decision.fieldPath} · ${sentenceIndex}`;
+}
+
+function formatFailureProvenanceDecisionSubtitle(
+  decision: GeoGeneratorFailureProvenanceDecision,
+  uiLanguage: UiLanguage
+): string {
+  const sentenceIndex = decision.sentenceIndex === null
+    ? (uiLanguage === "ko" ? "문장 인덱스 없음" : "no sentence index")
+    : (uiLanguage === "ko" ? `문장 인덱스 ${decision.sentenceIndex}` : `sentence index ${decision.sentenceIndex}`);
+  return `${sentenceIndex} · ${decision.outcome}/${decision.reason}`;
+}
+
+function formatFailureProvenanceDecisionSummary(
+  decision: GeoGeneratorFailureProvenanceDecision,
+  uiLanguage: UiLanguage
+): string {
+  const roleCounts = Object.entries(decision.eligibleRoleCounts)
+    .map(([role, count]) => `${role} ${count}`)
+    .join(", ");
+  const fieldIncluded = formatFailureDecisionFlag(decision.plan.fieldIncluded, uiLanguage);
+  const planMatch = formatFailureDecisionFlag(decision.plan.textHashMatch, uiLanguage);
+  if (uiLanguage === "ko") {
+    return [
+      decision.phase,
+      `${decision.outcome}/${decision.reason}`,
+      `계획 ${decision.plan.mode}`,
+      `필드 ${fieldIncluded}`,
+      `계획 일치 ${planMatch}`,
+      `근거 후보 ${decision.eligibleEvidenceCount}개`,
+      `선택 ${decision.selectedEvidenceCount}개`,
+      `역할 ${roleCounts || "없음"}`
+    ].join(" · ");
+  }
+  return [
+    decision.phase,
+    `${decision.outcome}/${decision.reason}`,
+    `plan ${decision.plan.mode}`,
+    `field ${fieldIncluded}`,
+    `plan match ${planMatch}`,
+    `${decision.eligibleEvidenceCount} eligible evidence`,
+    `${decision.selectedEvidenceCount} selected`,
+    `roles ${roleCounts || "none"}`
+  ].join(" · ");
+}
+
+function formatFailureDecisionFlag(value: boolean | null, uiLanguage: UiLanguage): string {
+  if (value === null) {
+    return uiLanguage === "ko" ? "미보고" : "not reported";
+  }
+  if (uiLanguage === "ko") {
+    return value ? "예" : "아니오";
+  }
+  return value ? "yes" : "no";
+}
+
+function GeoFailureDiagnosticLog({
+  diagnostics,
+  onOpenDetail,
+  uiLanguage
+}: Readonly<{
+  diagnostics: GeoGeneratorFailureDiagnostics;
+  onOpenDetail: (detail: PanelDetail) => void;
+  uiLanguage: UiLanguage;
+}>) {
+  const quality = diagnostics.qualityGate;
+  const title = uiLanguage === "ko" ? "실패 진단" : "Failure diagnostics";
+  const processLabel = uiLanguage === "ko" ? "실행 단계" : "Process";
+  const provenanceLabel = uiLanguage === "ko" ? "공개 문구 출처" : "Public-copy provenance";
+  const runtimeLabel = uiLanguage === "ko" ? "실행 요약" : "Execution summary";
+  const extractor = diagnostics.extractor;
+  const requestId = diagnostics.requestId;
+  const correctiveDiagnostics = quality?.correctiveDiagnostics;
+  const provenanceDecisionDiagnostics = diagnostics.publicCopyProvenanceDecisionDiagnostics;
+
+  return (
+    <div className="diagnosticLog" aria-label={title}>
+      <div className="diagnosticStats">
+        <button
+          type="button"
+          onClick={() => onOpenDetail(createPanelDetail(title, processLabel, undefined, diagnostics.process, { count: diagnostics.process.length }))}
+        >
+          process {diagnostics.process.length}
+        </button>
+        <button
+          type="button"
+          onClick={() => onOpenDetail(createPanelDetail(title, runtimeLabel, undefined, diagnostics.runtimeStages, { count: diagnostics.runtimeStages.length }))}
+        >
+          runtime {diagnostics.runtimeStages.length}
+        </button>
+        <button
+          type="button"
+          onClick={() => onOpenDetail(createPanelDetail(title, provenanceLabel, undefined, diagnostics.validationFindings, { count: diagnostics.validationFindings.length }))}
+        >
+          provenance {diagnostics.validationFindings.length}
+        </button>
+        {requestId && (
+          <button
+            type="button"
+            onClick={() => onOpenDetail(createPanelDetail(title, "Request ID", requestId, { requestId }, { requestId }))}
+          >
+            request {requestId}
+          </button>
+        )}
+        {provenanceDecisionDiagnostics && (
+          <button
+            type="button"
+            onClick={() => onOpenDetail(createPanelDetail(title, uiLanguage === "ko" ? "출처 판단" : "Provenance decisions", undefined, provenanceDecisionDiagnostics, {
+              count: provenanceDecisionDiagnostics.length
+            }))}
+          >
+            {uiLanguage === "ko" ? `출처 판단 ${provenanceDecisionDiagnostics.length}` : `decisions ${provenanceDecisionDiagnostics.length}`}
+          </button>
+        )}
+      </div>
+      {quality && (
+        <div className="diagnosticSection">
+          <strong>{uiLanguage === "ko" ? "품질 게이트" : "Quality gate"}</strong>
+          <p>{quality.reason}</p>
+          <button
+            className="diagnosticEntryButton"
+            type="button"
+            onClick={() => onOpenDetail(createPanelDetail(title, uiLanguage === "ko" ? "품질 게이트 상태" : "Quality-gate status", quality.reason, quality, {
+              attempted: quality.attempted,
+              adopted: quality.adopted,
+              shortfalls: quality.shortfalls.length,
+              blockingShortfalls: quality.blockingShortfalls.length
+            }))}
+          >
+            <b>{quality.attempted ? (uiLanguage === "ko" ? "보정 시도 완료" : "Correction attempted") : (uiLanguage === "ko" ? "보정 미시도" : "No correction attempted")}</b>
+            <span>{quality.blockingShortfalls[0] ?? quality.shortfalls[0] ?? quality.reason}</span>
+          </button>
+          {correctiveDiagnostics && (
+            <button
+              className="diagnosticEntryButton"
+              type="button"
+              onClick={() => onOpenDetail(createPanelDetail(title, uiLanguage === "ko" ? "보정 결과" : "Corrective outcome", undefined, correctiveDiagnostics, {
+                applied: correctiveDiagnostics.correctiveApplied,
+                adoptionReason: correctiveDiagnostics.adoptionReason,
+                correctedPaths: correctiveDiagnostics.correctedMissingPaths.length,
+                structuralShortfalls: correctiveDiagnostics.structuralShortfallCount,
+                provenanceRegressionDelta: correctiveDiagnostics.provenanceRegressionDelta
+              }))}
+            >
+              <b>{formatFailureCorrectiveOutcome(correctiveDiagnostics, uiLanguage)}</b>
+              <span>{formatFailureCorrectiveSummary(correctiveDiagnostics, uiLanguage)}</span>
+            </button>
+          )}
+        </div>
+      )}
+      <div className="diagnosticSection">
+        <strong>{provenanceLabel}</strong>
+        {diagnostics.validationFindings.length === 0 ? (
+          <p>{uiLanguage === "ko" ? "공개 문구 출처 위반 경로가 없습니다." : "No public-copy provenance path was reported."}</p>
+        ) : (
+          diagnostics.validationFindings.map((finding) => (
+            <button
+              className="diagnosticEntryButton"
+              key={`${finding.field}-${finding.reason}`}
+              type="button"
+              onClick={() => onOpenDetail(createPanelDetail(title, finding.field, finding.reason, finding, {
+                field: finding.field,
+                source: finding.source
+              }))}
+            >
+              <b>{finding.field}</b>
+              <span>{finding.reason}</span>
+            </button>
+          ))
+        )}
+      </div>
+      <div className="diagnosticSection">
+        <strong>{uiLanguage === "ko" ? "최종 공개 문구 바인딩" : "Final public-copy bindings"}</strong>
+        <button
+          className="diagnosticEntryButton"
+          type="button"
+          onClick={() => onOpenDetail(createPanelDetail(title, uiLanguage === "ko" ? "최종 공개 문구 바인딩" : "Final public-copy bindings", undefined, diagnostics.finalPublicCopyProvenance, {
+            count: diagnostics.finalPublicCopyProvenance.count
+          }))}
+        >
+          <b>{diagnostics.finalPublicCopyProvenance.count}</b>
+          <span>{diagnostics.finalPublicCopyProvenance.fieldPaths.join(", ") || (uiLanguage === "ko" ? "바인딩된 경로 없음" : "No bound paths")}</span>
+        </button>
+      </div>
+      {provenanceDecisionDiagnostics && (
+        <div className="diagnosticSection">
+          <strong>{uiLanguage === "ko" ? "공개 문구 출처 판단" : "Public-copy provenance decisions"}</strong>
+          {provenanceDecisionDiagnostics.length === 0 ? (
+            <p>{uiLanguage === "ko" ? "출처 판단 항목이 보고되지 않았습니다." : "No provenance decisions were reported."}</p>
+          ) : (
+            provenanceDecisionDiagnostics.map((decision, index) => (
+              <button
+                className="diagnosticEntryButton"
+                key={`${decision.fieldPath}-${decision.phase}-${decision.sentenceIndex ?? "none"}-${decision.reason}-${index}`}
+                type="button"
+                onClick={() => onOpenDetail(createPanelDetail(
+                  title,
+                  `${decision.fieldPath} · ${decision.phase}`,
+                  formatFailureProvenanceDecisionSubtitle(decision, uiLanguage),
+                  decision,
+                  {
+                    fieldPath: decision.fieldPath,
+                    phase: decision.phase,
+                    sentenceIndex: decision.sentenceIndex ?? "none",
+                    outcome: decision.outcome,
+                    reason: decision.reason,
+                    planMode: decision.plan.mode,
+                    eligibleEvidence: decision.eligibleEvidenceCount,
+                    selectedEvidence: decision.selectedEvidenceCount
+                  }
+                ))}
+              >
+                <b>{formatFailureProvenanceDecisionTitle(decision, uiLanguage)}</b>
+                <span>{formatFailureProvenanceDecisionSummary(decision, uiLanguage)}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+      {extractor && (
+        <div className="diagnosticSection">
+          <strong>{uiLanguage === "ko" ? "Extractor 완료 상태" : "Extractor completion"}</strong>
+          <button
+            className="diagnosticEntryButton"
+            type="button"
+            onClick={() => onOpenDetail(createPanelDetail(title, uiLanguage === "ko" ? "Extractor 실행 요약" : "Extractor execution summary", undefined, extractor, {
+              process: extractor.process.length,
+              warnings: extractor.diagnostics.warningCount,
+              evidence: extractor.diagnostics.evidenceCount
+            }))}
+          >
+            <b>{extractor.process.length} {uiLanguage === "ko" ? "단계" : "steps"}</b>
+            <span>{extractor.diagnostics.warningCount} {uiLanguage === "ko" ? "경고" : "warnings"} · {extractor.diagnostics.evidenceCount} {uiLanguage === "ko" ? "근거" : "evidence"}</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -4692,8 +5938,11 @@ interface RagProfileApiPayload {
   }>;
 }
 
-async function requestRagProfiles(): Promise<RagProfiles> {
-  const response = await fetch("/api/rag-profile", { cache: "no-store" });
+export async function requestRagProfiles(): Promise<RagProfiles> {
+  const response = await fetch(pythonAgentBrowserEndpoint("/rag-profile"), {
+    headers: { "Cache-Control": "no-store" },
+    cache: "no-store"
+  });
   const payload = await response.json() as { extractor?: RagProfileApiPayload; generator?: RagProfileApiPayload; error?: string };
 
   if (!response.ok || !payload.extractor || !payload.generator) {
@@ -4706,10 +5955,10 @@ async function requestRagProfiles(): Promise<RagProfiles> {
   };
 }
 
-async function writeRagProfile(target: RagProfileTarget, settings: RagProfileSettings): Promise<RagProfiles> {
-  const response = await fetch("/api/rag-profile", {
+export async function writeRagProfile(target: RagProfileTarget, settings: RagProfileSettings): Promise<RagProfiles> {
+  const response = await fetch(pythonAgentBrowserEndpoint("/rag-profile"), {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
     body: JSON.stringify({
       target,
       analysisPrompt: settings.analysisPrompt,
@@ -4718,7 +5967,8 @@ async function writeRagProfile(target: RagProfileTarget, settings: RagProfileSet
         version: file.version,
         content: file.content
       }))
-    })
+    }),
+    cache: "no-store"
   });
   const payload = await response.json() as { error?: string };
 
@@ -4729,8 +5979,12 @@ async function writeRagProfile(target: RagProfileTarget, settings: RagProfileSet
   return requestRagProfiles();
 }
 
-async function resetPackageRagProfile(target: RagProfileTarget): Promise<RagProfiles> {
-  const response = await fetch(`/api/rag-profile?target=${encodeURIComponent(target)}`, { method: "DELETE" });
+export async function resetPackageRagProfile(target: RagProfileTarget): Promise<RagProfiles> {
+  const response = await fetch(pythonAgentBrowserEndpoint(`/rag-profile?target=${encodeURIComponent(target)}`), {
+    method: "DELETE",
+    headers: { "Cache-Control": "no-store" },
+    cache: "no-store"
+  });
   const payload = await response.json() as { error?: string };
 
   if (!response.ok) {
@@ -4758,17 +6012,18 @@ function toRagProfileSettings(payload: RagProfileApiPayload): RagProfileSettings
   };
 }
 
-async function validateProviderConnection(
+export async function validateProviderConnection(
   settings: ProviderSettings,
   options: { listOnly?: boolean } = {}
 ): Promise<{ message: string; models: string[] }> {
-  const response = await fetch("/api/provider/validate", {
+  const response = await fetch(pythonAgentBrowserEndpoint("/provider/validate"), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
     body: JSON.stringify({
       ...createRuntimeLlmConfig(settings),
       listOnly: options.listOnly
-    })
+    }),
+    cache: "no-store"
   });
   const payload = await response.json() as { ok?: boolean; message?: string; details?: string; models?: string[] };
 
@@ -5201,25 +6456,59 @@ function customLabel(language: UiLanguage): string {
   return language === "ko" ? "사용자 첨부" : "Custom";
 }
 
-async function requestGeoGenerator(
+export async function requestGeoExtractor(
   body: object,
-  onProgress: (event: Extract<GeoGeneratorStreamEvent, { type: "progress" }>) => void
-): Promise<{ payload: GeoGeneratorResponse; ok: boolean }> {
-  const response = await fetch("/api/generate", {
+  signal?: AbortSignal,
+  requestId?: string
+): Promise<{ response: Response; payload: ProductExtractorResponse; requestId?: string }> {
+  const submittedRequestId = normalizeSafeRequestId(requestId);
+  const response = await fetch(pythonAgentBrowserEndpoint("/extract"), {
     method: "POST",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+      ...(submittedRequestId ? { "X-Request-ID": submittedRequestId } : {})
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+    signal
+  });
+  const echoedRequestId = resolveEchoedRequestId(response, submittedRequestId);
+
+  return {
+    response,
+    payload: await response.json() as ProductExtractorResponse,
+    ...(echoedRequestId ? { requestId: echoedRequestId } : {})
+  };
+}
+
+export async function requestGeoGenerator(
+  body: object,
+  onProgress: (event: Extract<GeoGeneratorStreamEvent, { type: "progress" }>) => void,
+  signal?: AbortSignal,
+  requestId?: string
+): Promise<{ payload: GeoGeneratorResponse; ok: boolean; requestId?: string }> {
+  const submittedRequestId = normalizeSafeRequestId(requestId);
+  const response = await fetch(pythonAgentBrowserEndpoint("/generate"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+      ...(submittedRequestId ? { "X-Request-ID": submittedRequestId } : {})
     },
     body: JSON.stringify({
       ...body,
       stream: true
-    })
+    }),
+    cache: "no-store",
+    signal
   });
 
   const contentType = response.headers.get("content-type") ?? "";
+  const echoedRequestId = resolveEchoedRequestId(response, submittedRequestId);
   if (!response.body || !contentType.includes("application/x-ndjson")) {
     const payload = await response.json() as GeoGeneratorResponse;
-    return { payload, ok: response.ok };
+    return { payload, ok: response.ok, ...(echoedRequestId ? { requestId: echoedRequestId } : {}) };
   }
 
   const reader = response.body.getReader();
@@ -5235,6 +6524,9 @@ async function requestGeoGenerator(
     const event = JSON.parse(line) as GeoGeneratorStreamEvent;
     if (event.type === "progress") {
       onProgress(event);
+      return;
+    }
+    if (event.type === "heartbeat") {
       return;
     }
     if (event.type === "result") {
@@ -5268,7 +6560,8 @@ async function requestGeoGenerator(
 
   return {
     payload,
-    ok: payload.failures.length === 0
+    ok: payload.failures.length === 0,
+    ...(echoedRequestId ? { requestId: echoedRequestId } : {})
   };
 }
 
@@ -5306,38 +6599,6 @@ function applyGeneratorProgressEvent(
 function mergeRuntimeStep<Step extends ProcessStep>(current: Step[] | undefined, fallback: Step[], next: Step): Step[] {
   const steps = current ?? fallback;
   return steps.map((step) => step.id === next.id ? { ...step, ...next } : step);
-}
-
-async function playExtractorPipelineProgress(
-  input: NormalizedComposerInput,
-  setPipelineProcess: (update: (current: GeoPipelineProcessState) => GeoPipelineProcessState) => void,
-  controller: { cancelled: boolean }
-) {
-  const sourceCount = Math.max(input.sources.length, 1);
-  const activeSource = input.sources[0];
-
-  for (const stepId of extractorStepIds) {
-    if (controller.cancelled) {
-      return;
-    }
-    setPipelineProcess((current) => ({
-      ...current,
-      status: "running",
-      currentGroup: "extractor",
-      currentStepId: stepId,
-      sourceCount,
-      completedSourceCount: stepId === "json" ? Math.max(current.completedSourceCount, input.sources.length) : current.completedSourceCount,
-      activeSource,
-      skipExtractor: false
-    }));
-    await waitForPipelineStep();
-  }
-}
-
-function waitForPipelineStep(duration = 130): Promise<void> {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, duration);
-  });
 }
 
 function createComposerAttachment(file: File, rawContent: string): ComposerAttachment | undefined {
@@ -5756,75 +7017,53 @@ function readStoredRagProfiles(): RagProfiles {
   }
 }
 
-function readStoredGeoHistory(): { results: GeoGeneratorResult[]; logs: GeoGeneratorLog[] } {
+function emptyGeoHistoryStorage(): GeoHistoryStorageV2 {
+  return { version: 2, entries: [], unpairedLegacyLogs: [] };
+}
+
+function emptyExtractorHistoryStorage(): ExtractorHistoryStorageV2 {
+  return { version: 2, entries: [], unpairedLegacyLogs: [] };
+}
+
+function readStoredGeoHistory(): GeoHistoryStorageV2 {
   if (typeof window === "undefined") {
-    return { results: [], logs: [] };
+    return emptyGeoHistoryStorage();
   }
 
   try {
-    const rawHistory = window.sessionStorage.getItem(HISTORY_STORAGE_KEY);
-
-    if (!rawHistory) {
-      return { results: [], logs: [] };
+    const v2 = window.sessionStorage.getItem(HISTORY_STORAGE_KEY);
+    if (v2) {
+      const parsed = normalizeStoredGeoHistoryV2(JSON.parse(v2));
+      if (parsed) {
+        return parsed;
+      }
     }
 
-    const parsed = JSON.parse(rawHistory) as Partial<{
-      results: unknown[];
-      logs: unknown[];
-    }>;
-    const results = Array.isArray(parsed.results)
-      ? parsed.results.map(normalizeStoredGeoResult).filter((result): result is GeoGeneratorResult => Boolean(result))
-      : [];
-    const resultSources = new Set(results.map((result) => result.source));
-    const logs = Array.isArray(parsed.logs)
-      ? parsed.logs
-          .map(normalizeStoredGeoLog)
-          .filter((log): log is GeoGeneratorLog => Boolean(log))
-          .filter((log) => resultSources.has(log.source))
-      : [];
-
-    return {
-      results: results.slice(0, HISTORY_LIMIT),
-      logs: logs.slice(0, HISTORY_LIMIT)
-    };
+    const v1 = window.sessionStorage.getItem(LEGACY_HISTORY_STORAGE_KEY);
+    return v1 ? migrateGeoHistoryV1(JSON.parse(v1)) : emptyGeoHistoryStorage();
   } catch {
-    return { results: [], logs: [] };
+    return emptyGeoHistoryStorage();
   }
 }
 
-function readStoredExtractorHistory(): { results: TimedProductExtractionResult[]; logs: ProductExtractionDiagnostics[] } {
+function readStoredExtractorHistory(): ExtractorHistoryStorageV2 {
   if (typeof window === "undefined") {
-    return { results: [], logs: [] };
+    return emptyExtractorHistoryStorage();
   }
 
   try {
-    const rawHistory = window.sessionStorage.getItem(EXTRACTOR_HISTORY_STORAGE_KEY);
-
-    if (!rawHistory) {
-      return { results: [], logs: [] };
+    const v2 = window.sessionStorage.getItem(EXTRACTOR_HISTORY_STORAGE_KEY);
+    if (v2) {
+      const parsed = normalizeStoredExtractorHistoryV2(JSON.parse(v2));
+      if (parsed) {
+        return parsed;
+      }
     }
 
-    const parsed = JSON.parse(rawHistory) as Partial<{
-      results: unknown[];
-      logs: unknown[];
-    }>;
-    const results = Array.isArray(parsed.results)
-      ? parsed.results.map(normalizeStoredExtractorResult).filter((result): result is ProductExtractionResult => Boolean(result))
-      : [];
-    const resultSources = new Set(results.map((result) => result.source));
-    const logs = Array.isArray(parsed.logs)
-      ? parsed.logs
-          .map(normalizeStoredExtractorLog)
-          .filter((log): log is ProductExtractionDiagnostics => Boolean(log))
-          .filter((log) => resultSources.has(log.source))
-      : [];
-
-    return {
-      results: results.slice(0, HISTORY_LIMIT),
-      logs: logs.slice(0, HISTORY_LIMIT)
-    };
+    const v1 = window.sessionStorage.getItem(LEGACY_EXTRACTOR_HISTORY_STORAGE_KEY);
+    return v1 ? migrateExtractorHistoryV1(JSON.parse(v1)) : emptyExtractorHistoryStorage();
   } catch {
-    return { results: [], logs: [] };
+    return emptyExtractorHistoryStorage();
   }
 }
 
@@ -5833,14 +7072,14 @@ function normalizeStoredGeoResult(value: unknown): GeoGeneratorResult | undefine
     return undefined;
   }
 
-  const result = value as Partial<GeoGeneratorResult>;
+  const result = sanitizeSessionHistoryValue(value) as Partial<GeoGeneratorResult>;
 
   if (typeof result.source !== "string" || !isGeoSourceType(result.sourceType) || !result.generator) {
     return undefined;
   }
 
   return {
-    id: typeof result.id === "string" && result.id.length > 0 ? result.id : crypto.randomUUID(),
+    id: typeof result.id === "string" && result.id.length > 0 ? result.id : createDurableHistoryId(),
     source: result.source,
     sourceType: result.sourceType,
     extractor: result.extractor,
@@ -5849,21 +7088,24 @@ function normalizeStoredGeoResult(value: unknown): GeoGeneratorResult | undefine
   };
 }
 
-function normalizeStoredGeoLog(value: unknown): GeoGeneratorLog | undefined {
+function normalizeStoredGeoLog(
+  value: unknown,
+  fallbackGenerator?: PdpGeoDiagnostics
+): GeoGeneratorLog | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
   }
 
-  const log = value as Partial<GeoGeneratorLog>;
+  const log = sanitizeSessionHistoryValue(value) as Partial<GeoGeneratorLog>;
 
-  if (typeof log.source !== "string" || !log.generator) {
+  if (typeof log.source !== "string" || (!log.generator && !fallbackGenerator)) {
     return undefined;
   }
 
   return {
     source: log.source,
     extractor: log.extractor,
-    generator: log.generator,
+    generator: log.generator ?? fallbackGenerator!,
     generatorProcess: Array.isArray(log.generatorProcess) ? log.generatorProcess : []
   };
 }
@@ -5873,7 +7115,7 @@ function normalizeStoredExtractorResult(value: unknown): TimedProductExtractionR
     return undefined;
   }
 
-  const result = value as Partial<TimedProductExtractionResult>;
+  const result = sanitizeSessionHistoryValue(value) as Partial<TimedProductExtractionResult>;
 
   if (typeof result.source !== "string" || !isExtractorSourceType(result.sourceType) || !result.geoProduct) {
     return undefined;
@@ -5889,17 +7131,109 @@ function normalizeStoredExtractorResult(value: unknown): TimedProductExtractionR
   };
 }
 
+function safeOcrConfidence(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1 ? value : undefined;
+}
+
+function safeOcrProvider(value: unknown): string | undefined {
+  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(value) ? value : undefined;
+}
+
+function safeOcrTargetUrl(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.length > 2048) {
+    return undefined;
+  }
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      return undefined;
+    }
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function safeOcrCountSubset(value: unknown, keys: readonly string[]): Record<string, number> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const entries = keys.flatMap((key) => {
+    const count = safeFailureNonnegativeCount(value[key]);
+    return count === undefined ? [] : [[key, count] as const];
+  });
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+/**
+ * Persist the OCR execution proof needed to verify a live run, while dropping
+ * raw provider errors, prompts, credentials, signed query parameters, and OCR copy.
+ */
+export function sanitizeExtractorOcrDiagnosticsForHistory(value: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const diagnostics: Record<string, unknown> = {};
+  const provider = safeOcrProvider(value.provider);
+  const targetsConsidered = safeFailureNonnegativeCount(value.targetsConsidered);
+  const inputsSent = safeFailureNonnegativeCount(value.inputsSent);
+  if (provider) diagnostics.provider = provider;
+  if (targetsConsidered !== undefined) diagnostics.targetsConsidered = targetsConsidered;
+  if (inputsSent !== undefined) diagnostics.inputsSent = inputsSent;
+
+  if (Array.isArray(value.targets)) {
+    const statuses = new Set(["empty", "extracted", "failed", "pending", "skipped"]);
+    const targets = value.targets.slice(0, 50).flatMap((raw) => {
+      if (!isRecord(raw)) {
+        return [];
+      }
+      const imageUrl = safeOcrTargetUrl(raw.imageUrl);
+      if (!imageUrl) {
+        return [];
+      }
+      const target: Record<string, string | number | boolean> = { imageUrl };
+      if (raw.sliced === true) target.sliced = true;
+      const sliceCount = safeFailureNonnegativeCount(raw.sliceCount);
+      if (sliceCount !== undefined) target.sliceCount = sliceCount;
+      if (typeof raw.status === "string" && statuses.has(raw.status)) target.status = raw.status;
+      const textLength = safeFailureNonnegativeCount(raw.textLength);
+      if (textLength !== undefined) target.textLength = textLength;
+      const confidence = safeOcrConfidence(raw.confidence);
+      if (confidence !== undefined) target.confidence = confidence;
+      return [target];
+    });
+    if (targets.length > 0) diagnostics.targets = targets;
+  }
+
+  const combination = safeOcrCountSubset(value.combination, ["candidatesIn", "duplicatesAbsorbed", "overlapJoins", "candidatesOut"]);
+  if (combination) diagnostics.combination = combination;
+
+  const classification = safeOcrCountSubset(value.classification, ["batches", "failedBatches", "providerKeywords", "sentenceInsights"]);
+  if (classification) {
+    const confidence = safeOcrConfidence(isRecord(value.classification) ? value.classification.confidence : undefined);
+    diagnostics.classification = confidence === undefined ? classification : { ...classification, confidence };
+  }
+
+  const utilization = safeOcrCountSubset(value.utilization, ["textBlocksInResult", "keywordsAttached", "ragChunksFromOcr"]);
+  if (utilization) diagnostics.utilization = utilization;
+
+  return Object.keys(diagnostics).length > 0 ? diagnostics : undefined;
+}
+
 function normalizeStoredExtractorLog(value: unknown): ProductExtractionDiagnostics | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
   }
 
-  const log = value as Partial<ProductExtractionDiagnostics>;
+  const log = sanitizeSessionHistoryValue(value) as Partial<ProductExtractionDiagnostics>;
 
   if (typeof log.source !== "string" || !isExtractorSourceType(log.sourceType)) {
     return undefined;
   }
 
+  const ocr = sanitizeExtractorOcrDiagnosticsForHistory(log.ocr);
   return {
     source: log.source,
     sourceType: log.sourceType,
@@ -5908,27 +7242,708 @@ function normalizeStoredExtractorLog(value: unknown): ProductExtractionDiagnosti
     warnings: Array.isArray(log.warnings) ? log.warnings : [],
     runtimeUsage: log.runtimeUsage,
     ragUsage: log.ragUsage,
+    ...(ocr ? { ocr } : {}),
     generatedAt: typeof log.generatedAt === "string" ? log.generatedAt : new Date().toISOString(),
     ragProfile: typeof log.ragProfile === "string" ? log.ragProfile : "pdp-extractor-default"
   };
 }
 
-function mergeGeoHistoryResults(incoming: GeoGeneratorResult[], current: GeoGeneratorResult[]): GeoGeneratorResult[] {
-  const incomingKeys = new Set(incoming.map(geoHistoryResultKey));
-
-  return [
-    ...incoming,
-    ...current.filter((result) => !incomingKeys.has(geoHistoryResultKey(result)))
-  ].slice(0, HISTORY_LIMIT);
+function createDurableHistoryId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `history-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function mergeGeoHistoryLogs(incoming: GeoGeneratorLog[], current: GeoGeneratorLog[]): GeoGeneratorLog[] {
-  const incomingKeys = new Set(incoming.map((log) => log.source));
+function countBySource<T extends { source: string }>(items: T[]): Map<string, number> {
+  return items.reduce((counts, item) => {
+    counts.set(item.source, (counts.get(item.source) ?? 0) + 1);
+    return counts;
+  }, new Map<string, number>());
+}
 
-  return [
-    ...incoming,
-    ...current.filter((log) => !incomingKeys.has(log.source))
-  ].slice(0, HISTORY_LIMIT);
+function indexLogsBySource<Log extends { source: string }>(logs: Log[]): Map<string, Log> {
+  return logs.reduce((indexed, log) => {
+    if (!indexed.has(log.source)) {
+      indexed.set(log.source, log);
+    }
+    return indexed;
+  }, new Map<string, Log>());
+}
+
+function unpairedLegacyLogs<Log extends { source: string }>(
+  logs: Log[],
+  resultSourceCounts: Map<string, number>,
+  logSourceCounts: Map<string, number>
+): LegacyUnpairedLog<Log>[] {
+  return logs.flatMap((log) => {
+    const resultCount = resultSourceCounts.get(log.source) ?? 0;
+    const logCount = logSourceCounts.get(log.source) ?? 0;
+    if (resultCount === 1 && logCount === 1) {
+      return [];
+    }
+    return [{
+      log,
+      reason: resultCount === 0 ? "orphaned-v1-source" : "ambiguous-v1-source"
+    }];
+  });
+}
+
+export function createGeoHistoryEntries(
+  results: GeoGeneratorResult[],
+  logs: GeoGeneratorLog[],
+  runId: string,
+  entryIdFor: (index: number) => string = () => createDurableHistoryId(),
+  requestId?: string
+): Pick<GeoHistoryStorageV2, "entries" | "unpairedLegacyLogs"> {
+  const storedRequestId = normalizeSafeRequestId(requestId);
+  const resultSourceCounts = countBySource(results);
+  const logSourceCounts = countBySource(logs);
+  const logsBySource = indexLogsBySource(logs);
+
+  return {
+    entries: results.map((result, index) => {
+      const entryId = entryIdFor(index);
+      const log = resultSourceCounts.get(result.source) === 1 && logSourceCounts.get(result.source) === 1
+        ? logsBySource.get(result.source)
+        : undefined;
+      return {
+        entryId,
+        runId,
+        ...(storedRequestId ? { requestId: storedRequestId } : {}),
+        result,
+        ...(log ? { log: { ...log, entryId, runId } } : {})
+      };
+    }),
+    unpairedLegacyLogs: unpairedLegacyLogs(logs, resultSourceCounts, logSourceCounts)
+  };
+}
+
+export function createExtractorHistoryEntries(
+  results: TimedProductExtractionResult[],
+  logs: ProductExtractionDiagnostics[],
+  runId: string,
+  entryIdFor: (index: number) => string = () => createDurableHistoryId(),
+  requestId?: string
+): Pick<ExtractorHistoryStorageV2, "entries" | "unpairedLegacyLogs"> {
+  const storedRequestId = normalizeSafeRequestId(requestId);
+  const resultSourceCounts = countBySource(results);
+  const logSourceCounts = countBySource(logs);
+  const logsBySource = indexLogsBySource(logs);
+
+  return {
+    entries: results.map((result, index) => {
+      const entryId = entryIdFor(index);
+      const log = resultSourceCounts.get(result.source) === 1 && logSourceCounts.get(result.source) === 1
+        ? logsBySource.get(result.source)
+        : undefined;
+      return {
+        entryId,
+        runId,
+        ...(storedRequestId ? { requestId: storedRequestId } : {}),
+        result,
+        ...(log ? { log: { ...log, entryId, runId } } : {})
+      };
+    }),
+    unpairedLegacyLogs: unpairedLegacyLogs(logs, resultSourceCounts, logSourceCounts)
+  };
+}
+
+export function appendGeoHistoryEntries(incoming: GeoHistoryEntry[], current: GeoHistoryEntry[]): GeoHistoryEntry[] {
+  const incomingEntryIds = new Set(incoming.map((entry) => entry.entryId));
+  return [...incoming, ...current.filter((entry) => !incomingEntryIds.has(entry.entryId))].slice(0, HISTORY_LIMIT);
+}
+
+export function appendExtractorHistoryEntries(incoming: ExtractorHistoryEntry[], current: ExtractorHistoryEntry[]): ExtractorHistoryEntry[] {
+  const incomingEntryIds = new Set(incoming.map((entry) => entry.entryId));
+  return [...incoming, ...current.filter((entry) => !incomingEntryIds.has(entry.entryId))].slice(0, HISTORY_LIMIT);
+}
+
+type SessionGeoHistoryEntry = Omit<GeoHistoryEntry, "log"> & {
+  log?: Omit<GeoGeneratorLog, "generator">;
+};
+
+type SessionExtractorHistoryEntry = Omit<ExtractorHistoryEntry, "log"> & {
+  log?: EntryBoundExtractorLog;
+};
+
+function isSessionHistorySensitiveKey(key: string): boolean {
+  return /(?:api[_-]?key|authorization|(?:access|bearer|refresh|id|auth|session|api)[_-]?token|\btoken\b|secret|credential|password|cookie|endpoint|headers?|signature)/i.test(key);
+}
+
+function sanitizeSessionHistoryUrl(value: string, key: string | undefined): string {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return value;
+    }
+    const keyName = key?.toLowerCase() ?? "";
+    const stripAllQuery = keyName.includes("image") || keyName === "url" || keyName === "urls" || keyName === "sourceurl" || keyName === "sourceurls";
+    for (const name of Array.from(url.searchParams.keys())) {
+      if (stripAllQuery || /(?:signature|sig|token|key|credential|authorization|expires|policy)/i.test(name)) {
+        url.searchParams.delete(name);
+      }
+    }
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return value;
+  }
+}
+
+function sanitizeSessionHistoryText(value: string, key?: string): string {
+  return value
+    .replace(/https?:\/\/[^\s<>"'\])}]+/gi, (url) => sanitizeSessionHistoryUrl(url, key))
+    .replace(
+      /"(api[_-]?key|authorization|(?:access|bearer|refresh|id|auth|session|api)[_-]?token|\btoken\b|secret|credential|password|cookie|endpoint|headers?|signature)"(\s*:\s*)"(?:\\.|[^"\\])*"/gi,
+      (_match, credentialKey: string, separator: string) => `"${credentialKey}"${separator}"[redacted]"`
+    )
+    .replace(
+      /'(api[_-]?key|authorization|(?:access|bearer|refresh|id|auth|session|api)[_-]?token|\btoken\b|secret|credential|password|cookie|endpoint|headers?|signature)'(\s*:\s*)'(?:\\.|[^'\\])*'/gi,
+      (_match, credentialKey: string, separator: string) => `'${credentialKey}'${separator}'[redacted]'`
+    )
+    .replace(
+      /\b(api[_-]?key|authorization|(?:access|bearer|refresh|id|auth|session|api)[_-]?token|token|secret|credential|password|cookie|endpoint|headers?|signature)\b\s*([:=])\s*(?:Bearer\s+)?[^\s,;]+/gi,
+      "$1$2[redacted]"
+    );
+}
+
+function sanitizeSessionHistoryValue(value: unknown, key?: string): unknown {
+  if (typeof value === "string") {
+    return sanitizeSessionHistoryText(value, key);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeSessionHistoryValue(item, key));
+  }
+  if (!isRecord(value)) {
+    return value;
+  }
+  return Object.fromEntries(Object.entries(value).flatMap(([entryKey, entryValue]) => {
+    if (isSessionHistorySensitiveKey(entryKey)) {
+      return [];
+    }
+    return [[entryKey, sanitizeSessionHistoryValue(entryValue, entryKey)]];
+  }));
+}
+
+function compactSessionHistoryValue(value: unknown, depth = 0): unknown {
+  if (typeof value === "string") {
+    return value.slice(0, 2_000);
+  }
+  if (Array.isArray(value)) {
+    return value.slice(0, 16).map((item) => compactSessionHistoryValue(item, depth + 1));
+  }
+  if (!isRecord(value)) {
+    return value;
+  }
+  if (depth >= 5) {
+    return {};
+  }
+  return Object.fromEntries(Object.entries(value).slice(0, 32).map(([entryKey, entryValue]) => [
+    entryKey,
+    compactSessionHistoryValue(entryValue, depth + 1)
+  ]));
+}
+
+function compactSessionHistoryText(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  return value.slice(0, Math.max(1, maxLength));
+}
+
+function compactSessionHistorySource(source: string, maxLength: number): string | undefined {
+  if (source.length <= maxLength) {
+    return source;
+  }
+  try {
+    const url = new URL(source);
+    const originOnly = `${url.origin}/`;
+    return originOnly.length <= maxLength ? originOnly : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function sanitizeExtractorHistoryResult(value: TimedProductExtractionResult): TimedProductExtractionResult | undefined {
+  const sanitized = sanitizeSessionHistoryValue(value);
+  return normalizeStoredExtractorResult(sanitized);
+}
+
+function sanitizeExtractorHistoryLog(value: ProductExtractionDiagnostics): ProductExtractionDiagnostics | undefined {
+  const sanitized = sanitizeSessionHistoryValue(value);
+  return normalizeStoredExtractorLog(sanitized);
+}
+
+function sanitizeGeoHistoryResult(value: GeoGeneratorResult): GeoGeneratorResult | undefined {
+  const sanitized = sanitizeSessionHistoryValue(value);
+  return normalizeStoredGeoResult(sanitized);
+}
+
+function sanitizeGeoHistoryLog(
+  value: GeoGeneratorLog,
+  fallbackGenerator?: PdpGeoDiagnostics
+): GeoGeneratorLog | undefined {
+  const sanitized = sanitizeSessionHistoryValue(value);
+  return normalizeStoredGeoLog(sanitized, fallbackGenerator);
+}
+
+function toSessionExtractorHistoryEntry(entry: ExtractorHistoryEntry, compact: boolean): SessionExtractorHistoryEntry | undefined {
+  const result = sanitizeExtractorHistoryResult(entry.result);
+  if (!result) {
+    return undefined;
+  }
+  const log = entry.log ? sanitizeExtractorHistoryLog(entry.log) : undefined;
+  const storedResult = compact ? compactSessionHistoryValue(result) as TimedProductExtractionResult : result;
+  const storedLog = log && (compact ? compactSessionHistoryValue(log) as ProductExtractionDiagnostics : log);
+  return {
+    entryId: entry.entryId,
+    runId: entry.runId,
+    ...(entry.requestId ? { requestId: entry.requestId } : {}),
+    result: storedResult,
+    ...(storedLog ? { log: { ...storedLog, entryId: entry.entryId, runId: entry.runId } } : {})
+  };
+}
+
+function minimalExtractorHistoryEntry(entry: ExtractorHistoryEntry, maxLength: number): SessionExtractorHistoryEntry | undefined {
+  const result = sanitizeExtractorHistoryResult(entry.result);
+  if (!result) {
+    return undefined;
+  }
+  const source = compactSessionHistorySource(result.source, maxLength);
+  if (!source) {
+    return undefined;
+  }
+  const productName = compactSessionHistoryText(result.geoProduct.name, maxLength) ?? "Archived product";
+  return {
+    entryId: compactSessionHistoryText(entry.entryId, maxLength) ?? "e",
+    runId: compactSessionHistoryText(entry.runId, maxLength) ?? "r",
+    result: {
+      source,
+      sourceType: result.sourceType,
+      geoProduct: {
+        name: productName,
+        images: [],
+        rag: { chunks: [] },
+        historyStorage: { artifactCompacted: true }
+      },
+      generatedAt: result.generatedAt,
+      ragProfile: result.ragProfile
+    }
+  };
+}
+
+function extractorHistorySessionPayload(
+  entries: ExtractorHistoryEntry[],
+  unpairedLegacyLogs: LegacyUnpairedLog<ProductExtractionDiagnostics>[],
+  compact: boolean
+): string {
+  return JSON.stringify({
+    version: 2,
+    entries: entries.flatMap((entry) => {
+      const stored = toSessionExtractorHistoryEntry(entry, compact);
+      return stored ? [stored] : [];
+    }),
+    unpairedLegacyLogs: unpairedLegacyLogs.flatMap(({ log, reason }) => {
+      const storedLog = sanitizeExtractorHistoryLog(log);
+      return storedLog ? [{ log: compact ? compactSessionHistoryValue(storedLog) : storedLog, reason }] : [];
+    })
+  });
+}
+
+function minimalExtractorHistorySessionPayload(entries: ExtractorHistoryEntry[], byteLimit: number): string {
+  const newest = entries[0];
+  for (const maxLength of [512, 256, 128, 64, 32, 16, 8, 1]) {
+    const entry = newest ? minimalExtractorHistoryEntry(newest, maxLength) : undefined;
+    const payload = JSON.stringify({ version: 2, entries: entry ? [entry] : [], unpairedLegacyLogs: [] });
+    if (sessionPayloadByteLength(payload) <= byteLimit) {
+      return payload;
+    }
+  }
+  return byteLimit >= 2 ? "[]" : "0";
+}
+
+function compactGeoDiagnosticsForSession(diagnostics: PdpGeoDiagnostics): PdpGeoDiagnostics {
+  return {
+    normalizedProduct: {
+      name: diagnostics.normalizedProduct?.name,
+      brand: diagnostics.normalizedProduct?.brand,
+      category: diagnostics.normalizedProduct?.category
+    },
+    ocrSentences: [],
+    recommendations: [],
+    evidence: [],
+    selectedRagChunks: [],
+    ragUsage: [],
+    terminology: {},
+    validationWarnings: Array.isArray(diagnostics.validationWarnings) ? diagnostics.validationWarnings.slice(0, 12) : [],
+    validationFindings: Array.isArray(diagnostics.validationFindings) ? diagnostics.validationFindings.slice(0, 12) : [],
+    validationRepairs: Array.isArray(diagnostics.validationRepairs) ? diagnostics.validationRepairs.slice(0, 12) : [],
+    publicCopyOmissions: Array.isArray(diagnostics.publicCopyOmissions) ? diagnostics.publicCopyOmissions.slice(0, 12) : [],
+    ragMode: diagnostics.ragMode,
+    generatedAt: diagnostics.generatedAt,
+    historyStorage: { diagnosticsCompacted: true }
+  };
+}
+
+function toSessionGeoHistoryEntry(entry: GeoHistoryEntry, compactDiagnostics: boolean): SessionGeoHistoryEntry | undefined {
+  const result = sanitizeGeoHistoryResult(entry.result);
+  if (!result) {
+    return undefined;
+  }
+  const log = entry.log ? sanitizeGeoHistoryLog(entry.log, result.generator.diagnostics) : undefined;
+  const { log: _entryLog, ...storedEntry } = entry;
+  const storedResult = compactDiagnostics
+    ? {
+        ...result,
+        generator: {
+          ...result.generator,
+          diagnostics: compactGeoDiagnosticsForSession(result.generator.diagnostics)
+        }
+      }
+    : result;
+
+  if (!log) {
+    return { ...storedEntry, result: storedResult };
+  }
+
+  const { generator: _generator, ...storedLog } = log;
+  return { ...storedEntry, result: storedResult, log: storedLog };
+}
+
+function minimalGeoHistoryEntry(entry: GeoHistoryEntry, maxLength: number): SessionGeoHistoryEntry | undefined {
+  const result = sanitizeGeoHistoryResult(entry.result);
+  if (!result) {
+    return undefined;
+  }
+  const source = compactSessionHistorySource(result.source, maxLength);
+  if (!source) {
+    return undefined;
+  }
+  const sections = isRecord(result.generator.content.sections) ? result.generator.content.sections : {};
+  const jsonLd = isRecord(result.generator.schemaMarkup.jsonLd) ? result.generator.schemaMarkup.jsonLd : {};
+  const normalizedProduct = isRecord(result.generator.diagnostics.normalizedProduct)
+    ? result.generator.diagnostics.normalizedProduct
+    : {};
+  const productName = compactSessionHistoryText(
+    sections.productName ?? jsonLd.name ?? normalizedProduct.name,
+    maxLength
+  ) ?? "Archived product";
+  const schemaType = compactSessionHistoryText(jsonLd["@type"], maxLength) ?? "Product";
+
+  return {
+    entryId: compactSessionHistoryText(entry.entryId, maxLength) ?? "e",
+    runId: compactSessionHistoryText(entry.runId, maxLength) ?? "r",
+    result: {
+      id: compactSessionHistoryText(result.id, maxLength) ?? "h",
+      source,
+      sourceType: result.sourceType,
+      generator: {
+        locale: result.generator.locale,
+        schemaMarkup: { jsonLd: { "@type": schemaType, name: productName } },
+        content: { sections: { productName } },
+        diagnostics: {
+          normalizedProduct: { name: productName },
+          ocrSentences: [],
+          recommendations: [],
+          evidence: [],
+          selectedRagChunks: [],
+          ragUsage: [],
+          terminology: {},
+          validationWarnings: [],
+          ragMode: result.generator.diagnostics.ragMode,
+          generatedAt: result.generator.generatedAt,
+          historyStorage: { artifactCompacted: true }
+        },
+        generatedAt: result.generator.generatedAt,
+        ragProfile: result.generator.ragProfile
+      }
+    }
+  };
+}
+
+function geoHistorySessionPayload(
+  entries: GeoHistoryEntry[],
+  unpairedLegacyLogs: LegacyUnpairedLog<GeoGeneratorLog>[],
+  compactDiagnostics: boolean
+): string {
+  return JSON.stringify({
+    version: 2,
+    entries: entries.flatMap((entry) => {
+      const stored = toSessionGeoHistoryEntry(entry, compactDiagnostics);
+      return stored ? [stored] : [];
+    }),
+    unpairedLegacyLogs: unpairedLegacyLogs.flatMap(({ log, reason }) => {
+      const storedLog = sanitizeGeoHistoryLog(log);
+      return storedLog ? [{ log: storedLog, reason }] : [];
+    })
+  });
+}
+
+function minimalGeoHistorySessionPayload(entries: GeoHistoryEntry[], byteLimit: number): string {
+  const newest = entries[0];
+  for (const maxLength of [512, 256, 128, 64, 32, 16, 8, 1]) {
+    const entry = newest ? minimalGeoHistoryEntry(newest, maxLength) : undefined;
+    const payload = JSON.stringify({ version: 2, entries: entry ? [entry] : [], unpairedLegacyLogs: [] });
+    if (sessionPayloadByteLength(payload) <= byteLimit) {
+      return payload;
+    }
+  }
+  return byteLimit >= 2 ? "[]" : "0";
+}
+
+function sessionPayloadByteLength(payload: string): number {
+  return new TextEncoder().encode(payload).byteLength;
+}
+
+export function serializeGeoHistoryForSession(
+  entries: GeoHistoryEntry[],
+  unpairedLegacyLogs: LegacyUnpairedLog<GeoGeneratorLog>[],
+  byteLimit = HISTORY_STORAGE_BYTE_LIMIT
+): string {
+  const limit = Number.isFinite(byteLimit) && byteLimit > 0 ? Math.max(1, Math.floor(byteLimit)) : HISTORY_STORAGE_BYTE_LIMIT;
+  let keptEntries = entries.slice(0, HISTORY_LIMIT);
+  let keptLegacyLogs = unpairedLegacyLogs.slice(0, HISTORY_LIMIT);
+  let compactDiagnostics = false;
+  let payload = geoHistorySessionPayload(keptEntries, keptLegacyLogs, compactDiagnostics);
+
+  while (sessionPayloadByteLength(payload) > limit && keptLegacyLogs.length > 0) {
+    keptLegacyLogs = keptLegacyLogs.slice(0, -1);
+    payload = geoHistorySessionPayload(keptEntries, keptLegacyLogs, compactDiagnostics);
+  }
+
+  while (sessionPayloadByteLength(payload) > limit && keptEntries.length > 1) {
+    keptEntries = keptEntries.slice(0, -1);
+    payload = geoHistorySessionPayload(keptEntries, keptLegacyLogs, compactDiagnostics);
+  }
+
+  if (sessionPayloadByteLength(payload) > limit && keptEntries.length > 0) {
+    compactDiagnostics = true;
+    payload = geoHistorySessionPayload(keptEntries, keptLegacyLogs, compactDiagnostics);
+  }
+
+  if (sessionPayloadByteLength(payload) > limit) {
+    return minimalGeoHistorySessionPayload(keptEntries, limit);
+  }
+
+  return payload;
+}
+
+function persistGeoHistoryForSession(
+  entries: GeoHistoryEntry[],
+  unpairedLegacyLogs: LegacyUnpairedLog<GeoGeneratorLog>[]
+): void {
+  for (const byteLimit of HISTORY_STORAGE_RETRY_BYTE_LIMITS) {
+    try {
+      window.sessionStorage.setItem(HISTORY_STORAGE_KEY, serializeGeoHistoryForSession(entries, unpairedLegacyLogs, byteLimit));
+      return;
+    } catch {
+      // Retry with a smaller, newest-first history payload.
+    }
+  }
+}
+
+export function serializeExtractorHistoryForSession(
+  entries: ExtractorHistoryEntry[],
+  unpairedLegacyLogs: LegacyUnpairedLog<ProductExtractionDiagnostics>[],
+  byteLimit = HISTORY_STORAGE_BYTE_LIMIT
+): string {
+  const limit = Number.isFinite(byteLimit) && byteLimit > 0 ? Math.max(1, Math.floor(byteLimit)) : HISTORY_STORAGE_BYTE_LIMIT;
+  let keptEntries = entries.slice(0, HISTORY_LIMIT);
+  let keptLegacyLogs = unpairedLegacyLogs.slice(0, HISTORY_LIMIT);
+  let compact = false;
+  let payload = extractorHistorySessionPayload(keptEntries, keptLegacyLogs, compact);
+
+  while (sessionPayloadByteLength(payload) > limit && keptLegacyLogs.length > 0) {
+    keptLegacyLogs = keptLegacyLogs.slice(0, -1);
+    payload = extractorHistorySessionPayload(keptEntries, keptLegacyLogs, compact);
+  }
+
+  while (sessionPayloadByteLength(payload) > limit && keptEntries.length > 1) {
+    keptEntries = keptEntries.slice(0, -1);
+    payload = extractorHistorySessionPayload(keptEntries, keptLegacyLogs, compact);
+  }
+
+  if (sessionPayloadByteLength(payload) > limit && keptEntries.length > 0) {
+    compact = true;
+    payload = extractorHistorySessionPayload(keptEntries, keptLegacyLogs, compact);
+  }
+
+  if (sessionPayloadByteLength(payload) > limit) {
+    return minimalExtractorHistorySessionPayload(keptEntries, limit);
+  }
+
+  return payload;
+}
+
+function persistExtractorHistoryForSession(
+  entries: ExtractorHistoryEntry[],
+  unpairedLegacyLogs: LegacyUnpairedLog<ProductExtractionDiagnostics>[]
+): void {
+  for (const byteLimit of HISTORY_STORAGE_RETRY_BYTE_LIMITS) {
+    try {
+      window.sessionStorage.setItem(
+        EXTRACTOR_HISTORY_STORAGE_KEY,
+        serializeExtractorHistoryForSession(entries, unpairedLegacyLogs, byteLimit)
+      );
+      return;
+    } catch {
+      // Retry with a smaller, newest-first history payload.
+    }
+  }
+}
+
+export function findGeoHistoryEntry(entries: GeoHistoryEntry[], entryId: string | null | undefined): GeoHistoryEntry | undefined {
+  return entryId ? entries.find((entry) => entry.entryId === entryId) : undefined;
+}
+
+export function findExtractorHistoryEntry(entries: ExtractorHistoryEntry[], entryId: string | null | undefined): ExtractorHistoryEntry | undefined {
+  return entryId ? entries.find((entry) => entry.entryId === entryId) : undefined;
+}
+
+function legacyEntryIds<Result>(
+  rawResults: unknown[],
+  normalizedResults: Array<{ result: Result; rawIndex: number }>,
+  entryIdFor: (index: number) => string
+): string[] {
+  const rawIds = rawResults.map((value) => isRecord(value) && typeof value.id === "string" && value.id.trim() ? value.id : undefined);
+  const counts = rawIds.reduce((total, id) => {
+    if (id) total.set(id, (total.get(id) ?? 0) + 1);
+    return total;
+  }, new Map<string, number>());
+
+  return normalizedResults.map(({ rawIndex }, index) => {
+    const id = rawIds[rawIndex];
+    return id && counts.get(id) === 1 ? id : entryIdFor(index);
+  });
+}
+
+export function migrateGeoHistoryV1(
+  value: unknown,
+  entryIdFor: (index: number) => string = () => createDurableHistoryId()
+): GeoHistoryStorageV2 {
+  if (!isRecord(value)) {
+    return emptyGeoHistoryStorage();
+  }
+  const rawResults = Array.isArray(value.results) ? value.results : [];
+  const rawLogs = Array.isArray(value.logs) ? value.logs : [];
+  const normalizedResults = rawResults.flatMap((item, rawIndex) => {
+    const result = normalizeStoredGeoResult(item);
+    return result ? [{ result, rawIndex }] : [];
+  });
+  const logs = rawLogs.map((log) => normalizeStoredGeoLog(log)).filter((log): log is GeoGeneratorLog => Boolean(log));
+  const entryIds = legacyEntryIds(rawResults, normalizedResults, entryIdFor);
+  const built = createGeoHistoryEntries(
+    normalizedResults.map(({ result }) => result),
+    logs,
+    "legacy",
+    (index) => entryIds[index] ?? entryIdFor(index)
+  );
+
+  return {
+    version: 2,
+    entries: built.entries.map((entry) => {
+      const runId = `legacy:${entry.entryId}`;
+      return { ...entry, runId, ...(entry.log ? { log: { ...entry.log, runId } } : {}) };
+    }).slice(0, HISTORY_LIMIT),
+    unpairedLegacyLogs: built.unpairedLegacyLogs.slice(0, HISTORY_LIMIT)
+  };
+}
+
+export function migrateExtractorHistoryV1(
+  value: unknown,
+  entryIdFor: (index: number) => string = () => createDurableHistoryId()
+): ExtractorHistoryStorageV2 {
+  if (!isRecord(value)) {
+    return emptyExtractorHistoryStorage();
+  }
+  const rawResults = Array.isArray(value.results) ? value.results : [];
+  const rawLogs = Array.isArray(value.logs) ? value.logs : [];
+  const normalizedResults = rawResults.flatMap((item, rawIndex) => {
+    const result = normalizeStoredExtractorResult(item);
+    return result ? [{ result, rawIndex }] : [];
+  });
+  const logs = rawLogs.map(normalizeStoredExtractorLog).filter((log): log is ProductExtractionDiagnostics => Boolean(log));
+  const entryIds = legacyEntryIds(rawResults, normalizedResults, entryIdFor);
+  const built = createExtractorHistoryEntries(
+    normalizedResults.map(({ result }) => result),
+    logs,
+    "legacy",
+    (index) => entryIds[index] ?? entryIdFor(index)
+  );
+
+  return {
+    version: 2,
+    entries: built.entries.map((entry) => {
+      const runId = `legacy:${entry.entryId}`;
+      return { ...entry, runId, ...(entry.log ? { log: { ...entry.log, runId } } : {}) };
+    }).slice(0, HISTORY_LIMIT),
+    unpairedLegacyLogs: built.unpairedLegacyLogs.slice(0, HISTORY_LIMIT)
+  };
+}
+
+export function normalizeStoredGeoHistoryV2(value: unknown): GeoHistoryStorageV2 | undefined {
+  if (!isRecord(value) || value.version !== 2 || !Array.isArray(value.entries)) {
+    return undefined;
+  }
+  const entries = value.entries.flatMap((item) => {
+    if (!isRecord(item) || typeof item.entryId !== "string" || !item.entryId || typeof item.runId !== "string" || !item.runId) {
+      return [];
+    }
+    const result = normalizeStoredGeoResult(item.result);
+    if (!result) {
+      return [];
+    }
+    const log = normalizeStoredGeoLog(item.log, result.generator.diagnostics);
+    const requestId = normalizeSafeRequestId(item.requestId);
+    return [{
+      entryId: item.entryId,
+      runId: item.runId,
+      ...(requestId ? { requestId } : {}),
+      result,
+      ...(log ? { log: { ...log, entryId: item.entryId, runId: item.runId } } : {})
+    }];
+  }).slice(0, HISTORY_LIMIT);
+  const unpairedLegacyLogs: LegacyUnpairedLog<GeoGeneratorLog>[] = Array.isArray(value.unpairedLegacyLogs)
+    ? value.unpairedLegacyLogs.flatMap((item) => {
+        if (!isRecord(item) || (item.reason !== "ambiguous-v1-source" && item.reason !== "orphaned-v1-source")) return [];
+        const log = normalizeStoredGeoLog(item.log);
+        return log ? [{ log, reason: item.reason as LegacyUnpairedLog<GeoGeneratorLog>["reason"] }] : [];
+      }).slice(0, HISTORY_LIMIT)
+    : [];
+  return { version: 2, entries, unpairedLegacyLogs };
+}
+
+export function normalizeStoredExtractorHistoryV2(value: unknown): ExtractorHistoryStorageV2 | undefined {
+  if (!isRecord(value) || value.version !== 2 || !Array.isArray(value.entries)) {
+    return undefined;
+  }
+  const entries = value.entries.flatMap((item) => {
+    if (!isRecord(item) || typeof item.entryId !== "string" || !item.entryId || typeof item.runId !== "string" || !item.runId) {
+      return [];
+    }
+    const result = normalizeStoredExtractorResult(item.result);
+    if (!result) {
+      return [];
+    }
+    const log = normalizeStoredExtractorLog(item.log);
+    const requestId = normalizeSafeRequestId(item.requestId);
+    return [{
+      entryId: item.entryId,
+      runId: item.runId,
+      ...(requestId ? { requestId } : {}),
+      result,
+      ...(log ? { log: { ...log, entryId: item.entryId, runId: item.runId } } : {})
+    }];
+  }).slice(0, HISTORY_LIMIT);
+  const unpairedLegacyLogs: LegacyUnpairedLog<ProductExtractionDiagnostics>[] = Array.isArray(value.unpairedLegacyLogs)
+    ? value.unpairedLegacyLogs.flatMap((item) => {
+        if (!isRecord(item) || (item.reason !== "ambiguous-v1-source" && item.reason !== "orphaned-v1-source")) return [];
+        const log = normalizeStoredExtractorLog(item.log);
+        return log ? [{ log, reason: item.reason as LegacyUnpairedLog<ProductExtractionDiagnostics>["reason"] }] : [];
+      }).slice(0, HISTORY_LIMIT)
+    : [];
+  return { version: 2, entries, unpairedLegacyLogs };
 }
 
 function attachRunDurationToGeoResults(results: GeoGeneratorResult[], runDurationMs: number): GeoGeneratorResult[] {
@@ -5943,32 +7958,6 @@ function attachRunDurationToExtractorResults(results: TimedProductExtractionResu
     ...result,
     runDurationMs
   }));
-}
-
-function geoHistoryResultKey(result: Pick<GeoGeneratorResult, "source" | "sourceType">): string {
-  return `${result.sourceType}:${result.source}`;
-}
-
-function mergeExtractorHistoryResults(incoming: TimedProductExtractionResult[], current: TimedProductExtractionResult[]): TimedProductExtractionResult[] {
-  const incomingKeys = new Set(incoming.map(extractorHistoryResultKey));
-
-  return [
-    ...incoming,
-    ...current.filter((result) => !incomingKeys.has(extractorHistoryResultKey(result)))
-  ].slice(0, HISTORY_LIMIT);
-}
-
-function mergeExtractorHistoryLogs(incoming: ProductExtractionDiagnostics[], current: ProductExtractionDiagnostics[]): ProductExtractionDiagnostics[] {
-  const incomingKeys = new Set(incoming.map((log) => log.source));
-
-  return [
-    ...incoming,
-    ...current.filter((log) => !incomingKeys.has(log.source))
-  ].slice(0, HISTORY_LIMIT);
-}
-
-function extractorHistoryResultKey(result: Pick<ProductExtractionResult, "source" | "sourceType">): string {
-  return `${result.sourceType}:${result.source}`;
 }
 
 function normalizeRunDurationMs(value: unknown): number | undefined {
@@ -6098,7 +8087,7 @@ function markProcessStepsDone<Step extends ProcessStep>(steps: Step[]): Step[] {
   }));
 }
 
-function localizeProcessStep(step: ProcessStep, group: "extractor" | "generator", language: UiLanguage): Pick<ProcessStep, "title" | "description"> {
+export function localizeProcessStep(step: ProcessStep, group: "extractor" | "generator", language: UiLanguage): Pick<ProcessStep, "title" | "description"> {
   if (group === "generator" && isGeneratorStageId(step.id)) {
     const [title, description] = generatorStepCopy[language][step.id];
     return {
@@ -6112,18 +8101,54 @@ function localizeProcessStep(step: ProcessStep, group: "extractor" | "generator"
     if (match) {
       return {
         title: match[1],
-        description: language === "ko" ? step.message ?? match[2] : match[2]
+        description: formatExtractorProgressDescription(match[2], step.metrics, language)
       };
     }
   }
 
   return {
     title: step.title,
-    description: language === "ko" ? step.message ?? step.description : step.description
+    description: group === "extractor"
+      ? formatExtractorProgressDescription(step.description, step.metrics, language)
+      : language === "ko" ? step.message ?? step.description : step.description
   };
 }
 
-function getPipelineStepStatus(
+function formatExtractorProgressDescription(
+  description: string,
+  metrics: ProcessStep["metrics"] | undefined,
+  language: UiLanguage
+): string {
+  const details = [
+    formatProgressCount(metrics?.ocrImageCandidateCount, language, "ocr"),
+    formatProgressCount(metrics?.reviewItemCount, language, "review"),
+    formatProgressCount(metrics?.ragChunkCount, language, "rag")
+  ].filter((detail): detail is string => detail !== undefined);
+
+  return details.length > 0 ? `${description} · ${details.join(" · ")}` : description;
+}
+
+function formatProgressCount(
+  value: unknown,
+  language: UiLanguage,
+  kind: "ocr" | "review" | "rag"
+): string | undefined {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    return undefined;
+  }
+
+  if (language === "ko") {
+    if (kind === "ocr") return `OCR 이미지 후보 ${value}개`;
+    if (kind === "review") return `리뷰 항목 ${value}개`;
+    return `RAG 청크 ${value}개`;
+  }
+
+  if (kind === "ocr") return `${value} OCR image candidate${value === 1 ? "" : "s"}`;
+  if (kind === "review") return `${value} review item${value === 1 ? "" : "s"}`;
+  return `${value} RAG chunk${value === 1 ? "" : "s"}`;
+}
+
+export function getPipelineStepStatus(
   stepId: string | PdpGeoGenerationStageId,
   group: "extractor" | "generator",
   process: GeoPipelineProcessState

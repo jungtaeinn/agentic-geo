@@ -1,0 +1,30 @@
+{
+  "captureFormat": 1,
+  "corpus": "agentic-geo-public-v1",
+  "managedSourceCount": 22,
+  "publicSha256": {
+    "analysis-prompt_v1.md": "cecb75998462a871d509e100c9e79c66b7ada42897d88c856648dc687b21b2fe",
+    "best-practice_v1.md": "f90780fca74b200dea95a1c7cb6678fd0da461012c5dc2880159b3f156153f33",
+    "brands/sample_botanics/best-practice_v2.md": "f7aab28553772e0a4f6945fe87332df50b7fd86d1312e6ec696c431863c72dbb",
+    "brands/sample_botanics/brand-identity_v1.md": "dec5dd71d78f6eb724598a4a27f319ffa8021a68d275340fb9e84eac5230ecf7",
+    "brands/sample_botanics/locale-expression-guidelines_v2.md": "e7526e33b800916b8cdfa2a93b2d41138e75e502457098d289be28b09904d1c4",
+    "brands/sample_botanics/locale-terminology-map_v2.json": "223d64747e4a4bfa6f84ef0630815ede59595ee0a1d6017098bb5c44b5851e86",
+    "brands/sample_derma/best-practice_v2.md": "f5425b4709b09386b1f6cba696785ed26548f11dbb5205b5a1816c044bdf299b",
+    "brands/sample_derma/brand-identity_v2.md": "52aa5363eef228c92ae8582e9d9702c7426c523fc3f57b757627b807ba9a2c24",
+    "brands/sample_derma/locale-expression-guidelines_v2.md": "a08d99fd5e53c5f3c22958d9af03a0726494f183001db3172c5180f94509af52",
+    "brands/sample_derma/locale-terminology-map_v2.json": "e2676157ba85dbda11c9b5d15be7b450e8059c126d063d353ddc0d5e5a9d93cd",
+    "cep_v1.md": "dc0458153587b1e137062aa89015b052e572a6410dd2572a717fc9ad45a6caaf",
+    "content-field-contracts_v1.md": "a0a2b002490e0d7122750043297bac7581160feba5e64a0c1f73bb853dd4f4f2",
+    "eeat_v1.md": "649c4dc8399febfbbe195b7dcf331bb519a8501661d10f9407c8f7b666ec85c8",
+    "evidence/geo-research-cards_v1.md": "4f0ec1981975f05ba6278d0670045921431584c0c813595bd085ece060a18fbf",
+    "geo-research_v3.md": "826adaba8a38127ee6b1064590cfec7cb5c2f7a29f319ac3ce0c6062ce50abff",
+    "locale-expression-guidelines_v1.md": "cd811e745302720edbd10894f96d6c0718871d135bfdcdcf5abe876bc2848d68",
+    "locale-terminology-map_v1.json": "0a8b0834e386213a061a945acbe9909484934568f2ead9b258dc862665f032c9",
+    "official-ai-search-platform-docs_v1.md": "e0096d4340078f3b82b343df5482f93e60f3d00ce5b6b11a8b4cddd5ebadcda0",
+    "rag-eval-baseline_v1.json": "13b59194c1a52f04c10a1dcfdf7163edaf986a448559806b9034b1801d54ff91",
+    "rag-eval-goldens_v1.json": "211731981da0920d5eca2d7ca27de7a7f7a286c9632476e6e0ca212bfa270bbb",
+    "rag-index.generated.json": "8a0ad5006a9a1206bf44c2b47e7b6145685a298473b4d8f32e12ff1c472e69ee",
+    "schema-org-product_v2.md": "54a1c973561e07bc04ac62b30e7ebac4a00e1a7df235559686482ae96d4192db"
+  },
+  "wholeContractSha256": "de52716563cb6bbcf0e4f64a38a31d1f46dcfd4c116974ae7044057ace1db902"
+}

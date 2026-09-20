@@ -1,0 +1,105 @@
+# GEO-004 — internally authored synthetic Korean cream-mist fixture (ko-KR)
+#
+# The record retains FAQ, review, OCR, and usability-metric coverage while
+# using only fictional copy and reserved example.test product assets.
+
+id: GEO-004
+name: "별모래 테스트 랩 클라우드베일 크림 미스트 (ko-KR)"
+tags: ["byeolmorae-test-lab", "ko-KR", "mist", "synthetic"]
+
+request: {
+  "locale": "ko-KR",
+  "product": {
+    "canonicalUrl": "https://catalog.example.test/products/cloudveil-cream-mist?variant=EX-CVM-004",
+    "offerUrl": "https://catalog.example.test/products/cloudveil-cream-mist?variant=EX-CVM-004",
+    "geoProduct": {
+      "id": "EX-CVM-004",
+      "name": "클라우드베일 크림 미스트",
+      "brand": "별모래 테스트 랩",
+      "category": "미스트",
+      "sku": "EX-CVM-004",
+      "gtin": "0000000000048",
+      "price": {"raw": "₩17,500", "amount": 17500, "currency": "KRW"},
+      "description": "클라우드베일 크림 미스트는 회귀 테스트용으로 만든 가상 보습 미스트입니다. 구름보습 지질 복합체와 판테놀을 담은 것으로 설정해 건조하게 느껴질 때 가볍게 덧뿌리는 사용 장면을 설명합니다.",
+      "images": [
+        "https://assets.example.test/fixtures/cloudveil/packshot-100ml.png",
+        "https://assets.example.test/fixtures/cloudveil/mist-swatch.png",
+        "https://assets.example.test/fixtures/cloudveil/ingredient-card.png",
+        "https://assets.example.test/fixtures/cloudveil/usability-card.png"
+      ],
+      "options": ["100 mL"],
+      "benefits": ["가벼운 보습", "건조할 때 수시 사용", "메이크업 위 사용 예시"],
+      "effects": ["미세하게 퍼지는 분사감", "건조하게 느껴지는 부위의 편안한 사용감"],
+      "ingredients": ["구름보습 지질 복합체", "글리세린", "스쿠알란", "판테놀"],
+      "usage": ["얼굴에서 약 20cm 떨어진 곳에서 두세 번 분사한 뒤 필요하면 손바닥으로 가볍게 눌러 줍니다. 이 문장은 합성 사용 예시입니다."],
+      "metrics": ["합성 사용성 조사: 10일 사용 후 18명 중 15명이 메이크업 위에서 분사감이 가볍다고 답했습니다."],
+      "faq": [
+        {"question": "크림 미스트는 스킨케어 순서에서 언제 사용하나요?", "answer": "이 합성 루틴에서는 세안 뒤 보습 제품 전 또는 건조하게 느껴질 때 수시로 덧뿌리는 예시를 제공합니다."},
+        {"question": "메이크업 위에 사용해도 되나요?", "answer": "가상의 사용 안내에서는 얼굴에서 거리를 두고 소량 분사한 다음 손으로 가볍게 눌러 보라고 안내합니다."},
+        {"question": "향에 민감한 사람은 무엇을 확인해야 하나요?", "answer": "이 레코드는 실제 성분 안내가 아니므로 개별 제품의 전성분과 개인 반응을 확인하라는 테스트용 문구입니다."},
+        {"question": "분사가 고르게 나오지 않으면 어떻게 하나요?", "answer": "노즐을 닦고 한두 번 공중에 시험 분사한 뒤 사용하라는 합성 고객지원 예시입니다."}
+      ],
+      "reviews": {
+        "rating": 4.6,
+        "reviewCount": 37,
+        "items": [
+          {"body": "가방에 넣고 다니다가 오후에 건조하게 느껴질 때 가볍게 뿌리기 좋았어요. 이 문장은 합성 리뷰입니다.", "rating": 5},
+          {"body": "분사 범위가 넓어서 한 번만 뿌려도 얼굴 전체에 잘 퍼지는 느낌이었어요. 합성 테스트 리뷰입니다.", "rating": 5},
+          {"body": "한 번에 많이 누르면 옷깃에 묻을 수 있어 거리를 두고 쓰는 편이 좋았어요. 합성 리뷰입니다.", "rating": 3}
+        ],
+        "keywords": ["가벼운 분사", "건조할 때", "메이크업 위", "합성 리뷰"]
+      },
+      "sourceExtraction": {
+        "html": {
+          "description": "클라우드베일 크림 미스트는 회귀 테스트용으로 만든 가상 보습 미스트입니다. 구름보습 지질 복합체와 판테놀을 담은 것으로 설정해 건조하게 느껴질 때 가볍게 덧뿌리는 사용 장면을 설명합니다.",
+          "sections": [
+            {"title": "주요 성분", "category": "ingredient", "text": "구름보습 지질 복합체, 글리세린, 스쿠알란, 판테놀.", "bullets": ["구름보습 지질 복합체", "글리세린", "스쿠알란", "판테놀"]},
+            {"title": "사용 장면", "category": "benefit", "text": "건조하게 느껴질 때 가볍게 덧뿌리는 합성 크림 미스트 예시입니다.", "bullets": ["가벼운 보습", "건조할 때 수시 사용", "메이크업 위 사용 예시"]},
+            {"title": "사용 방법", "category": "usage", "text": "얼굴에서 약 20cm 떨어진 곳에서 두세 번 분사한 뒤 가볍게 눌러 줍니다.", "bullets": ["약 20cm 거리", "두세 번 분사", "가볍게 눌러 흡수"]}
+          ],
+          "faq": [
+            {"question": "크림 미스트는 스킨케어 순서에서 언제 사용하나요?", "answer": "이 합성 루틴에서는 세안 뒤 보습 제품 전 또는 건조하게 느껴질 때 수시로 덧뿌리는 예시를 제공합니다."},
+            {"question": "메이크업 위에 사용해도 되나요?", "answer": "가상의 사용 안내에서는 얼굴에서 거리를 두고 소량 분사한 다음 손으로 가볍게 눌러 보라고 안내합니다."},
+            {"question": "향에 민감한 사람은 무엇을 확인해야 하나요?", "answer": "이 레코드는 실제 성분 안내가 아니므로 개별 제품의 전성분과 개인 반응을 확인하라는 테스트용 문구입니다."},
+            {"question": "분사가 고르게 나오지 않으면 어떻게 하나요?", "answer": "노즐을 닦고 한두 번 공중에 시험 분사한 뒤 사용하라는 합성 고객지원 예시입니다."}
+          ]
+        },
+        "ocr": {
+          "imageTexts": [
+            {"imageUrl": "https://assets.example.test/fixtures/cloudveil/ingredient-card.png", "text": "클라우드베일 크림 미스트. 구름보습 지질 복합체와 판테놀을 담았다고 설정한 합성 미스트. 100 mL."},
+            {"imageUrl": "https://assets.example.test/fixtures/cloudveil/usability-card.png", "text": "합성 사용성 조사. 10일 사용 후 18명 중 15명이 메이크업 위에서 분사감이 가볍다고 답했습니다."}
+          ],
+          "textBlocks": ["클라우드베일 크림 미스트. 구름보습 지질 복합체와 판테놀을 담았다고 설정한 합성 미스트. 100 mL.", "구름보습 지질 복합체는 이 픽스처에서 보습막 사용감을 설명하기 위한 가상 성분명입니다.", "합성 사용성 조사. 10일 사용 후 18명 중 15명이 메이크업 위에서 분사감이 가볍다고 답했습니다."],
+          "sentenceInsights": [
+            {"imageUrl": "https://assets.example.test/fixtures/cloudveil/ingredient-card.png", "text": "구름보습 지질 복합체는 이 픽스처에서 보습막 사용감을 설명하기 위한 가상 성분명입니다.", "category": "ingredient", "keywords": ["구름보습 지질 복합체", "보습막", "합성"]},
+            {"imageUrl": "https://assets.example.test/fixtures/cloudveil/usability-card.png", "text": "합성 사용성 조사: 10일 사용 후 18명 중 15명이 메이크업 위에서 분사감이 가볍다고 답했습니다.", "category": "metric", "keywords": ["10일", "18명", "15명", "분사감"]}
+          ],
+          "semanticFacts": {
+            "ingredients": ["구름보습 지질 복합체", "글리세린", "스쿠알란", "판테놀"],
+            "benefits": ["가벼운 보습", "건조할 때 수시 사용", "메이크업 위 사용 예시"],
+            "effects": ["미세하게 퍼지는 분사감", "건조하게 느껴지는 부위의 편안한 사용감"],
+            "skinTypes": ["건성", "복합성", "메이크업을 한 피부"],
+            "usageSteps": ["얼굴에서 약 20cm 떨어진 곳에서 두세 번 분사한 뒤 필요하면 손바닥으로 가볍게 눌러 줍니다. 이 문장은 합성 사용 예시입니다."],
+            "metricClaims": [{"label": "가벼운 분사감", "subject": "메이크업 위 분사감", "value": "83", "unit": "%", "metric": "사용성 응답", "direction": "improve", "timing": "10일 사용 후", "sample": "18명", "method": "합성 사용성 조사", "sentence": "합성 사용성 조사: 10일 사용 후 18명 중 15명이 메이크업 위에서 분사감이 가볍다고 답했습니다.", "sourceText": "합성 사용성 조사: 10일 사용 후 18명 중 15명이 메이크업 위에서 분사감이 가볍다고 답했습니다."}],
+            "evidenceSentences": ["합성 사용성 조사: 10일 사용 후 18명 중 15명이 메이크업 위에서 분사감이 가볍다고 답했습니다."],
+            "ingredientBenefitLinks": [{"ingredient": "구름보습 지질 복합체", "benefit": "가벼운 보습", "effect": "건조하게 느껴지는 부위의 편안한 사용감", "sentence": "구름보습 지질 복합체는 이 픽스처에서 보습막 사용감을 설명하기 위한 가상 성분명입니다.", "sourceText": "구름보습 지질 복합체는 이 픽스처에서 보습막 사용감을 설명하기 위한 가상 성분명입니다."}]
+          }
+        }
+      },
+      "aiAnalysis": {"keywords": {"product": ["클라우드베일 크림 미스트", "별모래 테스트 랩", "미스트"], "price": ["₩17,500"], "benefit": ["가벼운 보습", "건조할 때 수시 사용", "메이크업 위 사용 예시"], "effect": ["미세하게 퍼지는 분사감"], "ingredient": ["구름보습 지질 복합체", "글리세린", "스쿠알란", "판테놀"], "usage": ["약 20cm 거리에서 분사"], "faq": ["스킨케어 순서", "메이크업 위 사용", "분사 문제"], "review": ["가벼운 분사", "건조할 때"], "metric": ["18명 중 15명", "10일"], "trend": [], "unknown": []}, "categorizedSections": [{"title": "주요 성분", "category": "ingredient", "text": "구름보습 지질 복합체, 글리세린, 스쿠알란, 판테놀.", "bullets": ["구름보습 지질 복합체", "글리세린", "스쿠알란", "판테놀"]}], "summary": "한국어 FAQ·리뷰·OCR·사용성 지표를 포함하는 합성 크림 미스트 픽스처입니다."},
+      "semanticFacts": {"ingredients": ["구름보습 지질 복합체", "글리세린", "스쿠알란", "판테놀"], "benefits": ["가벼운 보습", "건조할 때 수시 사용", "메이크업 위 사용 예시"], "effects": ["미세하게 퍼지는 분사감", "건조하게 느껴지는 부위의 편안한 사용감"], "skinTypes": ["건성", "복합성", "메이크업을 한 피부"], "usageSteps": ["얼굴에서 약 20cm 떨어진 곳에서 두세 번 분사한 뒤 필요하면 손바닥으로 가볍게 눌러 줍니다. 이 문장은 합성 사용 예시입니다."], "metricClaims": [{"label": "가벼운 분사감", "subject": "메이크업 위 분사감", "value": "83", "unit": "%", "metric": "사용성 응답", "direction": "improve", "timing": "10일 사용 후", "sample": "18명", "method": "합성 사용성 조사", "sentence": "합성 사용성 조사: 10일 사용 후 18명 중 15명이 메이크업 위에서 분사감이 가볍다고 답했습니다.", "sourceText": "합성 사용성 조사: 10일 사용 후 18명 중 15명이 메이크업 위에서 분사감이 가볍다고 답했습니다."}], "evidenceSentences": ["합성 사용성 조사: 10일 사용 후 18명 중 15명이 메이크업 위에서 분사감이 가볍다고 답했습니다."], "ingredientBenefitLinks": [{"ingredient": "구름보습 지질 복합체", "benefit": "가벼운 보습", "effect": "건조하게 느껴지는 부위의 편안한 사용감", "sentence": "구름보습 지질 복합체는 이 픽스처에서 보습막 사용감을 설명하기 위한 가상 성분명입니다.", "sourceText": "구름보습 지질 복합체는 이 픽스처에서 보습막 사용감을 설명하기 위한 가상 성분명입니다."}]},
+      "categorizedProductInfo": {"benefits": ["가벼운 보습", "건조할 때 수시 사용", "메이크업 위 사용 예시"], "effects": ["미세하게 퍼지는 분사감", "건조하게 느껴지는 부위의 편안한 사용감"], "ingredients": ["구름보습 지질 복합체", "글리세린", "스쿠알란", "판테놀"], "usage": ["얼굴에서 약 20cm 떨어진 곳에서 두세 번 분사한 뒤 필요하면 손바닥으로 가볍게 눌러 줍니다. 이 문장은 합성 사용 예시입니다."], "metrics": ["합성 사용성 조사: 10일 사용 후 18명 중 15명이 메이크업 위에서 분사감이 가볍다고 답했습니다."], "faq": [{"question": "크림 미스트는 스킨케어 순서에서 언제 사용하나요?", "answer": "이 합성 루틴에서는 세안 뒤 보습 제품 전 또는 건조하게 느껴질 때 수시로 덧뿌리는 예시를 제공합니다."}]},
+      "customerReviewAnalysis": {"rating": 4.6, "reviewCount": 37, "items": [{"body": "가방에 넣고 다니다가 오후에 건조하게 느껴질 때 가볍게 뿌리기 좋았어요. 이 문장은 합성 리뷰입니다.", "rating": 5}, {"body": "분사 범위가 넓어서 한 번만 뿌려도 얼굴 전체에 잘 퍼지는 느낌이었어요. 합성 테스트 리뷰입니다.", "rating": 5}, {"body": "한 번에 많이 누르면 옷깃에 묻을 수 있어 거리를 두고 쓰는 편이 좋았어요. 합성 리뷰입니다.", "rating": 3}], "keywords": ["가벼운 분사", "건조할 때", "메이크업 위", "합성 리뷰"], "reviewSignals": ["가벼운 분사", "거리를 두고 사용"], "ratingSummary": "평점 4.6 · 합성 리뷰 37건"},
+      "contentAnalysis": {"sections": [{"title": "사용 방법", "category": "usage", "text": "얼굴에서 약 20cm 떨어진 곳에서 두세 번 분사한 뒤 가볍게 눌러 줍니다.", "bullets": ["약 20cm 거리", "두세 번 분사", "가볍게 눌러 흡수"]}], "reviewSignals": ["가벼운 분사", "거리를 두고 사용"], "ratingSummary": "평점 4.6 · 합성 리뷰 37건"},
+      "ocr": {"textBlocks": ["클라우드베일 크림 미스트. 구름보습 지질 복합체와 판테놀을 담았다고 설정한 합성 미스트. 100 mL.", "합성 사용성 조사. 10일 사용 후 18명 중 15명이 메이크업 위에서 분사감이 가볍다고 답했습니다."], "keywords": {"product": ["클라우드베일 크림 미스트"], "benefit": ["가벼운 보습", "메이크업 위 사용 예시"], "ingredient": ["구름보습 지질 복합체", "판테놀"], "review": ["가벼운 분사", "건조할 때"], "metric": ["18명 중 15명", "10일"]}, "sentenceInsights": [{"imageUrl": "https://assets.example.test/fixtures/cloudveil/usability-card.png", "text": "합성 사용성 조사: 10일 사용 후 18명 중 15명이 메이크업 위에서 분사감이 가볍다고 답했습니다.", "category": "metric", "keywords": ["10일", "18명", "15명", "합성"]}]},
+      "rag": {"chunks": [{"id": "ex-cvm-004-product", "kind": "product", "text": "클라우드베일 크림 미스트\n건조하게 느껴질 때 가볍게 덧뿌리는 합성 보습 미스트."}, {"id": "ex-cvm-004-faq-1", "kind": "faq", "text": "Q. 크림 미스트는 스킨케어 순서에서 언제 사용하나요?\nA. 세안 뒤 보습 제품 전 또는 건조하게 느껴질 때 덧뿌리는 합성 예시입니다."}, {"id": "ex-cvm-004-review-1", "kind": "review", "text": "가방에 넣고 다니다가 오후에 건조하게 느껴질 때 가볍게 뿌리기 좋았어요. 이 문장은 합성 리뷰입니다."}, {"id": "ex-cvm-004-ocr-1", "kind": "ocr", "text": "합성 사용성 조사: 10일 사용 후 18명 중 15명이 메이크업 위에서 분사감이 가볍다고 답했습니다."}]},
+      "availability": "InStock",
+      "variants": [{"id": "EX-CVM-004", "sku": "EX-CVM-004", "title": "100 mL", "price": "₩17,500"}],
+      "tags": ["#합성픽스처", "#크림미스트", "#예시데이터"]
+    }
+  }
+}
+
+expect:
+  resultStatus: SUCCEEDED
+  schemaTypes: ["Product", "WebPage"]

@@ -1,412 +1,53 @@
 # PDP Extractor Agent
 
-`packages/pdp-extractor-agent`는 Agentic GEO의 PDP 추출 sub agent입니다. 상품 상세 페이지, REST API 응답, 이미 수집한 HTML을 GEO RAW JSON으로 정리하고, downstream generator agent가 사용할 수 있는 product intelligence, evidence, warning, RAG chunk를 함께 제공합니다.
+`pdp-extractor-agent` is the Python source-to-product-intelligence agent. It accepts a product URL, API payload, HTML, or extraction input and returns a GEO-ready product record with evidence, provenance, warnings, OCR/review context, RAG usage, and process diagnostics. It replaces the previous runtime dependency with Python-native behavior rather than invoking Node.
 
-앱 없이 함수로 직접 호출할 수 있고, Next.js Route Handler 같은 Web API 환경에서는 REST 어댑터로 사용할 수 있습니다. 전체 Agentic GEO 오케스트레이션에서는 URL/REST 입력을 상품 중심 데이터로 바꾸는 첫 번째 agent 역할을 맡습니다.
+## How extraction changes a result
 
-## 빠른 호출 가이드
-
-이 패키지는 독립 HTTP 서버가 아니라, 앱/서버에서 import해서 쓰는 agent 라이브러리입니다. 호출 방식은 두 가지입니다.
-
-### 함수로 직접 호출
-
-```ts
-import { extractProduct } from "@agentic-geo/pdp-extractor-agent";
-
-const run = await extractProduct(
-  {
-    sourceType: "url",
-    source: "https://example.com/products/serum",
-    aiProvider: "mock"
-  },
-  {
-    provider: "mock"
-  }
-);
-
-console.log(run.result.geoProduct);
-```
-
-### REST API로 노출
-
-Next.js Route Handler, Express, Hono, Worker 같은 Web API 환경에 REST handler를 붙이면 POST로 호출할 수 있습니다.
-
-```ts
-import { createProductExtractorRestHandler } from "@agentic-geo/pdp-extractor-agent/rest";
-
-export const POST = createProductExtractorRestHandler({
-  provider: "mock"
-});
-```
-
-요청 payload:
-
-```json
-{
-  "sources": ["https://example.com/products/serum"],
-  "sourceType": "url"
-}
-```
-
-`apps/geo-generator`와 `apps/pdp-extractor`에서는 이 adapter가 이미 `/api/extract`에 연결되어 있습니다.
-
-## When To Use
-
-| 상황 | 사용 방식 |
-| --- | --- |
-| PDP URL에서 GEO 생성까지 자동화 | 이 agent로 `geoProduct`를 만든 뒤 `pdp-geo-generator-agent`에 전달 |
-| 상품 API 품질 검토 | REST API 응답을 추출하고 누락된 product/review/FAQ 신호 확인 |
-| 고정 key 후보로 잡히지 않는 API/PDP 정규화 | `productNormalization.enabled` 또는 `customProductNormalizer` 사용 |
-| 추출 결과 QA | `diagnostics.evidence`, `diagnostics.warnings`, `result.geoProduct.rag.chunks`를 보고 추출 근거 검토 |
-| 이미 수집한 HTML 처리 | `extractProductFromHtml`로 fetch 단계를 건너뛰고 추출만 실행 |
-
-## 담당 범위
-
-- URL 또는 REST API 입력 검증
-- HTML, meta tag, JSON-LD, embedded client state 수집
-- 상품명, 가격, 설명, 이미지, 옵션 추출
-- FAQ 후보 정리
-- 리뷰 평점, 리뷰 본문, 대표 키워드 추출
-- 이미지 alt/text와 상세 영역 텍스트 기반 OCR 후보 분류
-- RAG chunk 생성
-- 진행 단계와 evidence/warning 진단 로그 생성
-- GEO RAW JSON 결과 수정 요청 처리
-
-## Output Contract
-
-주요 산출물은 `ProductExtractionRun`입니다.
-
-| 필드 | 설명 |
-| --- | --- |
-| `result.geoProduct` | generator agent에 넘길 수 있는 상품 중심 GEO RAW JSON |
-| `result.geoProduct.rag.chunks` | 상품, 리뷰, FAQ, OCR 근거에서 만든 검색용 chunk |
-| `diagnostics.process` | UI와 REST 응답에서 공유하는 단계별 진행 로그 |
-| `diagnostics.evidence` | 어떤 원문/필드에서 추출했는지 남기는 근거 |
-| `diagnostics.warnings` | 누락, 추론, fallback 처리 등 검토가 필요한 항목 |
-| `diagnostics.ocr` | OCR 파이프라인 전 단계 추적: 이미지별 추출 결과, 조합/병합 통계, 분류 배치 상태, 최종 활용도, 리뷰 포인트 |
-
-## 처리 파이프라인
-
-```mermaid
-flowchart LR
-  A["input"] --> B["fetch"]
-  B --> C["extract"]
-  C --> D["ocr"]
-  D --> E["review"]
-  E --> F["rag"]
-  F --> G["json"]
-```
-
-각 단계는 `ProductExtractionStep`으로 기록되며 UI의 진행 패널과 REST 응답 로그에서 같은 단계명을 사용합니다.
-
-| 단계 | 설명 |
-| --- | --- |
-| `input` | URL/REST API 입력 검증과 정규화 |
-| `fetch` | HTML 또는 API JSON 수집 |
-| `extract` | 상품 기본 정보 부트스트랩 추출, 선택적 product normalization agent 보강 |
-| `ocr` | 이미지/상세 영역의 OCR 후보 키워드 분류 |
-| `review` | 리뷰 신호와 고객 표현 정리 |
-| `rag` | 상품/리뷰/FAQ/OCR 근거를 RAG chunk로 변환 |
-| `json` | 최종 GEO RAW JSON 생성 |
-
-## 공개 API
-
-패키지는 다음 entry point를 export합니다.
-
-```ts
-import {
-  extractProduct,
-  extractProductFromHtml,
-  refineGeoProductResult,
-  createProductExtractorRestHandler
-} from "@agentic-geo/pdp-extractor-agent";
-```
-
-### `extractProduct`
-
-URL 또는 REST API를 직접 수집해 결과를 만듭니다.
-
-```ts
-import { extractProduct } from "@agentic-geo/pdp-extractor-agent";
-
-const run = await extractProduct(
-  {
-    sourceType: "url",
-    source: "https://example.com/products/serum",
-    aiProvider: "openai"
-  },
-  {
-    provider: "openai",
-    apiKey: process.env.OPENAI_API_KEY,
-    model: process.env.OPENAI_MODEL,
-    onProgress(step) {
-      console.log(step.id, step.status);
-    }
-  }
-);
-
-console.log(run.result.geoProduct);
-console.log(run.diagnostics.evidence);
-```
-
-### `extractProductFromHtml`
-
-이미 수집한 HTML 문자열이 있을 때 사용합니다.
-
-```ts
-import { extractProductFromHtml } from "@agentic-geo/pdp-extractor-agent";
-
-const run = await extractProductFromHtml(html, "https://example.com/products/serum", {
-  provider: "mock"
-});
-```
-
-### Optional Product Profile Normalization
-
-기본 추출은 DOM/meta/JSON-LD/API key 후보를 보수적으로 사용해 `ProductProfile`을 부트스트랩합니다. 브랜드몰이나 사용자 지정 API마다 key 이름이 달라져 스크립트 후보를 계속 늘려야 하는 경우, `productNormalization.enabled` 또는 `customProductNormalizer`를 사용해 raw HTML/API payload, bootstrap product, typed RAG index, RAG 정책 문서를 함께 보고 field routing을 추론하게 할 수 있습니다.
-
-모델/커스텀 agent가 제안한 값은 원본 소스 또는 bootstrap product에 근거가 있는 경우에만 `geoProduct`로 반영됩니다. 적용/거절 근거는 `diagnostics.evidence`, 경고는 `diagnostics.warnings`, 토큰 사용량은 `diagnostics.runtimeUsage.steps`에 남습니다.
-
-```ts
-const run = await extractProductFromHtml(html, sourceUrl, {
-  provider: "openai",
-  apiKey: process.env.OPENAI_API_KEY,
-  model: process.env.OPENAI_MODEL,
-  productNormalization: {
-    enabled: true,
-    maxRagDocuments: 8,
-    maxSourceCharacters: 35000
-  }
-});
-```
-
-사용자 지정 catalog normalization agent가 있으면 provider adapter 대신 `customProductNormalizer`를 주입할 수 있습니다.
-
-### `createProductExtractorRestHandler`
-
-Web API `Request`/`Response` 기반 REST 핸들러를 만듭니다.
-
-```ts
-import { createProductExtractorRestHandler } from "@agentic-geo/pdp-extractor-agent/rest";
-
-export const POST = createProductExtractorRestHandler({
-  provider: "openai",
-  apiKey: process.env.OPENAI_API_KEY,
-  model: process.env.OPENAI_MODEL
-});
-```
-
-요청 예시:
-
-```json
-{
-  "sources": ["https://example.com/products/serum"],
-  "sourceType": "url",
-  "headers": {
-    "Accept": "text/html"
-  },
-  "llm": {
-    "provider": "openai",
-    "apiKey": "sk-...",
-    "model": "gpt-...",
-    "productNormalization": {
-      "enabled": true
-    }
-  },
-  "rag": {
-    "analysisPrompt": "추가 분석 기준",
-    "documents": [
-      {
-        "name": "brand-guide_v1.md",
-        "content": "브랜드 분석 기준..."
-      }
-    ]
-  }
-}
-```
-
-응답 형태:
-
-```json
-{
-  "results": [],
-  "logs": [],
-  "failures": []
-}
-```
-
-일부 소스만 실패하면 HTTP `207`로 성공 결과와 실패 목록을 함께 반환합니다.
-
-### `refineGeoProductResult`
-
-이미 생성된 GEO RAW JSON에서 사용자가 요청한 상품 정보 필드만 부분 수정합니다.
-
-```ts
-import { refineGeoProductResult } from "@agentic-geo/pdp-extractor-agent";
-
-const refinement = refineGeoProductResult({
-  result,
-  instruction: "상품명에서 용량 표기를 제거해줘"
-});
-
-console.log(refinement.result);
-console.log(refinement.summary);
-```
-
-## LLM provider
-
-지원 provider:
-
-- `mock`
-- `openai`
-- `gemini`
-- `azure-openai` (UI에서는 `Azure API`로 표시)
-
-`mock`은 외부 API 호출 없이 구조와 테스트 흐름을 확인할 때 사용합니다. 실제 키워드 분류와 분석 품질 검증은 OpenAI, Gemini, Azure API provider를 사용합니다.
-
-### OCR/분류 품질 정책
-
-- 모든 provider의 OCR 전사와 키워드 분류 호출은 구조화 출력(JSON Schema)을 강제합니다. OpenAI Responses는 `text.format`, Azure/AIStudio는 `response_format`, Gemini는 `responseSchema`를 사용하고, 스키마를 지원하지 않는 배포 모델에서는 자동으로 스키마 없이 한 번 재시도합니다. 스키마는 `src/llm/schemas.ts`에서 공유합니다.
-- vision OCR은 전사(transcription)와 의미 분류(classification)를 분리한 2-pass 구조입니다. 전사 프롬프트는 잘린 텍스트 완성 금지, 읽기순서 유지, 표 행 유지, 이미지별 confidence 보고를 요구하며 `src/llm/prompt.ts`의 `createImageOcrPrompt`로 공유합니다.
-- OCR 이미지 요청은 4장 단위 배치로 전송하고 1-based index로 앵커링해 이미지와 텍스트의 오귀속을 방지합니다. OpenAI/Azure는 `detail: "high"`로 고해상도 판독을 사용하고, Gemini는 이미지를 다운로드해 inline base64로 전달합니다.
-- 세로형 초장 상세 이미지(세로/가로 비율 3:1 초과, 세로 2,048px 초과)는 vision 모델의 자동 다운스케일로 글씨가 뭉개지므로, 헤더 프로브로 크기를 확인한 뒤 세로 1,400px·15% 오버랩 조각으로 분할해 전송합니다(`src/llm/providers/image-slicing.ts`). 조각별 전사 결과는 경계 라인 오버랩 병합이 하나의 연속 텍스트로 복원합니다. 분할에는 optional dependency인 `sharp`를 사용하며, sharp가 없는 환경에서는 분할 없이 통짜 전송으로 폴백하고 `IMAGE_SLICING_UNAVAILABLE` 경고를 남깁니다.
-- OCR 후보 병합은 전체 지문 기반 포함관계 중복 제거와 경계 라인 오버랩 병합을 수행해, 슬라이스된 세로형 상세 이미지나 srcset 변형에서 문장이 유실되거나 중복되지 않게 합니다.
-- 분류 입력이 문자 예산(14,000자)을 넘으면 배치로 분할해 호출하고 keywords/sentenceInsights/semanticFacts를 병합합니다. 일부 배치 실패는 `OCR_PROVIDER_PARTIAL` 경고로 남기고 성공 배치 결과를 사용합니다.
-
-### OCR 품질 추적 (`diagnostics.ocr`)
-
-OCR이 잘 추출·활용되었는지 사후 검증하고, 문제 지점을 다음 개선 실행에 넘길 수 있도록 실행마다 `diagnostics.ocr`에 전 단계 추적을 남깁니다.
-
-| 필드 | 내용 |
-| --- | --- |
-| `targets[]` | 이미지별 결과: `status`(extracted/empty/failed), 슬라이싱 여부·조각 수, 전사 길이, 모델 confidence, 텍스트 미리보기, 이미지별 `issues` |
-| `combination` | 병합 통계: 입력 후보 수, 중복 흡수 수, 오버랩 병합 수, 노이즈 필터로 드롭된 후보(사유·미리보기 포함), 최종 후보 수 |
-| `classification` | 분류 배치 수/실패 수, provider 키워드·문장 인사이트 수, confidence |
-| `utilization` | 공개 결과 활용도: 최종 textBlocks 수, 부착 키워드 수, 카테고리별 문장 인사이트 분포, OCR 유래 RAG chunk 수, 공개 출력에서 제외된 텍스트(사유 포함) |
-| `issues[]` | 추출 실패/빈 결과/저신뢰(0.6 미만)/분류 실패/드롭·미활용 텍스트를 요약한 리뷰 포인트 |
-
-`diagnostics.evidence`의 `ocr.pipeline` 항목에는 `대상 → 입력 → 병합 → 활용` 흐름의 한 줄 요약이 남습니다. QA 시에는 `issues`가 비어 있는지 먼저 확인하고, 문제가 있으면 해당 `targets`/`droppedCandidates`/`unusedTexts` 항목을 근거로 이미지·필터·프롬프트를 조정한 뒤 재실행해 비교하는 흐름을 권장합니다.
-
-옵션 예시:
-
-```ts
-{
-  provider: "azure-openai",
-  apiKey: process.env.AZURE_OPENAI_API_KEY,
-  endpoint: process.env.AZURE_OPENAI_ENDPOINT,
-  deployment: process.env.AZURE_OPENAI_DEPLOYMENT,
-  apiVersion: process.env.AZURE_OPENAI_API_VERSION
-}
-```
-
-## RAG 프로필
-
-기본 RAG 프로필은 `src/rag`에 있습니다.
-
-```txt
-src/rag/
-  rag-index.ts
-  analysis-prompt_v1.md
-  product-normalization_v1.md
-  review-keyword-extraction_v1.md
-  ocr-keyword-classification_v1.md
-  faq-extraction_v1.md
-  manifest.ts
-  profile.ts
-```
-
-`manifest.ts`는 현재 사용하는 파일 조합을 고정합니다.
-
-```ts
-export const productExtractorRagManifest = {
-  profile: "pdp-extractor-default",
-  analysisPrompt: "analysis-prompt_v1.md",
-  documents: {
-    productNormalization: "product-normalization_v1.md",
-    reviewKeywordExtraction: "review-keyword-extraction_v1.md",
-    ocrKeywordClassification: "ocr-keyword-classification_v1.md",
-    faqExtraction: "faq-extraction_v1.md"
-  }
-} as const;
-```
-
-`rag-index.ts`가 RAG routing의 source of truth입니다. 어떤 문서와 섹션이 normalization, OCR classification, review, FAQ, exclusion, diagnostics에 쓰이는지 typed metadata로 관리하고, 검색된 chunk의 `kind/intents/fieldTargets`와 함께 diagnostics에서 선택 근거를 추적할 수 있게 합니다.
-
-앱의 설정 화면에서 추가한 커스텀 문서는 `src/rag/custom` 아래에 저장됩니다.
-
-### RAG 활용 플로우
-
-```mermaid
-flowchart TD
-  RAGDOCS["Extractor RAG 문서<br/>normalization / review / OCR / FAQ 기준"] --> SYS["system prompt<br/>분류 규칙 + 출력 스키마 + 금지사항"]
-  PDP["PDP URL / REST / HTML"] --> EXTRACT["원천 추출<br/>상품 / 리뷰 / OCR / FAQ 후보"]
-  EXTRACT --> USER["user prompt<br/>실제 상품 evidence"]
-  SYS --> LLM["LLM 분류/정규화<br/>(선택적)"]
-  USER --> LLM
-  LLM --> RAW["GEO RAW JSON<br/>+ evidence + warnings"]
-  RAW --> CHUNKS["rag.chunks 생성<br/>downstream generator 검색/감사용"]
-```
-
-핵심 원칙: RAG 문서는 **분류 정책**이고 상품 사실이 아닙니다. claim은 user prompt의 PDP evidence에서만 나오며, RAG 예시가 원문에 없는 효능/성분을 만들 수 없습니다.
-
-### LLM 프롬프트에서의 RAG 구성
-
-OCR/상세 영역 키워드 분류에 provider LLM을 사용할 때는 RAG 정보를 다음처럼 분리해 전달합니다.
-
-| 영역 | 들어가는 정보 | 목적 |
+| Stage | Work | Output effect |
 | --- | --- | --- |
-| system prompt | 기본 분류 규칙, 출력 JSON 스키마, 금지사항, `analysisPrompt`, RAG 문서 요약 | agent가 일관된 정책으로 분류하도록 고정 |
-| user prompt | 현재 source URL, 상품명, OCR/상세 영역 evidence 텍스트 | 실제 상품 사실을 분류할 근거 제공 |
+| Input and fetch | Validates the requested source and collects page, metadata, JSON-LD, or API material. | Retrieval failures stay visible as warnings instead of becoming missing facts. |
+| Extract | Normalizes product name, description, options, FAQ candidates, and source signals. | Produces the product facts available for later planning. |
+| OCR | Inspects qualified image/detail candidates and retains image-text provenance. | Direct statements can be evidence; adjacent fragments do not establish a causal relationship. |
+| Review | Collects product-review signals. | Review language remains a signal with its own source role. |
+| RAG | Builds/retrieves guidance chunks for extraction. | Guidance is recorded in diagnostics, never substituted for product evidence. |
+| JSON | Emits the stable result envelope. | Consumers receive `geoProduct`, source information, diagnostics, and process steps. |
 
-이 구조에서는 RAG 프로필을 “상품 사실”로 취급하지 않습니다. RAG 프로필은 benefit/effect/ingredient/usage 같은 분류 기준과 제외 규칙을 잡아주는 정책/참고 자료이고, 실제 claim은 user prompt에 들어온 PDP evidence에서만 가져옵니다. 그래서 `analysisPrompt`나 RAG 문서에 있는 예시는 분류 판단을 도울 수는 있지만, 원문 evidence에 없는 상품 효능이나 성분을 새로 만들면 안 됩니다.
+Use `extract_product`, `extract_product_from_html`, or `extract_product_from_api_payload` for the primary paths. `refine_geo_product_result` and the REST handler preserve the migration-facing contract. The package exposes snake_case APIs plus intentional camelCase compatibility aliases.
 
-provider별 전달 방식:
+## Evidence rule
 
-- OpenAI Responses API: `instructions`에 system prompt, `input`에 user evidence를 전달합니다.
-- Azure 배포 모델 Chat Completions: `system` message와 `user` message를 분리합니다.
-- Gemini generateContent: `systemInstruction`과 user `contents`를 분리합니다.
-- system prompt를 지원하지 않는 환경을 위해 `createKeywordClassificationPrompt`는 두 영역을 합친 호환 문자열도 제공합니다.
+A source can support a directly stated ingredient, benefit, usage, safety, or qualified measurement. It cannot support a causal ingredient-to-outcome claim merely because OCR or nearby text contains both terms. That relationship must be explicit in the source. This distinction protects the downstream evidence ledger and quality gates from polished but ungrounded copy.
 
-`result.geoProduct.rag.chunks`는 위 프롬프트와 별개의 산출물입니다. 추출이 끝난 뒤 상품/리뷰/FAQ/OCR/source 근거를 downstream `pdp-geo-generator-agent`가 검색하거나 감사할 수 있도록 만든 데이터입니다.
+When OCR or a source exposes one contiguous numbered usage procedure, extraction keeps its original count, order, text, and image/source lineage. The generator can therefore render each source step as a separate `HowTo` step; unrelated numbered packaging, safety, or measurement copy is not promoted into a customer routine.
 
-## 주요 타입
+## Progress and diagnostics
 
-| 타입 | 설명 |
-| --- | --- |
-| `ProductExtractionInput` | 추출 요청 입력 |
-| `ProductExtractionRun` | 결과와 진단 로그를 모두 포함한 실행 결과 |
-| `ProductExtractionResult` | 최종 JSON 아티팩트 |
-| `ProductExtractionDiagnostics` | 단계별 로그, evidence, warning |
-| `GeoProductRawData` | downstream GEO 작업에 넘기는 상품 중심 데이터 |
-| `ProductExtractorOptions` | provider, RAG, progress callback 옵션 |
+Every real completed stage can emit a process event through the progress callback. The optional `metrics` object is structured and locale-neutral so callers can format it naturally without parsing backend prose:
 
-## 주요 파일
+| Completed stage | Metric | Meaning |
+| --- | --- | --- |
+| OCR | `ocrImageCandidateCount` | Image candidates inspected by OCR, not a verified-claim count. |
+| Review | `reviewItemCount` | Review items available to the extractor. |
+| RAG | `ragChunkCount` | Guidance chunks retrieved for extraction, not product facts. |
 
-| 파일 | 설명 |
-| --- | --- |
-| `src/agent.ts` | 추출 파이프라인의 중심 로직 |
-| `src/product-normalizer.ts` | RAG-aware Gen AI 상품 프로필 정규화와 source-backed 적용 필터 |
-| `src/rest.ts` | REST 핸들러 생성기 |
-| `src/refine.ts` | GEO RAW JSON 수정 로직 |
-| `src/types.ts` | 공개 타입과 Zod 입력 스키마 |
-| `src/llm/providers.ts` | provider 선택 |
-| `src/llm/providers/*` | provider별 키워드 분류 구현 |
-| `src/rag/rag-index.ts` | RAG 문서/섹션의 typed metadata source of truth |
-| `src/rag/profile.ts` | RAG 파일 읽기/쓰기/초기화 |
-| `tests/*` | 추출, REST, provider, RAG 프로필 테스트 |
+Older consumers can ignore `metrics`; older events without them remain valid. Diagnostics include the full process snapshot, evidence, OCR/review/RAG usage, warnings, and runtime information.
 
-## 명령어
+This package does not score the final GEO quality gate. The generator and evaluator consume its evidence/diagnostics later; neither a completed extraction stage nor a populated metric is proof that a downstream public claim is admissible.
+
+## Configuration and timing
+
+Keep provider settings, credentials, and service locations in deployment or local secret management only. Do not place them in source files, fixtures, READMEs, or browser-visible configuration.
+
+Model-backed stages use a 900-second minimum request timeout. A supplied timeout can extend that limit but cannot make it shorter. It is separate from acquisition: a page fetch has a 30-second timeout, and image retrieval is independently bounded. A model taking several minutes is therefore not the same condition as a source fetch timing out.
+
+## Test
+
+From the repository root:
 
 ```bash
-pnpm --filter @agentic-geo/pdp-extractor-agent test
-pnpm --filter @agentic-geo/pdp-extractor-agent typecheck
-pnpm --filter @agentic-geo/pdp-extractor-agent build
-pnpm --filter @agentic-geo/pdp-extractor-agent lint
+uv run --package pdp-extractor-agent pytest packages/pdp-extractor-agent/tests -q
+uv run ruff check packages/pdp-extractor-agent
 ```
 
-## 설계 메모
-
-- 이 패키지는 앱 UI에 의존하지 않습니다.
-- provider와 RAG 설정은 패키지 내부 옵션으로 주입합니다.
-- public result와 diagnostics를 분리해 최종 JSON은 깔끔하게 유지하고, 검증/디버깅 정보는 별도 로그로 제공합니다.
-- 앞으로 다른 GEO 서브 에이전트가 추가되더라도 각 에이전트가 자기 RAG 문서와 provider 설정을 독립적으로 갖는 구조를 유지합니다.
+The test suite uses deterministic transports and fixtures; it does not require a live provider.

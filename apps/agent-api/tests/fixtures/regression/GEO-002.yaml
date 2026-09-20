@@ -1,0 +1,86 @@
+# GEO-002 — internally authored synthetic first-step serum fixture (en-US)
+#
+# This fixture deliberately keeps an alternative English serum shape: multiple
+# sizes, two qualified metrics, source OCR, and no FAQ or customer reviews.
+
+id: GEO-002
+name: "Fieldnote Example Labs Daybreak First Essence (en-US)"
+tags: ["fieldnote-example-labs", "en-US", "essence", "synthetic"]
+
+request: {
+  "locale": "en-US",
+  "product": {
+    "canonicalUrl": "https://catalog.example.test/products/daybreak-first-essence?variant=EX-DAY-002",
+    "offerUrl": "https://catalog.example.test/products/daybreak-first-essence?variant=EX-DAY-002",
+    "geoProduct": {
+      "id": "EX-DAY-002",
+      "name": "Daybreak First Essence",
+      "brand": "Fieldnote Example Labs",
+      "category": "Skincare Essence",
+      "sku": "EX-DAY-002",
+      "gtin": "0000000000024",
+      "price": {"raw": "$38.00", "amount": 38, "currency": "USD"},
+      "description": "Daybreak First Essence is a fictional first-step essence created for regression testing. The synthetic source describes cloudleaf ferment, beta-glucan, and a vitamin C derivative as a lightweight layer used immediately after cleansing.",
+      "images": [
+        "https://assets.example.test/fixtures/daybreak/packshot-45ml.png",
+        "https://assets.example.test/fixtures/daybreak/texture-swatch.png",
+        "https://assets.example.test/fixtures/daybreak/user-panel-card.png",
+        "https://assets.example.test/fixtures/daybreak/instrument-card.png"
+      ],
+      "options": ["45 mL", "90 mL"],
+      "benefits": ["hydrating", "radiance", "texture-refining"],
+      "effects": ["a fresher-looking tone", "more even-looking texture", "comfortable first-step hydration"],
+      "ingredients": ["Cloudleaf Ferment", "Beta-Glucan", "Vitamin C Derivative"],
+      "usage": ["After cleansing, press two to three drops into the face before toner and moisturizer in this synthetic routine example."],
+      "metrics": ["Synthetic user panel: after 21 days, 18 of 24 adult volunteers reported a fresher-looking tone.", "Synthetic instrument reading: average surface hydration increased 12% after 14 days across 20 adult test participants."],
+      "faq": [],
+      "reviews": {"items": [], "keywords": []},
+      "sourceExtraction": {
+        "html": {
+          "description": "Daybreak First Essence is a fictional first-step essence created for regression testing. The synthetic source describes cloudleaf ferment, beta-glucan, and a vitamin C derivative as a lightweight layer used immediately after cleansing.",
+          "sections": [
+            {"title": "Key ingredients", "category": "ingredient", "text": "CLOUDLEAF FERMENT, BETA-GLUCAN, AND A VITAMIN C DERIVATIVE.", "bullets": ["Cloudleaf Ferment", "Beta-Glucan", "Vitamin C Derivative"]},
+            {"title": "Designed for", "category": "benefit", "text": "DESIGNED FOR: dull-looking tone, rough-feeling texture, and a lightweight first hydration step.", "bullets": ["dull-looking tone", "rough-feeling texture", "lightweight hydration"]},
+            {"title": "How to use", "category": "usage", "text": "PRESS TWO TO THREE DROPS INTO SKIN IMMEDIATELY AFTER CLEANSING, BEFORE TONER AND MOISTURIZER.", "bullets": ["after cleansing", "before toner", "before moisturizer"]}
+          ],
+          "faq": []
+        },
+        "ocr": {
+          "imageTexts": [
+            {"imageUrl": "https://assets.example.test/fixtures/daybreak/user-panel-card.png", "text": "SYNTHETIC USER PANEL. AFTER 21 DAYS, 18 OF 24 ADULT VOLUNTEERS REPORTED A FRESHER-LOOKING TONE."},
+            {"imageUrl": "https://assets.example.test/fixtures/daybreak/instrument-card.png", "text": "SYNTHETIC INSTRUMENT READING. AVERAGE SURFACE HYDRATION INCREASED 12% AFTER 14 DAYS ACROSS 20 ADULT TEST PARTICIPANTS."}
+          ],
+          "textBlocks": ["CLOUDLEAF FERMENT AND BETA-GLUCAN ARE DESCRIBED IN THIS SYNTHETIC FIXTURE AS A LIGHTWEIGHT FIRST STEP.", "SYNTHETIC USER PANEL. AFTER 21 DAYS, 18 OF 24 ADULT VOLUNTEERS REPORTED A FRESHER-LOOKING TONE.", "SYNTHETIC INSTRUMENT READING. AVERAGE SURFACE HYDRATION INCREASED 12% AFTER 14 DAYS ACROSS 20 ADULT TEST PARTICIPANTS."],
+          "sentenceInsights": [
+            {"imageUrl": "https://assets.example.test/fixtures/daybreak/user-panel-card.png", "text": "Synthetic user panel: after 21 days, 18 of 24 adult volunteers reported a fresher-looking tone.", "category": "metric", "keywords": ["21 days", "18 of 24", "synthetic user panel"]},
+            {"imageUrl": "https://assets.example.test/fixtures/daybreak/instrument-card.png", "text": "Synthetic instrument reading: average surface hydration increased 12% after 14 days across 20 adult test participants.", "category": "metric", "keywords": ["12%", "14 days", "20 adult test participants"]}
+          ],
+          "semanticFacts": {
+            "ingredients": ["Cloudleaf Ferment", "Beta-Glucan", "Vitamin C Derivative"],
+            "benefits": ["hydrating", "radiance", "texture-refining"],
+            "effects": ["a fresher-looking tone", "more even-looking texture", "comfortable first-step hydration"],
+            "skinTypes": ["normal", "dry", "combination", "oily"],
+            "usageSteps": ["After cleansing, press two to three drops into the face before toner and moisturizer in this synthetic routine example."],
+            "metricClaims": [{"label": "fresher-looking tone", "subject": "skin tone appearance", "value": "75", "unit": "%", "metric": "self-reported perception", "direction": "improve", "timing": "after 21 days", "sample": "24 adult volunteers", "method": "synthetic user panel", "sentence": "Synthetic user panel: after 21 days, 18 of 24 adult volunteers reported a fresher-looking tone.", "sourceText": "Synthetic user panel: after 21 days, 18 of 24 adult volunteers reported a fresher-looking tone."}, {"label": "surface hydration", "subject": "surface hydration", "value": "12", "unit": "%", "metric": "instrument reading", "direction": "increase", "timing": "after 14 days", "sample": "20 adult test participants", "method": "synthetic instrument reading", "sentence": "Synthetic instrument reading: average surface hydration increased 12% after 14 days across 20 adult test participants.", "sourceText": "Synthetic instrument reading: average surface hydration increased 12% after 14 days across 20 adult test participants."}],
+            "evidenceSentences": ["Synthetic user panel: after 21 days, 18 of 24 adult volunteers reported a fresher-looking tone.", "Synthetic instrument reading: average surface hydration increased 12% after 14 days across 20 adult test participants."],
+            "ingredientBenefitLinks": [{"ingredient": "Beta-Glucan", "benefit": "hydrating", "effect": "comfortable first-step hydration", "sentence": "Beta-Glucan is described in this synthetic fixture as part of a lightweight first step.", "sourceText": "CLOUDLEAF FERMENT AND BETA-GLUCAN ARE DESCRIBED IN THIS SYNTHETIC FIXTURE AS A LIGHTWEIGHT FIRST STEP."}]
+          }
+        }
+      },
+      "aiAnalysis": {"keywords": {"product": ["Daybreak First Essence", "Fieldnote Example Labs", "essence"], "price": ["$38.00"], "benefit": ["hydrating", "radiance", "texture-refining"], "effect": ["a fresher-looking tone", "more even-looking texture"], "ingredient": ["Cloudleaf Ferment", "Beta-Glucan", "Vitamin C Derivative"], "usage": ["after cleansing before toner"], "faq": [], "review": [], "metric": ["18 of 24 after 21 days", "12% after 14 days"], "trend": [], "unknown": []}, "categorizedSections": [{"title": "Key ingredients", "category": "ingredient", "text": "CLOUDLEAF FERMENT, BETA-GLUCAN, AND A VITAMIN C DERIVATIVE.", "bullets": ["Cloudleaf Ferment", "Beta-Glucan", "Vitamin C Derivative"]}], "summary": "Synthetic first-step essence fixture with multiple size options and two qualified metrics."},
+      "semanticFacts": {"ingredients": ["Cloudleaf Ferment", "Beta-Glucan", "Vitamin C Derivative"], "benefits": ["hydrating", "radiance", "texture-refining"], "effects": ["a fresher-looking tone", "more even-looking texture", "comfortable first-step hydration"], "skinTypes": ["normal", "dry", "combination", "oily"], "usageSteps": ["After cleansing, press two to three drops into the face before toner and moisturizer in this synthetic routine example."], "metricClaims": [{"label": "fresher-looking tone", "subject": "skin tone appearance", "value": "75", "unit": "%", "metric": "self-reported perception", "direction": "improve", "timing": "after 21 days", "sample": "24 adult volunteers", "method": "synthetic user panel", "sentence": "Synthetic user panel: after 21 days, 18 of 24 adult volunteers reported a fresher-looking tone.", "sourceText": "Synthetic user panel: after 21 days, 18 of 24 adult volunteers reported a fresher-looking tone."}, {"label": "surface hydration", "subject": "surface hydration", "value": "12", "unit": "%", "metric": "instrument reading", "direction": "increase", "timing": "after 14 days", "sample": "20 adult test participants", "method": "synthetic instrument reading", "sentence": "Synthetic instrument reading: average surface hydration increased 12% after 14 days across 20 adult test participants.", "sourceText": "Synthetic instrument reading: average surface hydration increased 12% after 14 days across 20 adult test participants."}], "evidenceSentences": ["Synthetic user panel: after 21 days, 18 of 24 adult volunteers reported a fresher-looking tone.", "Synthetic instrument reading: average surface hydration increased 12% after 14 days across 20 adult test participants."], "ingredientBenefitLinks": [{"ingredient": "Beta-Glucan", "benefit": "hydrating", "effect": "comfortable first-step hydration", "sentence": "Beta-Glucan is described in this synthetic fixture as part of a lightweight first step.", "sourceText": "CLOUDLEAF FERMENT AND BETA-GLUCAN ARE DESCRIBED IN THIS SYNTHETIC FIXTURE AS A LIGHTWEIGHT FIRST STEP."}]},
+      "categorizedProductInfo": {"benefits": ["hydrating", "radiance", "texture-refining"], "effects": ["a fresher-looking tone", "more even-looking texture", "comfortable first-step hydration"], "ingredients": ["Cloudleaf Ferment", "Beta-Glucan", "Vitamin C Derivative"], "usage": ["After cleansing, press two to three drops into the face before toner and moisturizer in this synthetic routine example."], "metrics": ["Synthetic user panel: after 21 days, 18 of 24 adult volunteers reported a fresher-looking tone.", "Synthetic instrument reading: average surface hydration increased 12% after 14 days across 20 adult test participants."], "faq": []},
+      "customerReviewAnalysis": {"items": [], "keywords": [], "reviewSignals": []},
+      "contentAnalysis": {"sections": [{"title": "How to use", "category": "usage", "text": "PRESS TWO TO THREE DROPS INTO SKIN IMMEDIATELY AFTER CLEANSING, BEFORE TONER AND MOISTURIZER.", "bullets": ["after cleansing", "before toner", "before moisturizer"]}], "reviewSignals": []},
+      "ocr": {"textBlocks": ["SYNTHETIC USER PANEL. AFTER 21 DAYS, 18 OF 24 ADULT VOLUNTEERS REPORTED A FRESHER-LOOKING TONE.", "SYNTHETIC INSTRUMENT READING. AVERAGE SURFACE HYDRATION INCREASED 12% AFTER 14 DAYS ACROSS 20 ADULT TEST PARTICIPANTS."], "keywords": {"product": ["Daybreak First Essence"], "benefit": ["hydrating", "radiance"], "ingredient": ["Cloudleaf Ferment", "Beta-Glucan"], "metric": ["18 of 24", "12%"]}, "sentenceInsights": [{"imageUrl": "https://assets.example.test/fixtures/daybreak/instrument-card.png", "text": "Synthetic instrument reading: average surface hydration increased 12% after 14 days across 20 adult test participants.", "category": "metric", "keywords": ["12%", "14 days", "synthetic"]}]},
+      "rag": {"chunks": [{"id": "ex-day-002-product", "kind": "product", "text": "Daybreak First Essence\nSynthetic first-step essence with hydration and radiance signals."}, {"id": "ex-day-002-ocr-1", "kind": "ocr", "text": "Synthetic user panel: after 21 days, 18 of 24 adult volunteers reported a fresher-looking tone."}]},
+      "availability": "InStock",
+      "variants": [{"id": "EX-DAY-002-45", "sku": "EX-DAY-002", "title": "45 mL", "price": "$38.00"}, {"id": "EX-DAY-002-90", "sku": "EX-DAY-002-90", "title": "90 mL", "price": "$62.00"}],
+      "tags": ["#synthetic", "#first-essence", "#example-fixture"]
+    }
+  }
+}
+
+expect:
+  resultStatus: SUCCEEDED
+  schemaTypes: ["Product", "WebPage"]

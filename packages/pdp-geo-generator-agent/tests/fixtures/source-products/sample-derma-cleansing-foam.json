@@ -1,0 +1,57 @@
+{
+  "name": "SampleDerma DailyClean365 Cleansing Foam 200g",
+  "originalName": "SampleDerma DailyClean365 Cleansing Foam 200g",
+  "brand": "SampleDerma",
+  "category": "Cleansing Foam",
+  "description": "건조 피부 또는 민감 피부에 추천하는 클렌징 폼입니다.",
+  "images": [],
+  "options": [],
+  "benefits": [
+    "일상 노폐물 세정",
+    "피부 장벽 보호"
+  ],
+  "effects": [],
+  "ingredients": [
+    "판테놀",
+    "베타인",
+    "글리세린",
+    "아미노산 유래 세정 포뮬라"
+  ],
+  "usage": [],
+  "metrics": [],
+  "faq": [],
+  "reviews": {
+    "items": [],
+    "keywords": []
+  },
+  "breadcrumbs": [],
+  "sourceTexts": [
+    "판테놀, 베타인, 글리세린을 담은 포뮬라가 함유되어 있습니다.",
+    "아미노산 유래 세정 포뮬라가 적용되었습니다.",
+    "아미노산 유래 세정 성분을 담음 약산성 포뮬라로 일상 속 노폐물을 말끔하게 세정"
+  ],
+  "semanticFacts": {
+    "ingredients": [
+      "판테놀",
+      "베타인",
+      "글리세린",
+      "아미노산 유래 세정 포뮬라"
+    ],
+    "benefits": [
+      "일상 노폐물 세정",
+      "피부 장벽 보호"
+    ],
+    "effects": [],
+    "skinTypes": [
+      "건조 피부 또는 민감 피부"
+    ],
+    "usageSteps": [],
+    "safetyTests": [],
+    "metricClaims": [],
+    "evidenceSentences": [
+      "아미노산 유래 세정 성분을 담음 약산성 포뮬라로 일상 속 노폐물을 말끔하게 세정"
+    ],
+    "ingredientBenefitLinks": [],
+    "citations": []
+  }
+}

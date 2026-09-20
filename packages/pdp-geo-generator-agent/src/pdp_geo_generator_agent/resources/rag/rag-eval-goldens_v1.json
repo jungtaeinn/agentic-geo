@@ -1,0 +1,745 @@
+[
+  {
+    "id": "ARC-FAQ",
+    "productId": "fieldnote-arcwell-night-serum",
+    "locale": "en-US",
+    "market": "US",
+    "target": "faq",
+    "focus": "Synthetic serum: customer-intent FAQ retrieval and claim-safe context",
+    "expectedChunks": [
+      {
+        "document": "eeat_v1.md",
+        "heading": "Experience"
+      },
+      {
+        "document": "cep_v1.md",
+        "heading": "CEP Dimensions"
+      },
+      {
+        "document": "schema-org-product_v2.md"
+      }
+    ],
+    "expectedClaims": [
+      "Arcwell Night Renewal Serum",
+      "Encapsulated Retinyl Oleate"
+    ],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "ARC-HOWTO",
+    "productId": "fieldnote-arcwell-night-serum",
+    "locale": "en-US",
+    "market": "US",
+    "target": "howToUse",
+    "focus": "Synthetic evening instruction reaches the HowTo generation context",
+    "expectedChunks": [
+      {
+        "document": "brands/sample_botanics/best-practice_v2.md"
+      },
+      {
+        "document": "content-field-contracts_v1.md",
+        "heading": "HowTo Contract"
+      },
+      {
+        "document": "cep_v1.md",
+        "heading": "PDP Field Mapping"
+      }
+    ],
+    "expectedClaims": [
+      "after a water-based toner",
+      "alternate nights"
+    ],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "ARC-PDESC",
+    "productId": "fieldnote-arcwell-night-serum",
+    "locale": "en-US",
+    "market": "US",
+    "target": "productDescription",
+    "focus": "Product.description preserves source-supported formula and use context",
+    "expectedChunks": [
+      {
+        "document": "cep_v1.md",
+        "heading": "Causal Path Completeness"
+      },
+      {
+        "document": "eeat_v1.md",
+        "heading": "Trust-First Claim Safety"
+      },
+      {
+        "document": "geo-research_v3.md",
+        "heading": "Research-Backed GEO Principles"
+      },
+      {
+        "document": "brands/sample_botanics/best-practice_v2.md"
+      }
+    ],
+    "expectedClaims": [
+      "Moonflower Peptide Blend",
+      "smoother-feeling texture"
+    ],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "ARC-WDESC",
+    "productId": "fieldnote-arcwell-night-serum",
+    "locale": "en-US",
+    "market": "US",
+    "target": "webPageDescription",
+    "focus": "WebPage and Product description remain separate for a synthetic page",
+    "expectedChunks": [
+      {
+        "document": "brands/sample_botanics/best-practice_v2.md"
+      },
+      {
+        "document": "content-field-contracts_v1.md"
+      },
+      {
+        "document": "cep_v1.md"
+      }
+    ],
+    "expectedClaims": [
+      "Fieldnote Example Labs"
+    ],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "ARC-SCHEMA",
+    "productId": "fieldnote-arcwell-night-serum",
+    "locale": "en-US",
+    "market": "US",
+    "target": "schema",
+    "focus": "Schema eligibility and official-platform constraints",
+    "expectedChunks": [
+      {
+        "document": "schema-org-product_v2.md"
+      },
+      {
+        "document": "official-ai-search-platform-docs_v1.md"
+      },
+      {
+        "document": "eeat_v1.md",
+        "heading": "Authoritativeness"
+      }
+    ],
+    "expectedClaims": [
+      "@graph"
+    ],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "ARC-EVIDENCE",
+    "productId": "fieldnote-arcwell-night-serum",
+    "locale": "en-US",
+    "market": "US",
+    "target": "productDescription",
+    "focus": "Qualified synthetic panel metric stays bounded by its source scope",
+    "expectedChunks": [
+      {
+        "document": "eeat_v1.md",
+        "heading": "Evidence Hierarchy"
+      },
+      {
+        "document": "evidence/geo-research-cards_v1.md"
+      }
+    ],
+    "expectedClaims": [
+      "28 days",
+      "19 of 24"
+    ],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "DAY-FAQ",
+    "productId": "fieldnote-daybreak-first-essence",
+    "locale": "en-US",
+    "market": "US",
+    "target": "faq",
+    "focus": "No-source-FAQ product retains the no-quota FAQ rule",
+    "expectedChunks": [
+      {
+        "document": "schema-org-product_v2.md"
+      },
+      {
+        "document": "eeat_v1.md",
+        "heading": "Experience"
+      },
+      {
+        "document": "cep_v1.md",
+        "heading": "CEP Dimensions"
+      }
+    ],
+    "expectedClaims": [
+      "Daybreak First Essence"
+    ],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "DAY-HOWTO",
+    "productId": "fieldnote-daybreak-first-essence",
+    "locale": "en-US",
+    "market": "US",
+    "target": "howToUse",
+    "focus": "One stated routine instruction is evaluated as one source-backed HowTo route",
+    "expectedChunks": [
+      {
+        "document": "brands/sample_botanics/best-practice_v2.md"
+      },
+      {
+        "document": "schema-org-product_v2.md"
+      }
+    ],
+    "expectedClaims": [
+      "After cleansing",
+      "before toner and moisturizer"
+    ],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "DAY-PDESC",
+    "productId": "fieldnote-daybreak-first-essence",
+    "locale": "en-US",
+    "market": "US",
+    "target": "productDescription",
+    "focus": "Multi-benefit synthetic product keeps causal context without overclaiming",
+    "expectedChunks": [
+      {
+        "document": "cep_v1.md",
+        "heading": "Causal Path Completeness"
+      },
+      {
+        "document": "geo-research_v3.md",
+        "heading": "Research-Backed GEO Principles"
+      },
+      {
+        "document": "brands/sample_botanics/best-practice_v2.md"
+      }
+    ],
+    "expectedClaims": [
+      "Cloudleaf Ferment",
+      "fresher-looking tone"
+    ],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "DAY-CLAIMSAFETY",
+    "productId": "fieldnote-daybreak-first-essence",
+    "locale": "en-US",
+    "market": "US",
+    "target": "productDescription",
+    "focus": "Unqualified rankings and guarantees route to claim-safety guidance",
+    "expectedChunks": [
+      {
+        "document": "eeat_v1.md",
+        "heading": "Trust-First Claim Safety"
+      },
+      {
+        "document": "brands/sample_botanics/locale-expression-guidelines_v2.md"
+      }
+    ],
+    "expectedClaims": [],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "number one",
+      "best serum",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "DAY-SCHEMA",
+    "productId": "fieldnote-daybreak-first-essence",
+    "locale": "en-US",
+    "market": "US",
+    "target": "schema",
+    "focus": "Variant and offer markup for a two-size synthetic product",
+    "expectedChunks": [
+      {
+        "document": "schema-org-product_v2.md"
+      },
+      {
+        "document": "official-ai-search-platform-docs_v1.md"
+      }
+    ],
+    "expectedClaims": [
+      "45 mL",
+      "90 mL"
+    ],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "DAY-WDESC",
+    "productId": "fieldnote-daybreak-first-essence",
+    "locale": "en-US",
+    "market": "US",
+    "target": "webPageDescription",
+    "focus": "Page-scope copy is distinct from a product narrative",
+    "expectedChunks": [
+      {
+        "document": "brands/sample_botanics/best-practice_v2.md"
+      },
+      {
+        "document": "cep_v1.md"
+      }
+    ],
+    "expectedClaims": [
+      "Fieldnote Example Labs"
+    ],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "WFT-FAQ",
+    "productId": "byeolmorae-waterfold-toner",
+    "locale": "ko-KR",
+    "market": "KR",
+    "target": "faq",
+    "focus": "Visible synthetic Korean Q&A routes to answer-ready FAQ context",
+    "expectedChunks": [
+      {
+        "document": "eeat_v1.md",
+        "heading": "Experience"
+      },
+      {
+        "document": "schema-org-product_v2.md"
+      },
+      {
+        "document": "brands/sample_derma/best-practice_v2.md"
+      }
+    ],
+    "expectedClaims": [
+      "워터폴드 캡슐 토너",
+      "수분결 리포좀"
+    ],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "WFT-HOWTO",
+    "productId": "byeolmorae-waterfold-toner",
+    "locale": "ko-KR",
+    "market": "KR",
+    "target": "howToUse",
+    "focus": "Korean source instruction retains its wording and sequence",
+    "expectedChunks": [
+      {
+        "document": "brands/sample_derma/best-practice_v2.md"
+      },
+      {
+        "document": "schema-org-product_v2.md"
+      }
+    ],
+    "expectedClaims": [
+      "세안 직후",
+      "가볍게 눌러"
+    ],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "WFT-PDESC",
+    "productId": "byeolmorae-waterfold-toner",
+    "locale": "ko-KR",
+    "market": "KR",
+    "target": "productDescription",
+    "focus": "Korean product description keeps formula details source-bounded",
+    "expectedChunks": [
+      {
+        "document": "cep_v1.md",
+        "heading": "Causal Path Completeness"
+      },
+      {
+        "document": "brands/sample_derma/best-practice_v2.md"
+      },
+      {
+        "document": "eeat_v1.md",
+        "heading": "Trust-First Claim Safety"
+      }
+    ],
+    "expectedClaims": [
+      "수분결 리포좀",
+      "판테놀"
+    ],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "아토피 치료",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "WFT-LOCALE",
+    "productId": "byeolmorae-waterfold-toner",
+    "locale": "ko-KR",
+    "market": "KR",
+    "target": "productDescription",
+    "focus": "Korean locale guidance is retrieved for Korean generation",
+    "expectedChunks": [
+      {
+        "document": "brands/sample_derma/locale-expression-guidelines_v2.md"
+      },
+      {
+        "document": "brands/sample_derma/brand-identity_v2.md"
+      }
+    ],
+    "expectedClaims": [
+      "보습"
+    ],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "WFT-SCHEMA",
+    "productId": "byeolmorae-waterfold-toner",
+    "locale": "ko-KR",
+    "market": "KR",
+    "target": "schema",
+    "focus": "FAQPage markup is limited to visible Q&A evidence",
+    "expectedChunks": [
+      {
+        "document": "schema-org-product_v2.md"
+      },
+      {
+        "document": "official-ai-search-platform-docs_v1.md"
+      }
+    ],
+    "expectedClaims": [
+      "FAQPage"
+    ],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "WFT-WDESC",
+    "productId": "byeolmorae-waterfold-toner",
+    "locale": "ko-KR",
+    "market": "KR",
+    "target": "webPageDescription",
+    "focus": "Korean page-scope description remains a page map",
+    "expectedChunks": [
+      {
+        "document": "brands/sample_derma/best-practice_v2.md"
+      },
+      {
+        "document": "cep_v1.md"
+      }
+    ],
+    "expectedClaims": [
+      "별모래 테스트 랩"
+    ],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "CVM-FAQ",
+    "productId": "byeolmorae-cloudveil-mist",
+    "locale": "ko-KR",
+    "market": "KR",
+    "target": "faq",
+    "focus": "Synthetic review and FAQ context route to answer-ready questions",
+    "expectedChunks": [
+      {
+        "document": "eeat_v1.md",
+        "heading": "Experience"
+      },
+      {
+        "document": "cep_v1.md",
+        "heading": "CEP Dimensions"
+      },
+      {
+        "document": "brands/sample_derma/best-practice_v2.md"
+      }
+    ],
+    "expectedClaims": [
+      "클라우드베일 크림 미스트"
+    ],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "CVM-HOWTO",
+    "productId": "byeolmorae-cloudveil-mist",
+    "locale": "ko-KR",
+    "market": "KR",
+    "target": "howToUse",
+    "focus": "Explicit mist instruction reaches HowTo context without invented steps",
+    "expectedChunks": [
+      {
+        "document": "brands/sample_derma/best-practice_v2.md"
+      },
+      {
+        "document": "schema-org-product_v2.md"
+      }
+    ],
+    "expectedClaims": [
+      "약 20cm",
+      "두세 번 분사"
+    ],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "CVM-PDESC",
+    "productId": "byeolmorae-cloudveil-mist",
+    "locale": "ko-KR",
+    "market": "KR",
+    "target": "productDescription",
+    "focus": "Synthetic formula and application details stay source-bounded",
+    "expectedChunks": [
+      {
+        "document": "cep_v1.md",
+        "heading": "Causal Path Completeness"
+      },
+      {
+        "document": "eeat_v1.md",
+        "heading": "Trust-First Claim Safety"
+      },
+      {
+        "document": "brands/sample_derma/best-practice_v2.md"
+      }
+    ],
+    "expectedClaims": [
+      "구름보습 지질 복합체",
+      "판테놀"
+    ],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "CVM-REVIEW",
+    "productId": "byeolmorae-cloudveil-mist",
+    "locale": "ko-KR",
+    "market": "KR",
+    "target": "faq",
+    "focus": "Synthetic review facts remain attributed rather than efficacy proof",
+    "expectedChunks": [
+      {
+        "document": "eeat_v1.md",
+        "heading": "Experience"
+      },
+      {
+        "document": "eeat_v1.md",
+        "heading": "Trust-First Claim Safety"
+      }
+    ],
+    "expectedClaims": [],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "모든 피부에 안전",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "CVM-SCHEMA",
+    "productId": "byeolmorae-cloudveil-mist",
+    "locale": "ko-KR",
+    "market": "KR",
+    "target": "schema",
+    "focus": "additionalProperty routing uses objective source-stated attributes",
+    "expectedChunks": [
+      {
+        "document": "schema-org-product_v2.md"
+      },
+      {
+        "document": "official-ai-search-platform-docs_v1.md"
+      }
+    ],
+    "expectedClaims": [
+      "additionalProperty"
+    ],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "medical treatment",
+      "치료 효과"
+    ]
+  },
+  {
+    "id": "CVM-WDESC",
+    "productId": "byeolmorae-cloudveil-mist",
+    "locale": "ko-KR",
+    "market": "KR",
+    "target": "webPageDescription",
+    "focus": "Korean page-scope description covers a synthetic review-bearing PDP",
+    "expectedChunks": [
+      {
+        "document": "brands/sample_derma/best-practice_v2.md"
+      },
+      {
+        "document": "cep_v1.md"
+      }
+    ],
+    "expectedClaims": [
+      "별모래 테스트 랩"
+    ],
+    "forbiddenClaims": [
+      "clinically proven",
+      "guaranteed",
+      "cure",
+      "치료",
+      "완치",
+      "medical treatment",
+      "치료 효과"
+    ]
+  }
+]

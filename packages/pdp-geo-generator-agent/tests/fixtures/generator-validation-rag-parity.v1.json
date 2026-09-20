@@ -1,0 +1,94 @@
+{
+  "fixtureVersion": 1,
+  "provenance": {
+    "capture": "agentic-geo-public-validation-rag-parity-v1",
+    "runtime": "Python deterministic validator"
+  },
+  "safe": {
+    "captureSha256": "49fbd783e5dfa44075ba16f9403e661f91e1a0d863b2eb9879cfcb3e877dde75",
+    "expectedGraph": [
+      0,
+      {},
+      {
+        "@type": "Organization",
+        "name": "Unchanged organization"
+      },
+      {
+        "@type": "Product",
+        "name": "Product name",
+        "description": "Product description.",
+        "additionalProperty": [
+          7,
+          {},
+          {
+            "@type": "PropertyValue",
+            "name": "Texture",
+            "value": "Smooth texture."
+          }
+        ]
+      }
+    ],
+    "callerHtml": "<article>caller-rendered</article>",
+    "scriptTagSha256": "0d03936c3c28250ee6fa40405449da55d3da003ed223c5ba1ee394ffb03b7ee0"
+  },
+  "readOnly": {
+    "captureSha256": "1a682a1922bbb16a238e8a00a5b7af7a37bfc68b2f34d0b3de6b48fcdb7bd10f",
+    "warnings": [
+      "MedicalEntity.@type: Unsupported schema.org node type \"MedicalEntity\" was detected.",
+      "schemaMarkup.scriptTag does not serialize the same JSON-LD object as schemaMarkup.jsonLd."
+    ],
+    "findingFields": [
+      "MedicalEntity.@type",
+      "schemaMarkup.scriptTag"
+    ]
+  },
+  "koreanHowTo": {
+    "captureSha256": "5e3969b691b9334788d13f2f40386d5999a908326e97928796cdd6eeae93058a",
+    "steps": [
+      {
+        "@type": "HowToStep",
+        "position": 1,
+        "name": "1\ub2e8\uacc4",
+        "text": "\uc801\ub2f9\ub7c9\uc744 \uc190\ubc14\ub2e5\uc5d0 \ub35c\uc5b4 \uac70\ud488\uc744 \ub0c5\ub2c8\ub2e4"
+      },
+      {
+        "@type": "HowToStep",
+        "position": 2,
+        "name": "2\ub2e8\uacc4",
+        "text": "\uc5bc\uad74\uc5d0 \ub9c8\uc0ac\uc9c0\ud558\ub4ef \ubb38\uc9c0\ub985\ub2c8\ub2e4"
+      },
+      {
+        "@type": "HowToStep",
+        "position": 3,
+        "name": "3\ub2e8\uacc4",
+        "text": "\ubbf8\uc628\uc218\ub85c \uae68\ub057\ud558\uac8c \ud5f9\uad7d\ub2c8\ub2e4"
+      }
+    ],
+    "howToUse": "1. \uc801\ub2f9\ub7c9\uc744 \uc190\ubc14\ub2e5\uc5d0 \ub35c\uc5b4 \uac70\ud488\uc744 \ub0c5\ub2c8\ub2e4\n2. \uc5bc\uad74\uc5d0 \ub9c8\uc0ac\uc9c0\ud558\ub4ef \ubb38\uc9c0\ub985\ub2c8\ub2e4\n3. \ubbf8\uc628\uc218\ub85c \uae68\ub057\ud558\uac8c \ud5f9\uad7d\ub2c8\ub2e4"
+  },
+  "ragUtf16": {
+    "captureSha256": "26135e21d0f73df34e98f4105cf9511d8eaa4138c9411679f3015fe7689c93a7",
+    "responseEmoji": {
+      "codePoints": 90000,
+      "codeUnits": 180000,
+      "sha256": "494a68fd6adda6eafbe62778a866104a45c2ccb4f2b43bf321859a04d13ee07d"
+    },
+    "outputEmoji": {
+      "codePoints": 20000,
+      "codeUnits": 40000,
+      "sha256": "05d172b0647e80ebde625c5558dfefdc5d7dfba78f2b73ebde9bce880da49ddc"
+    },
+    "responseSplit": {
+      "codePoints": 180000,
+      "codeUnits": 180000,
+      "sha256": "7db7af307ae4cc9aef06336e1f0a7b25274d13c0eae0ff4f56a52911ce2fb21d",
+      "endsWithHighSurrogate": true
+    },
+    "outputSplit": {
+      "codePoints": 40000,
+      "codeUnits": 40000,
+      "sha256": "8135fa844233117841af7e0c71047c286d753d7e969f09c1e89670acf05e1eb1",
+      "endsWithHighSurrogate": true
+    }
+  }
+}

@@ -8,7 +8,7 @@ const nextConfig = {
   images: {
     unoptimized: true
   },
-  transpilePackages: ["@agentic-geo/pdp-extractor-agent", "@agentic-geo/pdp-geo-generator-agent", "@agentic-geo/pdp-geo-eval-agent"]
+  ...(isGitHubPages ? { pageExtensions: ["tsx"] } : {})
 };
 
 export default nextConfig;

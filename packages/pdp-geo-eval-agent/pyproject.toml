@@ -1,0 +1,32 @@
+[project]
+name = "pdp-geo-eval-agent"
+version = "0.1.1"
+description = "PDP GEO artifact evaluation and benchmarking agent for Agentic GEO."
+requires-python = ">=3.14,<3.15"
+dependencies = [
+  "httpx>=0.28.1",
+  "neo-js-compat>=0.1.0",
+]
+
+[project.scripts]
+pdp-geo-eval-benchmark = "pdp_geo_eval_agent.benchmark.cli:main"
+
+[tool.uv.sources]
+neo-js-compat = { workspace = true }
+
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pdp_geo_eval_agent"]
+
+[tool.ruff]
+# Exact frozen benchmark documents and bilingual prompt/report wires are
+# intentionally kept as single literals so their source ordering is auditable
+# against the TypeScript oracle.  Line wrapping would only make that parity
+# review harder; all other Ruff rules remain inherited from the workspace.
+extend = "../../pyproject.toml"
+
+[tool.ruff.lint.per-file-ignores]
+"**/*.py" = ["E501"]

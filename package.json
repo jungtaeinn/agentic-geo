@@ -4,7 +4,7 @@
   "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "version": "0.2.0",
-  "description": "상품 상세 페이지를 분석해 GEO·CEP·E-E-A-T 원칙과 브랜드 아이덴티티를 반영한 schema.org 구조화 데이터 및 최적화 콘텐츠를 생성·검증하는 개인 AI 에이전트 프로젝트입니다.",
+  "description": "An evidence-first workspace for turning product-page facts into reviewable, AI-ready content and structured data.",
   "keywords": [
     "agentic-geo",
     "generative-engine-optimization",

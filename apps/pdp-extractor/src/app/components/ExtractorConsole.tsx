@@ -1,9 +1,12 @@
 "use client";
 
 import Image from "next/image";
-import { runMockProductExtraction } from "@agentic-geo/pdp-extractor-agent/mock";
-import { refineGeoProductResult } from "@agentic-geo/pdp-extractor-agent/refine";
-import type { ProductExtractionDiagnostics, ProductExtractionResult, ProductExtractionStep } from "@agentic-geo/pdp-extractor-agent/types";
+import {
+  pythonAgentBrowserEndpoint,
+  requestGeoProductRefinement,
+  requestMockProductExtractionWithMetadata
+} from "../lib/python-agent-browser-client";
+import type { ProductExtractionDiagnostics, ProductExtractionResult, ProductExtractionStep } from "../lib/python-agent-dtos";
 import {
   AlertCircle,
   ArrowLeft,
@@ -59,10 +62,12 @@ interface DisplayExtractionFailure {
 interface ExtractionRequestResult {
   results: DisplayExtractionResult[];
   failures: DisplayExtractionFailure[];
+  requestId?: string;
 }
 
 interface QueueItem {
   id: string;
+  requestId?: string;
   source: string;
   status: QueueStatus;
   createdAt: string;
@@ -95,7 +100,24 @@ interface AgentProcessState {
   errorMessage?: string;
 }
 
-interface ProviderSettings {
+export function createExtractorRunEpochGate() {
+  let activeEpoch = 0;
+
+  return {
+    begin() {
+      activeEpoch += 1;
+      return activeEpoch;
+    },
+    invalidate() {
+      activeEpoch += 1;
+    },
+    isCurrent(runEpoch: number) {
+      return activeEpoch === runEpoch;
+    }
+  };
+}
+
+export interface ProviderSettings {
   provider: ProviderId;
   openaiApiKey: string;
   openaiModel: string;
@@ -155,7 +177,7 @@ interface RuntimeLlmConfig {
   };
 }
 
-interface RestApiSettings {
+export interface RestApiSettings {
   sourceMode: SourceMode;
   headersJson: string;
 }
@@ -180,7 +202,7 @@ interface ComposerAttachment {
   invalidTokens: string[];
 }
 
-interface RagProfileSettings {
+export interface RagProfileSettings {
   analysisPrompt: string;
   files: RagAttachment[];
 }
@@ -199,8 +221,21 @@ const REST_SETTINGS_STORAGE_KEY = "agentic-geo.rest-api-settings.v1";
 const RAG_SETTINGS_STORAGE_KEY = "agentic-geo.rag-profile-settings.v1";
 const HISTORY_STORAGE_KEY = "agentic-geo.extraction-history.v1";
 const HISTORY_LIMIT = 50;
+const HISTORY_STORAGE_BYTE_LIMIT = 3_000_000;
+const HISTORY_STORAGE_RETRY_BYTE_LIMITS = [HISTORY_STORAGE_BYTE_LIMIT, 1_000_000, 256_000];
+const safeRequestIdPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
-const defaultProviderSettings: ProviderSettings = {
+function normalizeSafeRequestId(value: unknown): string | undefined {
+  return typeof value === "string" && safeRequestIdPattern.test(value) ? value : undefined;
+}
+
+function resolveEchoedRequestId(response: Response, submittedRequestId: string | undefined): string | undefined {
+  const submitted = normalizeSafeRequestId(submittedRequestId);
+  const echoed = normalizeSafeRequestId(response.headers.get("x-request-id"));
+  return submitted && echoed === submitted ? echoed : undefined;
+}
+
+export const defaultProviderSettings: ProviderSettings = {
   provider: "mock",
   openaiApiKey: "",
   openaiModel: "",
@@ -245,12 +280,12 @@ const providerDescriptions: Record<ProviderId, string> = {
   aistudio: "외부에이전트 엔드포인트"
 };
 
-const defaultRestApiSettings: RestApiSettings = {
+export const defaultRestApiSettings: RestApiSettings = {
   sourceMode: "auto",
   headersJson: "{}"
 };
 
-const defaultRagProfileSettings: RagProfileSettings = {
+export const defaultRagProfileSettings: RagProfileSettings = {
   analysisPrompt: "",
   files: []
 };
@@ -296,6 +331,7 @@ const agentSteps: AgentStep[] = [
 export function ExtractorConsole() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const ragFileInputRef = useRef<HTMLInputElement>(null);
+  const extractionRunGateRef = useRef(createExtractorRunEpochGate());
   const [draft, setDraft] = useState("");
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -400,11 +436,7 @@ export function ExtractorConsole() {
       return;
     }
 
-    try {
-      window.sessionStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(queue.slice(0, HISTORY_LIMIT)));
-    } catch {
-      // Session storage is best effort; keep the in-memory history available if quota is exceeded.
-    }
+    persistExtractorHistoryForSession(queue);
   }, [isHistoryReady, queue]);
 
   const selectedQueueItem = useMemo(() => {
@@ -440,7 +472,12 @@ export function ExtractorConsole() {
   const activeProviderLabel = providerLabels[providerSettings.provider];
   const isAgentBusy = isRunning || isRefining;
   const isAiAuthorized = isProviderSettingsReady && isAuthorizedAiSettings(providerSettings) && connectionStatus === "connected";
-  const canSubmitPrompt = isAiAuthorized && !isAgentBusy;
+  const canSubmitPrompt = canSubmitExtractorPrompt({
+    providerSettings,
+    isProviderSettingsReady,
+    connectionStatus,
+    isAgentBusy
+  });
   const shouldShowComposerNotice = isProviderSettingsReady && !isAiAuthorized;
   const activeModelOptions = modelOptions[providerSettings.provider] ?? [];
   const selectedRagFile = ragProfileSettings.files.find((file) => file.id === selectedRagFileId) ?? ragProfileSettings.files[0];
@@ -512,7 +549,9 @@ export function ExtractorConsole() {
       createdAt: now,
       updatedAt: now
     }));
-    const nextQueue = [...requestedItems, ...queue].slice(0, HISTORY_LIMIT);
+    const requestId = createId();
+    const nextQueue = prependHistoryQueueItems(requestedItems, queue);
+    const runEpoch = extractionRunGateRef.current.begin();
 
     setHasStarted(true);
     setMessages((current) => [
@@ -538,7 +577,7 @@ export function ExtractorConsole() {
     setSelectedId(requestedItems[0]?.id ?? null);
     setOutputPanelView("result");
 
-    await runItems(nextQueue, requestedItems);
+    await runItems(nextQueue, requestedItems, requestId, runEpoch);
   }
 
   function appendGuardrailMessage(instruction: string, body: string) {
@@ -560,9 +599,10 @@ export function ExtractorConsole() {
     ]);
   }
 
-  async function runItems(nextQueue: QueueItem[], pending: QueueItem[]) {
+  async function runItems(nextQueue: QueueItem[], pending: QueueItem[], requestId: string, runEpoch: number) {
     const pendingIds = new Set(pending.map((item) => item.id));
     const startedAt = new Date().toISOString();
+    const isCurrentRun = () => extractionRunGateRef.current.isCurrent(runEpoch);
 
     setIsRunning(true);
     setAgentProcess({
@@ -589,13 +629,20 @@ export function ExtractorConsole() {
 
     try {
       await waitForStep();
+      if (!isCurrentRun()) {
+        return;
+      }
       setAgentProcess((current) => ({ ...current, currentStepId: "fetch" }));
       const extraction = await requestExtraction(
         pending.map((item) => item.source),
         providerSettings,
         restApiSettings,
-        ragProfileSettings
+        ragProfileSettings,
+        requestId
       );
+      if (!isCurrentRun()) {
+        return;
+      }
       const { results, failures } = extraction;
       const resultBySource = new Map(results.map((result) => [result.source, result]));
       const failureBySource = new Map(failures.map((failure) => [failure.source, failure]));
@@ -608,10 +655,26 @@ export function ExtractorConsole() {
           const result = resultBySource.get(item.source);
           const failure = failureBySource.get(item.source);
           if (result) {
-            return { ...item, status: "done", result, diagnostics: result.diagnostics, error: undefined, updatedAt: finishedAt };
+            return {
+              ...item,
+              ...(extraction.requestId ? { requestId: extraction.requestId } : {}),
+              status: "done",
+              result,
+              diagnostics: result.diagnostics,
+              error: undefined,
+              updatedAt: finishedAt
+            };
           }
           if (failure) {
-            return { ...item, status: "error", diagnostics: failure.diagnostics, error: failure.error, result: undefined, updatedAt: finishedAt };
+            return {
+              ...item,
+              ...(extraction.requestId ? { requestId: extraction.requestId } : {}),
+              status: "error",
+              diagnostics: failure.diagnostics,
+              error: failure.error,
+              result: undefined,
+              updatedAt: finishedAt
+            };
           }
           return item;
         })
@@ -642,6 +705,9 @@ export function ExtractorConsole() {
         errorMessage: results.length > 0 ? undefined : failures[0]?.error
       }));
     } catch (error) {
+      if (!isCurrentRun()) {
+        return;
+      }
       const message = error instanceof Error ? error.message : "Extraction failed.";
       const failedAt = new Date().toISOString();
       setAgentProcess((current) => ({
@@ -664,7 +730,9 @@ export function ExtractorConsole() {
         }
       ]);
     } finally {
-      setIsRunning(false);
+      if (isCurrentRun()) {
+        setIsRunning(false);
+      }
     }
   }
 
@@ -672,6 +740,9 @@ export function ExtractorConsole() {
     if (isAgentBusy) {
       return;
     }
+
+    const runEpoch = extractionRunGateRef.current.begin();
+    const isCurrentRun = () => extractionRunGateRef.current.isCurrent(runEpoch);
 
     setHasStarted(true);
     setIsRefining(true);
@@ -694,7 +765,13 @@ export function ExtractorConsole() {
 
     try {
       await waitForStep();
-      const refinement = refineGeoProductResult({ result: toPublicResult(currentResult), instruction });
+      if (!isCurrentRun()) {
+        return;
+      }
+      const refinement = await requestGeoProductRefinement({ result: toPublicResult(currentResult), instruction });
+      if (!isCurrentRun()) {
+        return;
+      }
       const targetId = selectedQueueItem?.id ?? selectedId;
       const refinedAt = new Date().toISOString();
       const updatedResult: DisplayExtractionResult = {
@@ -709,6 +786,9 @@ export function ExtractorConsole() {
       );
       setSelectedId((current) => current ?? targetId ?? null);
       await waitForStep();
+      if (!isCurrentRun()) {
+        return;
+      }
       setMessages((current) => [
         ...current,
         {
@@ -727,6 +807,9 @@ export function ExtractorConsole() {
         }
       ]);
     } catch (error) {
+      if (!isCurrentRun()) {
+        return;
+      }
       const message = error instanceof Error ? error.message : "GEO RAW JSON 수정 요청 처리에 실패했습니다.";
       setMessages((current) => [
         ...current,
@@ -737,7 +820,9 @@ export function ExtractorConsole() {
         }
       ]);
     } finally {
-      setIsRefining(false);
+      if (isCurrentRun()) {
+        setIsRefining(false);
+      }
     }
   }
 
@@ -748,12 +833,15 @@ export function ExtractorConsole() {
   }
 
   function startNewChat() {
+    extractionRunGateRef.current.invalidate();
     setDraft("");
     setComposerStatus("");
     setComposerAttachments([]);
     setSelectedId(null);
     setHasStarted(false);
     setMessages([]);
+    setIsRunning(false);
+    setIsRefining(false);
     setIsArtifactGrid(false);
     setIsStatusPanelOpen(true);
     setOutputPanelView("result");
@@ -928,19 +1016,31 @@ export function ExtractorConsole() {
       ...current,
       [key]: value
     }));
-    setConnectionStatus("idle");
+    const isMockProvider = key === "provider" && value === "mock";
+    setConnectionStatus(isMockProvider ? "connected" : "idle");
     if (key === "provider") {
       setModelLoadStatus("idle");
       setModelMessage("AI 키를 입력한 뒤 모델 목록을 불러올 수 있습니다.");
     }
     setConnectionMessage(
-      key === "provider" && value === "mock"
-        ? "Mock 테스트는 데모 검증용입니다. 추출 실행 버튼을 사용하려면 실제 AI를 연결해주세요."
+      isMockProvider
+        ? "Mock 테스트가 준비되었습니다. URL 입력으로 추출 흐름을 확인할 수 있습니다."
         : "모델 목록을 불러와 선택한 뒤 연결 테스트를 진행해주세요."
     );
   }
 
   async function checkProviderConnection(shouldSave: boolean) {
+    if (providerSettings.provider === "mock") {
+      if (shouldSave) {
+        window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(providerSettings));
+      }
+      setConnectionStatus("connected");
+      setConnectionMessage(shouldSave
+        ? "Mock 테스트 설정을 저장했습니다. URL 입력으로 추출 흐름을 확인할 수 있습니다."
+        : "Mock 테스트가 준비되었습니다. URL 입력으로 추출 흐름을 확인할 수 있습니다.");
+      return;
+    }
+
     const validationMessage = getProviderValidationMessage(providerSettings);
 
     if (validationMessage) {
@@ -1044,11 +1144,11 @@ export function ExtractorConsole() {
     window.localStorage.removeItem(SETTINGS_STORAGE_KEY);
     LEGACY_SETTINGS_STORAGE_KEYS.forEach((key) => window.localStorage.removeItem(key));
     setProviderSettings(defaultProviderSettings);
-    setConnectionStatus("idle");
+    setConnectionStatus("connected");
     setModelOptions({});
     setModelLoadStatus("idle");
     setModelMessage("AI 키를 입력한 뒤 모델 목록을 불러올 수 있습니다.");
-    setConnectionMessage("AI 연동 설정을 초기화했습니다. 추출을 실행하려면 실제 AI를 연결해주세요.");
+    setConnectionMessage("Mock 테스트 설정으로 초기화했습니다. URL 입력으로 추출 흐름을 확인할 수 있습니다.");
   }
 
   function updateRestApiSetting<Key extends keyof RestApiSettings>(key: Key, value: RestApiSettings[Key]) {
@@ -1106,7 +1206,7 @@ export function ExtractorConsole() {
       files: [...attachments, ...current.files].slice(0, 12)
     }));
     setSelectedRagFileId(attachments[0]?.id ?? null);
-    setRagMessage(`${attachments.length}개 파일을 RAG 프로필에 추가했습니다. 저장하면 packages/pdp-extractor-agent/src/rag에 동기화됩니다.`);
+    setRagMessage(`${attachments.length}개 파일을 RAG 프로필에 추가했습니다. 저장하면 packages/pdp-extractor-agent/src/pdp_extractor_agent/resources/rag에 동기화됩니다.`);
   }
 
   async function handleRagFileInput(event: ChangeEvent<HTMLInputElement>) {
@@ -1144,7 +1244,7 @@ export function ExtractorConsole() {
       setRagProfileSettings(settings);
       setSelectedRagFileId(settings.files.find((file) => file.id === selectedRagFileId)?.id ?? settings.files[0]?.id ?? null);
       window.localStorage.setItem(RAG_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-      setRagMessage("RAG 프로필이 packages/pdp-extractor-agent/src/rag와 동기화되었습니다. 다음 추출부터 LLM 프롬프트와 RAG chunk에 반영됩니다.");
+      setRagMessage("RAG 프로필이 packages/pdp-extractor-agent/src/pdp_extractor_agent/resources/rag와 동기화되었습니다. 다음 추출부터 LLM 프롬프트와 RAG chunk에 반영됩니다.");
     } catch (error) {
       setRagMessage(error instanceof Error ? error.message : "RAG 프로필 저장에 실패했습니다.");
     }
@@ -1809,7 +1909,7 @@ export function ExtractorConsole() {
                 {providerSettings.provider === "mock" && (
                   <div className="settingsCard">
                     <strong>Mock 테스트</strong>
-                    <p>API Key 없이 UI/UX와 JSON 결과 흐름을 빠르게 확인하는 데모 모드입니다. 실제 추출 실행 버튼을 활성화하려면 OpenAI, Gemini, Azure API 중 하나를 연결해주세요.</p>
+                    <p>API Key 없이 URL 또는 자동 감지 입력의 추출과 JSON 결과 흐름을 바로 확인할 수 있는 데모 모드입니다. REST API 입력과 실제 AI 추출은 OpenAI, Gemini, Azure API 또는 AI Studio를 설정해주세요.</p>
                   </div>
                 )}
 
@@ -2590,8 +2690,14 @@ interface RagProfileApiPayload {
   }>;
 }
 
-async function requestRagProfile(): Promise<RagProfileSettings> {
-  const response = await fetch("/api/rag-profile", { cache: "no-store" });
+const extractorRagProfileHeaders = { "x-neo-console": "extractor" };
+const noStoreHeaders = { "Cache-Control": "no-store" };
+
+export async function requestRagProfile(): Promise<RagProfileSettings> {
+  const response = await fetch(pythonAgentBrowserEndpoint("/rag-profile"), {
+    cache: "no-store",
+    headers: { ...extractorRagProfileHeaders, ...noStoreHeaders }
+  });
   const payload = await response.json() as RagProfileApiPayload | { error?: string };
 
   if (!response.ok) {
@@ -2601,10 +2707,10 @@ async function requestRagProfile(): Promise<RagProfileSettings> {
   return toRagProfileSettings(payload as RagProfileApiPayload);
 }
 
-async function writeRagProfile(settings: RagProfileSettings): Promise<RagProfileSettings> {
-  const response = await fetch("/api/rag-profile", {
+export async function writeRagProfile(settings: RagProfileSettings): Promise<RagProfileSettings> {
+  const response = await fetch(pythonAgentBrowserEndpoint("/rag-profile"), {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...extractorRagProfileHeaders, ...noStoreHeaders },
     body: JSON.stringify({
       analysisPrompt: settings.analysisPrompt,
       documents: settings.files.map((file) => ({
@@ -2612,7 +2718,8 @@ async function writeRagProfile(settings: RagProfileSettings): Promise<RagProfile
         version: file.version,
         content: file.content
       }))
-    })
+    }),
+    cache: "no-store"
   });
   const payload = await response.json() as RagProfileApiPayload | { error?: string };
 
@@ -2623,8 +2730,12 @@ async function writeRagProfile(settings: RagProfileSettings): Promise<RagProfile
   return toRagProfileSettings(payload as RagProfileApiPayload);
 }
 
-async function resetPackageRagProfile(): Promise<RagProfileSettings> {
-  const response = await fetch("/api/rag-profile", { method: "DELETE" });
+export async function resetPackageRagProfile(): Promise<RagProfileSettings> {
+  const response = await fetch(pythonAgentBrowserEndpoint("/rag-profile"), {
+    method: "DELETE",
+    headers: { ...extractorRagProfileHeaders, ...noStoreHeaders },
+    cache: "no-store"
+  });
   const payload = await response.json() as RagProfileApiPayload | { error?: string };
 
   if (!response.ok) {
@@ -2651,39 +2762,43 @@ function toRagProfileSettings(payload: RagProfileApiPayload): RagProfileSettings
   };
 }
 
-async function requestExtraction(
+export async function requestExtraction(
   sources: string[],
   providerSettings: ProviderSettings,
   restApiSettings: RestApiSettings,
-  ragProfileSettings: RagProfileSettings
+  ragProfileSettings: RagProfileSettings,
+  requestId?: string
 ): Promise<ExtractionRequestResult> {
-  const externalApiUrl = process.env.NEXT_PUBLIC_AGENTIC_GEO_API_URL;
-  const isStaticExport = process.env.NEXT_PUBLIC_DEPLOY_TARGET === "github-pages";
   const llm = createRuntimeLlmConfig(providerSettings);
   const rag = createRuntimeRagConfig(ragProfileSettings);
   const headers = parseHeadersJson(restApiSettings.headersJson);
   const sourceGroups = groupSourcesByType(sources, restApiSettings.sourceMode);
+  const submittedRequestId = normalizeSafeRequestId(requestId);
+
+  if (llm.provider === "mock" && restApiSettings.sourceMode !== "restApi") {
+    const response = await requestMockProductExtractionWithMetadata<{
+      result: ProductExtractionResult;
+      diagnostics: ProductExtractionDiagnostics;
+    }>(sources, submittedRequestId);
+    return {
+      results: appendRuntimeRagChunks(response.runs.map(({ result, diagnostics }) => ({ ...result, diagnostics })), rag),
+      failures: [],
+      ...(response.requestId ? { requestId: response.requestId } : {})
+    };
+  }
 
   if (!validateProviderSettings(providerSettings)) {
     throw new Error(getProviderValidationMessage(providerSettings) ?? "AI provider 설정을 확인해주세요.");
   }
 
-  if (!externalApiUrl) {
-    if (isStaticExport) {
-      if (llm.provider !== "mock" || restApiSettings.sourceMode === "restApi") {
-        throw new Error("정적 배포에서는 NEXT_PUBLIC_AGENTIC_GEO_API_URL이 필요합니다. 로컬 서버 또는 외부 extraction API를 연결해주세요.");
-      }
-      const runs = await runMockProductExtraction(sources);
-      return {
-        results: appendRuntimeRagChunks(runs.map(({ result, diagnostics }) => ({ ...result, diagnostics })), rag),
-        failures: []
-      };
-    }
-
-    return requestExtractionGroups("/api/extract", sourceGroups, headers, llm, rag);
-  }
-
-  return requestExtractionGroups(`${externalApiUrl.replace(/\/$/, "")}/extract`, sourceGroups, headers, llm, rag);
+  return requestExtractionGroups(
+    pythonAgentBrowserEndpoint("/extract"),
+    sourceGroups,
+    headers,
+    llm,
+    rag,
+    submittedRequestId
+  );
 }
 
 async function requestExtractionGroups(
@@ -2691,23 +2806,33 @@ async function requestExtractionGroups(
   groups: Array<{ sourceType: "url" | "restApi"; sources: string[] }>,
   headers: Record<string, string>,
   llm: RuntimeLlmConfig,
-  rag: RuntimeRagConfig
+  rag: RuntimeRagConfig,
+  submittedRequestId?: string
 ): Promise<ExtractionRequestResult> {
   const results: DisplayExtractionResult[] = [];
   const failures: DisplayExtractionFailure[] = [];
+  let echoedRequestId = submittedRequestId;
 
   for (const group of groups) {
     const response = await fetch(endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+        ...(submittedRequestId ? { "X-Request-ID": submittedRequestId } : {})
+      },
       body: JSON.stringify({
         sources: group.sources,
         sourceType: group.sourceType,
         headers: headersForSourceType(headers, group.sourceType),
         llm,
         rag
-      })
+      }),
+      cache: "no-store"
     });
+    if (!resolveEchoedRequestId(response, submittedRequestId)) {
+      echoedRequestId = undefined;
+    }
 
     const payload = await response.json() as {
       results?: ProductExtractionResult[];
@@ -2732,7 +2857,7 @@ async function requestExtractionGroups(
     })));
   }
 
-  return { results, failures };
+  return { results, failures, ...(echoedRequestId ? { requestId: echoedRequestId } : {}) };
 }
 
 function headersForSourceType(headers: Record<string, string>, sourceType: "url" | "restApi"): Record<string, string> {
@@ -2750,17 +2875,18 @@ function headersForSourceType(headers: Record<string, string>, sourceType: "url"
   return next;
 }
 
-async function validateProviderConnection(
+export async function validateProviderConnection(
   settings: ProviderSettings,
   options: { listOnly?: boolean } = {}
 ): Promise<{ message: string; models: string[] }> {
-  const response = await fetch("/api/provider/validate", {
+  const response = await fetch(pythonAgentBrowserEndpoint("/provider/validate"), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...noStoreHeaders },
     body: JSON.stringify({
       ...createRuntimeLlmConfig(settings),
       listOnly: options.listOnly
-    })
+    }),
+    cache: "no-store"
   });
   const payload = await response.json() as { ok?: boolean; message?: string; details?: string; models?: string[] };
 
@@ -3057,7 +3183,24 @@ function validateProviderSettings(settings: ProviderSettings): boolean {
 }
 
 function isAuthorizedAiSettings(settings: ProviderSettings): boolean {
-  return settings.provider !== "mock" && validateProviderSettings(settings);
+  return settings.provider === "mock" || validateProviderSettings(settings);
+}
+
+export function canSubmitExtractorPrompt({
+  providerSettings,
+  isProviderSettingsReady,
+  connectionStatus,
+  isAgentBusy
+}: Readonly<{
+  providerSettings: ProviderSettings;
+  isProviderSettingsReady: boolean;
+  connectionStatus: ConnectionStatus;
+  isAgentBusy: boolean;
+}>): boolean {
+  return isProviderSettingsReady
+    && isAuthorizedAiSettings(providerSettings)
+    && connectionStatus === "connected"
+    && !isAgentBusy;
 }
 
 function getProviderValidationMessage(settings: ProviderSettings): string | undefined {
@@ -3235,6 +3378,249 @@ function readStoredRagProfileSettings(): RagProfileSettings {
   }
 }
 
+function isHistoryRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+const HISTORY_SENSITIVE_KEY_PATTERN = /(?:api[_-]?(?:key|token)|authorization|access[_-]?token|bearer[_-]?token|auth[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|(?:^|[_-])token(?:$|[_-])|secret|credential|password|cookie|endpoint|headers?|signature)/i;
+const HISTORY_SENSITIVE_TEXT_KEY = "api[_-]?(?:key|token)|authorization|access[_-]?token|bearer[_-]?token|auth[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|token|secret|credential|password|cookie|endpoint|headers?|signature";
+
+function isHistorySensitiveKey(key: string): boolean {
+  return HISTORY_SENSITIVE_KEY_PATTERN.test(key);
+}
+
+function sanitizeHistoryUrl(value: string, key: string | undefined): string {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return value;
+    }
+    const keyName = key?.toLowerCase() ?? "";
+    const stripAllQuery = keyName.includes("image") || keyName === "url" || keyName === "urls" || keyName === "sourceurl" || keyName === "sourceurls";
+    for (const name of Array.from(url.searchParams.keys())) {
+      if (stripAllQuery || /(?:signature|sig|token|key|credential|authorization|expires|policy)/i.test(name)) {
+        url.searchParams.delete(name);
+      }
+    }
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return value;
+  }
+}
+
+function sanitizeHistoryText(value: string, key?: string): string {
+  return value
+    .replace(/https?:\/\/[^\s<>"'\])}]+/gi, (url) => sanitizeHistoryUrl(url, key))
+    .replace(
+      new RegExp(`"(${HISTORY_SENSITIVE_TEXT_KEY})"(\\s*:\\s*)"(?:\\\\.|[^"\\\\])*"`, "gi"),
+      (_match, credentialKey: string, separator: string) => `"${credentialKey}"${separator}"[redacted]"`
+    )
+    .replace(
+      new RegExp(`'(${HISTORY_SENSITIVE_TEXT_KEY})'(\\s*:\\s*)'(?:\\\\.|[^'\\\\])*'`, "gi"),
+      (_match, credentialKey: string, separator: string) => `'${credentialKey}'${separator}'[redacted]'`
+    )
+    .replace(
+      new RegExp(`\\b(${HISTORY_SENSITIVE_TEXT_KEY})\\b\\s*([:=])\\s*(?:Bearer\\s+)?[^\\s,;]+`, "gi"),
+      "$1$2[redacted]"
+    );
+}
+
+function sanitizeHistoryValue(value: unknown, key?: string): unknown {
+  if (typeof value === "string") {
+    return sanitizeHistoryText(value, key);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeHistoryValue(item, key));
+  }
+  if (!isHistoryRecord(value)) {
+    return value;
+  }
+  return Object.fromEntries(Object.entries(value).flatMap(([entryKey, entryValue]) => {
+    if (isHistorySensitiveKey(entryKey)) {
+      return [];
+    }
+    return [[entryKey, sanitizeHistoryValue(entryValue, entryKey)]];
+  }));
+}
+
+function sanitizeHistoryDiagnostics(value: unknown): ProductExtractionDiagnostics | undefined {
+  if (!isHistoryRecord(value)) {
+    return undefined;
+  }
+  const sanitized = sanitizeHistoryValue(value) as Partial<ProductExtractionDiagnostics>;
+  if (typeof sanitized.source !== "string" || (sanitized.sourceType !== "url" && sanitized.sourceType !== "restApi" && sanitized.sourceType !== "mock")) {
+    return undefined;
+  }
+  return sanitized as ProductExtractionDiagnostics;
+}
+
+function sanitizeHistoryError(value: string): string {
+  return sanitizeHistoryText(value, "error");
+}
+
+function compactHistoryValue(value: unknown, depth = 0): unknown {
+  if (typeof value === "string") {
+    return value.slice(0, 2_000);
+  }
+  if (Array.isArray(value)) {
+    return value.slice(0, 16).map((item) => compactHistoryValue(item, depth + 1));
+  }
+  if (!isHistoryRecord(value)) {
+    return value;
+  }
+  if (depth >= 5) {
+    return {};
+  }
+  return Object.fromEntries(Object.entries(value).slice(0, 32).map(([key, item]) => [key, compactHistoryValue(item, depth + 1)]));
+}
+
+function compactHistoryText(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  return value.slice(0, Math.max(1, maxLength));
+}
+
+function compactHistorySource(source: string, maxLength: number): string | undefined {
+  if (source.length <= maxLength) {
+    return source;
+  }
+  try {
+    const url = new URL(source);
+    const originOnly = `${url.origin}/`;
+    return originOnly.length <= maxLength ? originOnly : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function minimalHistoryQueueItem(item: QueueItem, maxLength: number): QueueItem | undefined {
+  const normalized = normalizeStoredQueueItem(item);
+  if (!normalized) {
+    return undefined;
+  }
+  const source = compactHistorySource(normalized.source, maxLength);
+  if (!source) {
+    return undefined;
+  }
+  const name = compactHistoryText(normalized.result?.geoProduct.name, maxLength) ?? "Archived product";
+  const result = normalized.result
+    ? {
+        source,
+        sourceType: normalized.result.sourceType,
+        geoProduct: {
+          name,
+          images: [],
+          reviews: { keywords: [] },
+          ocr: { textBlocks: [] },
+          contentAnalysis: { sections: [] },
+          rag: { chunks: [] },
+          historyStorage: { artifactCompacted: true }
+        },
+        generatedAt: normalized.result.generatedAt,
+        ragProfile: normalized.result.ragProfile
+      } as DisplayExtractionResult
+    : undefined;
+  const error = normalized.error ? compactHistoryText(normalized.error, maxLength) : undefined;
+  return {
+    id: compactHistoryText(normalized.id, maxLength) ?? "h",
+    source,
+    status: normalized.status,
+    createdAt: normalized.createdAt,
+    updatedAt: normalized.updatedAt,
+    ...(result ? { result } : {}),
+    ...(error ? { error } : {})
+  };
+}
+
+function minimalExtractorHistoryPayload(queue: QueueItem[], byteLimit: number): string {
+  const newest = queue[0];
+  for (const maxLength of [512, 256, 128, 64, 32, 16, 8, 1]) {
+    const item = newest ? minimalHistoryQueueItem(newest, maxLength) : undefined;
+    const payload = JSON.stringify(item ? [item] : []);
+    if (sessionPayloadByteLength(payload) <= byteLimit) {
+      return payload;
+    }
+  }
+  return byteLimit >= 2 ? "[]" : "0";
+}
+
+function toSessionQueueItem(item: QueueItem, compact: boolean): QueueItem | undefined {
+  const normalized = normalizeStoredQueueItem(item);
+  if (!normalized) {
+    return undefined;
+  }
+  const result = normalized.result
+    ? compact ? compactHistoryValue(normalized.result) as DisplayExtractionResult : normalized.result
+    : undefined;
+  const { diagnostics, ...storedItem } = normalized;
+  if (result) {
+    return { ...storedItem, result };
+  }
+  return diagnostics ? { ...storedItem, diagnostics } : storedItem;
+}
+
+function extractorHistorySessionPayload(queue: QueueItem[], compact: boolean): string {
+  return JSON.stringify(queue.flatMap((item) => {
+    const stored = toSessionQueueItem(item, compact);
+    return stored ? [stored] : [];
+  }));
+}
+
+function sessionPayloadByteLength(payload: string): number {
+  return new TextEncoder().encode(payload).byteLength;
+}
+
+export function serializeExtractorHistoryForSession(queue: QueueItem[], byteLimit = HISTORY_STORAGE_BYTE_LIMIT): string {
+  const limit = Number.isFinite(byteLimit) && byteLimit > 0 ? Math.max(1, Math.floor(byteLimit)) : HISTORY_STORAGE_BYTE_LIMIT;
+  let keptQueue = queue.slice(0, HISTORY_LIMIT);
+  let compact = false;
+  let payload = extractorHistorySessionPayload(keptQueue, compact);
+
+  while (sessionPayloadByteLength(payload) > limit && keptQueue.length > 1) {
+    keptQueue = keptQueue.slice(0, -1);
+    payload = extractorHistorySessionPayload(keptQueue, compact);
+  }
+
+  if (sessionPayloadByteLength(payload) > limit && keptQueue.length > 0) {
+    compact = true;
+    payload = extractorHistorySessionPayload(keptQueue, compact);
+  }
+
+  if (sessionPayloadByteLength(payload) > limit) {
+    return minimalExtractorHistoryPayload(keptQueue, limit);
+  }
+
+  return payload;
+}
+
+function persistExtractorHistoryForSession(queue: QueueItem[]): void {
+  for (const byteLimit of HISTORY_STORAGE_RETRY_BYTE_LIMITS) {
+    try {
+      window.sessionStorage.setItem(HISTORY_STORAGE_KEY, serializeExtractorHistoryForSession(queue, byteLimit));
+      return;
+    } catch {
+      // Retry with a smaller, newest-first history payload.
+    }
+  }
+}
+
+export function prependHistoryQueueItems(incoming: QueueItem[], current: QueueItem[]): QueueItem[] {
+  const incomingIds = new Set(incoming.map((item) => item.id));
+  return [...incoming, ...current.filter((item) => !incomingIds.has(item.id))].slice(0, HISTORY_LIMIT);
+}
+
+export function normalizeStoredHistoryQueue(value: unknown): QueueItem[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map(normalizeStoredQueueItem)
+    .filter((item): item is QueueItem => Boolean(item))
+    .slice(0, HISTORY_LIMIT);
+}
+
 function readStoredHistoryQueue(): QueueItem[] {
   if (typeof window === "undefined") {
     return [];
@@ -3247,16 +3633,7 @@ function readStoredHistoryQueue(): QueueItem[] {
       return [];
     }
 
-    const parsed = JSON.parse(rawHistory) as unknown;
-
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    return parsed
-      .map(normalizeStoredQueueItem)
-      .filter((item): item is QueueItem => Boolean(item))
-      .slice(0, HISTORY_LIMIT);
+    return normalizeStoredHistoryQueue(JSON.parse(rawHistory) as unknown);
   } catch {
     return [];
   }
@@ -3273,28 +3650,32 @@ function normalizeStoredQueueItem(value: unknown): QueueItem | undefined {
     return undefined;
   }
 
-  const source = cleanSource(item.source);
+  const source = sanitizeHistoryUrl(cleanSource(item.source), "source");
 
   if (source.length === 0) {
     return undefined;
   }
 
   const now = new Date().toISOString();
-  const generatedAt = item.result && "generatedAt" in item.result ? item.result.generatedAt : undefined;
+  const result = item.result ? sanitizeHistoryValue(item.result) as DisplayExtractionResult : undefined;
+  const generatedAt = result && "generatedAt" in result ? result.generatedAt : undefined;
   const createdAt = normalizeStoredDate(item.createdAt) ?? normalizeStoredDate(generatedAt) ?? now;
   const updatedAt = normalizeStoredDate(item.updatedAt) ?? createdAt;
-  const storedStatus = isQueueStatus(item.status) ? item.status : item.result ? "done" : item.error ? "error" : "idle";
+  const storedStatus = isQueueStatus(item.status) ? item.status : result ? "done" : item.error ? "error" : "idle";
   const status = storedStatus === "running" ? "idle" : storedStatus;
+  const diagnostics = sanitizeHistoryDiagnostics(item.diagnostics ?? result?.diagnostics);
+  const requestId = normalizeSafeRequestId(item.requestId);
 
   return {
     id: typeof item.id === "string" && item.id.length > 0 ? item.id : createId(),
+    ...(requestId ? { requestId } : {}),
     source,
     status,
     createdAt,
     updatedAt,
-    result: item.result,
-    diagnostics: item.diagnostics ?? item.result?.diagnostics,
-    error: typeof item.error === "string" ? item.error : undefined
+    result,
+    diagnostics,
+    error: typeof item.error === "string" ? sanitizeHistoryError(item.error) : undefined
   };
 }
 

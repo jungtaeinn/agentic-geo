@@ -1,0 +1,38 @@
+[project]
+name = "pdp-extractor-agent"
+version = "0.1.2"
+description = "PDP extraction and GEO-ready product intelligence agent for Agentic GEO."
+requires-python = ">=3.14,<3.15"
+dependencies = [
+  "beautifulsoup4>=4.13.5",
+  "httpx>=0.28.1",
+  "neo-js-compat>=0.1.0",
+  "pillow>=11.3.0",
+  "pydantic>=2.12.5",
+  "PyICU>=2.16.2",
+]
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+neo-js-compat = { workspace = true }
+
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pdp_extractor_agent"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/pdp_extractor_agent"]
+
+[tool.ruff]
+# The extraction prompts, OCR fixtures, and frozen compatibility literals are
+# deliberately kept on one line so they can be audited byte-for-byte against
+# the TypeScript oracle. Other workspace Ruff rules remain inherited.
+extend = "../../pyproject.toml"
+
+[tool.ruff.lint.per-file-ignores]
+"**/*.py" = ["E501"]

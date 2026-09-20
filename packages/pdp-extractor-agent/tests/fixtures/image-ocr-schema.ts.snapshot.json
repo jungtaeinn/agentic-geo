@@ -1,0 +1,126 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "images": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "description": "0-1 legibility/completeness confidence for this transcription.",
+            "type": "number"
+          },
+          "groups": {
+            "description": "Layout relations visible in the image: groups of lines. No template is assumed.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "annotates": {
+                  "description": "For a footnote, disclaimer, or test-condition group, the id of the group it qualifies. Otherwise null.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "description": "Short id unique within this image, e.g. g1.",
+                  "type": "string"
+                },
+                "lines": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "pairedLabel": {
+                        "description": "For a value line, the label it is printed against (its bar's tick, its badge caption). null when the layout does not pair it.",
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "role": {
+                        "description": "Layout function of the line, not its meaning: title, body, label (axis tick, legend name, caption, package spec), value (a measured number or badge), footnote.",
+                        "enum": [
+                          "title",
+                          "body",
+                          "label",
+                          "value",
+                          "footnote"
+                        ],
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "text",
+                      "role",
+                      "pairedLabel"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "ordinal": {
+                  "description": "Number the layout actually printed for this group, or null. Never number groups yourself.",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "parentId": {
+                  "description": "Id of the enclosing group, or null at top level.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "title": {
+                  "description": "The group's own heading text when the layout sets one apart, or null.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "parentId",
+                "title",
+                "ordinal",
+                "annotates",
+                "lines"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "imageUrl": {
+            "description": "Image URL exactly as labeled in the prompt.",
+            "type": "string"
+          },
+          "index": {
+            "description": "1-based number of the image as labeled in the prompt.",
+            "type": "integer"
+          },
+          "text": {
+            "description": "Faithful transcription of all visible text in reading order. Empty string when no readable product text.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "imageUrl",
+          "text",
+          "confidence",
+          "groups"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "images"
+  ],
+  "type": "object"
+}

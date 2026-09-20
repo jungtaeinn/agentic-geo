@@ -1,0 +1,44 @@
+{
+  "captureFormat": 1,
+  "provenance": {
+    "capture": "agentic-geo-public-synthetic-rag-v1",
+    "normalizedTimestamps": [
+      "generatedAt"
+    ]
+  },
+  "contract": {
+    "args": [
+      "--json"
+    ],
+    "inputSha256": "57daaf713bd8721eb9bb9dc2d575f9263da59b75dfc841b6966ed9bc42b8dc1b",
+    "normalizedOutputSha256": "2377fb2988e481e0dd36d687669b230556fbe90b6a685e5b6c19f5164f595032",
+    "topLevelKeys": [
+      "status",
+      "generatedAt",
+      "aggregates",
+      "baseline",
+      "baselineGeneratedAt",
+      "deltaVsBaseline",
+      "scores"
+    ],
+    "scoreCount": 24,
+    "baselineGeneratedAt": "2026-09-20"
+  },
+  "humanContract": {
+    "args": [],
+    "inputSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "legacyOutputSha256": "f4f7f2cfda5dbc4485bd9821bd4198112e4130bf19103fb1d6d5993472fbd94f",
+    "callerOwnedOutputSha256": "4e34fd7a7bcbc1d09a70acdc8841e5d66c4ae7979f61021b5e72c97856ed853c",
+    "legacyBaselinePath": "evals/baseline.json",
+    "callerOwnedBaselinePath": ".pdp-geo-generator-rag/baseline.json"
+  },
+  "humanWriteContract": {
+    "args": [
+      "--write"
+    ],
+    "inputSha256": "340329e8ef0193f9669c9e47b8c05fbc5135db970b86fd25eb224e83dde27ced",
+    "legacyOutputSha256": "dffff2e24ca66f8d55acb216637dff0cc16f14128e5c27b385a2b19200690520",
+    "callerOwnedOutputSha256": "078b31af5ed0b99a68fe52f7a4297116c1a49fd0ab9942c2e76e602ef896113e"
+  },
+  "wholeContractSha256": "54363ae64f547fdad5a8063c66900e7665d05ba528d0b8762c4a1e3762e9e161"
+}

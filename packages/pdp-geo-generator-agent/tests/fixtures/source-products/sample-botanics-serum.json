@@ -1,0 +1,50 @@
+{
+  "name": "SampleBotanics Daily Renewal Serum VI",
+  "originalName": "SampleBotanics Daily Renewal Serum VI",
+  "brand": "SampleBotanics",
+  "category": "Serum",
+  "description": "A serum with source-stated moisture and hydration care.",
+  "images": [],
+  "options": [],
+  "benefits": [
+    "ELASTICITY",
+    "MOISTURE & HYDRATION"
+  ],
+  "effects": [],
+  "ingredients": [
+    "Ginseng",
+    "Korean Herb Extract",
+    "Betaine"
+  ],
+  "usage": [],
+  "metrics": [],
+  "faq": [],
+  "reviews": {
+    "items": [],
+    "keywords": []
+  },
+  "breadcrumbs": [],
+  "sourceTexts": [
+    "SampleBotanics Daily Renewal Serum VI retains the same core ingredients as earlier versions.",
+    "This serum contains Ginseng."
+  ],
+  "semanticFacts": {
+    "ingredients": [
+      "Ginseng",
+      "Korean Herb Extract",
+      "Betaine"
+    ],
+    "benefits": [
+      "ELASTICITY",
+      "MOISTURE & HYDRATION"
+    ],
+    "effects": [],
+    "skinTypes": [],
+    "usageSteps": [],
+    "safetyTests": [],
+    "metricClaims": [],
+    "evidenceSentences": [],
+    "ingredientBenefitLinks": [],
+    "citations": []
+  }
+}

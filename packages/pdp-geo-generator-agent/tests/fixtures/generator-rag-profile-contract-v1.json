@@ -1,0 +1,70 @@
+{
+  "captureFormat": 1,
+  "provenance": {
+    "capture": "agentic-geo-public-rag-profile-v1",
+    "normalizedTimestamps": [
+      "updatedAt"
+    ]
+  },
+  "cases": [
+    {
+      "id": "dotfiles",
+      "inputSha256": "dcdd9f47cf66a25607478aef38bb5c838bc7aaacd813c1477cd609e54a020560",
+      "outputSha256": "aa19751c139218d313fc6e99b002d2ec585fd4a2368a49caa069f54740d856dd"
+    },
+    {
+      "id": "version-digits",
+      "inputSha256": "c5e544c5f13616dc753d2e1eff28b3f57f153fee17cdd6607f9b0fc06ed94dfc",
+      "outputSha256": "d15916052f9943039ea5b263d632b426709b8de6bc7b4c36bd4acb8ebd5e4f56"
+    },
+    {
+      "id": "locale-order",
+      "inputSha256": "c9ba5e96435f4b85c9fcba9a73ec79b079f33c3fdb2e4e1371f9c9f5091ee8e6",
+      "outputSha256": "4326a46a1b70c35b663032b3d72690c63262e934103eec84095840bcea50360f"
+    },
+    {
+      "id": "utf16-even",
+      "inputSha256": "94b6ede0a678495e73360c059cd09c82720e294edf1a24514046ba71e7dc58e6",
+      "outputSha256": "e5301648c423397f69e7b9cfb056691172900aaf27992c32e1b057e8c4f6b53f"
+    },
+    {
+      "id": "utf16-odd",
+      "inputSha256": "64cae8c90d142eab344ec5f7ae551fbcd4a67c7ebc2eaf5aee56263000fa8775",
+      "outputSha256": "c423a345f210106d16df64cac54b6f5e1d7df360d1d7f4e1f871c1b0a933dbe3"
+    },
+    {
+      "id": "nfkc-extension",
+      "inputSha256": "430843002acd0799a0ca6286802de6055abc83eb6899bf3a4ea06f2d44d5f169",
+      "outputSha256": "b69fb6e9a0a1a93b509ebefdee5d3465dbc61607f4e31624ee86638ef2ecaecb"
+    }
+  ],
+  "partialWrite": {
+    "inputSha256": "5d13e398e77a2600f991685d2468d7e7055685c91187816af68aa46dff8680e3",
+    "outputSha256": "2d7e7713d7a2b8a82be6eeddf97cb29b09d95b5f0b062f4e6610307f9669fcae",
+    "error": {
+      "name": "TypeError",
+      "message": "value.endsWith is not a function"
+    }
+  },
+  "failureCases": [
+    {
+      "id": "custom-non-string",
+      "inputSha256": "e8be90701465cb18b5288e7d20274fdbfa56d8becd2263bbf278d0738201fa3f",
+      "outputSha256": "5e9df060b49aec394553258917049484e69e53867899c55a3906a34563b88ee2",
+      "error": {
+        "name": "TypeError",
+        "message": "value.endsWith is not a function"
+      }
+    },
+    {
+      "id": "brand-non-string",
+      "inputSha256": "9fcee176fa480a6a0b1e9acb9f9c792976edf67e58dbb490f6a0133bce98038d",
+      "outputSha256": "a169ee1b24aa2a847775f9a3ef95998f3acfbebb6d0d9cdb0f7b92de4c6bb730",
+      "error": {
+        "name": "TypeError",
+        "message": "value.endsWith is not a function"
+      }
+    }
+  ],
+  "wholeContractSha256": "6d6331b12c43b5ec86cad261825a24bd129bb7888db42e02534d84b818311cc7"
+}

@@ -1,9 +1,9 @@
 # GEO/CEP/E-E-A-T 품질 점수 산식
 
-> **유지보수 규칙**: 이 문서는 `src/quality/evaluate.ts`·`src/quality/internal.ts`의 산식과 항상 동기화되어야 한다.
+> **유지보수 규칙**: 이 문서는 `src/pdp_geo_eval_agent/quality/evaluate.py`·`src/pdp_geo_eval_agent/quality/internal.py`의 산식과 항상 동기화되어야 한다.
 > 두 파일의 가점/감점/조건을 바꾸면 이 문서도 같은 커밋에서 갱신한다. 라인 번호 대신 함수/조건 이름으로 참조한다.
 
-세 차원 모두 `clampQualityScore`로 `[0, 100]`에 고정(clamp)한다. **종합점수 = 세 차원의 단순 평균**(`Math.round(mean(geo, cep, eeat))`, `evaluateGeoQuality` 반환부).
+세 차원 모두 `clamp_quality_score`로 `[0, 100]`에 고정(clamp)한다. **종합점수 = 세 차원의 단순 평균**(`js_round(mean(geo, cep, eeat))`, `evaluate_geo_quality` 반환부).
 
 ## GEO (base 90)
 
@@ -69,9 +69,9 @@
 
 주의: 위 규칙은 "임상/시험 문맥"으로 좁게 설계됐다 — "24시간 보습 지속" 같은 광고성 지속 효과 문구는 의도적으로 매칭 대상에서 제외한다(마케팅 문구를 시험 기간으로 오인하지 않도록).
 
-## 개념 반영도 심사 (점수 외 옵트인, `src/quality/concept-judge.ts`)
+## 개념 반영도 심사 (점수 외 옵트인, `src/pdp_geo_eval_agent/quality/concept_judge.py`)
 
-**위 표의 결정적 점수와는 완전히 분리된 별도 평가**다. `evaluateGeoQuality`의 산식·점수는 이 심사로 변경되지 않는다. 모델 설정(`GeoEvalEngineConfig`)이 주어졌을 때만 `judgeConceptEmbodiment`를 통해 옵트인으로 실행되는 LLM 판정이며, "스키마가 안전하게 작성됐는가"가 아니라 "GEO/CEP/E-E-A-T 개념이 콘텐츠에 실제로 녹아들었는가"를 심사한다.
+**위 표의 결정적 점수와는 완전히 분리된 별도 평가**다. `evaluate_geo_quality`의 산식·점수는 이 심사로 변경되지 않는다. 모델 설정(`GeoEvalEngineConfig`)이 주어졌을 때만 `judge_concept_embodiment`를 통해 옵트인으로 실행되는 LLM 판정이며, "스키마가 안전하게 작성됐는가"가 아니라 "GEO/CEP/E-E-A-T 개념이 콘텐츠에 실제로 녹아들었는가"를 심사한다.
 
 | 개념 | 심사 기능(무엇을 확인하는가) |
 | --- | --- |

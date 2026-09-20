@@ -1,0 +1,13 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "neo-js-compat"
+version = "0.1.0"
+description = "JavaScript compatibility primitives for Agentic GEO Python agents."
+requires-python = ">=3.14,<3.15"
+dependencies = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/neo_js_compat"]

@@ -1,0 +1,38 @@
+{
+  "concepts": [
+    {
+      "concept": "botanical-formula-example",
+      "category": "ingredient-technology",
+      "preferred": {
+        "ko-KR": ["식물 유래 성분", "제품에 표기된 포뮬러"],
+        "ja-JP": ["植物由来成分", "製品に記載された処方"],
+        "en-US": ["botanical-derived ingredient", "page-stated formula"],
+        "en-GB": ["botanical-derived ingredient", "page-stated formula"]
+      },
+      "avoid": {
+        "ko-KR": ["한방 치료", "만병통치"],
+        "ja-JP": ["治療", "万能薬"],
+        "en-US": ["herbal cure", "miracle treatment"],
+        "en-GB": ["herbal cure", "miracle treatment"]
+      },
+      "notes": "Use only when the current product evidence names the ingredient or formula."
+    },
+    {
+      "concept": "routine-experience-example",
+      "category": "customer-language",
+      "preferred": {
+        "ko-KR": ["스킨케어 루틴", "사용감"],
+        "ja-JP": ["スキンケアルーティン", "使用感"],
+        "en-US": ["skincare routine", "application feel"],
+        "en-GB": ["skincare routine", "application feel"]
+      },
+      "avoid": {
+        "ko-KR": ["사치품 과장", "왕실 치료"],
+        "ja-JP": ["過度な高級表現", "王室治療"],
+        "en-US": ["luxury cure", "royal treatment"],
+        "en-GB": ["luxury cure", "royal treatment"]
+      },
+      "notes": "Keep sensory language tied to a page-stated texture or routine."
+    }
+  ]
+}

@@ -1,0 +1,99 @@
+# GEO-001 — internally authored synthetic English serum fixture (en-US)
+#
+# Every name, identifier, URL, image path, claim, FAQ, and review in this
+# record is test data. `example.test` assets are deliberately non-resolving.
+
+id: GEO-001
+name: "Fieldnote Example Labs Arcwell Night Renewal Serum (en-US)"
+tags: ["fieldnote-example-labs", "en-US", "serum", "synthetic"]
+
+request: {
+  "locale": "en-US",
+  "product": {
+    "canonicalUrl": "https://catalog.example.test/products/arcwell-night-renewal-serum?variant=EX-ARC-001",
+    "offerUrl": "https://catalog.example.test/products/arcwell-night-renewal-serum?variant=EX-ARC-001",
+    "geoProduct": {
+      "id": "EX-ARC-001",
+      "name": "Arcwell Night Renewal Serum",
+      "brand": "Fieldnote Example Labs",
+      "category": "Skincare Serum",
+      "sku": "EX-ARC-001",
+      "gtin": "0000000000017",
+      "price": {"raw": "$47.00", "amount": 47, "currency": "USD"},
+      "description": "Arcwell Night Renewal Serum is an internally authored test formula with a light emulsion texture. Encapsulated retinyl oleate and a moonflower peptide blend are described in this synthetic record as supporting the look of smoother, more comfortable skin overnight.",
+      "images": [
+        "https://assets.example.test/fixtures/arcwell/packshot-30ml.png",
+        "https://assets.example.test/fixtures/arcwell/texture-swatch.png",
+        "https://assets.example.test/fixtures/arcwell/ingredient-card.png",
+        "https://assets.example.test/fixtures/arcwell/test-panel-card.png"
+      ],
+      "options": ["30 mL"],
+      "benefits": ["smoothing", "comforting", "moisturizing"],
+      "effects": ["softer-feeling texture", "more comfortable dry areas", "a more even-looking surface"],
+      "ingredients": ["Encapsulated Retinyl Oleate", "Moonflower Peptide Blend", "Oat Lipid Complex", "Niacinamide"],
+      "usage": ["In the evening, apply one pump after a water-based toner and follow with moisturizer. Begin on alternate nights in this synthetic routine example."],
+      "metrics": ["Synthetic test panel: after 28 days, 19 of 24 adult volunteers reported smoother-feeling skin."],
+      "faq": [],
+      "reviews": {"items": [], "keywords": []},
+      "sourceExtraction": {
+        "html": {
+          "description": "Arcwell Night Renewal Serum is an internally authored test formula with a light emulsion texture. Encapsulated retinyl oleate and a moonflower peptide blend are described in this synthetic record as supporting the look of smoother, more comfortable skin overnight.",
+          "sections": [
+            {"title": "Key ingredients", "category": "ingredient", "text": "ENCAPSULATED RETINYL OLEATE, MOONFLOWER PEPTIDE BLEND, OAT LIPID COMPLEX, AND NIACINAMIDE.", "bullets": ["Encapsulated Retinyl Oleate", "Moonflower Peptide Blend", "Oat Lipid Complex", "Niacinamide"]},
+            {"title": "Designed for", "category": "benefit", "text": "DESIGNED FOR: dry-feeling areas, uneven-looking texture, and an evening smoothing routine.", "bullets": ["dry-feeling areas", "uneven-looking texture", "evening smoothing routine"]},
+            {"title": "How to use", "category": "usage", "text": "USE IN THE EVENING AFTER TONER; BEGIN ON ALTERNATE NIGHTS AND FOLLOW WITH MOISTURIZER.", "bullets": ["evening use", "after toner", "follow with moisturizer"]}
+          ],
+          "faq": []
+        },
+        "ocr": {
+          "imageTexts": [
+            {"imageUrl": "https://assets.example.test/fixtures/arcwell/ingredient-card.png", "text": "ENCAPSULATED RETINYL OLEATE. A synthetic fixture ingredient card for a gradual evening routine. MOONFLOWER PEPTIDE BLEND. Described here as helping skin feel cushioned. OAT LIPID COMPLEX. Described here as supporting comfort."},
+            {"imageUrl": "https://assets.example.test/fixtures/arcwell/test-panel-card.png", "text": "SYNTHETIC TEST PANEL. AFTER 28 DAYS, 19 OF 24 ADULT VOLUNTEERS REPORTED SMOOTHER-FEELING SKIN."}
+          ],
+          "textBlocks": ["ENCAPSULATED RETINYL OLEATE. A synthetic fixture ingredient card for a gradual evening routine. MOONFLOWER PEPTIDE BLEND. Described here as helping skin feel cushioned. OAT LIPID COMPLEX. Described here as supporting comfort.", "SYNTHETIC TEST PANEL. AFTER 28 DAYS, 19 OF 24 ADULT VOLUNTEERS REPORTED SMOOTHER-FEELING SKIN."],
+          "sentenceInsights": [
+            {"imageUrl": "https://assets.example.test/fixtures/arcwell/ingredient-card.png", "text": "Moonflower Peptide Blend is described here as helping skin feel cushioned.", "category": "ingredient", "keywords": ["Moonflower Peptide Blend", "comfort"]},
+            {"imageUrl": "https://assets.example.test/fixtures/arcwell/test-panel-card.png", "text": "Synthetic test panel: after 28 days, 19 of 24 adult volunteers reported smoother-feeling skin.", "category": "metric", "keywords": ["28 days", "19 of 24", "smoother-feeling skin", "synthetic"]}
+          ],
+          "semanticFacts": {
+            "ingredients": ["Encapsulated Retinyl Oleate", "Moonflower Peptide Blend", "Oat Lipid Complex", "Niacinamide"],
+            "benefits": ["smoothing", "comforting", "moisturizing"],
+            "effects": ["softer-feeling texture", "more comfortable dry areas", "a more even-looking surface"],
+            "skinTypes": ["dry", "normal", "combination"],
+            "usageSteps": ["In the evening, apply one pump after a water-based toner and follow with moisturizer. Begin on alternate nights in this synthetic routine example."],
+            "metricClaims": [{"label": "smoother-feeling skin", "subject": "skin feel", "value": "79", "unit": "%", "metric": "self-reported smoother feel", "direction": "improve", "timing": "after 28 days", "sample": "24 adult volunteers", "method": "synthetic test panel", "sentence": "Synthetic test panel: after 28 days, 19 of 24 adult volunteers reported smoother-feeling skin.", "sourceText": "Synthetic test panel: after 28 days, 19 of 24 adult volunteers reported smoother-feeling skin."}],
+            "evidenceSentences": ["Synthetic test panel: after 28 days, 19 of 24 adult volunteers reported smoother-feeling skin."],
+            "ingredientBenefitLinks": [{"ingredient": "Moonflower Peptide Blend", "benefit": "comforting", "effect": "more comfortable dry areas", "sentence": "Moonflower Peptide Blend is described here as helping skin feel cushioned.", "sourceText": "ENCAPSULATED RETINYL OLEATE. A synthetic fixture ingredient card for a gradual evening routine. MOONFLOWER PEPTIDE BLEND. Described here as helping skin feel cushioned. OAT LIPID COMPLEX. Described here as supporting comfort."}]
+          }
+        }
+      },
+      "aiAnalysis": {
+        "keywords": {"product": ["Arcwell Night Renewal Serum", "Fieldnote Example Labs", "serum"], "price": ["$47.00"], "benefit": ["smoothing", "comforting", "moisturizing"], "effect": ["softer-feeling texture", "more comfortable dry areas"], "ingredient": ["Encapsulated Retinyl Oleate", "Moonflower Peptide Blend", "Oat Lipid Complex", "Niacinamide"], "usage": ["evening after toner"], "faq": [], "review": [], "metric": ["19 of 24 after 28 days"], "trend": [], "unknown": []},
+        "categorizedSections": [{"title": "Key ingredients", "category": "ingredient", "text": "ENCAPSULATED RETINYL OLEATE, MOONFLOWER PEPTIDE BLEND, OAT LIPID COMPLEX, AND NIACINAMIDE.", "bullets": ["Encapsulated Retinyl Oleate", "Moonflower Peptide Blend", "Oat Lipid Complex", "Niacinamide"]}],
+        "summary": "Synthetic evening-serum fixture with ingredient, usage, and qualified panel evidence."
+      },
+      "semanticFacts": {
+        "ingredients": ["Encapsulated Retinyl Oleate", "Moonflower Peptide Blend", "Oat Lipid Complex", "Niacinamide"],
+        "benefits": ["smoothing", "comforting", "moisturizing"],
+        "effects": ["softer-feeling texture", "more comfortable dry areas", "a more even-looking surface"],
+        "skinTypes": ["dry", "normal", "combination"],
+        "usageSteps": ["In the evening, apply one pump after a water-based toner and follow with moisturizer. Begin on alternate nights in this synthetic routine example."],
+        "metricClaims": [{"label": "smoother-feeling skin", "subject": "skin feel", "value": "79", "unit": "%", "metric": "self-reported smoother feel", "direction": "improve", "timing": "after 28 days", "sample": "24 adult volunteers", "method": "synthetic test panel", "sentence": "Synthetic test panel: after 28 days, 19 of 24 adult volunteers reported smoother-feeling skin.", "sourceText": "Synthetic test panel: after 28 days, 19 of 24 adult volunteers reported smoother-feeling skin."}],
+        "evidenceSentences": ["Synthetic test panel: after 28 days, 19 of 24 adult volunteers reported smoother-feeling skin."],
+        "ingredientBenefitLinks": [{"ingredient": "Moonflower Peptide Blend", "benefit": "comforting", "effect": "more comfortable dry areas", "sentence": "Moonflower Peptide Blend is described here as helping skin feel cushioned.", "sourceText": "ENCAPSULATED RETINYL OLEATE. A synthetic fixture ingredient card for a gradual evening routine. MOONFLOWER PEPTIDE BLEND. Described here as helping skin feel cushioned. OAT LIPID COMPLEX. Described here as supporting comfort."}]
+      },
+      "categorizedProductInfo": {"benefits": ["smoothing", "comforting", "moisturizing"], "effects": ["softer-feeling texture", "more comfortable dry areas", "a more even-looking surface"], "ingredients": ["Encapsulated Retinyl Oleate", "Moonflower Peptide Blend", "Oat Lipid Complex", "Niacinamide"], "usage": ["In the evening, apply one pump after a water-based toner and follow with moisturizer. Begin on alternate nights in this synthetic routine example."], "metrics": ["Synthetic test panel: after 28 days, 19 of 24 adult volunteers reported smoother-feeling skin."], "faq": []},
+      "customerReviewAnalysis": {"items": [], "keywords": [], "reviewSignals": []},
+      "contentAnalysis": {"sections": [{"title": "Key ingredients", "category": "ingredient", "text": "ENCAPSULATED RETINYL OLEATE, MOONFLOWER PEPTIDE BLEND, OAT LIPID COMPLEX, AND NIACINAMIDE.", "bullets": ["Encapsulated Retinyl Oleate", "Moonflower Peptide Blend", "Oat Lipid Complex", "Niacinamide"]}], "reviewSignals": []},
+      "ocr": {"textBlocks": ["ENCAPSULATED RETINYL OLEATE. A synthetic fixture ingredient card for a gradual evening routine.", "SYNTHETIC TEST PANEL. AFTER 28 DAYS, 19 OF 24 ADULT VOLUNTEERS REPORTED SMOOTHER-FEELING SKIN."], "keywords": {"product": ["Arcwell Night Renewal Serum"], "benefit": ["smoothing", "comforting"], "ingredient": ["Encapsulated Retinyl Oleate", "Moonflower Peptide Blend"], "metric": ["19 of 24 after 28 days"]}, "sentenceInsights": [{"imageUrl": "https://assets.example.test/fixtures/arcwell/test-panel-card.png", "text": "Synthetic test panel: after 28 days, 19 of 24 adult volunteers reported smoother-feeling skin.", "category": "metric", "keywords": ["28 days", "19 of 24", "synthetic"]}]},
+      "rag": {"chunks": [{"id": "ex-arc-001-product", "kind": "product", "text": "Arcwell Night Renewal Serum\nSynthetic evening serum fixture with smoothing, comforting, and moisturizing signals."}, {"id": "ex-arc-001-ocr-1", "kind": "ocr", "text": "Synthetic test panel: after 28 days, 19 of 24 adult volunteers reported smoother-feeling skin."}]},
+      "availability": "InStock",
+      "variants": [{"id": "EX-ARC-001", "sku": "EX-ARC-001", "title": "30 mL", "price": "$47.00"}],
+      "tags": ["#synthetic", "#night-serum", "#example-fixture"]
+    }
+  }
+}
+
+expect:
+  resultStatus: SUCCEEDED
+  schemaTypes: ["Product", "WebPage"]

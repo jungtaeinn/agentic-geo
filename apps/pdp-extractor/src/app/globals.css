@@ -231,7 +231,8 @@ button:disabled {
   flex: 1;
   flex-direction: column;
   gap: 4px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding-right: 2px;
 }
 
@@ -1336,17 +1337,18 @@ button:disabled {
   inset: 0;
   z-index: 20;
   display: grid;
-  place-items: stretch;
+  place-items: center;
   background: rgba(10, 11, 10, 0.7);
   backdrop-filter: blur(10px);
+  padding: 16px;
 }
 
 .settingsModal {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
   width: min(1120px, calc(100vw - 32px));
-  height: min(760px, calc(100vh - 32px));
-  margin: auto;
+  height: min(760px, calc(100dvh - 32px));
+  min-height: 0;
   overflow: hidden;
   border: 1px solid var(--line-strong);
   border-radius: 12px;
@@ -1359,7 +1361,8 @@ button:disabled {
   min-width: 0;
   flex-direction: column;
   gap: 18px;
-  overflow: auto;
+  min-height: 0;
+  overflow-y: auto;
   border-right: 1px solid rgba(255, 255, 255, 0.1);
   background:
     linear-gradient(128deg, rgba(42, 72, 98, 0.72) 0%, rgba(43, 87, 84, 0.7) 48%, rgba(82, 58, 49, 0.72) 100%),
@@ -1428,16 +1431,21 @@ button:disabled {
 
 .settingsContent {
   min-width: 0;
-  overflow: auto;
+  min-height: 0;
+  overflow-y: auto;
   padding: 34px min(72px, 6vw) 40px;
 }
 
 .settingsTopbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 20px;
   margin-bottom: 28px;
+  background: #151716;
 }
 
 .settingsTopbar > div {
@@ -1461,8 +1469,8 @@ button:disabled {
 
 .settingsTopbar button {
   display: grid;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   place-items: center;
   border-radius: 8px;
   background: transparent;
@@ -1978,18 +1986,19 @@ button:disabled {
 
 .settingsActions {
   position: sticky;
-  bottom: -40px;
+  bottom: 0;
+  z-index: 2;
   display: flex;
   justify-content: flex-end;
   gap: 10px;
   margin-top: 34px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   background: #151716;
-  padding: 16px 0 0;
+  padding: 14px 0;
 }
 
 .settingsActions button {
-  min-height: 32px;
+  min-height: 44px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.055);
@@ -2108,6 +2117,26 @@ button:disabled {
   }
 }
 
+@media (max-width: 1079px) {
+  .settingsOverlay {
+    padding: 8px;
+  }
+
+  .settingsModal {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    width: 100%;
+    height: 100%;
+  }
+
+  .settingsSidebar {
+    max-height: 216px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 12px 10px;
+  }
+}
+
 @media (max-width: 980px) {
   .codexShell {
     --status-panel-width: 280px;
@@ -2139,7 +2168,8 @@ button:disabled {
     position: sticky;
     top: 0;
     z-index: 5;
-    max-height: 248px;
+    height: min(248px, 42dvh);
+    overflow: hidden;
     border-right: 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.13);
   }
@@ -2197,9 +2227,9 @@ button:disabled {
 
   .settingsModal {
     grid-template-columns: 1fr;
-    width: 100vw;
-    height: 100vh;
-    border-radius: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: 10px;
   }
 
   .settingsSidebar {
@@ -2209,7 +2239,21 @@ button:disabled {
   }
 
   .settingsContent {
-    padding: 24px 18px 32px;
+    padding: 0;
+  }
+
+  .settingsTopbar {
+    padding: 16px 18px 12px;
+  }
+
+  .settingsContent > :not(.settingsTopbar):not(.settingsActions) {
+    margin-right: 18px;
+    margin-left: 18px;
+  }
+
+  .settingsActions {
+    flex-wrap: wrap;
+    padding: 12px 18px;
   }
 
   .providerGrid,

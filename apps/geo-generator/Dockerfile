@@ -16,6 +16,8 @@ WORKDIR /repo/apps/geo-generator
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
+# Set at deployment time to the separately deployed Python Agent API.
+ENV AGENTIC_GEO_API_URL=
 
 EXPOSE 3000
 

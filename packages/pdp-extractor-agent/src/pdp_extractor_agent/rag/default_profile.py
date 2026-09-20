@@ -1,0 +1,66 @@
+"""Managed RAG assets and the legacy runtime-default profile."""
+
+from __future__ import annotations
+
+import base64
+import gzip
+import json
+from copy import deepcopy
+from importlib import resources
+from typing import Any
+
+from .manifest import PRODUCT_EXTRACTOR_RAG_MANIFEST
+
+_RAG_RESOURCES = resources.files("pdp_extractor_agent").joinpath("resources", "rag")
+
+# The five Markdown files are package data and deliberately retain their source
+# bytes. The TS runtime profile, however, predates the richer Markdown assets:
+# it has its own policy-bearing prompt/document strings. Keep both identities
+# rather than silently substituting one for the other.
+_MANAGED_ANALYSIS_PROMPT = _RAG_RESOURCES.joinpath(PRODUCT_EXTRACTOR_RAG_MANIFEST["analysisPrompt"]).read_text(
+    encoding="utf-8"
+)
+_LEGACY_RUNTIME_PROFILE = json.loads(
+    gzip.decompress(
+        base64.b64decode(
+            "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"
+        )
+    ).decode("utf-8")
+)
+DEFAULT_PRODUCT_EXTRACTOR_ANALYSIS_PROMPT: str = _LEGACY_RUNTIME_PROFILE["analysisPrompt"]
+defaultProductExtractorAnalysisPrompt = DEFAULT_PRODUCT_EXTRACTOR_ANALYSIS_PROMPT
+
+
+def default_profile() -> dict[str, Any]:
+    """Return the TypeScript runtime default, including its document order."""
+
+    return deepcopy(_LEGACY_RUNTIME_PROFILE)
+
+
+def managed_assets() -> dict[str, Any]:
+    """Return the byte-preserved managed Markdown resources for package consumers."""
+
+    documents = PRODUCT_EXTRACTOR_RAG_MANIFEST["documents"]
+    document_names = [
+        documents["productNormalization"],
+        documents["reviewKeywordExtraction"],
+        documents["ocrKeywordClassification"],
+        documents["faqExtraction"],
+    ]
+    return {
+        "profile": PRODUCT_EXTRACTOR_RAG_MANIFEST["profile"],
+        "analysisPrompt": _MANAGED_ANALYSIS_PROMPT,
+        "documents": [
+            {"name": name, "version": "v1", "content": _RAG_RESOURCES.joinpath(name).read_text(encoding="utf-8")}
+            for name in document_names
+        ],
+    }
+
+
+def default_product_extractor_rag_profile() -> dict[str, Any]:
+    """Named public alias matching the legacy profile export."""
+
+    return default_profile()
+
+
+defaultProductExtractorRagProfile = default_product_extractor_rag_profile

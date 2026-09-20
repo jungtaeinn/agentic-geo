@@ -1,0 +1,46 @@
+[project]
+name = "neo-agents-workspace"
+version = "0.1.0"
+description = "Python workspace for Agentic GEO agent services and packages."
+requires-python = ">=3.14,<3.15"
+dependencies = []
+
+[dependency-groups]
+dev = [
+  "pyright>=1.1.407",
+  "pytest>=9.0.0",
+  "pytest-asyncio>=1.3.0",
+  "pytest-cov>=7.0.0",
+  "ruff>=0.14.0",
+  "testcontainers[postgres]>=4.13.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = [
+  "apps/agent-api",
+  "packages/neo-js-compat",
+  "packages/pdp-extractor-agent",
+  "packages/pdp-geo-eval-agent",
+  "packages/pdp-geo-generator-agent",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["apps", "packages"]
+markers = [
+  "integration: requires a disposable PostgreSQL database",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pyright]
+pythonVersion = "3.14"
+typeCheckingMode = "strict"
