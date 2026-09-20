@@ -3,7 +3,7 @@
 > Turn product-page evidence into citation-ready, AI-ready content and structured data.
 
 <p align="center">
-  <img src="docs/images/agentic-geo-citation-ready-workflow-v3.png" alt="Agentic GEO turns authorized product evidence into citation-ready content, JSON-LD, and attributable answer units for ChatGPT and Gemini" width="100%" />
+  <img src="docs/images/agentic-geo-citation-opportunity-workflow-v4.png" alt="Agentic GEO turns authorized product PDP evidence into citation-ready AI data, source-supported schema and content, and citation opportunities for ChatGPT and Gemini" width="100%" />
 </p>
 
 Agentic GEO converts authorized PDP evidence into reviewable, AI-ready content and connected JSON-LD. It is designed to make a relevant product page easier for AI answer engines—including ChatGPT and Gemini—to understand, retrieve, summarize, and cite when those systems independently select it. It keeps the page, product, FAQ, HowTo, and atomic product facts in distinct, source-backed roles.
